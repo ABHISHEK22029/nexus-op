@@ -3,33 +3,35 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, ShoppingCart, Package, Activity,
   Receipt, Workflow, FileText, ClipboardList, BookOpen, Truck,
-  FolderGit2, Briefcase, Milestone, Zap, Home
+  FolderGit2, Briefcase, Milestone, Zap, Home, Sun, Moon
 } from 'lucide-react';
 import { useRole } from '../context/RoleContext';
 import { useProject } from '../context/ProjectContext';
+import { useTheme } from '../context/ThemeContext';
 
 const Sidebar = () => {
   const { role } = useRole();
   const { enabledModules } = useProject();
+  const { theme, toggleTheme, isDark } = useTheme();
 
   const baseNavItems = [
-    { name: 'Dashboard',       path: '/dashboard',  icon: <LayoutDashboard size={18} />, group: 'Overview' },
-    { name: 'Projects',        path: '/projects',   icon: <FolderGit2 size={18} />,       group: 'Project' },
-    { name: 'Work Orders',     path: '/workorders', icon: <Briefcase size={18} />,         group: 'Project' },
-    { name: 'Vendors',         path: '/vendors',    icon: <Users size={18} />,             group: 'Project' },
-    { name: 'Purchase Orders', path: '/po',         icon: <ShoppingCart size={18} />,      group: 'Procurement' },
-    { name: 'GRN',             path: '/grn',        icon: <Truck size={18} />,             group: 'Procurement' },
-    { name: 'Inventory',       path: '/inventory',  icon: <Package size={18} />,           group: 'Procurement' },
-    { name: 'RA Bills',        path: '/bills',      icon: <Receipt size={18} />,           group: 'Billing' },
-    { name: 'Activity Log',    path: '/activity',   icon: <Activity size={18} />,          group: 'System' },
-    { name: 'Process Flow',    path: '/flow',       icon: <Workflow size={18} />,          group: 'System' },
+    { name: 'Dashboard', path: '/dashboard', icon: <LayoutDashboard size={18} />, group: 'Overview' },
+    { name: 'Projects', path: '/projects', icon: <FolderGit2 size={18} />, group: 'Project' },
+    { name: 'Work Orders', path: '/workorders', icon: <Briefcase size={18} />, group: 'Project' },
+    { name: 'Vendors', path: '/vendors', icon: <Users size={18} />, group: 'Project' },
+    { name: 'Purchase Orders', path: '/po', icon: <ShoppingCart size={18} />, group: 'Procurement' },
+    { name: 'GRN', path: '/grn', icon: <Truck size={18} />, group: 'Procurement' },
+    { name: 'Inventory', path: '/inventory', icon: <Package size={18} />, group: 'Procurement' },
+    { name: 'RA Bills', path: '/bills', icon: <Receipt size={18} />, group: 'Billing' },
+    { name: 'Activity Log', path: '/activity', icon: <Activity size={18} />, group: 'System' },
+    { name: 'Process Flow', path: '/flow', icon: <Workflow size={18} />, group: 'System' },
   ];
 
   const moduleNavItems = [
-    { name: 'BOQ',              path: '/boq',        icon: <FileText size={18} />,     requiredModule: 'BOQ',              group: 'Project' },
-    { name: 'Indent',           path: '/indent',     icon: <ClipboardList size={18} />, requiredModule: 'Indent',           group: 'Procurement' },
-    { name: 'Measurement Book', path: '/mb',         icon: <BookOpen size={18} />,     requiredModule: 'Measurement Book', group: 'Billing' },
-    { name: 'Milestones',       path: '/milestones', icon: <Milestone size={18} />,    requiredModule: 'Milestones',       group: 'Project' },
+    { name: 'BOQ', path: '/boq', icon: <FileText size={18} />, requiredModule: 'BOQ', group: 'Project' },
+    { name: 'Indent', path: '/indent', icon: <ClipboardList size={18} />, requiredModule: 'Indent', group: 'Procurement' },
+    { name: 'Measurement Book', path: '/mb', icon: <BookOpen size={18} />, requiredModule: 'Measurement Book', group: 'Billing' },
+    { name: 'Milestones', path: '/milestones', icon: <Milestone size={18} />, requiredModule: 'Milestones', group: 'Project' },
   ];
 
   const allNavItems = [
@@ -40,9 +42,9 @@ const Sidebar = () => {
   const getNavItemsForRole = () => {
     switch (role) {
       case 'Engineer':
-        return allNavItems.filter(i => ['Purchase Orders','Inventory','Process Flow','Indent','GRN','Measurement Book'].includes(i.name));
+        return allNavItems.filter(i => ['Purchase Orders', 'Inventory', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
       case 'Finance':
-        return allNavItems.filter(i => ['Dashboard','RA Bills','Activity Log','BOQ'].includes(i.name));
+        return allNavItems.filter(i => ['Dashboard', 'RA Bills', 'Activity Log', 'BOQ'].includes(i.name));
       case 'Vendor':
         return allNavItems.filter(i => ['Purchase Orders'].includes(i.name));
       case 'Admin':

@@ -32,18 +32,18 @@ const STATUS_COLORS = {
 };
 
 const TYPE_CONFIG = {
-  PO_CREATED:        { color: '#F59E0B', icon: '📦', label: 'PO Created' },
-  PO_APPROVED:       { color: '#3B82F6', icon: '✅', label: 'PO Approved' },
-  PO_DISPATCHED:     { color: '#8B5CF6', icon: '🚚', label: 'Dispatched' },
-  GRN_RECEIVED:      { color: '#10B981', icon: '📬', label: 'GRN' },
-  BILL_GENERATED:    { color: '#EF4444', icon: '📄', label: 'Bill' },
-  BILL_SUBMITTED:    { color: '#F43F5E', icon: '📨', label: 'Submitted' },
-  BILL_PAID:         { color: '#22C55E', icon: '💰', label: 'Paid' },
-  INDENT_CREATED:    { color: '#F97316', icon: '📋', label: 'Indent' },
-  INDENT_UPDATED:    { color: '#EC4899', icon: '🔄', label: 'Updated' },
-  MB_ENTRY:          { color: '#06B6D4', icon: '📐', label: 'MB Entry' },
+  PO_CREATED: { color: '#F59E0B', icon: '📦', label: 'PO Created' },
+  PO_APPROVED: { color: '#3B82F6', icon: '✅', label: 'PO Approved' },
+  PO_DISPATCHED: { color: '#8B5CF6', icon: '🚚', label: 'Dispatched' },
+  GRN_RECEIVED: { color: '#10B981', icon: '📬', label: 'GRN' },
+  BILL_GENERATED: { color: '#EF4444', icon: '📄', label: 'Bill' },
+  BILL_SUBMITTED: { color: '#F43F5E', icon: '📨', label: 'Submitted' },
+  BILL_PAID: { color: '#22C55E', icon: '💰', label: 'Paid' },
+  INDENT_CREATED: { color: '#F97316', icon: '📋', label: 'Indent' },
+  INDENT_UPDATED: { color: '#EC4899', icon: '🔄', label: 'Updated' },
+  MB_ENTRY: { color: '#06B6D4', icon: '📐', label: 'MB Entry' },
   MILESTONE_UPDATED: { color: '#A78BFA', icon: '🎯', label: 'Milestone' },
-  VENDOR_ADDED:      { color: '#84CC16', icon: '🏢', label: 'Vendor' },
+  VENDOR_ADDED: { color: '#84CC16', icon: '🏢', label: 'Vendor' },
 };
 
 /* ══════════════════════════════════════════════════════════
@@ -409,18 +409,18 @@ const Dashboard = () => {
 
       {/* ══ 4 PRIMARY KPI CARDS (row 1) ═══════════════════ */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px', marginBottom: '18px' }}>
-        <KpiCard key="vendors"   title="Active Vendors"   value={fmtNum(stats?.totalVendors)}   icon={Users}        accent="#3B82F6"  link="/vendors"   trend={12} />
-        <KpiCard key="pos"       title="Purchase Orders"  value={fmtNum(stats?.totalPOs)}        icon={ShoppingCart} accent="#8B5CF6"  link="/po"        trend={5} />
-        <KpiCard key="delivered" title="POs Delivered"    value={fmtNum(stats?.deliveredPOs)}    icon={CheckCircle}  accent="#10B981"  link="/po"        sub={`${deliveryRate}% delivery rate`} />
-        <KpiCard key="inv"       title="Inventory SKUs"   value={fmtNum(stats?.inventoryCount)}  icon={Package}      accent="#F59E0B"  link="/inventory" />
+        <KpiCard key="vendors" title="Active Vendors" value={fmtNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" trend={12} />
+        <KpiCard key="pos" title="Purchase Orders" value={fmtNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po" trend={5} />
+        <KpiCard key="delivered" title="POs Delivered" value={fmtNum(stats?.deliveredPOs)} icon={CheckCircle} accent="#10B981" link="/po" sub={`${deliveryRate}% delivery rate`} />
+        <KpiCard key="inv" title="Inventory SKUs" value={fmtNum(stats?.inventoryCount)} icon={Package} accent="#F59E0B" link="/inventory" />
       </div>
 
       {/* ══ 4 FINANCIAL KPI CARDS (row 2) ═══════════════ */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px', marginBottom: '28px' }}>
-        <KpiCard key="billed"   title="Total Billed"   value={fmtCrore(stats?.totalBilled)}   icon={Receipt}       accent="#EF4444"  link="/bills"  isCurrency sub="Gross amount raised" />
-        <KpiCard key="paid"     title="Net Released"   value={fmtCrore(stats?.netPaid)}        icon={TrendingUp}    accent="#22C55E"  link="/bills"  isCurrency trend={8} sub={`${utilizationPct}% utilization`} />
-        <KpiCard key="indents"  title="Open Indents"   value={fmtNum(stats?.openIndents)}      icon={AlertTriangle} accent="#F97316"  link="/indent" />
-        <KpiCard key="modules"  title="Platform Modules" value="15"                            icon={Layers}        accent="#06B6D4"  sub="All modules active" />
+        <KpiCard key="billed" title="Total Billed" value={fmtCrore(stats?.totalBilled)} icon={Receipt} accent="#EF4444" link="/bills" isCurrency sub="Gross amount raised" />
+        <KpiCard key="paid" title="Net Released" value={fmtCrore(stats?.netPaid)} icon={TrendingUp} accent="#22C55E" link="/bills" isCurrency trend={8} sub={`${utilizationPct}% utilization`} />
+        <KpiCard key="indents" title="Open Indents" value={fmtNum(stats?.openIndents)} icon={AlertTriangle} accent="#F97316" link="/indent" />
+        <KpiCard key="modules" title="Platform Modules" value="15" icon={Layers} accent="#06B6D4" sub="All modules active" />
       </div>
 
       {/* ══ MAP + S-CURVE (2 col) ══════════════════════════ */}

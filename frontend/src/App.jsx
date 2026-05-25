@@ -21,13 +21,24 @@ import HowItWorks from './pages/HowItWorks';
 import { RoleProvider, useRole } from './context/RoleContext';
 import { ProjectProvider, useProject } from './context/ProjectContext';
 import { useTheme } from './context/ThemeContext';
-import { UserCircle, Settings, Sun, Moon } from 'lucide-react';
+import { UserCircle, Settings, Sun, Moon, Plus } from 'lucide-react';
+import QuickCreateModal from './components/QuickCreateModal';
 
 /* ─── Top Header (App Layer only) ──────────────────────── */
 const TopHeader = () => {
   const { role, setRole } = useRole();
   const { projects, activeProject, setActiveProject } = useProject();
   const { isDark, toggleTheme } = useTheme();
+  
+  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+  const [activeModal, setActiveModal] = React.useState(null);
+
+  // Close dropdown on click outside
+  React.useEffect(() => {
+    const handleOutsideClick = () => setIsDropdownOpen(false);
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
+  }, []);
 
   return (
     <div
@@ -47,6 +58,91 @@ const TopHeader = () => {
         boxShadow: 'var(--shadow-sm)',
       }}
     >
+      {/* Quick Create Dropdown Menu */}
+      <div 
+        style={{ position: 'relative' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '8px',
+            padding: '6px 14px',
+            fontSize: '0.8rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.25)',
+            transition: 'all 150ms ease'
+          }}
+          onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.05)'}
+          onMouseLeave={e => e.currentTarget.style.filter = 'brightness(1)'}
+        >
+          <Plus size={14} strokeWidth={3} />
+          <span>Quick Create</span>
+        </button>
+
+        {isDropdownOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 8px)',
+              right: 0,
+              width: '200px',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '8px',
+              boxShadow: 'var(--shadow-md)',
+              padding: '6px',
+              zIndex: 100,
+              animation: 'dropdownFade 150ms ease-out'
+            }}
+          >
+            {[
+              { label: 'New Project', value: 'project', info: 'Create active workspace' },
+              { label: 'Onboard Vendor', value: 'vendor', info: 'Add partner details' },
+              { label: 'Raise Indent', value: 'indent', info: 'Site material request' },
+              { label: 'Raise PO', value: 'po', info: 'Issue supplier order' }
+            ].map((item) => (
+              <button
+                key={item.value}
+                onClick={() => {
+                  setActiveModal(item.value);
+                  setIsDropdownOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  background: 'transparent',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                  transition: 'background 150ms'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {item.label}
+                </span>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {item.info}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Project context selector */}
       <div
         style={{
@@ -152,6 +248,17 @@ const TopHeader = () => {
             : <Sun size={12} color="#fff" />}
         </div>
       </button>
+
+      {/* Render Quick Create Modal Overlay */}
+      <QuickCreateModal 
+        type={activeModal} 
+        isOpen={activeModal !== null} 
+        onClose={() => setActiveModal(null)} 
+        onSuccess={() => {
+          // Refresh window to show newly created item on the page
+          window.location.reload();
+        }}
+      />
     </div>
   );
 };
