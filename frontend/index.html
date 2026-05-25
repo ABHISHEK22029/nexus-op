@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nexus Op — Infrastructure Intelligence Platform</title>
+    <meta name="description" content="Nexus Op manages the full lifecycle of civil infrastructure projects — from indents and purchase orders to GRN, measurement books, and RA Bill generation." />
+    <!-- Google Fonts: Plus Jakarta Sans + Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <!-- Google Maps JavaScript API — Replace YOUR_API_KEY with your key from console.cloud.google.com -->
+    <script>
+      window.GOOGLE_MAPS_LOADED = false;
+      function onGoogleMapsLoaded() { window.GOOGLE_MAPS_LOADED = true; window.dispatchEvent(new Event('google-maps-ready')); }
+    </script>
+    <script async defer
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY&libraries=places&callback=onGoogleMapsLoaded"
+      onerror="console.warn('Google Maps API failed to load. Using Leaflet fallback.')">
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
