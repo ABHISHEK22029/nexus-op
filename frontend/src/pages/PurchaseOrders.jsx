@@ -12,11 +12,11 @@ const PurchaseOrders = () => {
 
   const fetchData = () => {
     if (!activeProject) return;
-    axios.get(`http://localhost:5000/po?projectId=${activeProject.id}`)
+    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/po?projectId=${activeProject.id}`)
       .then(res => setPos(res.data))
       .catch(err => console.error("Failed to fetch POs", err));
     
-    axios.get(`http://localhost:5000/vendors?projectId=${activeProject.id}`)
+    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/vendors?projectId=${activeProject.id}`)
       .then(res => setVendors(res.data))
       .catch(err => console.error("Failed to fetch vendors", err));
   };
@@ -27,7 +27,7 @@ const PurchaseOrders = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    axios.post('http://localhost:5000/po', {
+    axios.post('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/po', {
       ...formData,
       quantity: parseInt(formData.quantity)
     })
@@ -43,7 +43,7 @@ const PurchaseOrders = () => {
     const endpoint = action === 'grn' ? 'grn' : `po/${poId}/${action}`;
     const payload = action === 'grn' ? { poId, selectedAction: action, ...extraPayload } : {};
     
-    axios[action === 'grn' ? 'post' : 'patch'](`http://localhost:5000/${endpoint}`, payload)
+    axios[action === 'grn' ? 'post' : 'patch'](`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/${endpoint}`, payload)
       .then(() => fetchData())
       .catch(err => alert(`Failed to ${action} PO: ` + (err.response?.data?.error || err.message)));
   };

@@ -7,7 +7,7 @@ const Milestones = () => {
   const [milestones, setMilestones] = useState([]);
 
   useEffect(() => {
-    fetch('http://localhost:5000/milestones')
+    fetch('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/milestones')
       .then(res => res.json())
       .then(data => setMilestones(data))
       .catch(err => console.error(err));

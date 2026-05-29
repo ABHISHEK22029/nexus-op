@@ -1,0 +1,12 @@
+{
+  "name": "nexus-op-db-tools",
+  "version": "1.0.0",
+  "description": "DB migration tools for Nexus-OP",
+  "scripts": {
+    "migrate": "node db/migrate_sqlite_to_postgres.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "pg": "^8.11.5"
+  }
+}

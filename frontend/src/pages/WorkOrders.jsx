@@ -14,15 +14,15 @@ const WorkOrders = () => {
 
   useEffect(() => {
     if (!activeProject) return;
-    axios.get(`http://localhost:5000/vendors?projectId=${activeProject.id}`).then(res => setVendors(res.data));
-    axios.get(`http://localhost:5000/boq?projectId=${activeProject.id}`).then(res => setBoqs(res.data));
+    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/vendors?projectId=${activeProject.id}`).then(res => setVendors(res.data));
+    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/boq?projectId=${activeProject.id}`).then(res => setBoqs(res.data));
   }, [activeProject]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!activeProject) return;
     try {
-      await axios.post('http://localhost:5000/work-orders', { ...formData, projectId: activeProject.id });
+      await axios.post('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/work-orders', { ...formData, projectId: activeProject.id });
       // Minor manual refresh hack by toggling activeProject or we simply reload the whole page to fetch Context wrapper again cleanly
       window.location.reload(); 
     } catch (err) {

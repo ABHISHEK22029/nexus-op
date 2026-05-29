@@ -13,7 +13,7 @@ const Projects = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/projects', formData);
+      await axios.post('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/projects', formData);
       setShowForm(false);
       setFormData({ name: '', clientName: '', type: 'construction', startDate: '', endDate: '' });
       fetchProjects(); // Live reload context

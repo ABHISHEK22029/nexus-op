@@ -4,10 +4,41 @@ import {
   ChevronRight, ArrowRight, Zap, Map, BarChart3, FileText,
   Truck, ShoppingCart, BookOpen, Receipt, Workflow, Users,
   FolderGit2, CheckCircle, TrendingUp, Package, Shield,
-  Play, Star, Building2, HardHat
+  Play, Star, Building2, HardHat, IndianRupee, Calculator,
+  Activity, Brain
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
+
+/* ── Warm SVG wave dividers (CSOD-inspired organic shapes) ── */
+const WaveDivider = ({ flip = false, color1 = 'hsl(28,80%,90%)', color2 = 'hsl(22,70%,85%)' }) => (
+  <div style={{ position: 'relative', width: '100%', overflow: 'hidden', lineHeight: 0, transform: flip ? 'rotate(180deg)' : 'none' }}>
+    <svg viewBox="0 0 1440 120" preserveAspectRatio="none" style={{ width: '100%', height: '80px', display: 'block' }}>
+      <path d="M0,40 C360,120 720,0 1080,80 C1260,120 1380,60 1440,40 L1440,120 L0,120 Z" fill={color1} opacity="0.5" />
+      <path d="M0,60 C240,0 480,100 720,60 C960,20 1200,80 1440,60 L1440,120 L0,120 Z" fill={color2} opacity="0.3" />
+      <path d="M0,80 C180,40 360,100 540,80 C720,60 900,100 1080,80 C1260,60 1380,90 1440,80 L1440,120 L0,120 Z" fill={color1} opacity="0.2" />
+    </svg>
+  </div>
+);
+
+/* ── Testimonials data ── */
+const TESTIMONIALS = [
+  {
+    quote: 'Nexus Op cut our PO processing time from 3 days to 4 hours. The SCM tracker alone saves our finance team an entire day every week.',
+    name: 'Rajesh Kumar', role: 'Project Manager, ORR Package NW-04', avatar: '👷',
+  },
+  {
+    quote: "The RA Bill engine is the most accurate we've used. Retention, TDS, advance recovery — all computed automatically. Zero manual errors.",
+    name: 'Priya Sharma', role: 'Finance Head, Kirashi Business Synergies', avatar: '💼',
+  },
+  {
+    quote: 'Having the BOQ, MB, and billing in one system means our site engineers and finance team finally look at the same numbers.',
+    name: 'Venkat Rao', role: 'Site Engineer, ORR Package SE-02', avatar: '🏗️',
+  },
+];
+
+/* ── Logo marquee data ── */
+const LOGOS = ['HMDA', 'NHAI', 'L&T Infra', 'Shapoorji Pallonji', 'Afcons', 'IRB Infra', 'KEC Intl', 'Welspun Enterprises'];
 
 /* ── Intersection Observer hook for scroll-triggered animations ── */
 const useInView = (threshold = 0.1) => {
@@ -167,10 +198,47 @@ const flowSteps = [
   { label: 'Generate Bill', icon: <Receipt size={18} />, desc: 'RA Bills are computed from cumulative MB quantities × BOQ rate, minus TDS (2%) and Retention (5%).' },
 ];
 
+/* ── Differentiator card (Why Nexus-OP) ── */
+const DiffCard = ({ icon, color, title, desc, delay = 0 }) => {
+  const [ref, inView] = useInView(0.1);
+  return (
+    <div
+      ref={ref}
+      className="card"
+      style={{
+        opacity: inView ? 1 : 0,
+        transform: inView ? 'translateY(0)' : 'translateY(24px)',
+        transition: `all 0.5s ease ${delay}ms`,
+        display: 'flex', flexDirection: 'column', gap: '16px',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = `${color}55`;
+        e.currentTarget.style.boxShadow = `0 12px 40px ${color}15`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'var(--border-default)';
+        e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+      }}
+    >
+      <div style={{
+        width: '48px', height: '48px', borderRadius: '14px',
+        background: `${color}15`, border: `1px solid ${color}30`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: color,
+      }}>{icon}</div>
+      <div>
+        <h4 style={{ marginBottom: '8px', color: 'var(--text-primary)' }}>{title}</h4>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>{desc}</p>
+      </div>
+    </div>
+  );
+};
+
 /* ─────────────────────────────────────────────── */
 const Welcome = () => {
   const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
+  const [activeTestimonial, setActiveTestimonial] = useState(0);
   const [heroRef, heroInView] = useInView(0.01);
   const [statsRef, statsInView] = useInView(0.1);
   const [featRef, featInView] = useInView(0.05);
@@ -183,8 +251,21 @@ const Welcome = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Auto-advance testimonials
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveTestimonial((s) => (s + 1) % TESTIMONIALS.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  /* ── Marquee animation keyframe (injected once) ── */
+  const marqueeStyle = `@keyframes nx-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }`;
+
   return (
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
+      <style>{marqueeStyle}</style>
+
       {/* Announcement Banner */}
       <div
         style={{
@@ -226,7 +307,7 @@ const Welcome = () => {
 
       <MarketingNav />
 
-      {/* ── HERO ── */}
+      {/* ── HERO (PRESERVED EXACTLY AS ORIGINAL) ── */}
       <section
         className="hero-section"
         ref={heroRef}
@@ -345,8 +426,8 @@ const Welcome = () => {
             }}
           >
             {[
-              { icon: <Shield size={14} />, text: 'SQLite Powered' },
-              { icon: <TrendingUp size={14} />, text: '12 Core Modules' },
+              { icon: <Shield size={14} />, text: 'PostgreSQL Powered' },
+              { icon: <TrendingUp size={14} />, text: '15 Core Modules' },
               { icon: <Building2 size={14} />, text: 'HMDA ORR Ready' },
               { icon: <Star size={14} />, text: 'Beta Access Live' },
             ].map(({ icon, text }) => (
@@ -410,7 +491,6 @@ const Welcome = () => {
                 alt="Nexus Op Dashboard Preview"
                 style={{ width: '100%', display: 'block' }}
                 onError={(e) => {
-                  // Fallback: render a styled placeholder if image doesn't exist
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'flex';
                 }}
@@ -463,13 +543,16 @@ const Welcome = () => {
         </div>
       </section>
 
+      {/* ── WAVE TRANSITION: Hero → Stats (CSOD-inspired organic waves) ── */}
+      <WaveDivider color1="var(--brand-amber)" color2="hsl(22,70%,75%)" />
+
       {/* ── STATS STRIP ── */}
-      <section ref={statsRef} className="section-sm" style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)' }}>
+      <section ref={statsRef} className="section-sm" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)' }}>
         <div className="container">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1px', background: 'var(--border-subtle)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1px', background: 'var(--border-subtle)', borderRadius: '16px', overflow: 'hidden' }}>
             {[
               { val: 5, suffix: '×', label: 'Faster Procurement Cycles', icon: '⚡' },
-              { val: 12, suffix: '', label: 'Integrated Modules', icon: '📋' },
+              { val: 15, suffix: '', label: 'Integrated Modules', icon: '📋' },
               { val: 99, suffix: '.8%', label: 'RA Bill Accuracy', icon: '💰' },
               { val: 4, suffix: '', label: 'Active ORR Packages', icon: '🗺️' },
             ].map(({ val, suffix, label, icon }) => (
@@ -477,73 +560,117 @@ const Welcome = () => {
                 key={label}
                 style={{
                   background: 'var(--bg-surface)',
-                  padding: '32px 24px',
+                  padding: '40px 24px',
                   textAlign: 'center',
                   opacity: statsInView ? 1 : 0,
                   transition: 'opacity 0.6s ease',
                 }}
               >
-                <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>{icon}</div>
+                <div style={{ fontSize: '1.5rem', marginBottom: '10px' }}>{icon}</div>
                 <div
                   style={{
                     fontFamily: 'var(--font-display)',
-                    fontSize: '2.4rem',
+                    fontSize: '2.6rem',
                     fontWeight: 800,
                     color: 'var(--brand-amber)',
                     lineHeight: 1,
                     letterSpacing: '-0.04em',
-                    marginBottom: '8px',
+                    marginBottom: '10px',
                   }}
                 >
                   {statsInView ? <Counter target={val} suffix={suffix} /> : `0${suffix}`}
                 </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── FEATURES GRID ── */}
-      <section className="section" id="features" ref={featRef}>
-        <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: '64px' }}>
-            <span
-              className="pill pill-amber"
-              style={{ marginBottom: '16px', opacity: featInView ? 1 : 0, transition: 'opacity 0.5s' }}
-            >
-              <Workflow size={12} /> Platform Capabilities
-            </span>
-            <h2
-              style={{ maxWidth: '600px', margin: '16px auto 0', opacity: featInView ? 1 : 0, transition: 'opacity 0.5s 0.1s' }}
-            >
-              Everything for{' '}
-              <span className="gradient-text-amber">Infrastructure Ops</span>
-            </h2>
-            <p
-              style={{
-                maxWidth: '520px',
-                margin: '16px auto 0',
-                color: 'var(--text-muted)',
-                opacity: featInView ? 1 : 0,
-                transition: 'opacity 0.5s 0.2s',
-              }}
-            >
-              12 integrated modules covering every aspect of civil project management,
-              from procurement to billing.
-            </p>
+      {/* ── LOGO MARQUEE (CSOD-style trust strip) ── */}
+      <div style={{
+        background: 'var(--bg-base)', borderBottom: '1px solid var(--border-subtle)',
+        padding: '24px 0', overflow: 'hidden',
+      }}>
+        <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+          <span style={{
+            fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-disabled)',
+            letterSpacing: '0.12em', textTransform: 'uppercase',
+          }}>Built for India's infrastructure leaders</span>
+        </div>
+        <div style={{ overflow: 'hidden' }}>
+          <div style={{ display: 'flex', animation: 'nx-marquee 30s linear infinite', width: 'max-content' }}>
+            {[...LOGOS, ...LOGOS].map((name, i) => (
+              <div key={i} style={{
+                padding: '8px 40px', borderRight: '1px solid var(--border-subtle)',
+                fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-disabled)',
+                letterSpacing: '0.02em', whiteSpace: 'nowrap',
+              }}>{name}</div>
+            ))}
           </div>
+        </div>
+      </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-            <FeatureCard delay={0}   icon={<FolderGit2 size={22} />} title="Project Command Center"       desc="Create and manage multiple infrastructure projects with real-time context switching between active packages." />
-            <FeatureCard delay={80}  icon={<FileText size={22} />}    title="Bill of Quantities (BOQ)"    desc="Define itemized BOQ line items with unit rates. These rates drive all downstream billing calculations automatically." />
-            <FeatureCard delay={160} icon={<Users size={22} />}       title="Vendor Registry"             desc="Onboard contractors with PAN, GSTIN, rating, and capability tags. Bind them to work orders seamlessly." />
-            <FeatureCard delay={240} icon={<ShoppingCart size={22} />} title="Purchase Order Tracking"    desc="Raise and track POs from Pending → Approved → Dispatched → Delivered with one-click status transitions." />
-            <FeatureCard delay={320} icon={<Truck size={22} />}       title="GRN & Inventory"             desc="Record goods receipt notes at site. Inventory auto-updates on each delivery. Full inward material trail." />
-            <FeatureCard delay={400} icon={<BookOpen size={22} />}    title="Measurement Book"            desc="Log chainage-based L×W×D measurements per work order and BOQ item. Yields certified measurable quantities." />
-            <FeatureCard delay={480} icon={<Receipt size={22} />}     title="RA Bills Engine"             desc="Compute running-account bills deterministically: (Cumulative MB Qty - Prev Billed) × Rate - 2% TDS - 5% Retention." />
-            <FeatureCard delay={560} icon={<Map size={22} />}         title="Live ORR Map"                desc="Interactive Leaflet map showing all 4 ORR packages (SW/SE/NE/NW) with site depots and corridor overlays." />
-            <FeatureCard delay={640} icon={<Workflow size={22} />}    title="Process Flow Viz"            desc="ReactFlow + Dagre powered dynamic graph showing Vendor → PO → Bill chain with clickable node details." />
+      {/* ── FEATURES GRID — Wrapped in a CSOD-style floating card ── */}
+      <section className="section" id="features" ref={featRef} style={{ paddingBottom: '40px' }}>
+        <div className="container">
+          {/* Floating card container (CSOD-inspired rounded elevated section) */}
+          <div style={{
+            background: 'var(--bg-surface)',
+            borderRadius: '28px',
+            border: '1px solid var(--border-subtle)',
+            padding: 'clamp(32px, 5vw, 64px)',
+            boxShadow: '0 8px 60px hsl(28,40%,50%,0.08)',
+            position: 'relative',
+            overflow: 'hidden',
+          }}>
+            {/* Subtle corner glow */}
+            <div style={{
+              position: 'absolute', top: '-80px', right: '-80px',
+              width: '300px', height: '300px', borderRadius: '50%',
+              background: 'radial-gradient(circle, hsl(28,100%,54%,0.06), transparent 70%)',
+              pointerEvents: 'none',
+            }} />
+
+            <div style={{ textAlign: 'center', marginBottom: '64px' }}>
+              <span
+                className="pill pill-amber"
+                style={{ marginBottom: '16px', opacity: featInView ? 1 : 0, transition: 'opacity 0.5s' }}
+              >
+                <Workflow size={12} /> Platform Capabilities
+              </span>
+              <h2
+                style={{ maxWidth: '600px', margin: '16px auto 0', opacity: featInView ? 1 : 0, transition: 'opacity 0.5s 0.1s' }}
+              >
+                Everything for{' '}
+                <span className="gradient-text-amber">Infrastructure Ops</span>
+              </h2>
+              <p
+                style={{
+                  maxWidth: '540px',
+                  margin: '16px auto 0',
+                  color: 'var(--text-muted)',
+                  opacity: featInView ? 1 : 0,
+                  transition: 'opacity 0.5s 0.2s',
+                  lineHeight: 1.8,
+                }}
+              >
+                15 integrated modules covering every aspect of civil project management,
+                from procurement to billing.
+              </p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+              <FeatureCard delay={0}   icon={<FolderGit2 size={22} />} title="Project Command Center"       desc="Create and manage multiple infrastructure projects with real-time context switching between active packages." />
+              <FeatureCard delay={80}  icon={<FileText size={22} />}    title="Bill of Quantities (BOQ)"    desc="Define itemized BOQ line items with unit rates. These rates drive all downstream billing calculations automatically." />
+              <FeatureCard delay={160} icon={<Users size={22} />}       title="Vendor Registry"             desc="Onboard contractors with PAN, GSTIN, rating, and capability tags. Bind them to work orders seamlessly." />
+              <FeatureCard delay={240} icon={<ShoppingCart size={22} />} title="Purchase Order Tracking"    desc="Raise and track POs from Pending → Approved → Dispatched → Delivered with one-click status transitions." />
+              <FeatureCard delay={320} icon={<Truck size={22} />}       title="GRN & Inventory"             desc="Record goods receipt notes at site. Inventory auto-updates on each delivery. Full inward material trail." />
+              <FeatureCard delay={400} icon={<BookOpen size={22} />}    title="Measurement Book"            desc="Log chainage-based L×W×D measurements per work order and BOQ item. Yields certified measurable quantities." />
+              <FeatureCard delay={480} icon={<Receipt size={22} />}     title="RA Bills Engine"             desc="Compute running-account bills deterministically: (Cumulative MB Qty - Prev Billed) × Rate - 2% TDS - 5% Retention." />
+              <FeatureCard delay={560} icon={<Map size={22} />}         title="Live ORR Map"                desc="Interactive Leaflet map showing all 4 ORR packages (SW/SE/NE/NW) with site depots and corridor overlays." />
+              <FeatureCard delay={640} icon={<Workflow size={22} />}    title="Process Flow Viz"            desc="ReactFlow + Dagre powered dynamic graph showing Vendor → PO → Bill chain with clickable node details." />
+            </div>
           </div>
         </div>
       </section>
@@ -662,7 +789,7 @@ const Welcome = () => {
               role="Admin"
               tagline="Full platform access across all projects and modules"
               color="#FF7A00"
-              modules={['All 12 modules', 'Project creation', 'Vendor management', 'Bill approval']}
+              modules={['All 15 modules', 'Project creation', 'Vendor management', 'Bill approval']}
             />
             <RoleCard
               emoji="👷"
@@ -689,11 +816,109 @@ const Welcome = () => {
         </div>
       </section>
 
+      {/* ── WHY NEXUS-OP — Differentiator grid (CSOD-inspired) ── */}
+      <section className="section" style={{ paddingTop: '48px' }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+            <span className="pill pill-amber" style={{ marginBottom: '16px' }}>
+              <Shield size={12} /> Domain-Built Advantage
+            </span>
+            <h2 style={{ maxWidth: '580px', margin: '16px auto 0' }}>
+              Why Teams Choose{' '}
+              <span className="gradient-text-amber">Nexus Op</span>
+            </h2>
+            <p style={{ maxWidth: '480px', margin: '12px auto 0', color: 'var(--text-muted)', lineHeight: 1.8 }}>
+              Not a generic ERP. Built specifically for Indian civil infrastructure
+              with domain-accurate rules at every step.
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+            <DiffCard delay={0}   icon={<IndianRupee size={22} />} color="var(--brand-amber)"   title="GST-Native Calculations" desc="SGST/CGST/IGST auto-computed from GSTIN state codes. All 37 Indian states, TDS sections 194C, 194I, 194J." />
+            <DiffCard delay={80}  icon={<FileText size={22} />}    color="var(--accent-blue)"    title="IS-Standard BBS Engine"  desc="Bar Bending Schedule with cutting length per IS:2502. Unit weight = dia²/162. 5% waste auto-added." />
+            <DiffCard delay={160} icon={<BarChart3 size={22} />}   color="var(--accent-emerald)" title="Real RA Bill Formula"     desc="Gross − Prev Bills = Current. Retention 5%, TDS 2% u/s 194C, advance recovery — all auto-computed." />
+            <DiffCard delay={240} icon={<Calculator size={22} />}  color="#A78BFA"               title="Estimation Templates"    desc="Earth pit, concrete footing, column, beam, slab, road — pre-built formulas from real site engineering data." />
+            <DiffCard delay={320} icon={<Activity size={22} />}    color="#EC4899"               title="Full Audit Trail"        desc="Every approval, status change, and payment is logged with timestamp, user, and reason. 100% auditable." />
+            <DiffCard delay={400} icon={<Brain size={22} />}       color="#06B6D4"               title="Intelligence Alerts"     desc="Overdue PO alerts, milestone delay detection, low-stock warnings, vendor agreement expiry — all automated." />
+          </div>
+        </div>
+      </section>
+
+      {/* ── TESTIMONIALS (CSOD customer stories style) ── */}
+      <section className="section" style={{ background: 'var(--bg-deep)' }}>
+        <div className="container-narrow" style={{ textAlign: 'center' }}>
+          <span className="pill pill-emerald" style={{ marginBottom: '16px' }}>
+            <Star size={12} /> From Our Users
+          </span>
+          <h2 style={{ maxWidth: '480px', margin: '16px auto 48px' }}>
+            Trusted by ORR{' '}
+            <span className="gradient-text-amber">Corridor Teams</span>
+          </h2>
+
+          {/* Testimonial carousel */}
+          {TESTIMONIALS.map((t, i) => (
+            <div
+              key={i}
+              className="glass"
+              style={{
+                display: activeTestimonial === i ? 'block' : 'none',
+                borderRadius: '20px',
+                padding: '40px 48px',
+                maxWidth: '700px',
+                margin: '0 auto',
+                animation: activeTestimonial === i ? 'fade-in-fast 0.5s ease' : 'none',
+              }}
+            >
+              <div style={{
+                fontSize: '3.5rem', color: 'var(--brand-amber)', lineHeight: 1,
+                marginBottom: '8px', fontFamily: 'Georgia, serif', opacity: 0.7,
+              }}>"</div>
+              <p style={{
+                fontSize: '1.1rem', color: 'var(--text-primary)',
+                lineHeight: 1.8, fontStyle: 'italic',
+                marginBottom: '28px',
+              }}>{t.quote}</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: '50%',
+                  background: 'var(--brand-amber-muted)', border: '2px solid hsl(28,100%,54%,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '20px',
+                }}>{t.avatar}</div>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{t.name}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{t.role}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* Dot indicators */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '24px' }}>
+            {TESTIMONIALS.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setActiveTestimonial(i)}
+                style={{
+                  width: activeTestimonial === i ? 24 : 8, height: 8,
+                  borderRadius: '999px',
+                  background: activeTestimonial === i ? 'var(--brand-amber)' : 'var(--border-emphasis)',
+                  border: 'none', cursor: 'pointer',
+                  transition: 'all 300ms ease',
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── WAVE TRANSITION → CTA ── */}
+      <WaveDivider flip color1="var(--brand-amber)" color2="hsl(22,70%,75%)" />
+
       {/* ── CTA BAND ── */}
       <section
         style={{
           background: 'linear-gradient(135deg, hsl(25,90%,35%), hsl(28,100%,48%), hsl(35,100%,52%))',
-          padding: '80px 24px',
+          padding: '96px 24px',
           textAlign: 'center',
           position: 'relative',
           overflow: 'hidden',
@@ -708,7 +933,7 @@ const Welcome = () => {
           }}
         />
         <div style={{ position: 'relative', zIndex: 1, maxWidth: '700px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
             <span
               style={{
                 background: 'rgba(255,255,255,0.2)',
@@ -731,7 +956,7 @@ const Welcome = () => {
               color: '#fff',
               fontWeight: 800,
               fontSize: 'clamp(1.8rem, 4vw, 2.8rem)',
-              marginBottom: '16px',
+              marginBottom: '20px',
               letterSpacing: '-0.03em',
             }}
           >
@@ -742,13 +967,13 @@ const Welcome = () => {
               color: 'rgba(255,255,255,0.85)',
               fontSize: '1.05rem',
               lineHeight: 1.8,
-              marginBottom: '36px',
+              marginBottom: '40px',
             }}
           >
-            Access all 12 modules — manage projects, vendors, indents, GRN, and
+            Access all 15 modules — manage projects, vendors, indents, GRN, and
             billing in one unified interface. No setup required.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '32px' }}>
             <button
               onClick={() => navigate('/dashboard')}
               style={{
@@ -764,6 +989,7 @@ const Welcome = () => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
+                fontFamily: 'var(--font-body)',
                 boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
               }}
               onMouseEnter={(e) => {
@@ -799,6 +1025,18 @@ const Welcome = () => {
             >
               Watch How It Works
             </Link>
+          </div>
+          {/* Trust badges in CTA (CSOD-inspired) */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', flexWrap: 'wrap' }}>
+            {[
+              { icon: <Shield size={13} />, text: 'No credit card required' },
+              { icon: <CheckCircle size={13} />, text: 'All modules included' },
+              { icon: <Users size={13} />, text: 'Multi-role access' },
+            ].map(({ icon, text }) => (
+              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem' }}>
+                {icon} {text}
+              </div>
+            ))}
           </div>
         </div>
       </section>

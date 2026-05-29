@@ -157,9 +157,9 @@ const ProcessFlow = () => {
     setLoading(true);
     try {
       const [vRes, poRes, bRes] = await Promise.all([
-        fetch('http://localhost:5000/vendors').then(r => r.json()),
-        fetch('http://localhost:5000/po').then(r => r.json()),
-        fetch('http://localhost:5000/bills').then(r => r.json()),
+        fetch('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/vendors').then(r => r.json()),
+        fetch('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/po').then(r => r.json()),
+        fetch('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/bills').then(r => r.json()),
       ]);
 
       setStats({ vendors: vRes.length, pos: poRes.length, bills: bRes.length });

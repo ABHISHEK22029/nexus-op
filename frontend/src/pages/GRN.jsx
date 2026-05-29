@@ -11,8 +11,8 @@ const GRN = () => {
 
   const fetchData = async () => {
     if (!activeProject) return;
-    const gRes = await fetch(`http://localhost:5000/grn?projectId=${activeProject.id}`).then(res => res.json());
-    const pRes = await fetch(`http://localhost:5000/po?projectId=${activeProject.id}`).then(res => res.json());
+    const gRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/grn?projectId=${activeProject.id}`).then(res => res.json());
+    const pRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/po?projectId=${activeProject.id}`).then(res => res.json());
     
     setGrns(gRes);
     setPos(pRes.filter(p => p.status !== 'Delivered'));
@@ -44,7 +44,7 @@ const GRN = () => {
     const selectedPo = pos.find(p => p.id === parseInt(newItem.poId));
     const workOrderId = selectedPo ? selectedPo.workOrderId : 0;
 
-    await fetch('http://localhost:5000/grn', {
+    await fetch('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/grn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...newItem, projectId: activeProject.id, workOrderId })

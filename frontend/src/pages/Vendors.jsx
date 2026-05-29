@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Sparkles, UploadCloud, Search, FileUp, Star } from 'lucide-react';
+import { Plus, Sparkles, UploadCloud, Search, FileUp, Star, ExternalLink } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+
 const Vendors = () => {
+  const navigate = useNavigate();
   const { activeProject } = useProject();
   const [vendors, setVendors] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -14,7 +18,7 @@ const Vendors = () => {
 
   const fetchVendors = () => {
     if (!activeProject) return;
-    axios.get(`http://localhost:5000/vendors?projectId=${activeProject.id}`)
+    axios.get(`${API}/vendors?projectId=${activeProject.id}`)
       .then(res => setVendors(res.data))
       .catch(err => console.error("Failed to fetch vendors", err));
   };
@@ -38,7 +42,7 @@ const Vendors = () => {
 
   const addVendor = (e) => {
     e.preventDefault();
-    axios.post('http://localhost:5000/vendors', formData)
+    axios.post('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/vendors', formData)
       .then(() => {
         setFormData({ name: '', type: '' });
         setShowForm(false);
@@ -52,7 +56,7 @@ const Vendors = () => {
     if (!file) return;
     setBulkLoading(true);
     setTimeout(() => {
-      axios.post('http://localhost:5000/vendors/bulk')
+      axios.post('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/vendors/bulk')
         .then(() => fetchVendors())
         .finally(() => setBulkLoading(false));
       e.target.value = null;
@@ -82,6 +86,7 @@ const Vendors = () => {
                   onClick={() => setShowForm(!showForm)}
                   className="btn-primary btn-sm"
                   style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => navigate('/vendors/new')}
                 >
                   <Plus size={16} /> Add Vendor
                 </button>
@@ -179,7 +184,10 @@ const Vendors = () => {
           </thead>
           <tbody className="divide-y divide-white/5">
             {filteredVendors.length > 0 ? filteredVendors.map((vendor) => (
-              <tr key={vendor.id} className="table-row-animate group">
+              <tr key={vendor.id}
+                className="table-row-animate group cursor-pointer"
+                onClick={() => navigate(`/vendors/${vendor.id}/edit`)}
+              >
                 <td className="px-6 py-4 text-sm text-gray-500">#{vendor.id}</td>
                 <td className="px-6 py-4 text-sm font-medium text-white group-hover:text-blue-400 transition-colors">{vendor.name}</td>
                 <td className="px-6 py-4">

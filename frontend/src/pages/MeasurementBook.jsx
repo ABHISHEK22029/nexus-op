@@ -10,8 +10,8 @@ const MeasurementBook = () => {
 
   const fetchData = async () => {
     if (!activeProject) return;
-    const eRes = await fetch(`http://localhost:5000/mb?projectId=${activeProject.id}`).then(res => res.json());
-    const bRes = await fetch(`http://localhost:5000/boq?projectId=${activeProject.id}`).then(res => res.json());
+    const eRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/mb?projectId=${activeProject.id}`).then(res => res.json());
+    const bRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/boq?projectId=${activeProject.id}`).then(res => res.json());
     setEntries(eRes);
     setBoqs(bRes);
   };
@@ -26,7 +26,7 @@ const MeasurementBook = () => {
     const d = parseFloat(newItem.depth) || 0;
     const measuredQuantity = l * w * d;
     
-    await fetch('http://localhost:5000/mb', {
+    await fetch('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/mb', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...newItem, projectId: activeProject.id, measuredQuantity })

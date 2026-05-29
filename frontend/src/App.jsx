@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import WorkOrders from './pages/WorkOrders';
 import Vendors from './pages/Vendors';
+import VendorForm from './pages/VendorForm';
 import PurchaseOrders from './pages/PurchaseOrders';
 import Inventory from './pages/Inventory';
 import ActivityLog from './pages/ActivityLog';
@@ -18,9 +19,13 @@ import GRN from './pages/GRN';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
+import Login from './pages/Login';
+import Onboarding from './pages/Onboarding';
 import { RoleProvider, useRole } from './context/RoleContext';
 import { ProjectProvider, useProject } from './context/ProjectContext';
 import { useTheme } from './context/ThemeContext';
+import { AuthProvider } from './context/AuthContext';
+import { UiConfigProvider } from './context/UiConfigContext';
 import { UserCircle, Settings, Sun, Moon, Plus } from 'lucide-react';
 import QuickCreateModal from './components/QuickCreateModal';
 
@@ -288,26 +293,32 @@ const MarketingLayout = ({ children }) => (
 const AppRoutes = () => {
   return (
     <Routes>
+      {/* ── Auth ── */}
+      <Route path="/login"       element={<Login />} />
+      <Route path="/onboarding"  element={<Onboarding />} />
+
       {/* ── Marketing Layer ── */}
       <Route path="/"              element={<MarketingLayout><Welcome /></MarketingLayout>} />
       <Route path="/platform"      element={<MarketingLayout><PlatformCapabilities /></MarketingLayout>} />
       <Route path="/how-it-works"  element={<MarketingLayout><HowItWorks /></MarketingLayout>} />
 
       {/* ── App Layer ── */}
-      <Route path="/dashboard"  element={<AppLayout><Dashboard /></AppLayout>} />
-      <Route path="/projects"   element={<AppLayout><Projects /></AppLayout>} />
-      <Route path="/workorders" element={<AppLayout><WorkOrders /></AppLayout>} />
-      <Route path="/vendors"    element={<AppLayout><Vendors /></AppLayout>} />
-      <Route path="/po"         element={<AppLayout><PurchaseOrders /></AppLayout>} />
-      <Route path="/inventory"  element={<AppLayout><Inventory /></AppLayout>} />
-      <Route path="/grn"        element={<AppLayout><GRN /></AppLayout>} />
-      <Route path="/bills"      element={<AppLayout><Bills /></AppLayout>} />
-      <Route path="/activity"   element={<AppLayout><ActivityLog /></AppLayout>} />
-      <Route path="/flow"       element={<AppLayout><ProcessFlow /></AppLayout>} />
-      <Route path="/boq"        element={<AppLayout><BOQ /></AppLayout>} />
-      <Route path="/indent"     element={<AppLayout><Indent /></AppLayout>} />
-      <Route path="/mb"         element={<AppLayout><MeasurementBook /></AppLayout>} />
-      <Route path="/milestones" element={<AppLayout><Milestones /></AppLayout>} />
+      <Route path="/dashboard"         element={<AppLayout><Dashboard /></AppLayout>} />
+      <Route path="/projects"          element={<AppLayout><Projects /></AppLayout>} />
+      <Route path="/workorders"        element={<AppLayout><WorkOrders /></AppLayout>} />
+      <Route path="/vendors"           element={<AppLayout><Vendors /></AppLayout>} />
+      <Route path="/vendors/new"       element={<VendorForm />} />
+      <Route path="/vendors/:id/edit"  element={<VendorForm />} />
+      <Route path="/po"                element={<AppLayout><PurchaseOrders /></AppLayout>} />
+      <Route path="/inventory"         element={<AppLayout><Inventory /></AppLayout>} />
+      <Route path="/grn"               element={<AppLayout><GRN /></AppLayout>} />
+      <Route path="/bills"             element={<AppLayout><Bills /></AppLayout>} />
+      <Route path="/activity"          element={<AppLayout><ActivityLog /></AppLayout>} />
+      <Route path="/flow"              element={<AppLayout><ProcessFlow /></AppLayout>} />
+      <Route path="/boq"               element={<AppLayout><BOQ /></AppLayout>} />
+      <Route path="/indent"            element={<AppLayout><Indent /></AppLayout>} />
+      <Route path="/mb"                element={<AppLayout><MeasurementBook /></AppLayout>} />
+      <Route path="/milestones"        element={<AppLayout><Milestones /></AppLayout>} />
     </Routes>
   );
 };
@@ -315,13 +326,17 @@ const AppRoutes = () => {
 /* ─── Root App ──────────────────────────────────────────── */
 function App() {
   return (
-    <ProjectProvider>
-      <RoleProvider>
-        <Router>
-          <AppRoutes />
-        </Router>
-      </RoleProvider>
-    </ProjectProvider>
+    <AuthProvider>
+      <UiConfigProvider>
+        <ProjectProvider>
+          <RoleProvider>
+            <Router>
+              <AppRoutes />
+            </Router>
+          </RoleProvider>
+        </ProjectProvider>
+      </UiConfigProvider>
+    </AuthProvider>
   );
 }
 
