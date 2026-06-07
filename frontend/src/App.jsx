@@ -313,6 +313,7 @@ const AppRoutes = () => {
       <Route path="/vendors/new"       element={<AppLayout><VendorForm /></AppLayout>} />
       <Route path="/vendors/:id/edit"  element={<AppLayout><VendorForm /></AppLayout>} />
       <Route path="/purchase-orders"   element={<AppLayout><PurchaseOrders /></AppLayout>} />
+      <Route path="/po"                element={<Navigate to="/purchase-orders" replace />} />
       <Route path="/po/:id"            element={<POInvoice />} />
       <Route path="/inventory"         element={<AppLayout><Inventory /></AppLayout>} />
       <Route path="/grn"               element={<AppLayout><GRN /></AppLayout>} />
