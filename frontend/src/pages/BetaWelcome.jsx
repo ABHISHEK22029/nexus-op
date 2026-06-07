@@ -5,12 +5,12 @@ import '../beta.css';
 export default function BetaWelcome() {
   const navigate = useNavigate();
 
-  // Force dark mode for the welcome screen to get the rich dark theme
+  // Force light mode for the Cornerstone UI
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
     return () => {
-      // Revert to light theme when leaving (since Cornerstone is light theme)
-      document.documentElement.setAttribute('data-theme', 'light');
+      // Revert to dark theme when leaving
+      document.documentElement.setAttribute('data-theme', 'dark');
     };
   }, []);
 

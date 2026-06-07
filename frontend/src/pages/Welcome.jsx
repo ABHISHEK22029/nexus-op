@@ -388,7 +388,6 @@ const Welcome = () => {
             <span style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>HMDA's ORR Corridor</span>.
           </p>
 
-          {/* CTA Row */}
           <div
             className="animate-in stagger-3"
             style={{
@@ -400,7 +399,7 @@ const Welcome = () => {
             }}
           >
             <button
-              onClick={() => navigate('/get-started')}
+              onClick={() => navigate('/beta-welcome')}
               className="btn-primary"
               style={{ fontSize: '1rem', padding: '16px 32px', gap: '10px' }}
             >
@@ -411,14 +410,6 @@ const Welcome = () => {
               How It Works
               <ChevronRight size={16} />
             </Link>
-            <button
-              onClick={() => navigate('/beta-welcome')}
-              className="btn-primary"
-              style={{ fontSize: '1rem', padding: '16px 32px', gap: '10px', background: 'var(--accent-blue)', boxShadow: 'var(--shadow-blue)' }}
-            >
-              <Star size={16} fill="#fff" />
-              Test Beta (Cornerstone UI)
-            </button>
           </div>
 
           {/* Trust badges */}

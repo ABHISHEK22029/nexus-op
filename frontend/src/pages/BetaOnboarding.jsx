@@ -12,6 +12,14 @@ export default function BetaOnboarding() {
   const [error, setError] = useState(null);
   const { fetchProjects } = useProject();
 
+  // Force light mode for the Cornerstone UI
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'light');
+    return () => {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    };
+  }, []);
+
   // State
   const [org, setOrg] = useState({ name: '', tradeName: '', industry: 'Construction / EPC', gstin: '', pan: '', regType: 'Registered Business — Regular', state: 'Telangana', currency: 'INR — Indian Rupee (₹)', fyStart: 'April (Indian Standard)', retention: '5', tds: '194C — Contractors (2%)' });
   const [role, setRole] = useState('Project Manager');
