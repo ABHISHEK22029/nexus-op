@@ -29,7 +29,6 @@ yarn-error.log*
 # Environment files (secrets)
 .env
 backend/.env
-frontend/.env.production
 
 # OS files
 .DS_Store
