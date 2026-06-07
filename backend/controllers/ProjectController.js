@@ -1,20 +1,24 @@
 const db = require('../db');
 
-exports.getProjects = (req, res) => {
-    db.all("SELECT * FROM projects", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+exports.getProjects = async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM projects');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
-exports.createProject = (req, res) => {
-    const { name, clientName, type, startDate, endDate, status } = req.body;
-    db.run(
-        `INSERT INTO projects (name, clientName, type, startDate, endDate, status) VALUES (?, ?, ?, ?, ?, ?)`,
-        [name, clientName, type, startDate, endDate, status || 'Active'],
-        function(err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ id: this.lastID, message: 'Project Created Successfully' });
-        }
+exports.createProject = async (req, res) => {
+  const { name, clientName, type, startDate, endDate, status } = req.body;
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO projects (name, "clientName", type, "startDate", "endDate", status)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [name, clientName, type, startDate, endDate, status || 'Active']
     );
+    res.json({ id: rows[0].id, message: 'Project Created Successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };

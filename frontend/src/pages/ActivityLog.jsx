@@ -45,8 +45,8 @@ const ActivityLog = () => {
     setLoading(true);
     try {
       const url = activeProject
-        ? `${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/activities?projectId=${activeProject.id}`
-        : '${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/activities';
+        ? `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/activities?projectId=${activeProject.id}`
+        : '${import.meta.env.VITE_API_URL || "http://localhost:5000"}/activities';
       const res = await axios.get(url);
       setActivities(res.data || []);
     } catch (err) {

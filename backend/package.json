@@ -1,19 +1,21 @@
 {
-  "name": "backend",
+  "name": "nexus-op-backend",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
+    "dev": "nodemon index.js",
     "seed:edge": "node seed_edge_cases.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Nexus-OP Backend API — PostgreSQL",
   "dependencies": {
     "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
     "express": "^5.2.1",
-    "sqlite3": "^6.0.1"
+    "pg": "^8.13.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

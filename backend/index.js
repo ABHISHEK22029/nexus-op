@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
@@ -13,445 +14,445 @@ app.use(express.json());
 
 /* ══════════════════════════════════════════════════════════
    UTILITY: Activity Logger
-   Used by every state-changing route to maintain audit trail
    ══════════════════════════════════════════════════════════ */
-const logActivity = (projectId, type, description) => {
-  db.run(
-    `INSERT INTO activities (projectId, type, description, timestamp)
-     VALUES (?, ?, ?, datetime('now'))`,
-    [projectId || null, type, description],
-    (err) => { if (err) console.error('Activity log error:', err.message); }
-  );
+const logActivity = async (projectId, type, description) => {
+  try {
+    await db.query(
+      `INSERT INTO activities ("projectId", type, description, timestamp) VALUES ($1, $2, $3, NOW())`,
+      [projectId || null, type, description]
+    );
+  } catch (err) {
+    console.error('Activity log error:', err.message);
+  }
 };
+
+/* ══════════════════════════════════════════════════════════
+   HEALTH CHECK
+   ══════════════════════════════════════════════════════════ */
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 /* ══════════════════════════════════════════════════════════
    PROJECTS
    ══════════════════════════════════════════════════════════ */
 app.get('/projects', projectController.getProjects);
-app.post('/projects', (req, res) => {
-  projectController.createProject(req, res);
-  // Log after creation — piggyback on controller
-});
+app.post('/projects', projectController.createProject);
 
 /* ══════════════════════════════════════════════════════════
    WORK ORDERS
    ══════════════════════════════════════════════════════════ */
 app.get('/work-orders', workOrderController.getWorkOrders);
-app.post('/work-orders', (req, res, next) => {
-  workOrderController.createWorkOrder(req, res);
-});
+app.post('/work-orders', workOrderController.createWorkOrder);
 
 /* ══════════════════════════════════════════════════════════
-   MILESTONES — Extended with real progress updates
+   MILESTONES
    ══════════════════════════════════════════════════════════ */
 app.get('/milestones', workOrderController.getMilestones);
 
-app.patch('/milestones/:id', (req, res) => {
+app.patch('/milestones/:id', async (req, res) => {
   const { actualPercent, remarks } = req.body;
-  db.run(
-    `UPDATE milestones SET actualPercent = ?, remarks = ? WHERE id = ?`,
-    [actualPercent, remarks || null, req.params.id],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      if (this.changes === 0) return res.status(404).json({ error: 'Milestone not found' });
-      // Fetch project from work order for logging
-      db.get(`SELECT wo.projectId FROM work_orders wo
-              JOIN milestones m ON m.workOrderId = wo.id
-              WHERE m.id = ?`, [req.params.id], (e, row) => {
-        logActivity(row?.projectId, 'MILESTONE_UPDATED',
-          `Milestone #${req.params.id} updated to ${actualPercent}% complete`);
-      });
-      res.json({ success: true, id: Number(req.params.id), actualPercent });
-    }
-  );
+  try {
+    const result = await db.query(
+      `UPDATE milestones SET "actualPercent" = $1, remarks = $2 WHERE id = $3 RETURNING id`,
+      [actualPercent, remarks || null, req.params.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Milestone not found' });
+
+    const woResult = await db.query(
+      `SELECT wo."projectId" FROM work_orders wo JOIN milestones m ON m."workOrderId" = wo.id WHERE m.id = $1`,
+      [req.params.id]
+    );
+    await logActivity(woResult.rows[0]?.projectId, 'MILESTONE_UPDATED',
+      `Milestone #${req.params.id} updated to ${actualPercent}% complete`);
+
+    res.json({ success: true, id: Number(req.params.id), actualPercent });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
    VENDORS
    ══════════════════════════════════════════════════════════ */
-app.get('/vendors', (req, res) => {
-  let query = 'SELECT * FROM vendors';
-  let params = [];
-  if (req.query.projectId) {
-    query += ' WHERE projectId = ?';
-    params.push(req.query.projectId);
-  }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get('/vendors', async (req, res) => {
+  try {
+    let query = 'SELECT * FROM vendors';
+    let params = [];
+    if (req.query.projectId) {
+      query += ' WHERE "projectId" = $1';
+      params.push(req.query.projectId);
+    }
+    const { rows } = await db.query(query, params);
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/vendors', (req, res) => {
+app.post('/vendors', async (req, res) => {
   const { projectId, name, type, pan, gstin, contact, rating } = req.body;
   if (!name || !type) return res.status(400).json({ error: 'name and type are required' });
-  db.run(
-    `INSERT INTO vendors (projectId, name, type, pan, gstin, status, rating)
-     VALUES (?, ?, ?, ?, ?, 'Active', ?)`,
-    [projectId, name, type, pan || null, gstin || null, rating || 90],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      logActivity(projectId, 'VENDOR_ADDED', `Vendor "${name}" added to project`);
-      res.json({ id: this.lastID });
-    }
-  );
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO vendors ("projectId", name, type, pan, gstin, status, rating)
+       VALUES ($1, $2, $3, $4, $5, 'Active', $6) RETURNING id`,
+      [projectId, name, type, pan || null, gstin || null, rating || 90]
+    );
+    await logActivity(projectId, 'VENDOR_ADDED', `Vendor "${name}" added to project`);
+    res.json({ id: rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
-   PURCHASE ORDERS — Full state machine
+   PURCHASE ORDERS
    ══════════════════════════════════════════════════════════ */
-app.get('/po', (req, res) => {
-  let query = `SELECT po.*, v.name as vendorName, wo.name as workOrderName
-               FROM purchase_orders po
-               LEFT JOIN vendors v ON po.vendorId = v.id
-               LEFT JOIN work_orders wo ON po.workOrderId = wo.id`;
-  let params = [];
-  if (req.query.projectId) {
-    query += ' WHERE po.projectId = ?';
-    params.push(req.query.projectId);
-  }
-  query += ' ORDER BY po.id DESC';
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get('/po', async (req, res) => {
+  try {
+    let query = `SELECT po.*, v.name as "vendorName", wo.name as "workOrderName"
+                 FROM purchase_orders po
+                 LEFT JOIN vendors v ON po."vendorId" = v.id
+                 LEFT JOIN work_orders wo ON po."workOrderId" = wo.id`;
+    let params = [];
+    if (req.query.projectId) {
+      query += ' WHERE po."projectId" = $1';
+      params.push(req.query.projectId);
+    }
+    query += ' ORDER BY po.id DESC';
+    const { rows } = await db.query(query, params);
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/po', (req, res) => {
+app.post('/po', async (req, res) => {
   const { projectId, vendorId, workOrderId, itemName, quantity, unitPrice, indentId } = req.body;
   if (!projectId || !vendorId || !itemName || !quantity)
     return res.status(400).json({ error: 'projectId, vendorId, itemName, quantity required' });
-  const totalAmount = (quantity || 0) * (unitPrice || 0);
-  db.run(
-    `INSERT INTO purchase_orders
-     (projectId, vendorId, workOrderId, itemName, quantity, indentId, status)
-     VALUES (?, ?, ?, ?, ?, ?, 'Pending')`,
-    [projectId, vendorId, workOrderId || null, itemName, quantity, indentId || null],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      logActivity(projectId, 'PO_CREATED',
-        `PO-${this.lastID} created for "${itemName}" (qty: ${quantity})`);
-      res.json({ id: this.lastID });
-    }
-  );
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO purchase_orders ("projectId", "vendorId", "workOrderId", "itemName", quantity, "indentId", status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'Pending') RETURNING id`,
+      [projectId, vendorId, workOrderId || null, itemName, quantity, indentId || null]
+    );
+    await logActivity(projectId, 'PO_CREATED', `PO-${rows[0].id} created for "${itemName}" (qty: ${quantity})`);
+    res.json({ id: rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// ── PO State Transitions ──────────────────────────────────
-app.patch('/po/:id/approve', (req, res) => {
-  db.get('SELECT * FROM purchase_orders WHERE id = ?', [req.params.id], (err, po) => {
-    if (err || !po) return res.status(404).json({ error: 'PO not found' });
+// PO State Transitions
+app.patch('/po/:id/approve', async (req, res) => {
+  try {
+    const poResult = await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id]);
+    const po = poResult.rows[0];
+    if (!po) return res.status(404).json({ error: 'PO not found' });
     if (po.status !== 'Pending')
       return res.status(400).json({ error: `Cannot approve a PO with status "${po.status}"` });
-    db.run(`UPDATE purchase_orders SET status = 'Approved' WHERE id = ?`,
-      [req.params.id], function (err2) {
-        if (err2) return res.status(500).json({ error: err2.message });
-        logActivity(po.projectId, 'PO_APPROVED',
-          `PO-${po.id} "${po.itemName}" approved`);
-        res.json({ success: true, status: 'Approved' });
-      });
-  });
+    await db.query(`UPDATE purchase_orders SET status = 'Approved' WHERE id = $1`, [req.params.id]);
+    await logActivity(po.projectId, 'PO_APPROVED', `PO-${po.id} "${po.itemName}" approved`);
+    res.json({ success: true, status: 'Approved' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.patch('/po/:id/dispatch', (req, res) => {
-  db.get('SELECT * FROM purchase_orders WHERE id = ?', [req.params.id], (err, po) => {
-    if (err || !po) return res.status(404).json({ error: 'PO not found' });
+app.patch('/po/:id/dispatch', async (req, res) => {
+  try {
+    const poResult = await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id]);
+    const po = poResult.rows[0];
+    if (!po) return res.status(404).json({ error: 'PO not found' });
     if (po.status !== 'Approved')
       return res.status(400).json({ error: `Cannot dispatch a PO with status "${po.status}"` });
-    db.run(`UPDATE purchase_orders SET status = 'Dispatched' WHERE id = ?`,
-      [req.params.id], function (err2) {
-        if (err2) return res.status(500).json({ error: err2.message });
-        logActivity(po.projectId, 'PO_DISPATCHED',
-          `PO-${po.id} "${po.itemName}" dispatched to vendor`);
-        res.json({ success: true, status: 'Dispatched' });
-      });
-  });
+    await db.query(`UPDATE purchase_orders SET status = 'Dispatched' WHERE id = $1`, [req.params.id]);
+    await logActivity(po.projectId, 'PO_DISPATCHED', `PO-${po.id} "${po.itemName}" dispatched to vendor`);
+    res.json({ success: true, status: 'Dispatched' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
-   INDENT — with status update
+   INDENT
    ══════════════════════════════════════════════════════════ */
-app.get('/indent', (req, res) => {
-  let query = `SELECT indents.*, boq_items.itemCode, boq_items.description as itemDescription
-               FROM indents
-               LEFT JOIN boq_items ON indents.boqId = boq_items.id`;
-  let params = [];
-  if (req.query.projectId) {
-    query += ' WHERE indents.projectId = ?';
-    params.push(req.query.projectId);
-  }
-  query += ' ORDER BY indents.id DESC';
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
-});
-
-app.post('/indent', (req, res) => {
-  const { projectId, workOrderId, boqId, requestedQuantity, requiredDate, chainage } = req.body;
-  db.run(
-    `INSERT INTO indents (projectId, workOrderId, boqId, requestedQuantity, requiredDate, chainage, status)
-     VALUES (?, ?, ?, ?, ?, ?, 'Pending')`,
-    [projectId, workOrderId, boqId, requestedQuantity, requiredDate, chainage],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      logActivity(projectId, 'INDENT_CREATED',
-        `Indent #${this.lastID} raised for ${requestedQuantity} units at ${chainage || 'N/A'}`);
-      res.json({ id: this.lastID });
+app.get('/indent', async (req, res) => {
+  try {
+    let query = `SELECT indents.*, boq_items."itemCode", boq_items.description as "itemDescription"
+                 FROM indents
+                 LEFT JOIN boq_items ON indents."boqId" = boq_items.id`;
+    let params = [];
+    if (req.query.projectId) {
+      query += ' WHERE indents."projectId" = $1';
+      params.push(req.query.projectId);
     }
-  );
+    query += ' ORDER BY indents.id DESC';
+    const { rows } = await db.query(query, params);
+    res.json(rows || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.put('/indent/:id/status', (req, res) => {
+app.post('/indent', async (req, res) => {
+  const { projectId, workOrderId, boqId, requestedQuantity, requiredDate, chainage } = req.body;
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO indents ("projectId", "workOrderId", "boqId", "requestedQuantity", "requiredDate", chainage, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'Pending') RETURNING id`,
+      [projectId, workOrderId, boqId, requestedQuantity, requiredDate, chainage]
+    );
+    await logActivity(projectId, 'INDENT_CREATED',
+      `Indent #${rows[0].id} raised for ${requestedQuantity} units at ${chainage || 'N/A'}`);
+    res.json({ id: rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/indent/:id/status', async (req, res) => {
   const { status } = req.body;
   const allowed = ['Pending', 'Approved', 'Rejected'];
   if (!allowed.includes(status))
     return res.status(400).json({ error: `Status must be one of: ${allowed.join(', ')}` });
-  db.get('SELECT * FROM indents WHERE id = ?', [req.params.id], (err, indent) => {
-    if (err || !indent) return res.status(404).json({ error: 'Indent not found' });
-    db.run(`UPDATE indents SET status = ? WHERE id = ?`, [status, req.params.id], function (err2) {
-      if (err2) return res.status(500).json({ error: err2.message });
-      logActivity(indent.projectId, 'INDENT_UPDATED',
-        `Indent #${req.params.id} status → ${status}`);
-      // If approved, suggest PO creation
-      res.json({
-        success: true,
-        status,
-        suggestPO: status === 'Approved',
-        indentData: status === 'Approved' ? indent : null
-      });
+  try {
+    const indentResult = await db.query('SELECT * FROM indents WHERE id = $1', [req.params.id]);
+    const indent = indentResult.rows[0];
+    if (!indent) return res.status(404).json({ error: 'Indent not found' });
+    await db.query('UPDATE indents SET status = $1 WHERE id = $2', [status, req.params.id]);
+    await logActivity(indent.projectId, 'INDENT_UPDATED', `Indent #${req.params.id} status → ${status}`);
+    res.json({
+      success: true, status,
+      suggestPO: status === 'Approved',
+      indentData: status === 'Approved' ? indent : null
     });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
    INVENTORY
    ══════════════════════════════════════════════════════════ */
-app.get('/inventory', (req, res) => {
-  let query = 'SELECT * FROM inventory';
-  let params = [];
-  if (req.query.projectId) {
-    query += ' WHERE projectId = ?';
-    params.push(req.query.projectId);
-  }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get('/inventory', async (req, res) => {
+  try {
+    let query = 'SELECT * FROM inventory';
+    let params = [];
+    if (req.query.projectId) {
+      query += ' WHERE "projectId" = $1';
+      params.push(req.query.projectId);
+    }
+    const { rows } = await db.query(query, params);
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
    BOQ
    ══════════════════════════════════════════════════════════ */
-app.get('/boq', (req, res) => {
-  let query = `SELECT boq_items.*,
-    COALESCE((SELECT SUM(measuredQuantity) FROM measurement_book mb
-              WHERE mb.boqId = boq_items.id), 0) AS executedQuantity,
-    COALESCE((SELECT SUM(billedQuantity) FROM bills b
-              JOIN work_orders wo ON b.workOrderId = wo.id
-              WHERE wo.boqId = boq_items.id), 0) AS billedQuantity
-    FROM boq_items`;
-  let params = [];
-  if (req.query.projectId) {
-    query += ' WHERE boq_items.projectId = ?';
-    params.push(req.query.projectId);
-  }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get('/boq', async (req, res) => {
+  try {
+    let query = `SELECT boq_items.*,
+      COALESCE((SELECT SUM("measuredQuantity") FROM measurement_book mb
+                WHERE mb."boqId" = boq_items.id), 0) AS "executedQuantity",
+      COALESCE((SELECT SUM("billedQuantity") FROM bills b
+                JOIN work_orders wo ON b."workOrderId" = wo.id
+                WHERE wo."boqId" = boq_items.id), 0) AS "billedQuantity"
+      FROM boq_items`;
+    let params = [];
+    if (req.query.projectId) {
+      query += ' WHERE boq_items."projectId" = $1';
+      params.push(req.query.projectId);
+    }
+    const { rows } = await db.query(query, params);
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/boq', (req, res) => {
+app.post('/boq', async (req, res) => {
   const { projectId, itemCode, description, unit, estimatedQuantity, rate } = req.body;
-  db.run(
-    `INSERT INTO boq_items (projectId, itemCode, description, unit, estimatedQuantity, rate)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [projectId, itemCode, description, unit, estimatedQuantity, rate],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO boq_items ("projectId", "itemCode", description, unit, "estimatedQuantity", rate)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [projectId, itemCode, description, unit, estimatedQuantity, rate]
+    );
+    res.json({ id: rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
    MEASUREMENT BOOK
    ══════════════════════════════════════════════════════════ */
-app.get('/mb', (req, res) => {
-  let query = `SELECT measurement_book.*, boq_items.itemCode, boq_items.description as itemDescription,
-               boq_items.unit, boq_items.rate
-               FROM measurement_book
-               LEFT JOIN boq_items ON measurement_book.boqId = boq_items.id`;
-  let params = [];
-  if (req.query.projectId) {
-    query += ' WHERE measurement_book.projectId = ?';
-    params.push(req.query.projectId);
-  }
-  query += ' ORDER BY measurement_book.id DESC';
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get('/mb', async (req, res) => {
+  try {
+    let query = `SELECT measurement_book.*, boq_items."itemCode", boq_items.description as "itemDescription",
+                 boq_items.unit, boq_items.rate
+                 FROM measurement_book
+                 LEFT JOIN boq_items ON measurement_book."boqId" = boq_items.id`;
+    let params = [];
+    if (req.query.projectId) {
+      query += ' WHERE measurement_book."projectId" = $1';
+      params.push(req.query.projectId);
+    }
+    query += ' ORDER BY measurement_book.id DESC';
+    const { rows } = await db.query(query, params);
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/mb', (req, res) => {
+app.post('/mb', async (req, res) => {
   const { projectId, workOrderId, boqId, chainage, length, width, depth, measuredQuantity } = req.body;
-  db.run(
-    `INSERT INTO measurement_book (projectId, workOrderId, boqId, chainage, length, width, depth, measuredQuantity)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [projectId, workOrderId, boqId, chainage, length, width, depth, measuredQuantity],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      logActivity(projectId, 'MB_ENTRY',
-        `MB entry at ${chainage || 'N/A'}: ${measuredQuantity} units recorded`);
-      res.json({ id: this.lastID });
-    }
-  );
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO measurement_book ("projectId", "workOrderId", "boqId", chainage, length, width, depth, "measuredQuantity")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [projectId, workOrderId, boqId, chainage, length, width, depth, measuredQuantity]
+    );
+    await logActivity(projectId, 'MB_ENTRY',
+      `MB entry at ${chainage || 'N/A'}: ${measuredQuantity} units recorded`);
+    res.json({ id: rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
-   GRN (Router module — keeps existing logic + logs)
+   GRN (Router module)
    ══════════════════════════════════════════════════════════ */
 app.use('/grn', grnRouter);
 
 /* ══════════════════════════════════════════════════════════
-   RA BILLS — With state machine
+   RA BILLS — State machine
    ══════════════════════════════════════════════════════════ */
 app.get('/bills', billController.getBills);
-app.post('/bills/generate', (req, res, next) => {
-  // Wrap controller to add activity logging
-  const origJson = res.json.bind(res);
-  res.json = (data) => {
-    if (data && data.id) {
-      logActivity(req.body.projectId, 'BILL_GENERATED',
-        `RA Bill #${data.id} generated for WO-${req.body.workOrderId}`);
-    }
-    return origJson(data);
-  };
-  billController.generateRABill(req, res, next);
+app.post('/bills/generate', async (req, res) => {
+  await billController.generateRABill(req, res);
 });
 
-// ── Bill Status Transitions ───────────────────────────────
-app.patch('/bills/:id/submit', (req, res) => {
-  db.get('SELECT * FROM bills WHERE id = ?', [req.params.id], (err, bill) => {
-    if (err || !bill) return res.status(404).json({ error: 'Bill not found' });
-    db.run(`UPDATE bills SET status = 'Under Review' WHERE id = ?`, [req.params.id], function (err2) {
-      if (err2) return res.status(500).json({ error: err2.message });
-      logActivity(bill.projectId, 'BILL_SUBMITTED',
-        `Invoice INV-${String(bill.id).padStart(5,'0')} submitted for review`);
-      res.json({ success: true, status: 'Under Review' });
-    });
-  });
-});
-
-app.patch('/bills/:id/approve', (req, res) => {
-  db.get('SELECT * FROM bills WHERE id = ?', [req.params.id], (err, bill) => {
-    if (err || !bill) return res.status(404).json({ error: 'Bill not found' });
-    db.run(`UPDATE bills SET status = 'Approved' WHERE id = ?`, [req.params.id], function (err2) {
-      if (err2) return res.status(500).json({ error: err2.message });
-      logActivity(bill.projectId, 'BILL_APPROVED',
-        `Invoice INV-${String(bill.id).padStart(5,'0')} approved`);
-      res.json({ success: true, status: 'Approved' });
-    });
-  });
-});
-
-app.patch('/bills/:id/pay', (req, res) => {
-  db.get('SELECT * FROM bills WHERE id = ?', [req.params.id], (err, bill) => {
-    if (err || !bill) return res.status(404).json({ error: 'Bill not found' });
-    db.run(`UPDATE bills SET status = 'Paid' WHERE id = ?`, [req.params.id], function (err2) {
-      if (err2) return res.status(500).json({ error: err2.message });
-      logActivity(bill.projectId, 'BILL_PAID',
-        `Payment released for INV-${String(bill.id).padStart(5,'0')} (₹${bill.netAmount?.toLocaleString()})`);
-      res.json({ success: true, status: 'Paid' });
-    });
-  });
-});
-
-/* ══════════════════════════════════════════════════════════
-   ACTIVITIES — Real audit trail
-   ══════════════════════════════════════════════════════════ */
-app.get('/activities', (req, res) => {
-  let query = `SELECT * FROM activities ORDER BY timestamp DESC LIMIT 200`;
-  let params = [];
-  if (req.query.projectId) {
-    query = `SELECT * FROM activities WHERE projectId = ? ORDER BY timestamp DESC LIMIT 200`;
-    params.push(req.query.projectId);
+app.patch('/bills/:id/submit', async (req, res) => {
+  try {
+    const billResult = await db.query('SELECT * FROM bills WHERE id = $1', [req.params.id]);
+    const bill = billResult.rows[0];
+    if (!bill) return res.status(404).json({ error: 'Bill not found' });
+    await db.query(`UPDATE bills SET status = 'Under Review' WHERE id = $1`, [req.params.id]);
+    await logActivity(bill.projectId, 'BILL_SUBMITTED',
+      `Invoice INV-${String(bill.id).padStart(5, '0')} submitted for review`);
+    res.json({ success: true, status: 'Under Review' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
+});
+
+app.patch('/bills/:id/approve', async (req, res) => {
+  try {
+    const billResult = await db.query('SELECT * FROM bills WHERE id = $1', [req.params.id]);
+    const bill = billResult.rows[0];
+    if (!bill) return res.status(404).json({ error: 'Bill not found' });
+    await db.query(`UPDATE bills SET status = 'Approved' WHERE id = $1`, [req.params.id]);
+    await logActivity(bill.projectId, 'BILL_APPROVED',
+      `Invoice INV-${String(bill.id).padStart(5, '0')} approved`);
+    res.json({ success: true, status: 'Approved' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/bills/:id/pay', async (req, res) => {
+  try {
+    const billResult = await db.query('SELECT * FROM bills WHERE id = $1', [req.params.id]);
+    const bill = billResult.rows[0];
+    if (!bill) return res.status(404).json({ error: 'Bill not found' });
+    await db.query(`UPDATE bills SET status = 'Paid' WHERE id = $1`, [req.params.id]);
+    await logActivity(bill.projectId, 'BILL_PAID',
+      `Payment released for INV-${String(bill.id).padStart(5, '0')} (₹${bill.netAmount?.toLocaleString()})`);
+    res.json({ success: true, status: 'Paid' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
-   DASHBOARD — Real SQL aggregates (no mock data)
+   ACTIVITIES
    ══════════════════════════════════════════════════════════ */
-app.get('/dashboard', (req, res) => {
+app.get('/activities', async (req, res) => {
+  try {
+    let query = 'SELECT * FROM activities ORDER BY timestamp DESC LIMIT 200';
+    let params = [];
+    if (req.query.projectId) {
+      query = 'SELECT * FROM activities WHERE "projectId" = $1 ORDER BY timestamp DESC LIMIT 200';
+      params.push(req.query.projectId);
+    }
+    const { rows } = await db.query(query, params);
+    res.json(rows || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════
+   DASHBOARD
+   ══════════════════════════════════════════════════════════ */
+app.get('/dashboard', async (req, res) => {
   const pid = req.query.projectId;
   if (!pid) return res.status(400).json({ error: 'projectId required' });
 
-  const q = (sql, params) => new Promise((resolve, reject) =>
-    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows))
-  );
+  try {
+    const [vendors, pos, delivered, inv, billed, paid, indents, poQty, dist, activities, milestones, boq] = await Promise.all([
+      db.query(`SELECT COUNT(*) as c FROM vendors WHERE "projectId" = $1`, [pid]),
+      db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE "projectId" = $1`, [pid]),
+      db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE "projectId" = $1 AND status = 'Delivered'`, [pid]),
+      db.query(`SELECT COUNT(*) as c FROM inventory WHERE "projectId" = $1`, [pid]),
+      db.query(`SELECT COALESCE(SUM("grossAmount"), 0) as total FROM bills WHERE "projectId" = $1`, [pid]),
+      db.query(`SELECT COALESCE(SUM("netAmount"), 0) as total FROM bills WHERE "projectId" = $1 AND status = 'Paid'`, [pid]),
+      db.query(`SELECT COUNT(*) as c FROM indents WHERE "projectId" = $1 AND status = 'Pending'`, [pid]),
+      db.query(`SELECT COALESCE(SUM(quantity), 0) as total FROM purchase_orders WHERE "projectId" = $1`, [pid]),
+      db.query(`SELECT status, COUNT(*) as count FROM purchase_orders WHERE "projectId" = $1 GROUP BY status`, [pid]),
+      db.query(`SELECT * FROM activities WHERE "projectId" = $1 ORDER BY timestamp DESC LIMIT 5`, [pid]),
+      db.query(`SELECT m.*, wo.name as "workOrderName" FROM milestones m
+         JOIN work_orders wo ON m."workOrderId" = wo.id
+         WHERE wo."projectId" = $1 ORDER BY m.id ASC`, [pid]),
+      db.query(`SELECT bi."itemCode", bi.description, bi."estimatedQuantity", bi.rate,
+         COALESCE(SUM(mb."measuredQuantity"), 0) as "executedQuantity"
+         FROM boq_items bi
+         LEFT JOIN measurement_book mb ON mb."boqId" = bi.id
+         WHERE bi."projectId" = $1
+         GROUP BY bi.id, bi."itemCode", bi.description, bi."estimatedQuantity", bi.rate`, [pid]),
+    ]);
 
-  Promise.all([
-    // KPI 1: Vendor count
-    q(`SELECT COUNT(*) as c FROM vendors WHERE projectId = ?`, [pid]),
-    // KPI 2: Total PO count
-    q(`SELECT COUNT(*) as c FROM purchase_orders WHERE projectId = ?`, [pid]),
-    // KPI 3: Delivered POs
-    q(`SELECT COUNT(*) as c FROM purchase_orders WHERE projectId = ? AND status = 'Delivered'`, [pid]),
-    // KPI 4: Inventory SKUs
-    q(`SELECT COUNT(*) as c FROM inventory WHERE projectId = ?`, [pid]),
-    // KPI 5: Total billed amount
-    q(`SELECT COALESCE(SUM(grossAmount), 0) as total FROM bills WHERE projectId = ?`, [pid]),
-    // KPI 6: Net payable released
-    q(`SELECT COALESCE(SUM(netAmount), 0) as total FROM bills WHERE projectId = ? AND status = 'Paid'`, [pid]),
-    // KPI 7: Open indents
-    q(`SELECT COUNT(*) as c FROM indents WHERE projectId = ? AND status = 'Pending'`, [pid]),
-    // KPI 8: Total PO value
-    q(`SELECT COALESCE(SUM(quantity), 0) as total FROM purchase_orders WHERE projectId = ?`, [pid]),
-    // PO status distribution
-    q(`SELECT status, COUNT(*) as count FROM purchase_orders WHERE projectId = ? GROUP BY status`, [pid]),
-    // Recent activities
-    q(`SELECT * FROM activities WHERE projectId = ? ORDER BY timestamp DESC LIMIT 5`, [pid]),
-    // Milestones for S-curve
-    q(`SELECT m.*, wo.name as workOrderName FROM milestones m
-       JOIN work_orders wo ON m.workOrderId = wo.id
-       WHERE wo.projectId = ? ORDER BY m.id ASC`, [pid]),
-    // BOQ summary
-    q(`SELECT bi.itemCode, bi.description, bi.estimatedQuantity, bi.rate,
-       COALESCE(SUM(mb.measuredQuantity), 0) as executedQuantity
-       FROM boq_items bi
-       LEFT JOIN measurement_book mb ON mb.boqId = bi.id
-       WHERE bi.projectId = ?
-       GROUP BY bi.id`, [pid]),
-  ]).then(([vendors, pos, delivered, inv, billed, paid, indents, poQty, dist, activities, milestones, boq]) => {
     res.json({
-      totalVendors:    vendors[0].c,
-      totalPOs:        pos[0].c,
-      deliveredPOs:    delivered[0].c,
-      inventoryCount:  inv[0].c,
-      totalBilled:     billed[0].total,
-      netPaid:         paid[0].total,
-      openIndents:     indents[0].c,
-      totalPOQty:      poQty[0].total,
-      distribution:    dist,
-      recentActivities: activities,
-      milestones,
-      boqSummary: boq,
+      totalVendors:    parseInt(vendors.rows[0].c),
+      totalPOs:        parseInt(pos.rows[0].c),
+      deliveredPOs:    parseInt(delivered.rows[0].c),
+      inventoryCount:  parseInt(inv.rows[0].c),
+      totalBilled:     parseFloat(billed.rows[0].total),
+      netPaid:         parseFloat(paid.rows[0].total),
+      openIndents:     parseInt(indents.rows[0].c),
+      totalPOQty:      parseInt(poQty.rows[0].total),
+      distribution:    dist.rows,
+      recentActivities: activities.rows,
+      milestones:      milestones.rows,
+      boqSummary:      boq.rows,
     });
-  }).catch(err => {
+  } catch (err) {
     console.error('Dashboard error:', err.message);
     res.status(500).json({ error: err.message });
-  });
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
    SERVER
    ══════════════════════════════════════════════════════════ */
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Nexus Op Backend running on http://localhost:${PORT}`);
   console.log(`   Routes: ${[

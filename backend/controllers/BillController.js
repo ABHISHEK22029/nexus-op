@@ -1,55 +1,61 @@
 const db = require('../db');
 
-exports.generateRABill = (req, res) => {
-    const { projectId, workOrderId, poId } = req.body;
-    
+exports.generateRABill = async (req, res) => {
+  const { projectId, workOrderId } = req.body;
+  try {
     // Step 1: Find all MB cumulative quantity for this Work Order
-    db.get('SELECT SUM(measuredQuantity) as cumQty, boqId FROM measurement_book WHERE workOrderId = ?', [workOrderId], (err, mbRow) => {
-        if (err) return res.status(500).json({ error: err.message });
-        const cumQty = mbRow && mbRow.cumQty ? mbRow.cumQty : 0;
-        const boqId = mbRow ? mbRow.boqId : null;
-        
-        if (cumQty === 0) return res.status(400).json({ error: "No MB records found for this Work Order to bill." });
+    const mbResult = await db.query(
+      `SELECT SUM("measuredQuantity") as "cumQty", "boqId" FROM measurement_book WHERE "workOrderId" = $1 GROUP BY "boqId" LIMIT 1`,
+      [workOrderId]
+    );
+    const cumQty = mbResult.rows[0]?.cumQty || 0;
+    const boqId = mbResult.rows[0]?.boqId || null;
 
-        // Step 2: See how much was previously billed
-        db.get('SELECT SUM(billedQuantity) as prevBilledQty FROM bills WHERE workOrderId = ?', [workOrderId], (err, billRow) => {
-            if (err) return res.status(500).json({ error: err.message });
-            const prevBilledQty = billRow && billRow.prevBilledQty ? billRow.prevBilledQty : 0;
-            
-            const currentPayableQty = cumQty - prevBilledQty;
-            if (currentPayableQty <= 0) return res.status(400).json({ error: "No new quantities to bill." });
+    if (cumQty === 0) return res.status(400).json({ error: "No MB records found for this Work Order to bill." });
 
-            // Step 3: Fetch BOQ rate
-            db.get('SELECT rate FROM boq_items WHERE id = ?', [boqId], (err, boq) => {
-                if (err) return res.status(500).json({ error: err.message });
-                const rate = boq ? boq.rate : 500; // fallback if boqId missing somehow
-                
-                // MATH LOGIC
-                const grossAmount = currentPayableQty * rate;
-                const tds = grossAmount * 0.02; // 2%
-                const retention = grossAmount * 0.05; // 5%
-                const netAmount = grossAmount - tds - retention;
+    // Step 2: See how much was previously billed
+    const billResult = await db.query(
+      `SELECT SUM("billedQuantity") as "prevBilledQty" FROM bills WHERE "workOrderId" = $1`,
+      [workOrderId]
+    );
+    const prevBilledQty = billResult.rows[0]?.prevBilledQty || 0;
+    const currentPayableQty = cumQty - prevBilledQty;
 
-                db.run(`INSERT INTO bills (projectId, workOrderId, grossAmount, tds, retention, netAmount, billedQuantity, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'Draft')`,
-                [projectId, workOrderId, grossAmount, tds, retention, netAmount, currentPayableQty], function(err) {
-                    if (err) return res.status(500).json({ error: err.message });
-                    res.json({ message: "RA Bill Generated", billId: this.lastID, netAmount });
-                });
-            });
-        });
-    });
+    if (currentPayableQty <= 0) return res.status(400).json({ error: "No new quantities to bill." });
+
+    // Step 3: Fetch BOQ rate
+    const boqResult = await db.query('SELECT rate FROM boq_items WHERE id = $1', [boqId]);
+    const rate = boqResult.rows[0]?.rate || 500;
+
+    // MATH LOGIC
+    const grossAmount = currentPayableQty * rate;
+    const tds = grossAmount * 0.02;
+    const retention = grossAmount * 0.05;
+    const netAmount = grossAmount - tds - retention;
+
+    const insertResult = await db.query(
+      `INSERT INTO bills ("projectId", "workOrderId", "grossAmount", tds, retention, "netAmount", "billedQuantity", status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'Draft') RETURNING id`,
+      [projectId, workOrderId, grossAmount, tds, retention, netAmount, currentPayableQty]
+    );
+    res.json({ message: "RA Bill Generated", billId: insertResult.rows[0].id, netAmount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
-exports.getBills = (req, res) => {
+exports.getBills = async (req, res) => {
+  try {
     const { projectId } = req.query;
-    let query = "SELECT * FROM bills";
+    let query = 'SELECT * FROM bills';
     let params = [];
     if (projectId) {
-        query += " WHERE projectId = ?";
-        params.push(projectId);
+      query += ' WHERE "projectId" = $1';
+      params.push(projectId);
     }
-    db.all(query, params, (err, rows) => {
-         if (err) return res.status(500).json({ error: err.message });
-         res.json(rows);
-    });
+    const { rows } = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };

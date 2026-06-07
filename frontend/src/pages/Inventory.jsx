@@ -10,7 +10,7 @@ const Inventory = () => {
 
   useEffect(() => {
     if (!activeProject) return;
-    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/inventory?projectId=${activeProject.id}`)
+    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/inventory?projectId=${activeProject.id}`)
       .then(res => setInventory(res.data))
       .catch(err => console.error("Failed to fetch inventory", err));
   }, [activeProject]);

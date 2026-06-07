@@ -263,7 +263,7 @@ const Dashboard = () => {
     if (!activeProject) return;
     try {
       setLoading(true);
-      const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/dashboard?projectId=${activeProject.id}`);
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/dashboard?projectId=${activeProject.id}`);
       setStats(res.data);
       setLastRefresh(new Date());
     } catch (err) {

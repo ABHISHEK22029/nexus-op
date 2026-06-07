@@ -15,8 +15,8 @@ const BOQ = () => {
   const fetchData = async () => {
     if (!activeProject) return;
     try {
-      const boqResponse = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/boq?projectId=${activeProject.id}`).then(res => res.json());
-      const mbResponse = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/mb?projectId=${activeProject.id}`).then(res => res.json());
+      const boqResponse = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/boq?projectId=${activeProject.id}`).then(res => res.json());
+      const mbResponse = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/mb?projectId=${activeProject.id}`).then(res => res.json());
       setItems(boqResponse);
       setMbData(mbResponse);
       setLoading(false);
@@ -33,7 +33,7 @@ const BOQ = () => {
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!activeProject) return;
-    await fetch('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/boq', {
+    await fetch('${import.meta.env.VITE_API_URL || "http://localhost:5000"}/boq', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...newItem, projectId: activeProject.id })

@@ -21,6 +21,8 @@ import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
 import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
+import GetStarted from './pages/GetStarted';
+import POInvoice from './pages/POInvoice';
 import { RoleProvider, useRole } from './context/RoleContext';
 import { ProjectProvider, useProject } from './context/ProjectContext';
 import { useTheme } from './context/ThemeContext';
@@ -299,6 +301,7 @@ const AppRoutes = () => {
 
       {/* ── Marketing Layer ── */}
       <Route path="/"              element={<MarketingLayout><Welcome /></MarketingLayout>} />
+      <Route path="/get-started"   element={<MarketingLayout><GetStarted /></MarketingLayout>} />
       <Route path="/platform"      element={<MarketingLayout><PlatformCapabilities /></MarketingLayout>} />
       <Route path="/how-it-works"  element={<MarketingLayout><HowItWorks /></MarketingLayout>} />
 
@@ -307,9 +310,10 @@ const AppRoutes = () => {
       <Route path="/projects"          element={<AppLayout><Projects /></AppLayout>} />
       <Route path="/workorders"        element={<AppLayout><WorkOrders /></AppLayout>} />
       <Route path="/vendors"           element={<AppLayout><Vendors /></AppLayout>} />
-      <Route path="/vendors/new"       element={<VendorForm />} />
-      <Route path="/vendors/:id/edit"  element={<VendorForm />} />
-      <Route path="/po"                element={<AppLayout><PurchaseOrders /></AppLayout>} />
+      <Route path="/vendors/new"       element={<AppLayout><VendorForm /></AppLayout>} />
+      <Route path="/vendors/:id/edit"  element={<AppLayout><VendorForm /></AppLayout>} />
+      <Route path="/purchase-orders"   element={<AppLayout><PurchaseOrders /></AppLayout>} />
+      <Route path="/po/:id"            element={<POInvoice />} />
       <Route path="/inventory"         element={<AppLayout><Inventory /></AppLayout>} />
       <Route path="/grn"               element={<AppLayout><GRN /></AppLayout>} />
       <Route path="/bills"             element={<AppLayout><Bills /></AppLayout>} />

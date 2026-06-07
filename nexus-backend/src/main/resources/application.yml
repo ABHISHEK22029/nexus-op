@@ -1,29 +1,19 @@
 spring:
-  datasource:
-    # ── UPDATE THESE 3 VALUES with correct Supabase connection ──
-    # Go to: Supabase → Project Settings → Database → Connection string
-    url: jdbc:postgresql://aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require&prepareThreshold=0
-    username: postgres.xkopxriicqxwgvbwbzdk
-    password: ${DB_PASSWORD:NexusOP202412}
-    driver-class-name: org.postgresql.Driver
-    hikari:
-      maximum-pool-size: 5
-      minimum-idle: 1
-      connection-timeout: 30000
-      idle-timeout: 300000
+  profiles:
+    active: ${SPRING_PROFILE:local}
 
   jpa:
     hibernate:
       ddl-auto: none        # Liquibase manages schema
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: false
     show-sql: false
+    open-in-view: false
 
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
-    enabled: false          # ← DISABLED until DB connection is verified
+    enabled: true
 
 server:
   port: 8080
@@ -32,8 +22,8 @@ server:
 
 nexusop:
   jwt:
-    secret: ${JWT_SECRET:nexusop-local-dev-secret-key-min-256-bits-change-in-production}
-    expiration-ms: 86400000
+    secret: ${JWT_SECRET:nexusop-local-dev-secret-key-min-256-bits-change-in-production-env}
+    expiration-ms: 86400000   # 24 hours
   cors:
     allowed-origins: ${CORS_ORIGIN:http://localhost:5173}
   pg-notify:
@@ -45,3 +35,79 @@ logging:
     com.nexusop: DEBUG
     org.springframework.security: WARN
     liquibase: INFO
+
+---
+# ═══ LOCAL PROFILE — PostgreSQL on localhost ═══
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/nexusop_db
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 300000
+
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+---
+# ═══ H2 PROFILE — For testing without PostgreSQL ═══
+spring:
+  config:
+    activate:
+      on-profile: h2
+
+  datasource:
+    url: jdbc:h2:file:./data/nexusop;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  liquibase:
+    enabled: false           # H2 uses JPA auto-create for now
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop  # Auto-create tables in H2
+
+---
+# ═══ CLOUD PROFILE — Supabase / AWS RDS (for future) ═══
+spring:
+  config:
+    activate:
+      on-profile: cloud
+
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USER}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 300000
+
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect

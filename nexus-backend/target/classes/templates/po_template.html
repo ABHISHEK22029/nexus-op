@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; }
+  .page { width: 210mm; min-height: 297mm; padding: 15mm; background: white; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; border-bottom: 2px solid #1a3a6b; padding-bottom: 10px; margin-bottom: 10px; }
+  .company-name { font-size: 16px; font-weight: bold; color: #1a3a6b; }
+  .company-details { font-size: 10px; color: #444; margin-top: 3px; }
+  .po-badge { text-align: right; }
+  .po-title { font-size: 13px; font-weight: bold; color: #1a3a6b; }
+  .po-meta { font-size: 10px; margin-top: 2px; }
+  .po-meta strong { color: #1a3a6b; }
+
+  /* Project Info */
+  .info-grid { display: flex; gap: 30px; margin: 8px 0; font-size: 10px; }
+  .info-row { display: flex; gap: 5px; }
+  .info-label { font-weight: bold; min-width: 80px; color: #333; }
+
+  /* Three-party block: Vendor / Ship To / Bill To */
+  .parties { display: flex; border: 1px solid #ccc; margin: 10px 0; }
+  .party { flex: 1; padding: 8px; border-right: 1px solid #ccc; }
+  .party:last-child { border-right: none; }
+  .party-title { font-weight: bold; font-size: 10px; text-transform: uppercase; color: #1a3a6b; border-bottom: 1px solid #eee; margin-bottom: 4px; padding-bottom: 4px; }
+  .party-name { font-weight: bold; font-size: 11px; }
+  .party-detail { font-size: 9px; color: #555; margin-top: 2px; }
+
+  /* Line items table */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  th { background: #1a3a6b; color: white; padding: 6px 8px; text-align: left; font-size: 10px; font-weight: 600; }
+  td { padding: 5px 8px; border-bottom: 1px solid #eee; vertical-align: top; font-size: 10px; }
+  tr:nth-child(even) { background: #f8f9ff; }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+
+  /* Totals */
+  .totals-section { display: flex; justify-content: space-between; align-items: flex-start; margin-top: 10px; }
+  .notes-section { max-width: 280px; font-size: 10px; }
+  .notes-section p { margin-bottom: 4px; }
+  .totals-table { width: 220px; border-collapse: collapse; }
+  .totals-table td { padding: 4px 6px; font-size: 10px; }
+  .total-label { text-align: right; font-weight: bold; color: #333; }
+  .total-row-final { background: #1a3a6b; color: white; font-weight: bold; }
+  .total-row-final td { padding: 6px; }
+
+  /* Amount in words */
+  .amount-words { background: #f0f4ff; padding: 8px; border-left: 3px solid #1a3a6b; margin: 8px 0; font-style: italic; font-size: 10px; color: #1a3a6b; }
+
+  /* Terms footer grid */
+  .terms-grid { display: flex; border: 1px solid #ccc; margin-top: 10px; }
+  .term-cell { flex: 1; padding: 6px; border-right: 1px solid #ccc; font-size: 9px; }
+  .term-cell:last-child { border-right: none; }
+  .term-header { font-weight: bold; font-size: 8px; text-transform: uppercase; color: #666; margin-bottom: 2px; }
+
+  /* Signature */
+  .signature-block { display: flex; justify-content: flex-end; margin-top: 30px; }
+  .sig-box { text-align: center; font-size: 10px; }
+  .sig-line { border-top: 1px solid #333; width: 150px; margin: 40px auto 4px; }
+
+  /* Footer */
+  .footer { margin-top: 15px; border-top: 1px solid #eee; padding-top: 8px; font-size: 8px; color: #888; text-align: center; }
+</style>
+</head>
+<body>
+<div class="page">
+  <!-- Company Header -->
+  <div class="header">
+    <div>
+      <div class="company-name">{{orgName}}</div>
+      <div class="company-details">
+        {{orgAddress}}<br/>
+        GSTIN: {{orgGstin}} | PAN: {{orgPan}}<br/>
+        Ph: {{orgPhone}} | Email: {{orgEmail}}
+      </div>
+    </div>
+    <div class="po-badge">
+      <div class="po-title">PURCHASE ORDER</div>
+      <div class="po-meta">
+        <strong>P.O. #:</strong> {{poNumber}}<br/>
+        <strong>Date:</strong> {{poDate}}<br/>
+        <strong>Quote Ref:</strong> {{quoteRef}}
+      </div>
+    </div>
+  </div>
+
+  <!-- Project Info -->
+  <div class="info-grid">
+    <div class="info-row"><span class="info-label">Project:</span> {{projectName}}</div>
+    <div class="info-row"><span class="info-label">Delivery:</span> {{expectedDelivery}}</div>
+  </div>
+
+  <!-- Three-party block: Vendor / Ship To / Bill To -->
+  <div class="parties">
+    <div class="party">
+      <div class="party-title">Vendor</div>
+      <div class="party-name">{{vendorName}}</div>
+      <div class="party-detail">
+        {{vendorAddress}}<br/>
+        Ph: {{vendorPhone}}<br/>
+        Email: {{vendorEmail}}<br/>
+        GST: {{vendorGstin}}
+      </div>
+    </div>
+    <div class="party">
+      <div class="party-title">Ship To</div>
+      <div class="party-name">{{orgName}}</div>
+      <div class="party-detail">
+        {{siteAddress}}<br/>
+        Ph: {{orgPhone}}
+      </div>
+    </div>
+    <div class="party">
+      <div class="party-title">Bill To</div>
+      <div class="party-name">{{orgName}}</div>
+      <div class="party-detail">
+        {{orgAddress}}<br/>
+        Ph: {{orgPhone}}<br/>
+        GST: {{orgGstin}}
+      </div>
+    </div>
+  </div>
+
+  <!-- Line Items Table -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width:30px">S.No</th>
+        <th>Description</th>
+        <th style="width:40px" class="text-center">UOM</th>
+        <th style="width:60px" class="text-center">HSN/SAC</th>
+        <th style="width:40px" class="text-center">Qty</th>
+        <th style="width:80px" class="text-right">Unit Price (₹)</th>
+        <th style="width:90px" class="text-right">Total (₹)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{lineItemsHtml}}
+    </tbody>
+  </table>
+
+  <!-- Totals Section -->
+  <div class="totals-section">
+    <div class="notes-section">
+      <p><strong>Payment Terms:</strong> {{paymentTerms}}</p>
+      <p><strong>Other Comments:</strong></p>
+      <p>{{notes}}</p>
+    </div>
+    <table class="totals-table">
+      <tr><td class="total-label">SUBTOTAL</td><td class="text-right">₹{{subtotal}}</td></tr>
+      {{taxRowsHtml}}
+      <tr><td class="total-label">TOTAL TAX</td><td class="text-right">₹{{totalTax}}</td></tr>
+      <tr class="total-row-final"><td class="total-label">PO VALUE</td><td class="text-right">₹{{grandTotal}}</td></tr>
+    </table>
+  </div>
+
+  <!-- Amount in Words -->
+  <div class="amount-words">
+    <strong>Amount in Words:</strong> {{amountInWords}}
+  </div>
+
+  <!-- Terms Footer -->
+  <div class="terms-grid">
+    <div class="term-cell"><div class="term-header">Price Basis</div>{{priceBasis}}</div>
+    <div class="term-cell"><div class="term-header">P&amp;F, Insurance</div>{{pfScope}}</div>
+    <div class="term-cell"><div class="term-header">Loading &amp; Unloading</div>{{loadingScope}}</div>
+    <div class="term-cell"><div class="term-header">Guarantee/Warranty</div>{{warranty}}</div>
+  </div>
+
+  <!-- Signature Block -->
+  <div class="signature-block">
+    <div class="sig-box">
+      <div class="sig-line"></div>
+      <div><strong>Authorized By</strong></div>
+      <div>{{orgName}}</div>
+      <div>Date: {{poDate}}</div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    Generated by Nexus-OP — Infrastructure Intelligence Platform | {{poNumber}} | {{poDate}}
+  </div>
+</div>
+</body>
+</html>

@@ -11,8 +11,8 @@ const Indent = () => {
 
   const fetchData = async () => {
     if (!activeProject) return;
-    const iRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/indent?projectId=${activeProject.id}`).then(res => res.json());
-    const bRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/boq?projectId=${activeProject.id}`).then(res => res.json());
+    const iRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/indent?projectId=${activeProject.id}`).then(res => res.json());
+    const bRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/boq?projectId=${activeProject.id}`).then(res => res.json());
     setIndents(iRes);
     setBoqs(bRes);
   };
@@ -22,7 +22,7 @@ const Indent = () => {
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!activeProject) return;
-    await fetch('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/indent', {
+    await fetch('${import.meta.env.VITE_API_URL || "http://localhost:5000"}/indent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...newItem, projectId: activeProject.id })
@@ -32,7 +32,7 @@ const Indent = () => {
   };
 
   const handleStatus = async (id, status) => {
-    await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/indent/${id}/status`, {
+    await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/indent/${id}/status`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })

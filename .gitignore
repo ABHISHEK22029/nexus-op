@@ -26,6 +26,11 @@ yarn-error.log*
 *.sln
 *.sw?
 
+# Environment files (secrets)
+.env
+backend/.env
+frontend/.env.production
+
 # OS files
 .DS_Store
 Thumbs.db

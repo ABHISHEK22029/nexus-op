@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { FilePlus, PackageCheck, Send, CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { FilePlus, PackageCheck, Send, CheckCircle2, FileText } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const PurchaseOrders = () => {
+  const navigate = useNavigate();
   const { activeProject } = useProject();
   const [pos, setPos] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -12,11 +16,11 @@ const PurchaseOrders = () => {
 
   const fetchData = () => {
     if (!activeProject) return;
-    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/po?projectId=${activeProject.id}`)
+    axios.get(`${API}/po?projectId=${activeProject.id}`)
       .then(res => setPos(res.data))
       .catch(err => console.error("Failed to fetch POs", err));
     
-    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/vendors?projectId=${activeProject.id}`)
+    axios.get(`${API}/vendors?projectId=${activeProject.id}`)
       .then(res => setVendors(res.data))
       .catch(err => console.error("Failed to fetch vendors", err));
   };
@@ -27,7 +31,7 @@ const PurchaseOrders = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    axios.post('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/po', {
+    axios.post(`${API}/po`, {
       ...formData,
       quantity: parseInt(formData.quantity)
     })
@@ -43,7 +47,7 @@ const PurchaseOrders = () => {
     const endpoint = action === 'grn' ? 'grn' : `po/${poId}/${action}`;
     const payload = action === 'grn' ? { poId, selectedAction: action, ...extraPayload } : {};
     
-    axios[action === 'grn' ? 'post' : 'patch'](`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/${endpoint}`, payload)
+    axios[action === 'grn' ? 'post' : 'patch'](`${API}/${endpoint}`, payload)
       .then(() => fetchData())
       .catch(err => alert(`Failed to ${action} PO: ` + (err.response?.data?.error || err.message)));
   };
@@ -196,6 +200,13 @@ const PurchaseOrders = () => {
                       Receive GRN
                     </button>
                   )}
+                  <button
+                    onClick={() => navigate(`/po/${po.id}`)}
+                    className="ml-2 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border border-white/20 bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white transition-all"
+                  >
+                    <FileText size={13} />
+                    View PO
+                  </button>
                 </td>
               </tr>
             )) : (

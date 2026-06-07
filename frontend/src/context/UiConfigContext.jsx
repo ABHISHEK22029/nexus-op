@@ -10,49 +10,24 @@ export function UiConfigProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // 1. Load all config on mount
-    const token = localStorage.getItem('nexus_token');
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    // Load config from API if available (Spring Boot endpoint — skipped in local/Render mode)
+    const apiUrl = import.meta.env.VITE_API_URL;
+    if (!apiUrl) return;
 
-    fetch(`${import.meta.env.VITE_API_URL}/ui-config/all`, { headers })
+    fetch(`${apiUrl}/ui-config/all`)
       .then(r => r.ok ? r.json() : {})
       .then(data => {
-        // Flatten: { "vendor.form.gstin.label": { value: {...} } } → { key: value }
         const flat = {};
         for (const [key, entry] of Object.entries(data)) {
           flat[key] = entry.value ?? entry;
         }
         setConfig(flat);
       })
-      .catch(() => console.warn('[UiConfig] Failed to load config'));
+      .catch(() => {
+        // ui-config endpoint doesn't exist on Node backend — silently skip
+      });
 
-    // 2. Subscribe to WebSocket for real-time updates
-    // (WebSocket is on /ws, Spring Boot STOMP endpoint)
-    let ws;
-    const connectWs = () => {
-      try {
-        ws = new WebSocket(
-          `${import.meta.env.VITE_API_URL?.replace('http', 'ws')}/ws/websocket`
-        );
-        ws.onopen = () => console.log('[UiConfig] WebSocket connected');
-        ws.onmessage = (e) => {
-          try {
-            const event = JSON.parse(e.data);
-            if (event.configKey && event.newValue !== undefined) {
-              updateKey(event.configKey, event.newValue);
-              console.log(`[UiConfig] Live update: ${event.configKey}`);
-            }
-          } catch (err) {
-            // STOMP frames, ignore
-          }
-        };
-        ws.onerror = () => {};
-        ws.onclose = () => setTimeout(connectWs, 3000); // reconnect
-      } catch (e) {}
-    };
-    connectWs();
-
-    return () => ws?.close();
+    // WebSocket disabled — only used with Spring Boot STOMP
   }, [updateKey]);
 
   return (

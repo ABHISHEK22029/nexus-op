@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Plus, Sparkles, UploadCloud, Search, FileUp, Star, ExternalLink } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const Vendors = () => {
   const navigate = useNavigate();
@@ -42,7 +42,7 @@ const Vendors = () => {
 
   const addVendor = (e) => {
     e.preventDefault();
-    axios.post('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/vendors', formData)
+    axios.post(`${API}/vendors`, formData)
       .then(() => {
         setFormData({ name: '', type: '' });
         setShowForm(false);
@@ -56,7 +56,7 @@ const Vendors = () => {
     if (!file) return;
     setBulkLoading(true);
     setTimeout(() => {
-      axios.post('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/vendors/bulk')
+      axios.post(`${API}/vendors/bulk`)
         .then(() => fetchVendors())
         .finally(() => setBulkLoading(false));
       e.target.value = null;

@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const ProjectContext = createContext();
 
 export const ProjectProvider = ({ children }) => {
@@ -8,11 +10,11 @@ export const ProjectProvider = ({ children }) => {
   const [workOrders, setWorkOrders] = useState([]);
 
   const fetchProjects = () => {
-    fetch('http://localhost:5000/projects')
+    fetch(`${API}/projects`)
       .then(res => res.json())
       .then(data => {
          setProjects(data);
-         if (data.length > 0 && !activeProject) setActiveProject(data[data.length - 1]); // Set newest if null, else keep
+         if (data.length > 0 && !activeProject) setActiveProject(data[data.length - 1]);
       })
       .catch(err => console.error(err));
   };
@@ -23,7 +25,7 @@ export const ProjectProvider = ({ children }) => {
 
   useEffect(() => {
     if (activeProject) {
-      fetch(`http://localhost:5000/work-orders?projectId=${activeProject.id}`)
+      fetch(`${API}/work-orders?projectId=${activeProject.id}`)
         .then(res => res.json())
         .then(data => setWorkOrders(data));
     } else {
@@ -36,7 +38,7 @@ export const ProjectProvider = ({ children }) => {
     if (activeProject.type === 'construction') {
         return ['BOQ', 'Indent', 'Measurement Book', 'Milestones', 'Chainage'];
     }
-    return []; // generic
+    return [];
   };
 
   return (

@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Building2, MapPin, Calendar, IndianRupee, Users, CheckCircle,
-  ChevronRight, ChevronLeft, Loader2, Sparkles, Layers
+  ChevronRight, ChevronLeft, Loader2, Sparkles, Layers, AlertCircle
 } from 'lucide-react';
+import { useProject } from '../context/ProjectContext';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const STEPS = [
   { label: 'Organization',  icon: Building2,  desc: 'Set up your company' },
@@ -47,6 +48,8 @@ export default function Onboarding() {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState(null);
+  const { fetchProjects } = useProject();
 
   const [org, setOrg] = useState({ name: '', cin: '', gst: '', address: '', city: '', state: '' });
   const [project, setProject] = useState({ name: '', code: '', type: '', client: '', contractValue: '', startDate: '', endDate: '' });
@@ -62,29 +65,34 @@ export default function Onboarding() {
 
   const handleFinish = async () => {
     setSaving(true);
+    setError(null);
     try {
       const token = localStorage.getItem('nexus_token');
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
 
-      // Create project (org setup can be done later in settings)
-      await fetch(`${API}/projects`, {
+      // Create project in Node DB
+      const res = await fetch(`${API}/projects`, {
         method: 'POST', headers,
         body: JSON.stringify({
-          name: project.name, code: project.code, type: project.type,
-          client: project.client, contractValue: project.contractValue,
-          startDate: project.startDate, endDate: project.endDate,
-          location: details.location, state: details.state,
-          latitude: details.latitude, longitude: details.longitude,
-          description: details.description, status: 'Planning',
+          name: project.name,
+          clientName: project.client || 'Internal',
+          type: project.type || 'construction',
+          startDate: project.startDate || null,
+          endDate: project.endDate || null,
+          status: 'Active',
         }),
       });
 
+      if (!res.ok) throw new Error('Failed to create project');
+
+      // Refresh project context so it shows up in dashboard
+      fetchProjects();
+
       setDone(true);
       setTimeout(() => navigate('/dashboard'), 2000);
-    } catch {
-      // Even on error, allow navigation for demo
-      setDone(true);
-      setTimeout(() => navigate('/dashboard'), 2000);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Something went wrong');
     } finally {
       setSaving(false);
     }
@@ -129,6 +137,11 @@ export default function Onboarding() {
           <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: 8 }}>
             Takes about 2 minutes. You can update everything later from Settings.
           </p>
+          {error && (
+            <div style={{ marginTop: 16, padding: '12px', background: 'hsl(0,80%,50%,0.1)', color: 'hsl(0,80%,60%)', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+              <AlertCircle size={16} /> {error}
+            </div>
+          )}
         </div>
 
         {/* Step Progress */}

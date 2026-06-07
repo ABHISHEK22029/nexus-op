@@ -12,7 +12,7 @@ const Bills = () => {
   const fetchData = async () => {
     if (!activeProject) return;
     try {
-        const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/bills?projectId=${activeProject.id}`);
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/bills?projectId=${activeProject.id}`);
         setBills(res.data);
     } catch(err) {
         console.error(err);
@@ -25,7 +25,7 @@ const Bills = () => {
     e.preventDefault();
     if (!activeProject || !newWOId) return;
     try {
-        await axios.post('${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/bills/generate', { 
+        await axios.post('${import.meta.env.VITE_API_URL || "http://localhost:5000"}/bills/generate', { 
             projectId: activeProject.id, 
             workOrderId: newWOId 
         });
@@ -38,7 +38,7 @@ const Bills = () => {
 
   const handleStatusChange = async (id, action) => {
     try {
-        await axios.patch(`${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/bills/${id}/${action}`);
+        await axios.patch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/bills/${id}/${action}`);
         fetchData();
     } catch(err) {
         alert(err.response?.data?.error || "Error updating status");
