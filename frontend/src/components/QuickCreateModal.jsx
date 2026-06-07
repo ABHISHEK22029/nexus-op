@@ -121,7 +121,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
         if (!activeProject) throw new Error('No active project context');
         if (!indentWO || !indentBOQ || !indentQty) throw new Error('Work Order, BOQ, and Quantity are required');
       } else if (type === 'po') {
-        url = 'http://localhost:5000/po';
+        url = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/po`;
         body = {
           projectId: activeProject?.id,
           workOrderId: parseInt(poWO),
