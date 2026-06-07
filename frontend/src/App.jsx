@@ -23,6 +23,8 @@ import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
 import GetStarted from './pages/GetStarted';
 import POInvoice from './pages/POInvoice';
+import BetaWelcome from './pages/BetaWelcome';
+import BetaOnboarding from './pages/BetaOnboarding';
 import { RoleProvider, useRole } from './context/RoleContext';
 import { ProjectProvider, useProject } from './context/ProjectContext';
 import { useTheme } from './context/ThemeContext';
@@ -298,6 +300,8 @@ const AppRoutes = () => {
       {/* ── Auth ── */}
       <Route path="/login"       element={<Login />} />
       <Route path="/onboarding"  element={<Onboarding />} />
+      <Route path="/beta-welcome"  element={<BetaWelcome />} />
+      <Route path="/beta-onboarding"  element={<BetaOnboarding />} />
 
       {/* ── Marketing Layer ── */}
       <Route path="/"              element={<MarketingLayout><Welcome /></MarketingLayout>} />
