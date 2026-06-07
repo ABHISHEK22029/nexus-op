@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import '../beta.css';
 
 export default function BetaWelcome() {
   const navigate = useNavigate();
