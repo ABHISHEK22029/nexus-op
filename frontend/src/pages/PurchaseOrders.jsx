@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { FilePlus, PackageCheck, Send, CheckCircle2, FileText } from 'lucide-react';
+import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { numberToWords } from '../utils/numberToWords';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -12,7 +13,22 @@ const PurchaseOrders = () => {
   const [pos, setPos] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ vendorId: '', itemName: '', quantity: '' });
+  const [company, setCompany] = useState(null);
+
+  const initialForm = { 
+    vendorId: '', 
+    itemName: '', 
+    quoteRef: '',
+    paymentTerms: '50% Advance, 50% before Delivery',
+    priceBasis: 'Ex Works',
+    pnfInsurance: 'Vendor Scope',
+    loadingScope: 'Kirashi Scope',
+    warranty: '12 months from date of Installation'
+  };
+  const [formData, setFormData] = useState(initialForm);
+  
+  const [items, setItems] = useState([{ sno: 1, description: '', uom: "No's", hsn: '', quantity: 1, unitPrice: 0 }]);
+  const [gstType, setGstType] = useState(null);
 
   const fetchData = () => {
     if (!activeProject) return;
@@ -23,24 +39,88 @@ const PurchaseOrders = () => {
     axios.get(`${API}/vendors?projectId=${activeProject.id}`)
       .then(res => setVendors(res.data))
       .catch(err => console.error("Failed to fetch vendors", err));
+
+    axios.get(`${API}/company-profile`)
+      .then(res => setCompany(res.data))
+      .catch(err => console.error("Failed to fetch company profile", err));
   };
 
   useEffect(() => {
     fetchData();
   }, [activeProject]);
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    // Check GST type when vendor changes
+    if (formData.vendorId && company?.stateCode) {
+      const vendor = vendors.find(v => v.id == formData.vendorId);
+      if (vendor && vendor.gstin) {
+        const vendorState = vendor.gstin.substring(0, 2);
+        if (vendorState === company.stateCode) {
+          setGstType('intra'); // SGST + CGST
+        } else {
+          setGstType('inter'); // IGST
+        }
+      } else {
+        setGstType(null);
+      }
+    }
+  }, [formData.vendorId, company, vendors]);
+
+  const handleAddItem = () => {
+    setItems([...items, { sno: items.length + 1, description: '', uom: "No's", hsn: '', quantity: 1, unitPrice: 0 }]);
+  };
+
+  const handleRemoveItem = (index) => {
+    const newItems = items.filter((_, i) => i !== index).map((item, i) => ({ ...item, sno: i + 1 }));
+    setItems(newItems);
+  };
+
+  const handleItemChange = (index, field, value) => {
+    const newItems = [...items];
+    newItems[index][field] = value;
+    setItems(newItems);
+  };
+
+  const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+  const tax = subtotal * 0.18;
+  const totalValue = subtotal + tax;
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    axios.post(`${API}/po`, {
-      ...formData,
-      quantity: parseInt(formData.quantity)
-    })
-      .then(() => {
-        setFormData({ vendorId: '', itemName: '', quantity: '' });
-        setShowForm(false);
-        fetchData();
-      })
-      .catch(err => console.error(err));
+    const vendor = vendors.find(v => v.id == formData.vendorId);
+    if (!vendor?.gstin) {
+      alert("Selected vendor must have a valid GSTIN. Please update vendor details first.");
+      return;
+    }
+    if (items.some(i => !i.description || i.quantity <= 0 || i.unitPrice <= 0)) {
+      alert("Please fill all line items correctly (Description, Qty > 0, Price > 0).");
+      return;
+    }
+
+    try {
+      const totalQty = items.reduce((sum, i) => sum + Number(i.quantity), 0);
+      const amountInWords = numberToWords(totalValue);
+
+      // Create PO
+      const poRes = await axios.post(`${API}/po`, {
+        ...formData,
+        projectId: activeProject.id,
+        itemName: formData.itemName || items[0].description, // fallback to first item
+        quantity: totalQty,
+        amountInWords
+      });
+
+      // Insert Line Items
+      await axios.post(`${API}/po/${poRes.data.id}/items`, items);
+
+      setFormData(initialForm);
+      setItems([{ sno: 1, description: '', uom: "No's", hsn: '', quantity: 1, unitPrice: 0 }]);
+      setShowForm(false);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to create PO");
+    }
   };
 
   const handleAction = (poId, action, extraPayload = {}) => {
@@ -54,25 +134,20 @@ const PurchaseOrders = () => {
 
   const StatusBadge = ({ status }) => {
     switch(status) {
-      case 'Pending':
-        return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20">Pending</span>;
-      case 'Approved':
-        return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">Approved</span>;
-      case 'Dispatched':
-        return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">Dispatched</span>;
-      case 'Delivered':
-        return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Delivered</span>;
-      default:
-        return null;
+      case 'Pending': return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20">Pending</span>;
+      case 'Approved': return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">Approved</span>;
+      case 'Dispatched': return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">Dispatched</span>;
+      case 'Delivered': return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Delivered</span>;
+      default: return null;
     }
   };
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto">
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-6xl mx-auto pb-16">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-white/90 tracking-tight">Purchase Orders</h1>
-          <p className="text-gray-500 text-sm mt-1">Create orders and process deliveries (GRN).</p>
+          <p className="text-gray-500 text-sm mt-1">Create orders with detailed line items and GST.</p>
         </div>
         <button 
           onClick={() => setShowForm(!showForm)}
@@ -85,61 +160,145 @@ const PurchaseOrders = () => {
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-[#111113] border border-white/5 p-6 rounded-xl mb-8 animate-in slide-in-from-top-4 fade-in duration-300">
-          <h2 className="text-lg font-medium mb-4">New Purchase Order</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <h2 className="text-lg font-medium mb-4 text-white">New Purchase Order</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Select Vendor</label>
+              <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Vendor <span className="text-red-400">*</span></label>
               <select 
                 required
                 value={formData.vendorId}
                 onChange={e => setFormData({...formData, vendorId: e.target.value})}
-                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
+                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
               >
-                <option value="" disabled>Choose...</option>
+                <option value="" disabled>Select Vendor...</option>
                 {vendors.map(v => (
-                  <option key={v.id} value={v.id}>{v.name} ({v.type})</option>
+                  <option key={v.id} value={v.id}>{v.name} {v.gstin ? `(GST: ${v.gstin})` : '(No GST)'}</option>
                 ))}
               </select>
+              {gstType && (
+                <div className="mt-1 text-xs text-amber-500/80">
+                  {gstType === 'intra' ? 'Intra-state (SGST 9% + CGST 9%)' : 'Inter-state (IGST 18%)'}
+                </div>
+              )}
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Item Name</label>
+              <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">PO Title / Summary <span className="text-red-400">*</span></label>
               <input 
-                required
-                type="text" 
+                required type="text" 
                 value={formData.itemName}
                 onChange={e => setFormData({...formData, itemName: e.target.value})}
-                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                placeholder="e.g. Copper Wire"
+                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                placeholder="e.g. Earth Pit equipment"
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Quantity</label>
+              <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Quote Reference</label>
               <input 
-                required
-                type="number" 
-                min="1"
-                value={formData.quantity}
-                onChange={e => setFormData({...formData, quantity: e.target.value})}
-                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                placeholder="e.g. 500"
+                type="text" 
+                value={formData.quoteRef}
+                onChange={e => setFormData({...formData, quoteRef: e.target.value})}
+                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                placeholder="e.g. Quo 077428 18 May 2026"
               />
             </div>
           </div>
-          <div className="mt-6 flex justify-end gap-3">
-            <button 
-              type="button" 
-              onClick={() => setShowForm(false)}
-              className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn-primary btn-sm"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              Raise Order
-            </button>
+
+          <h3 className="text-sm font-medium mb-3 text-white">Line Items</h3>
+          <div className="border border-white/10 rounded-lg overflow-hidden mb-4">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-[#1A1A1E] border-b border-white/10">
+                <tr>
+                  <th className="p-3 text-gray-400 font-medium w-12 text-center">#</th>
+                  <th className="p-3 text-gray-400 font-medium">Description</th>
+                  <th className="p-3 text-gray-400 font-medium w-24">UOM</th>
+                  <th className="p-3 text-gray-400 font-medium w-24">HSN</th>
+                  <th className="p-3 text-gray-400 font-medium w-24">Qty</th>
+                  <th className="p-3 text-gray-400 font-medium w-32">Rate (₹)</th>
+                  <th className="p-3 text-gray-400 font-medium w-32 text-right">Total (₹)</th>
+                  <th className="p-3 w-12"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {items.map((item, idx) => (
+                  <tr key={idx} className="bg-[#111113]">
+                    <td className="p-3 text-center text-gray-500">{item.sno}</td>
+                    <td className="p-2">
+                      <input type="text" required value={item.description} onChange={e => handleItemChange(idx, 'description', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="Item description" />
+                    </td>
+                    <td className="p-2">
+                      <select value={item.uom} onChange={e => handleItemChange(idx, 'uom', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-1 py-1 text-white outline-none appearance-none">
+                        <option>No's</option><option>Kgs</option><option>EA</option><option>SET</option><option>AU</option><option>Mtr</option>
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <input type="text" value={item.hsn} onChange={e => handleItemChange(idx, 'hsn', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="HSN" />
+                    </td>
+                    <td className="p-2">
+                      <input type="number" required min="0.01" step="0.01" value={item.quantity} onChange={e => handleItemChange(idx, 'quantity', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" />
+                    </td>
+                    <td className="p-2">
+                      <input type="number" required min="0" step="0.01" value={item.unitPrice} onChange={e => handleItemChange(idx, 'unitPrice', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" />
+                    </td>
+                    <td className="p-3 text-right text-gray-300">
+                      {(item.quantity * item.unitPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="p-2 text-center">
+                      {items.length > 1 && (
+                        <button type="button" onClick={() => handleRemoveItem(idx)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="flex justify-between items-start mb-8">
+            <button type="button" onClick={handleAddItem} className="text-amber-500 hover:text-amber-400 text-sm font-medium flex items-center gap-1"><Plus size={16}/> Add Line Item</button>
+            <div className="w-64">
+              <div className="flex justify-between text-sm text-gray-400 mb-1"><span>Subtotal:</span><span>₹{subtotal.toLocaleString('en-IN')}</span></div>
+              {gstType === 'intra' ? (
+                <>
+                  <div className="flex justify-between text-sm text-gray-400 mb-1"><span>SGST (9%):</span><span>₹{(subtotal * 0.09).toLocaleString('en-IN')}</span></div>
+                  <div className="flex justify-between text-sm text-gray-400 mb-2"><span>CGST (9%):</span><span>₹{(subtotal * 0.09).toLocaleString('en-IN')}</span></div>
+                </>
+              ) : (
+                <div className="flex justify-between text-sm text-gray-400 mb-2"><span>IGST (18%):</span><span>₹{(subtotal * 0.18).toLocaleString('en-IN')}</span></div>
+              )}
+              <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-white/10"><span>PO Value:</span><span>₹{totalValue.toLocaleString('en-IN')}</span></div>
+            </div>
+          </div>
+
+          <h3 className="text-sm font-medium mb-3 text-white">Commercial Terms</h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 bg-[#1A1A1E] p-4 rounded-lg border border-white/5">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Payment Terms</label>
+              <select value={formData.paymentTerms} onChange={e => setFormData({...formData, paymentTerms: e.target.value})} className="w-full bg-[#111113] border border-white/10 rounded px-3 py-1.5 text-sm text-white outline-none">
+                <option>100% Advance</option><option>50% Advance, 50% before Delivery</option><option>30% Advance, 70% Post Handover</option><option>Net 30 Days</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Price Basis</label>
+              <select value={formData.priceBasis} onChange={e => setFormData({...formData, priceBasis: e.target.value})} className="w-full bg-[#111113] border border-white/10 rounded px-3 py-1.5 text-sm text-white outline-none">
+                <option>Ex Works</option><option>FOB</option><option>FOR Site</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">P&F / Loading</label>
+              <select value={formData.loadingScope} onChange={e => setFormData({...formData, loadingScope: e.target.value})} className="w-full bg-[#111113] border border-white/10 rounded px-3 py-1.5 text-sm text-white outline-none">
+                <option>Kirashi Scope</option><option>Vendor Scope</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Warranty</label>
+              <input type="text" value={formData.warranty} onChange={e => setFormData({...formData, warranty: e.target.value})} className="w-full bg-[#111113] border border-white/10 rounded px-3 py-1.5 text-sm text-white outline-none" placeholder="e.g. NA" />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors">Cancel</button>
+            <button type="submit" className="bg-amber-600 hover:bg-amber-500 text-white font-medium px-6 py-2 rounded-lg transition-colors flex items-center gap-2">Raise Order</button>
           </div>
         </form>
       )}

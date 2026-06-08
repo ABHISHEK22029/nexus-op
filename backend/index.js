@@ -126,18 +126,110 @@ app.get('/po', async (req, res) => {
   }
 });
 
-app.post('/po', async (req, res) => {
-  const { projectId, vendorId, workOrderId, itemName, quantity, unitPrice, indentId } = req.body;
-  if (!projectId || !vendorId || !itemName || !quantity)
-    return res.status(400).json({ error: 'projectId, vendorId, itemName, quantity required' });
+app.get('/po/:id', async (req, res) => {
   try {
     const { rows } = await db.query(
-      `INSERT INTO purchase_orders ("projectId", "vendorId", "workOrderId", "itemName", quantity, "indentId", status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'Pending') RETURNING id`,
-      [projectId, vendorId, workOrderId || null, itemName, quantity, indentId || null]
+      `SELECT po.*, 
+              v.name as "vendorName", v.address as "vendorAddress", v.gstin as "vendorGstin", v."contactName", v."contactPhone", v."contactEmail",
+              p.name as "projectName", p."clientName" as "clientName"
+       FROM purchase_orders po
+       LEFT JOIN vendors v ON po."vendorId" = v.id
+       LEFT JOIN projects p ON po."projectId" = p.id
+       WHERE po.id = $1`, [req.params.id]
     );
-    await logActivity(projectId, 'PO_CREATED', `PO-${rows[0].id} created for "${itemName}" (qty: ${quantity})`);
-    res.json({ id: rows[0].id });
+    if (rows.length === 0) return res.status(404).json({ error: 'PO not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/po/:id/items', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT * FROM po_line_items WHERE "poId" = $1 ORDER BY sno ASC`, [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/po', async (req, res) => {
+  const { projectId, vendorId, workOrderId, itemName, quantity, unitPrice, quoteRef, paymentTerms, priceBasis, pnfInsurance, loadingScope, warranty, amountInWords, indentId } = req.body;
+  
+  if (!projectId || !vendorId || !itemName || !quantity)
+    return res.status(400).json({ error: 'projectId, vendorId, itemName, quantity required' });
+  
+  try {
+    // Generate PO Number
+    const countRes = await db.query('SELECT COUNT(*) FROM purchase_orders WHERE "projectId" = $1', [projectId]);
+    const nextSeq = parseInt(countRes.rows[0].count) + 1;
+    const poNumber = `Kirashi/FY2026-27/${String(nextSeq).padStart(3, '0')}`;
+
+    const { rows } = await db.query(
+      `INSERT INTO purchase_orders (
+        "projectId", "vendorId", "workOrderId", "itemName", quantity, "unitPrice", 
+        "poNumber", "quoteRef", "paymentTerms", "priceBasis", "pnfInsurance", 
+        "loadingScope", "warranty", "amountInWords", "indentId", status
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'Pending') RETURNING id`,
+      [
+        projectId, vendorId, workOrderId || null, itemName, quantity, unitPrice || null,
+        poNumber, quoteRef || null, paymentTerms || null, priceBasis || 'Ex Works',
+        pnfInsurance || 'Vendor Scope', loadingScope || 'Kirashi Scope', warranty || '12 months',
+        amountInWords || null, indentId || null
+      ]
+    );
+    await logActivity(projectId, 'PO_CREATED', `${poNumber} created for "${itemName}"`);
+    res.json({ id: rows[0].id, poNumber });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/po/:id/items', async (req, res) => {
+  const poId = req.params.id;
+  const items = req.body; // Array of items
+  
+  if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'Items required' });
+
+  try {
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
+      // Delete existing to allow pure replacement on edit
+      await client.query('DELETE FROM po_line_items WHERE "poId" = $1', [poId]);
+      
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO po_line_items ("poId", sno, description, uom, hsn, quantity, "unitPrice") 
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [poId, item.sno, item.description, item.uom || "No's", item.hsn || null, item.quantity, item.unitPrice]
+        );
+      }
+      await client.query('COMMIT');
+      res.json({ success: true });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/company-profile', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM company_profile LIMIT 1');
+    if (rows.length === 0) {
+      // Auto-insert default if missing
+      const def = await db.query(`INSERT INTO company_profile (name) VALUES ('Kirashi Business Synergies Private Limited') RETURNING *`);
+      return res.json(def.rows[0]);
+    }
+    res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -49,7 +49,11 @@ CREATE TABLE IF NOT EXISTS vendors (
   class TEXT,
   capability_tags TEXT,
   rating INTEGER,
-  status TEXT
+  status TEXT,
+  address TEXT,
+  "contactName" TEXT,
+  "contactPhone" TEXT,
+  "contactEmail" TEXT
 );
 
 -- 5. Inventory
@@ -64,12 +68,48 @@ CREATE TABLE IF NOT EXISTS inventory (
 CREATE TABLE IF NOT EXISTS purchase_orders (
   id SERIAL PRIMARY KEY,
   "projectId" INTEGER NOT NULL REFERENCES projects(id),
-  "workOrderId" INTEGER NOT NULL,
+  "workOrderId" INTEGER,
   "vendorId" INTEGER NOT NULL,
   "itemName" TEXT NOT NULL,
   quantity INTEGER NOT NULL,
+  "unitPrice" REAL,
+  "poNumber" TEXT,
+  "quoteRef" TEXT,
+  "paymentTerms" TEXT,
+  "priceBasis" TEXT DEFAULT 'Ex Works',
+  "pnfInsurance" TEXT DEFAULT 'Vendor Scope',
+  "loadingScope" TEXT DEFAULT 'Kirashi Scope',
+  "warranty" TEXT DEFAULT '12 months',
+  "amountInWords" TEXT,
   "indentId" INTEGER,
-  status TEXT DEFAULT 'Pending' CHECK(status IN ('Pending', 'Approved', 'Dispatched', 'Delivered'))
+  status TEXT DEFAULT 'Pending' CHECK(status IN ('Pending', 'Approved', 'Dispatched', 'Delivered')),
+  "createdAt" TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6b. PO Line Items
+CREATE TABLE IF NOT EXISTS po_line_items (
+  id SERIAL PRIMARY KEY,
+  "poId" INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  sno INTEGER NOT NULL,
+  description TEXT NOT NULL,
+  uom TEXT NOT NULL DEFAULT 'No''s',
+  hsn TEXT,
+  quantity REAL NOT NULL,
+  "unitPrice" REAL NOT NULL
+);
+
+-- 6c. Company Profile
+CREATE TABLE IF NOT EXISTS company_profile (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT 'Kirashi Business Synergies Private Limited',
+  "tradeName" TEXT DEFAULT 'Kirashi',
+  address TEXT DEFAULT '6-148/1, Bowrampet, Gandimaisamma Dundigal, Medchal-Malkajgiri, Telangana 500043',
+  phone TEXT DEFAULT '+91 9030498359',
+  email TEXT DEFAULT 'info@kirashi.in',
+  gstin TEXT DEFAULT '36AAMCK2569F1Z9',
+  pan TEXT DEFAULT 'AAMCK2569F',
+  "stateCode" TEXT DEFAULT '36',
+  "fyStart" TEXT DEFAULT 'April'
 );
 
 -- 7. Activities
