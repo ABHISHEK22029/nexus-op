@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Sparkles, UploadCloud, Search, FileUp, Star, ExternalLink } from 'lucide-react';
+import { Plus, Sparkles, UploadCloud, Search, FileUp, Star, ExternalLink, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { useToast } from '../context/ToastContext';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const Vendors = () => {
   const navigate = useNavigate();
+  const toast = useToast();
   const { activeProject } = useProject();
   const [vendors, setVendors] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -15,12 +17,25 @@ const Vendors = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const fetchVendors = () => {
     if (!activeProject) return;
     axios.get(`${API}/vendors?projectId=${activeProject.id}`)
       .then(res => setVendors(res.data))
-      .catch(err => console.error("Failed to fetch vendors", err));
+      .catch(err => console.error("Failed to fetch vendors", err))
+      .finally(() => setLoaded(true));
+  };
+
+  const handleDelete = (e, vendor) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete vendor "${vendor.name}"? This cannot be undone.`)) return;
+    axios.delete(`${API}/vendors/${vendor.id}`)
+      .then(() => {
+        toast.success('Vendor deleted');
+        fetchVendors();
+      })
+      .catch(err => toast.error(err.response?.data?.error || err.message || 'Something went wrong'));
   };
 
   useEffect(() => {
@@ -46,9 +61,10 @@ const Vendors = () => {
       .then(() => {
         setFormData({ name: '', type: '' });
         setShowForm(false);
+        toast.success('Vendor added');
         fetchVendors();
       })
-      .catch(err => console.error(err));
+      .catch(err => toast.error(err.response?.data?.error || err.message || 'Something went wrong'));
   };
 
   const handleBulkUpload = (e) => {
@@ -83,10 +99,9 @@ const Vendors = () => {
                     {bulkLoading && <div className="absolute bottom-0 left-0 h-1 bg-indigo-500 animate-pulse w-full"></div>}
                 </div>
                 <button
-                  onClick={() => setShowForm(!showForm)}
+                  onClick={() => navigate('/vendors/new')}
                   className="btn-primary btn-sm"
                   style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  onClick={() => navigate('/vendors/new')}
                 >
                   <Plus size={16} /> Add Vendor
                 </button>
@@ -180,6 +195,7 @@ const Vendors = () => {
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor Name</th>
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Sector / Type</th>
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Performance</th>
+              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -203,10 +219,21 @@ const Vendors = () => {
                       </span>
                   </div>
                 </td>
+                <td className="px-6 py-4 text-right">
+                  <button
+                    onClick={(e) => handleDelete(e, vendor)}
+                    title="Delete vendor"
+                    className="text-gray-500 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </td>
               </tr>
             )) : (
               <tr>
-                <td colSpan="3" className="px-6 py-8 text-center text-gray-500">No vendors found.</td>
+                <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                  {loaded ? (vendors.length === 0 ? 'No vendors yet.' : 'No vendors found.') : 'Loading…'}
+                </td>
               </tr>
             )}
           </tbody>

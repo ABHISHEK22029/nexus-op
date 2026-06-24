@@ -1,3 +1,8 @@
+/* ⚠️ DEPRECATED — this script uses the SQLite API (db.run/db.all) and does NOT
+   work on PostgreSQL. Use `npm run seed` (seed_demo.cjs) instead. */
+console.error('\n⚠️  seed_edge_cases.js is deprecated (SQLite-only). Run `npm run seed` instead (seed_demo.cjs).\n');
+process.exit(1);
+
 const db = require('./db');
 const fs = require('fs');
 

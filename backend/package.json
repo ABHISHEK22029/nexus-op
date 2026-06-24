@@ -5,7 +5,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "seed:edge": "node seed_edge_cases.js"
+    "migrate": "node migrate.js",
+    "seed": "node seed_demo.cjs",
+    "test:e2e": "node e2e_test.cjs"
   },
   "keywords": [],
   "author": "",

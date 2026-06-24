@@ -1,3 +1,8 @@
+/* ⚠️ DEPRECATED — this script uses the SQLite API and does NOT work on PostgreSQL.
+   Use `npm run seed` (seed_demo.cjs) instead. */
+console.error('\n⚠️  seed_massive.js is deprecated (SQLite-only). Run `npm run seed` instead (seed_demo.cjs).\n');
+process.exit(1);
+
 const db = require('./db');
 
 const vendorTypes = ['Material Supply', 'Logistics', 'Software', 'Consulting'];

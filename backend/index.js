@@ -427,51 +427,98 @@ app.use('/grn', grnRouter);
    RA BILLS — State machine
    ══════════════════════════════════════════════════════════ */
 app.get('/bills', billController.getBills);
+app.get('/bills/:id', billController.getBillById);
 app.post('/bills/generate', async (req, res) => {
   await billController.generateRABill(req, res);
 });
 
-app.patch('/bills/:id/submit', async (req, res) => {
+// Status lifecycle with valid-transition guard (Zoho-style):
+// Draft → Under Review → Approved → Paid  (Reject from Draft/Under Review)
+const BILL_TRANSITIONS = {
+  submit:  { from: ['Draft'],                 to: 'Under Review', type: 'BILL_SUBMITTED', verb: 'submitted for review' },
+  approve: { from: ['Under Review'],          to: 'Approved',     type: 'BILL_APPROVED',  verb: 'approved' },
+  pay:     { from: ['Approved'],              to: 'Paid',         type: 'BILL_PAID',      verb: 'paid' },
+  reject:  { from: ['Draft', 'Under Review'], to: 'Rejected',     type: 'BILL_REJECTED',  verb: 'rejected' },
+};
+
+function billTransition(action) {
+  return async (req, res) => {
+    const tr = BILL_TRANSITIONS[action];
+    try {
+      const billResult = await db.query('SELECT * FROM bills WHERE id = $1', [req.params.id]);
+      const bill = billResult.rows[0];
+      if (!bill) return res.status(404).json({ error: 'Bill not found' });
+      if (!tr.from.includes(bill.status)) {
+        return res.status(409).json({ error: `Cannot ${action} a bill in '${bill.status}' state.` });
+      }
+      await db.query('UPDATE bills SET status = $1, updated_at = NOW() WHERE id = $2', [tr.to, req.params.id]);
+      const ref = bill.bill_number || `RA-${String(bill.id).padStart(4, '0')}`;
+      const tail = action === 'pay' ? ` (₹${Number(bill.netAmount || 0).toLocaleString('en-IN')})` : '';
+      await logActivity(bill.projectId, tr.type, `Invoice ${ref} ${tr.verb}${tail}`);
+      res.json({ success: true, status: tr.to });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  };
+}
+
+app.patch('/bills/:id/submit', billTransition('submit'));
+app.patch('/bills/:id/approve', billTransition('approve'));
+app.patch('/bills/:id/pay', billTransition('pay'));
+app.patch('/bills/:id/reject', billTransition('reject'));
+app.delete('/bills/:id', async (req, res) => {
   try {
-    const billResult = await db.query('SELECT * FROM bills WHERE id = $1', [req.params.id]);
-    const bill = billResult.rows[0];
-    if (!bill) return res.status(404).json({ error: 'Bill not found' });
-    await db.query(`UPDATE bills SET status = 'Under Review' WHERE id = $1`, [req.params.id]);
-    await logActivity(bill.projectId, 'BILL_SUBMITTED',
-      `Invoice INV-${String(bill.id).padStart(5, '0')} submitted for review`);
-    res.json({ success: true, status: 'Under Review' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const r = await db.query('SELECT status FROM bills WHERE id = $1', [req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'Bill not found' });
+    if (!['Draft', 'Rejected'].includes(r.rows[0].status))
+      return res.status(409).json({ error: `Only Draft or Rejected bills can be deleted (this is '${r.rows[0].status}').` });
+    await db.query('DELETE FROM bills WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/bills/:id/approve', async (req, res) => {
-  try {
-    const billResult = await db.query('SELECT * FROM bills WHERE id = $1', [req.params.id]);
-    const bill = billResult.rows[0];
-    if (!bill) return res.status(404).json({ error: 'Bill not found' });
-    await db.query(`UPDATE bills SET status = 'Approved' WHERE id = $1`, [req.params.id]);
-    await logActivity(bill.projectId, 'BILL_APPROVED',
-      `Invoice INV-${String(bill.id).padStart(5, '0')} approved`);
-    res.json({ success: true, status: 'Approved' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+/* ══════════════════════════════════════════════════════════
+   GENERIC UPDATE / DELETE  (Phase 3c — completes CRUD)
+   ══════════════════════════════════════════════════════════ */
+function registerCrud(route, table, cols, logType) {
+  // UPDATE (partial) — only whitelisted columns
+  app.patch(`/${route}/:id`, async (req, res) => {
+    const sets = [], vals = [];
+    let i = 1;
+    for (const c of cols) {
+      if (req.body[c] !== undefined) { sets.push(`"${c}" = $${i++}`); vals.push(req.body[c]); }
+    }
+    if (!sets.length) return res.status(400).json({ error: 'No updatable fields provided' });
+    vals.push(req.params.id);
+    try {
+      const r = await db.query(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`, vals);
+      if (!r.rowCount) return res.status(404).json({ error: 'Record not found' });
+      if (logType) await logActivity(r.rows[0].projectId || null, logType, `${route} #${req.params.id} updated`);
+      res.json(r.rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+  // DELETE
+  app.delete(`/${route}/:id`, async (req, res) => {
+    try {
+      const r = await db.query(`DELETE FROM ${table} WHERE id = $1 RETURNING id, "projectId"`, [req.params.id]);
+      if (!r.rowCount) return res.status(404).json({ error: 'Record not found' });
+      if (logType) await logActivity(r.rows[0].projectId || null, logType, `${route} #${req.params.id} deleted`);
+      res.json({ success: true });
+    } catch (err) {
+      // friendly message for FK violations
+      if (err.code === '23503') return res.status(409).json({ error: 'Cannot delete — other records depend on this. Remove them first.' });
+      res.status(500).json({ error: err.message });
+    }
+  });
+}
 
-app.patch('/bills/:id/pay', async (req, res) => {
-  try {
-    const billResult = await db.query('SELECT * FROM bills WHERE id = $1', [req.params.id]);
-    const bill = billResult.rows[0];
-    if (!bill) return res.status(404).json({ error: 'Bill not found' });
-    await db.query(`UPDATE bills SET status = 'Paid' WHERE id = $1`, [req.params.id]);
-    await logActivity(bill.projectId, 'BILL_PAID',
-      `Payment released for INV-${String(bill.id).padStart(5, '0')} (₹${bill.netAmount?.toLocaleString()})`);
-    res.json({ success: true, status: 'Paid' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+registerCrud('projects', 'projects', ['name', 'clientName', 'type', 'startDate', 'endDate', 'status'], 'PROJECT_UPDATED');
+registerCrud('vendors', 'vendors', ['name', 'type', 'pan', 'gstin', 'class', 'capability_tags', 'rating', 'status', 'address', 'contactName', 'contactPhone', 'contactEmail'], 'VENDOR_UPDATED');
+registerCrud('work-orders', 'work_orders', ['name', 'vendorId', 'boqId', 'startDate', 'endDate', 'contractValue', 'status'], 'WO_UPDATED');
+registerCrud('boq', 'boq_items', ['itemCode', 'description', 'unit', 'estimatedQuantity', 'rate'], 'BOQ_UPDATED');
+registerCrud('indent', 'indents', ['workOrderId', 'boqId', 'requestedQuantity', 'requiredDate', 'chainage', 'status'], 'INDENT_UPDATED');
+registerCrud('mb', 'measurement_book', ['boqId', 'workOrderId', 'chainage', 'length', 'width', 'depth', 'measuredQuantity'], 'MB_UPDATED');
+registerCrud('grn', 'grn', ['vehicleNumber', 'batchNumber', 'chainage', 'receivedQuantity'], 'GRN_UPDATED');
 
 /* ══════════════════════════════════════════════════════════
    ACTIVITIES

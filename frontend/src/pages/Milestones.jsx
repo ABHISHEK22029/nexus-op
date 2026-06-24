@@ -1,16 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Flag, Activity, CheckCircle2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { useToast } from '../context/ToastContext';
 
 const Milestones = () => {
+  const toast = useToast();
   const { activeProject, workOrders } = useProject();
   const [milestones, setMilestones] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('${import.meta.env.VITE_API_URL || "http://localhost:5000"}/milestones')
+    setLoading(true);
+    fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/milestones`)
       .then(res => res.json())
       .then(data => setMilestones(data))
-      .catch(err => console.error(err));
+      .catch(err => {
+        console.error(err);
+        toast.error(err.message || 'Something went wrong');
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   // Map milestones to active project's work orders
@@ -28,7 +36,15 @@ const Milestones = () => {
       </div>
 
       <div className="grid gap-6">
-        {workOrders.map(wo => {
+        {loading ? (
+          <div className="p-8 text-center border border-white/5 bg-[#111113] rounded-xl text-gray-500">
+            Loading…
+          </div>
+        ) : activeMilestones.length === 0 ? (
+          <div className="p-8 text-center border border-white/5 bg-[#111113] rounded-xl text-gray-500">
+            No milestones yet.
+          </div>
+        ) : workOrders.map(wo => {
            const woMilestones = activeMilestones.filter(m => m.workOrderId === wo.id);
            if(woMilestones.length === 0) return null;
            return (

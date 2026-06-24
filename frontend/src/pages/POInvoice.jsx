@@ -115,7 +115,7 @@ const POInvoice = () => {
             </div>
             <div className="mt-3 text-xs">
               <span className="text-gray-500 uppercase tracking-wider font-bold text-[10px]">Project Scope</span><br/>
-              <strong style={{ color: 'hsl(22, 70%, 35%)', fontSize: '13px' }}>{po.projectName}</strong><br/>
+              <strong style={{ color: '#111', fontSize: '13px' }}>{po.projectName}</strong><br/>
               <span className="text-gray-600">Client: {po.clientName}</span>
             </div>
           </div>

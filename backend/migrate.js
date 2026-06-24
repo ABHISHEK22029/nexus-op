@@ -1,6 +1,13 @@
+require('dotenv').config();
 const { Client } = require('pg');
+
+if (!process.env.DATABASE_URL) {
+  console.error('✖ DATABASE_URL is not set. Create backend/.env with DATABASE_URL=postgresql://… before running migrations.');
+  process.exit(1);
+}
+
 const client = new Client({
-  connectionString: 'postgresql://postgres.bhbtqimqahymkukhgxqs:NexusOp%402026%21@aws-1-ap-south-1.pooler.supabase.com:5432/postgres',
+  connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 

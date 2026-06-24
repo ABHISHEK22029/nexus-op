@@ -2,17 +2,25 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Database, Package, Search, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { useToast } from '../context/ToastContext';
 
 const Inventory = () => {
+  const toast = useToast();
   const { activeProject } = useProject();
   const [inventory, setInventory] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!activeProject) return;
+    setLoading(true);
     axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/inventory?projectId=${activeProject.id}`)
       .then(res => setInventory(res.data))
-      .catch(err => console.error("Failed to fetch inventory", err));
+      .catch(err => {
+        console.error("Failed to fetch inventory", err);
+        toast.error(err.response?.data?.error || err.message || 'Something went wrong');
+      })
+      .finally(() => setLoading(false));
   }, [activeProject]);
 
   const filteredInventory = inventory.filter(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -43,7 +51,11 @@ const Inventory = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {filteredInventory.length > 0 ? filteredInventory.map((item) => {
+        {loading ? (
+          <div className="col-span-full py-12 text-center text-gray-500 bg-[#111113] border border-white/5 rounded-xl">
+            Loading…
+          </div>
+        ) : filteredInventory.length > 0 ? filteredInventory.map((item) => {
           const isLowStock = item.status === 'Near threshold';
           return (
           <div key={item.itemName} className={`bg-[#111113] border rounded-xl p-5 transition-colors group relative overflow-hidden \${isLowStock ? 'border-red-500/30 hover:border-red-500/50 hover:bg-red-500/[0.02]' : 'border-white/5 hover:border-amber-500/30 hover:bg-amber-500/[0.02]'}`}>
@@ -84,7 +96,7 @@ const Inventory = () => {
           </div>
         )}) : (
           <div className="col-span-full py-12 text-center text-gray-500 bg-[#111113] border border-white/5 rounded-xl">
-            No items in inventory. Receive a PO to add stock.
+            {inventory.length === 0 ? 'No inventory items yet.' : 'No items match your search.'}
           </div>
         )}
       </div>

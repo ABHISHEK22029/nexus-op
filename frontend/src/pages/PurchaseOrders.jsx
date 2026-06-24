@@ -3,12 +3,14 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { useToast } from '../context/ToastContext';
 import { numberToWords } from '../utils/numberToWords';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const PurchaseOrders = () => {
   const navigate = useNavigate();
+  const toast = useToast();
   const { activeProject } = useProject();
   const [pos, setPos] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -89,11 +91,11 @@ const PurchaseOrders = () => {
     e.preventDefault();
     const vendor = vendors.find(v => v.id == formData.vendorId);
     if (!vendor?.gstin) {
-      alert("Selected vendor must have a valid GSTIN. Please update vendor details first.");
+      toast.error("Selected vendor must have a valid GSTIN. Please update vendor details first.");
       return;
     }
     if (items.some(i => !i.description || i.quantity <= 0 || i.unitPrice <= 0)) {
-      alert("Please fill all line items correctly (Description, Qty > 0, Price > 0).");
+      toast.error("Please fill all line items correctly (Description, Qty > 0, Price > 0).");
       return;
     }
 
@@ -117,19 +119,20 @@ const PurchaseOrders = () => {
       setItems([{ sno: 1, description: '', uom: "No's", hsn: '', quantity: 1, unitPrice: 0 }]);
       setShowForm(false);
       fetchData();
+      toast.success('Purchase Order created');
     } catch (err) {
       console.error(err);
-      alert("Failed to create PO");
+      toast.error(err.response?.data?.error || "Failed to create PO");
     }
   };
 
   const handleAction = (poId, action, extraPayload = {}) => {
     const endpoint = action === 'grn' ? 'grn' : `po/${poId}/${action}`;
     const payload = action === 'grn' ? { poId, selectedAction: action, ...extraPayload } : {};
-    
+
     axios[action === 'grn' ? 'post' : 'patch'](`${API}/${endpoint}`, payload)
-      .then(() => fetchData())
-      .catch(err => alert(`Failed to ${action} PO: ` + (err.response?.data?.error || err.message)));
+      .then(() => { fetchData(); toast.success(`PO ${action === 'grn' ? 'received' : action + 'd'}`); })
+      .catch(err => toast.error(`Failed to ${action} PO: ` + (err.response?.data?.error || err.message)));
   };
 
   const StatusBadge = ({ status }) => {

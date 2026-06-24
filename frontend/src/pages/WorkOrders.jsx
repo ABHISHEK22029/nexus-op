@@ -1,32 +1,73 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Briefcase, Plus } from 'lucide-react';
+import { Briefcase, Plus, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { useToast } from '../context/ToastContext';
+
+const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const WorkOrders = () => {
   const { activeProject, workOrders } = useProject();
+  const toast = useToast();
   const [vendors, setVendors] = useState([]);
   const [boqs, setBoqs] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [localWorkOrders, setLocalWorkOrders] = useState([]);
   const [formData, setFormData] = useState({
      vendorId: '', name: '', boqId: '', startDate: '', endDate: '', contractValue: ''
   });
 
+  // keep local list in sync with context-provided work orders
+  useEffect(() => {
+    setLocalWorkOrders(workOrders || []);
+  }, [workOrders]);
+
+  const fetchWorkOrders = async () => {
+    if (!activeProject) return;
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API}/work-orders?projectId=${activeProject.id}`);
+      setLocalWorkOrders(res.data);
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!activeProject) return;
-    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/vendors?projectId=${activeProject.id}`).then(res => setVendors(res.data));
-    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/boq?projectId=${activeProject.id}`).then(res => setBoqs(res.data));
+    axios.get(`${API}/vendors?projectId=${activeProject.id}`).then(res => setVendors(res.data));
+    axios.get(`${API}/boq?projectId=${activeProject.id}`).then(res => setBoqs(res.data));
   }, [activeProject]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!activeProject) return;
+    if (!formData.name.trim() || !formData.vendorId) {
+      toast.error('Directive Name and an Authorized Subcontractor are required.');
+      return;
+    }
     try {
-      await axios.post('${import.meta.env.VITE_API_URL || "http://localhost:5000"}/work-orders', { ...formData, projectId: activeProject.id });
-      // Minor manual refresh hack by toggling activeProject or we simply reload the whole page to fetch Context wrapper again cleanly
-      window.location.reload(); 
+      await axios.post(`${API}/work-orders`, { ...formData, projectId: activeProject.id });
+      setShowForm(false);
+      setFormData({ vendorId: '', name: '', boqId: '', startDate: '', endDate: '', contractValue: '' });
+      await fetchWorkOrders();
+      toast.success('Work order assigned successfully.');
     } catch (err) {
-      alert("Error allocating Work Order");
+      toast.error(err.response?.data?.error || err.message || 'Something went wrong');
+    }
+  };
+
+  const handleDelete = async (w) => {
+    if (!window.confirm('Delete this work order?')) return;
+    try {
+      await axios.delete(`${API}/work-orders/${w.id}`);
+      await fetchWorkOrders();
+      toast.success('Work order deleted.');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Something went wrong');
     }
   };
 
@@ -102,10 +143,20 @@ const WorkOrders = () => {
               <th className="px-6 py-4 font-medium">Vendor Target</th>
               <th className="px-6 py-4 font-medium">Value Envelope</th>
               <th className="px-6 py-4 font-medium">Progress Control</th>
+              <th className="px-6 py-4 font-medium">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {workOrders.map((w) => (
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-gray-500">Loading…</td>
+              </tr>
+            ) : localWorkOrders.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-gray-500">No work orders yet</td>
+              </tr>
+            ) : (
+              localWorkOrders.map((w) => (
               <tr key={w.id} className="hover:bg-white/[0.02] transition-colors text-gray-300">
                 <td className="px-6 py-4 font-bold text-amber-400">WO-{w.id.toString().padStart(4, '0')}</td>
                 <td className="px-6 py-4 font-medium text-white">{w.name}</td>
@@ -114,8 +165,14 @@ const WorkOrders = () => {
                 <td className="px-6 py-4">
                   <span className={`px-2 py-1 rounded text-xs ${w.status === 'In Progress' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>{w.status}</span>
                 </td>
+                <td className="px-6 py-4">
+                  <button onClick={() => handleDelete(w)} title="Delete work order" className="text-gray-500 hover:text-red-400 transition-colors">
+                    <Trash2 size={15} />
+                  </button>
+                </td>
               </tr>
-            ))}
+              ))
+            )}
           </tbody>
         </table>
       </div>

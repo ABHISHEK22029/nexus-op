@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
   const { activeProject, fetchProjects } = useProject();
   const [loading, setLoading] = useState(false);
@@ -46,7 +48,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
 
     if (activeProject) {
       // Fetch vendors
-      fetch(`http://localhost:5000/vendors?projectId=${activeProject.id}`)
+      fetch(`${API}/vendors?projectId=${activeProject.id}`)
         .then(res => res.json())
         .then(data => {
           setVendors(data);
@@ -54,7 +56,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
         });
 
       // Fetch work orders
-      fetch(`http://localhost:5000/work-orders?projectId=${activeProject.id}`)
+      fetch(`${API}/work-orders?projectId=${activeProject.id}`)
         .then(res => res.json())
         .then(data => {
           setWorkOrders(data);
@@ -65,7 +67,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
         });
 
       // Fetch BOQ items
-      fetch(`http://localhost:5000/boq?projectId=${activeProject.id}`)
+      fetch(`${API}/boq?projectId=${activeProject.id}`)
         .then(res => res.json())
         .then(data => {
           setBoqItems(data);
@@ -86,7 +88,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
 
     try {
       if (type === 'project') {
-        url = 'http://localhost:5000/projects';
+        url = `${API}/projects`;
         body = {
           name: projName,
           clientName: projClient,
@@ -97,7 +99,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
         };
         if (!projName || !projClient) throw new Error('Name and Client are required');
       } else if (type === 'vendor') {
-        url = 'http://localhost:5000/vendors';
+        url = `${API}/vendors`;
         body = {
           projectId: activeProject?.id || null,
           name: vendorName,
@@ -109,7 +111,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
         };
         if (!vendorName) throw new Error('Vendor Name is required');
       } else if (type === 'indent') {
-        url = 'http://localhost:5000/indent';
+        url = `${API}/indent`;
         body = {
           projectId: activeProject?.id,
           workOrderId: parseInt(indentWO),

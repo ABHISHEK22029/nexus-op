@@ -23,6 +23,7 @@ import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
 import GetStarted from './pages/GetStarted';
 import POInvoice from './pages/POInvoice';
+import RABillInvoice from './pages/RABillInvoice';
 import BetaWelcome from './pages/BetaWelcome';
 import BetaOnboarding from './pages/BetaOnboarding';
 import { RoleProvider, useRole } from './context/RoleContext';
@@ -30,6 +31,7 @@ import { ProjectProvider, useProject } from './context/ProjectContext';
 import { useTheme } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { UiConfigProvider } from './context/UiConfigContext';
+import { ToastProvider } from './context/ToastContext';
 import { UserCircle, Settings, Sun, Moon, Plus } from 'lucide-react';
 import QuickCreateModal from './components/QuickCreateModal';
 
@@ -322,30 +324,50 @@ const AppRoutes = () => {
       <Route path="/inventory"         element={<AppLayout><Inventory /></AppLayout>} />
       <Route path="/grn"               element={<AppLayout><GRN /></AppLayout>} />
       <Route path="/bills"             element={<AppLayout><Bills /></AppLayout>} />
+      <Route path="/bills/:id"         element={<RABillInvoice />} />
       <Route path="/activity"          element={<AppLayout><ActivityLog /></AppLayout>} />
       <Route path="/flow"              element={<AppLayout><ProcessFlow /></AppLayout>} />
       <Route path="/boq"               element={<AppLayout><BOQ /></AppLayout>} />
       <Route path="/indent"            element={<AppLayout><Indent /></AppLayout>} />
       <Route path="/mb"                element={<AppLayout><MeasurementBook /></AppLayout>} />
       <Route path="/milestones"        element={<AppLayout><Milestones /></AppLayout>} />
+      <Route path="*"                  element={<NotFound />} />
     </Routes>
+  );
+};
+
+/* ─── 404 ───────────────────────────────────────────────── */
+const NotFound = () => {
+  const loc = useLocation();
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: 'var(--bg-deep, #0a0f1a)', color: 'var(--text-primary, #e6eaf2)', padding: 24, textAlign: 'center' }}>
+      <div style={{ fontFamily: 'monospace', fontSize: 72, fontWeight: 800, color: 'var(--brand-amber, #f97316)', lineHeight: 1 }}>404</div>
+      <div style={{ fontSize: 20, fontWeight: 600 }}>Page not found</div>
+      <div style={{ opacity: .6, fontSize: 14 }}>No route matches <code>{loc.pathname}</code></div>
+      <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+        <a href="/dashboard" style={{ background: 'var(--brand-amber, #f97316)', color: '#0a0f1a', padding: '10px 22px', borderRadius: 8, fontWeight: 700, textDecoration: 'none' }}>Go to Dashboard</a>
+        <a href="/" style={{ border: '1px solid var(--border-default, #2a3346)', color: 'inherit', padding: '10px 22px', borderRadius: 8, fontWeight: 600, textDecoration: 'none' }}>Home</a>
+      </div>
+    </div>
   );
 };
 
 /* ─── Root App ──────────────────────────────────────────── */
 function App() {
   return (
-    <AuthProvider>
-      <UiConfigProvider>
-        <ProjectProvider>
-          <RoleProvider>
-            <Router>
-              <AppRoutes />
-            </Router>
-          </RoleProvider>
-        </ProjectProvider>
-      </UiConfigProvider>
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <UiConfigProvider>
+          <ProjectProvider>
+            <RoleProvider>
+              <Router>
+                <AppRoutes />
+              </Router>
+            </RoleProvider>
+          </ProjectProvider>
+        </UiConfigProvider>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 

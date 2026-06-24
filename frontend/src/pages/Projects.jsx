@@ -1,30 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { FolderGit2, Plus } from 'lucide-react';
+import { FolderGit2, Plus, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { useToast } from '../context/ToastContext';
 
 const Projects = () => {
   const { projects, fetchProjects, setActiveProject } = useProject();
+  const toast = useToast();
   const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     name: '', clientName: '', type: 'construction', startDate: '', endDate: ''
   });
 
+  useEffect(() => {
+    setLoading(true);
+    fetchProjects();
+    // projects arrive asynchronously via context; clear loading shortly after trigger
+    const t = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(t);
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.name.trim() || !formData.clientName.trim()) {
+      toast.error('Project Name and Client Authority are required.');
+      return;
+    }
     try {
-      await axios.post('${import.meta.env.VITE_API_URL || "http://localhost:5000"}/projects', formData);
+      await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/projects`, formData);
       setShowForm(false);
       setFormData({ name: '', clientName: '', type: 'construction', startDate: '', endDate: '' });
       fetchProjects(); // Live reload context
+      toast.success('Project created successfully.');
     } catch (err) {
-      alert("Error generating Project");
+      toast.error(err.response?.data?.error || err.message || 'Something went wrong');
+    }
+  };
+
+  const handleDelete = async (p) => {
+    if (!window.confirm('Delete this project?')) return;
+    try {
+      await axios.delete(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/projects/${p.id}`);
+      fetchProjects();
+      toast.success('Project deleted.');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Something went wrong');
     }
   };
 
   const jumpToProject = (proj) => {
       setActiveProject(proj);
-      alert(`Switched Global Context to ${proj.name}`);
+      toast.success(`Switched Global Context to ${proj.name}`);
   };
 
   return (
@@ -98,7 +125,16 @@ const Projects = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {projects.map((p) => (
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-gray-500">Loading…</td>
+              </tr>
+            ) : projects.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-gray-500">No projects yet</td>
+              </tr>
+            ) : (
+              projects.map((p) => (
               <tr key={p.id} className="hover:bg-white/[0.02] transition-colors text-gray-300">
                 <td className="px-6 py-4 font-medium text-indigo-400">PRJ-{p.id.toString().padStart(4, '0')}</td>
                 <td className="px-6 py-4 font-medium text-white">{p.name}</td>
@@ -108,10 +144,16 @@ const Projects = () => {
                   <span className="px-2 py-1 rounded text-xs bg-emerald-500/20 text-emerald-400">{p.status}</span>
                 </td>
                 <td className="px-6 py-4">
-                   <button onClick={() => jumpToProject(p)} className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Jump &rarr;</button>
+                   <div className="flex items-center gap-3">
+                     <button onClick={() => jumpToProject(p)} className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Jump &rarr;</button>
+                     <button onClick={() => handleDelete(p)} title="Delete project" className="text-gray-500 hover:text-red-400 transition-colors">
+                       <Trash2 size={15} />
+                     </button>
+                   </div>
                 </td>
               </tr>
-            ))}
+              ))
+            )}
           </tbody>
         </table>
       </div>

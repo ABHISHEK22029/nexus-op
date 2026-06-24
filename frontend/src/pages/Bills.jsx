@@ -1,13 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Receipt, Plus, ChevronDown, ChevronUp, CheckCircle, Clock, Banknote, Shield } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Receipt, Plus, ChevronDown, ChevronUp, CheckCircle, Clock, Banknote, Shield, FileText, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { useToast } from '../context/ToastContext';
 
 const Bills = () => {
+  const navigate = useNavigate();
+  const toast = useToast();
   const { activeProject, workOrders } = useProject();
   const [bills, setBills] = useState([]);
   const [newWOId, setNewWOId] = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const [showOpts, setShowOpts] = useState(false);
+  const [opts, setOpts] = useState({
+    gstRate: 18, tdsSection: '194C', tdsRate: 2, retentionPct: 5,
+    gstTdsRate: 0, labourCessRate: 0, advanceRecovery: 0, otherDeductions: 0, deductionReason: '',
+  });
+  const setOpt = (k, v) => setOpts(o => ({ ...o, [k]: v }));
 
   const fetchData = async () => {
     if (!activeProject) return;
@@ -25,23 +35,41 @@ const Bills = () => {
     e.preventDefault();
     if (!activeProject || !newWOId) return;
     try {
-        await axios.post('${import.meta.env.VITE_API_URL || "http://localhost:5000"}/bills/generate', { 
-            projectId: activeProject.id, 
-            workOrderId: newWOId 
+        await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/bills/generate`, {
+            projectId: activeProject.id,
+            workOrderId: newWOId,
+            gstRate: +opts.gstRate, tdsSection: opts.tdsSection, tdsRate: +opts.tdsRate,
+            retentionPct: +opts.retentionPct, gstTdsRate: +opts.gstTdsRate, labourCessRate: +opts.labourCessRate,
+            advanceRecovery: +opts.advanceRecovery, otherDeductions: +opts.otherDeductions,
+            deductionReason: opts.deductionReason || null,
         });
         setNewWOId('');
+        toast.success('RA Bill generated');
         fetchData();
     } catch(err) {
-        alert(err.response?.data?.error || "Error generating bill");
+        toast.error(err.response?.data?.error || err.message || 'Something went wrong');
     }
   };
 
+  const STATUS_LABEL = { submit: 'submitted', approve: 'approved', pay: 'paid', reject: 'rejected' };
   const handleStatusChange = async (id, action) => {
     try {
         await axios.patch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/bills/${id}/${action}`);
+        toast.success(`Bill ${STATUS_LABEL[action] || action}`);
         fetchData();
     } catch(err) {
-        alert(err.response?.data?.error || "Error updating status");
+        toast.error(err.response?.data?.error || err.message || 'Something went wrong');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this bill? This cannot be undone.')) return;
+    try {
+        await axios.delete(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/bills/${id}`);
+        toast.success('Bill deleted');
+        fetchData();
+    } catch(err) {
+        toast.error(err.response?.data?.error || err.message || 'Something went wrong');
     }
   };
 
@@ -90,7 +118,13 @@ const Bills = () => {
       </div>
 
       <div className="bg-[#111113] border border-white/5 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Execute Invoice Run</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Execute Invoice Run</h2>
+          <button type="button" onClick={() => setShowOpts(s => !s)}
+            className="text-xs text-amber-400 hover:text-amber-300 font-medium">
+            {showOpts ? 'Hide billing options ▲' : 'Billing options (GST / TDS / deductions) ▼'}
+          </button>
+        </div>
         <form onSubmit={handleGenerate} className="flex gap-4 items-end flex-wrap">
           <div className="flex-[2] min-w-[250px]">
              <label className="block text-xs font-medium text-gray-500 mb-1">Target Work Order</label>
@@ -103,6 +137,38 @@ const Bills = () => {
             <Plus size={16} /> Compute Draft Bill
           </button>
         </form>
+
+        {showOpts && (
+          <div className="mt-5 pt-5 border-t border-white/5">
+            <p className="text-xs text-gray-500 mb-3">All values are editable — leave a rate at 0 to skip that head. Optional heads (GST-TDS, Labour Cess) are off (0) by default.</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { k: 'gstRate', label: 'GST Rate %', step: '0.01' },
+                { k: 'tdsSection', label: 'TDS Section', text: true },
+                { k: 'tdsRate', label: 'TDS Rate %', step: '0.01' },
+                { k: 'retentionPct', label: 'Retention %', step: '0.01' },
+                { k: 'gstTdsRate', label: 'TDS under GST % (optional)', step: '0.01' },
+                { k: 'labourCessRate', label: 'Labour Cess % (optional)', step: '0.01' },
+                { k: 'advanceRecovery', label: 'Advance Recovery ₹', step: '1' },
+                { k: 'otherDeductions', label: 'Other Deductions ₹', step: '1' },
+              ].map(f => (
+                <div key={f.k}>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{f.label}</label>
+                  <input
+                    type={f.text ? 'text' : 'number'} step={f.step}
+                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+                    value={opts[f.k]} onChange={e => setOpt(f.k, e.target.value)} />
+                </div>
+              ))}
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Other Deduction Reason</label>
+                <input type="text" placeholder="e.g. quality penalty, debit note…"
+                  className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+                  value={opts.deductionReason} onChange={e => setOpt('deductionReason', e.target.value)} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -143,6 +209,15 @@ const Bills = () => {
                           <p className="text-xs text-gray-500 mb-1">Net Payout</p>
                           <p className="font-bold text-red-400">₹{b.netAmount?.toLocaleString()}</p>
                       </div>
+                      {(b.status === 'Draft' || b.status === 'Rejected') && (
+                          <button
+                              onClick={(e) => { e.stopPropagation(); handleDelete(b.id); }}
+                              title="Delete bill"
+                              className="text-gray-500 hover:text-red-400 transition-colors"
+                          >
+                              <Trash2 size={18} />
+                          </button>
+                      )}
                       <div className="text-gray-500">
                           {expandedId === b.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                       </div>
@@ -155,28 +230,41 @@ const Bills = () => {
                           <Shield size={16} className="text-indigo-400" />
                           Mathematical Breakdown
                       </h3>
-                      <div className="grid grid-cols-4 gap-4 mb-6">
-                          <div className="p-4 rounded-lg bg-[#111113] border border-white/5">
-                              <p className="text-xs text-gray-500 mb-1">Gross Amount</p>
-                              <p className="font-semibold text-gray-200">₹{b.grossAmount?.toLocaleString()}</p>
-                              <p className="text-xs text-gray-600 mt-1">({b.billedQuantity} Qty Billed)</p>
+                      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6">
+                          <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
+                              <p className="text-xs text-gray-500 mb-1">Taxable Value</p>
+                              <p className="font-semibold text-gray-200">₹{(b.sub_total ?? b.grossAmount)?.toLocaleString()}</p>
+                              <p className="text-xs text-gray-600 mt-1">({b.billedQuantity} qty)</p>
                           </div>
-                          <div className="p-4 rounded-lg bg-[#111113] border border-white/5">
-                              <p className="text-xs text-gray-500 mb-1">TDS (2%)</p>
+                          <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
+                              <p className="text-xs text-gray-500 mb-1">GST ({b.gst_rate ?? 18}%)</p>
+                              <p className="font-semibold text-gray-300">+ ₹{(b.gst_total ?? 0)?.toLocaleString()}</p>
+                              <p className="text-xs text-gray-600 mt-1">{(b.cgst > 0) ? 'CGST+SGST' : 'IGST'}</p>
+                          </div>
+                          <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
+                              <p className="text-xs text-gray-500 mb-1">TDS ({b.tds_rate ?? 2}%)</p>
                               <p className="font-semibold text-red-400">- ₹{b.tds?.toLocaleString()}</p>
                           </div>
-                          <div className="p-4 rounded-lg bg-[#111113] border border-white/5">
-                              <p className="text-xs text-gray-500 mb-1">Retention (5%)</p>
+                          <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
+                              <p className="text-xs text-gray-500 mb-1">Retention ({b.retention_pct ?? 5}%)</p>
                               <p className="font-semibold text-red-400">- ₹{b.retention?.toLocaleString()}</p>
                           </div>
-                          <div className="p-4 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
-                              <p className="text-xs text-indigo-300 mb-1">Net Payable Amount</p>
+                          <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
+                              <p className="text-xs text-gray-500 mb-1">Other Deductions</p>
+                              <p className="font-semibold text-red-400">- ₹{((b.gst_tds ?? 0) + (b.labour_cess ?? 0) + (b.advance_recovery ?? 0) + (b.other_deductions ?? 0)).toLocaleString()}</p>
+                              <p className="text-xs text-gray-600 mt-1">GST-TDS · cess · adv · other</p>
+                          </div>
+                          <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                              <p className="text-xs text-indigo-300 mb-1">Net Payable</p>
                               <p className="font-bold text-indigo-400 text-lg">₹{b.netAmount?.toLocaleString()}</p>
                           </div>
                       </div>
 
-                      <div className="flex items-center gap-3 pt-4 border-t border-white/5">
-                          <span className="text-xs text-gray-500 mr-2">Workflow Actions:</span>
+                      <div className="flex items-center gap-3 pt-4 border-t border-white/5 flex-wrap">
+                          <button onClick={() => navigate(`/bills/${b.id}`)} className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5">
+                              <FileText size={14} /> View Invoice
+                          </button>
+                          <span className="text-xs text-gray-500 mr-2">Workflow:</span>
                           {b.status === 'Draft' && (
                               <button onClick={() => handleStatusChange(b.id, 'submit')} className="btn-secondary text-xs px-3 py-1.5">
                                   Submit for Review
