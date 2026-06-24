@@ -222,85 +222,86 @@ export default function RABillInvoice() {
   );
 }
 
-/* ── refined professional BLACK & WHITE invoice ───────────── */
+/* ── classic black & white professional TAX INVOICE ───────── */
 const RA_CSS = `
-.ra-screen{min-height:100vh;background:#e9e9ec;padding:24px 16px 60px;font-family:'Inter',system-ui,sans-serif;}
+.ra-screen{min-height:100vh;background:#d9d9dd;padding:24px 16px 60px;font-family:'Inter',Arial,system-ui,sans-serif;}
 .ra-toolbar{max-width:210mm;margin:0 auto 16px;display:flex;justify-content:space-between;align-items:center;}
-.ra-toolbar button{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #cfcfd6;border-radius:7px;padding:9px 16px;font-size:13px;font-weight:600;color:#1a1a1a;cursor:pointer;transition:.15s;}
-.ra-toolbar button:hover{border-color:#4b5563;}
-.ra-toolbar button.primary{background:#4b5563;color:#fff;border-color:#4b5563;}
+.ra-toolbar button{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #bbb;border-radius:7px;padding:9px 16px;font-size:13px;font-weight:600;color:#1a1a1a;cursor:pointer;transition:.15s;}
+.ra-toolbar button:hover{border-color:#000;}
+.ra-toolbar button.primary{background:#1a1a1a;color:#fff;border-color:#1a1a1a;}
 .ra-tb-right{display:flex;gap:10px;align-items:center;}
-.ra-badge{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:5px 12px;border-radius:30px;border:1px solid #cfcfd6;color:#444;background:#fff;}
-.st-Draft{color:#7a5b00;border-color:#e3c97a;background:#fdf6e3;}
-.st-UnderReview{color:#1d4ed8;border-color:#9db8f5;background:#eef3ff;}
-.st-Approved{color:#0f7a3d;border-color:#9bd6b3;background:#eafaf0;}
-.st-Paid{color:#fff;background:#4b5563;border-color:#4b5563;}
-.st-Rejected{color:#b42318;border-color:#f0b4ad;background:#fdecea;}
+.ra-badge{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:5px 12px;border-radius:30px;border:1px solid #bbb;color:#333;background:#fff;}
+.st-Draft,.st-UnderReview,.st-Approved,.st-Rejected{color:#333;}
+.st-Paid{color:#fff;background:#1a1a1a;border-color:#1a1a1a;}
 
 .ra-page{max-width:210mm;margin:0 auto;}
-.ra-doc{background:#fff;color:#111;width:100%;min-height:297mm;padding:14mm 13mm;box-shadow:0 10px 40px rgba(0,0,0,.18);
-  font-size:12px;line-height:1.45;border:1px solid #000;}
-.ra-doc *{box-sizing:border-box;}
+/* whole document forced to pure black on white — no stray colours */
+.ra-doc{background:#fff;color:#000;width:100%;min-height:297mm;box-shadow:0 10px 40px rgba(0,0,0,.22);
+  font-size:12px;line-height:1.45;border:2px solid #000;}
+.ra-doc *{box-sizing:border-box;color:#000;}
 
-.ra-title{text-align:center;font-weight:800;letter-spacing:2px;font-size:14px;border:1.5px solid #000;
-  padding:8px;margin-bottom:0;text-transform:uppercase;background:#4b5563;color:#fff;}
+.ra-title{text-align:center;font-weight:800;letter-spacing:3px;font-size:15px;
+  padding:11px 8px;text-transform:uppercase;background:#fff;color:#000;border-bottom:2px solid #000;}
 
-.ra-head{display:flex;border:1px solid #000;border-top:0;}
-.ra-head-l{flex:1.5;padding:12px 14px;border-right:1px solid #000;}
-.ra-co{font-size:17px;font-weight:800;letter-spacing:.2px;}
-.ra-co-sub{font-size:11px;color:#333;margin-bottom:4px;}
+.ra-head{display:flex;border-bottom:2px solid #000;}
+.ra-head-l{flex:1.5;padding:13px 15px;border-right:2px solid #000;}
+.ra-co{font-size:18px;font-weight:800;letter-spacing:.2px;}
+.ra-co-sub{font-size:11px;color:#333;margin-bottom:5px;font-weight:600;}
 .ra-addr{font-size:11px;color:#222;}
-.ra-gst{font-size:11px;margin-top:6px;}
+.ra-gst{font-size:11px;margin-top:7px;font-weight:600;}
 .ra-meta{flex:1;border-collapse:collapse;font-size:11.5px;}
-.ra-meta td{border-bottom:1px solid #000;padding:6px 10px;}
+.ra-meta td{border-bottom:1px solid #000;padding:7px 11px;}
 .ra-meta tr:last-child td{border-bottom:0;}
-.ra-meta td:first-child{font-weight:700;width:42%;border-right:1px solid #000;background:#f4f4f5;}
+.ra-meta td:first-child{font-weight:700;width:40%;border-right:1px solid #000;background:#f1f1f1;text-transform:uppercase;font-size:10px;letter-spacing:.4px;}
+.ra-meta td:last-child{font-weight:600;}
 
-.ra-party{border:1px solid #000;border-top:0;}
-.ra-party-h{font-size:10px;font-weight:800;letter-spacing:1px;background:#f4f4f5;padding:5px 14px;border-bottom:1px solid #000;}
-.ra-party-b{padding:9px 14px;font-size:11.5px;}
-.ra-party-name{font-weight:800;font-size:13px;}
+.ra-party{border-bottom:2px solid #000;}
+.ra-party-h{font-size:10px;font-weight:800;letter-spacing:1.5px;background:#f1f1f1;padding:6px 15px;border-bottom:1px solid #000;}
+.ra-party-b{padding:10px 15px;font-size:11.5px;}
+.ra-party-name{font-weight:800;font-size:14px;margin-bottom:2px;}
 
-.ra-items{width:100%;border-collapse:collapse;border:1px solid #000;border-top:0;}
-.ra-items th{background:#4b5563;color:#fff;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;
-  padding:8px 8px;text-align:left;border-right:1px solid #444;}
+.ra-items{width:100%;border-collapse:collapse;}
+.ra-items th{background:#f1f1f1;color:#000;font-size:10px;letter-spacing:.5px;text-transform:uppercase;font-weight:800;
+  padding:9px 8px;text-align:left;border-right:1px solid #000;border-bottom:2px solid #000;}
 .ra-items th.r{text-align:right;}.ra-items th.c{text-align:center;}
-.ra-items td{border-right:1px solid #000;border-top:1px solid #000;padding:7px 8px;vertical-align:top;font-size:11.5px;}
+.ra-items td{border-right:1px solid #000;border-bottom:1px solid #000;padding:8px;vertical-align:top;font-size:11.5px;}
 .ra-items td.r{text-align:right;font-variant-numeric:tabular-nums;}
 .ra-items td.c{text-align:center;}
 .ra-items td:last-child,.ra-items th:last-child{border-right:0;}
-.ra-items tr.filler td{height:22px;color:transparent;}
-.ra-items tfoot .ra-sub td{border-top:1.5px solid #000;font-weight:800;font-size:12.5px;background:#f4f4f5;}
+.ra-items tr.filler td{height:24px;}
+.ra-items tfoot .ra-sub td{border-top:1px solid #000;border-bottom:2px solid #000;font-weight:800;font-size:13px;background:#f1f1f1;}
 
-.ra-foot{display:flex;border:1px solid #000;border-top:0;}
-.ra-foot-l{flex:1.35;border-right:1px solid #000;padding:0;display:flex;flex-direction:column;}
-.ra-words{padding:10px 12px;border-bottom:1px solid #000;font-size:11.5px;}
-.ra-words span{display:block;color:#555;font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;}
+.ra-foot{display:flex;border-bottom:2px solid #000;}
+.ra-foot-l{flex:1.35;border-right:2px solid #000;display:flex;flex-direction:column;}
+.ra-words{padding:11px 13px;border-bottom:1px solid #000;font-size:12px;}
+.ra-words span{display:block;color:#444;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:700;}
 .ra-words b{font-weight:700;}
 .ra-tax{width:100%;border-collapse:collapse;}
-.ra-tax td{padding:6px 12px;border-bottom:1px solid #000;font-size:11.5px;}
+.ra-tax td{padding:7px 13px;border-bottom:1px solid #000;font-size:11.5px;}
 .ra-tax td.r{text-align:right;font-variant-numeric:tabular-nums;}
-.ra-decl{padding:10px 12px;font-size:10px;color:#333;line-height:1.5;}
+.ra-decl{padding:11px 13px;font-size:10px;color:#333;line-height:1.55;}
+.ra-decl b{color:#000;}
 
-.ra-summary{flex:1;border-collapse:collapse;align-self:flex-start;width:100%;}
-.ra-summary td{padding:6px 12px;border-bottom:1px solid #000;font-size:11.5px;}
-.ra-summary td.r{text-align:right;font-variant-numeric:tabular-nums;}
-.ra-summary tr.ra-inv td{font-weight:800;background:#f4f4f5;}
-.ra-summary tr.ded-h td{font-size:9.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#555;background:#fafafa;}
-.ra-summary tr.ded-t td{font-weight:700;}
-.ra-summary tr.ra-net td{background:#4b5563;color:#fff;font-weight:800;font-size:14px;border-bottom:0;}
+.ra-summary{flex:1;border-collapse:collapse;align-self:stretch;width:100%;}
+.ra-summary td{padding:7px 13px;border-bottom:1px solid #000;font-size:11.5px;}
+.ra-summary td.r{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;}
+.ra-summary tr.ra-inv td{font-weight:800;background:#f1f1f1;font-size:12.5px;}
+.ra-summary tr.ded-h td{font-size:9.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;background:#f7f7f7;}
+.ra-summary tr.ded-t td{font-weight:700;border-top:1px solid #000;}
+/* NET PAYABLE — emphasised with bold + heavy rules, NOT a dark fill */
+.ra-summary tr.ra-net td{background:#ededed;color:#000;font-weight:800;font-size:15px;border-top:2px solid #000;border-bottom:0;padding:11px 13px;letter-spacing:.3px;}
 
-.ra-sign{display:flex;border:1px solid #000;border-top:0;}
-.ra-sign-c{flex:1;padding:30px 14px 10px;text-align:center;font-size:11px;border-right:1px solid #000;}
+.ra-sign{display:flex;border-bottom:2px solid #000;}
+.ra-sign-c{flex:1;padding:34px 14px 10px;text-align:center;font-size:11px;border-right:1px solid #000;}
 .ra-sign-c:last-child{border-right:0;}
-.ra-sign-line{border-top:1px solid #000;margin:0 10px 6px;}
+.ra-sign-line{border-top:1px solid #000;margin:0 10px 7px;}
 
-.ra-end{text-align:center;font-size:9.5px;color:#666;padding:8px;border:1px solid #000;border-top:0;letter-spacing:.3px;}
+.ra-end{text-align:center;font-size:9.5px;color:#555;padding:9px;letter-spacing:.3px;}
 
 @media print{
   .no-print{display:none !important;}
   .ra-screen{background:#fff;padding:0;}
-  .ra-doc{box-shadow:none;border:1px solid #000;}
+  .ra-doc{box-shadow:none;border:2px solid #000;}
   @page{size:A4;margin:8mm;}
 }
 `;
