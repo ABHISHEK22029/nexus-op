@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
+import { useTheme } from '../context/ThemeContext';
 import '../beta.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -11,14 +12,14 @@ export default function BetaOnboarding() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const { fetchProjects } = useProject();
+  const { setTheme } = useTheme();
 
-  // Force light mode for the Cornerstone UI, then restore the user's saved theme on exit
+  // Force light for the Cornerstone UI through the theme context (keeps state,
+  // data-theme and localStorage in sync — no more toggle/UI mismatch).
   React.useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'light');
-    return () => {
-      // Restore the user's actual preference (default light) — do NOT hardcode dark
-      document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
-    };
+    const prev = localStorage.getItem('nexus-theme') || 'light';
+    setTheme('light');
+    return () => setTheme(prev);
   }, []);
 
   // State

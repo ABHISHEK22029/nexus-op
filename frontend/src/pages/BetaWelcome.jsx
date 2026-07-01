@@ -1,17 +1,20 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
 import '../beta.css';
 
 export default function BetaWelcome() {
   const navigate = useNavigate();
+  const { setTheme } = useTheme();
 
-  // Force light mode for the Cornerstone UI, then restore the user's saved theme on exit
+  // Force light for the Cornerstone UI THROUGH the theme context, so state,
+  // the data-theme attribute and localStorage never drift apart (which was
+  // leaving the toggle on "light" while the app rendered dark). Restore the
+  // user's real preference on exit.
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'light');
-    return () => {
-      // Restore the user's actual preference (default light) — do NOT hardcode dark
-      document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
-    };
+    const prev = localStorage.getItem('nexus-theme') || 'light';
+    setTheme('light');
+    return () => setTheme(prev);
   }, []);
 
   return (

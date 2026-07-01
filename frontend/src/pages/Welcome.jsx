@@ -283,7 +283,7 @@ const Welcome = () => {
       >
         <span>🚀 Nexus Op Beta is Live — Built for HMDA ORR Package Management</span>
         <button
-          onClick={() => navigate('/get-started')}
+          onClick={() => navigate('/login')}
           style={{
             background: 'rgba(255,255,255,0.2)',
             border: '1px solid rgba(255,255,255,0.4)',
@@ -399,7 +399,7 @@ const Welcome = () => {
             }}
           >
             <button
-              onClick={() => navigate('/beta-welcome')}
+              onClick={() => navigate('/login')}
               className="btn-primary"
               style={{ fontSize: '1rem', padding: '16px 32px', gap: '10px' }}
             >
@@ -974,7 +974,7 @@ const Welcome = () => {
           </p>
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '32px' }}>
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate('/login')}
               style={{
                 background: '#fff',
                 color: 'hsl(25,90%,38%)',

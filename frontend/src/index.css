@@ -666,7 +666,7 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
    LIGHT THEME � OVERRIDE HARDCODED TAILWIND DARK CLASSES
    ------------------------------------------------------------ */
 [data-theme="light"] .bg-\[\#111113\] { background-color: hsl(0, 0%, 100%) !important; box-shadow: 0 2px 12px hsl(30,30%,60%,0.1); }
-[data-theme="light"] .bg-\[\#1e1e24\], [data-theme="light"] .bg-\[\#1a1f2e\] { background-color: hsl(36, 20%, 97%) !important; }
+[data-theme="light"] .bg-\[\#1e1e24\], [data-theme="light"] .bg-\[\#1a1f2e\], [data-theme="light"] .bg-\[\#1A1A1E\] { background-color: hsl(36, 20%, 97%) !important; }
 [data-theme="light"] .border-white\/5  { border-color: hsl(32, 20%, 86%) !important; }
 [data-theme="light"] .border-white\/10 { border-color: hsl(30, 18%, 82%) !important; }
 [data-theme="light"] .bg-black\/40 { background-color: hsl(36, 20%, 94%) !important; }
