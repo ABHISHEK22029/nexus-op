@@ -18,6 +18,7 @@ import Milestones from './pages/Milestones';
 import GRN from './pages/GRN';
 import Production from './pages/Production';
 import ProductionOrder from './pages/ProductionOrder';
+import ComingSoon from './pages/ComingSoon';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
@@ -379,6 +380,13 @@ const AppRoutes = () => {
       <Route path="/grn"               element={<AppLayout><GRN /></AppLayout>} />
       <Route path="/production"        element={<AppLayout><Production /></AppLayout>} />
       <Route path="/production/:id"    element={<AppLayout><ProductionOrder /></AppLayout>} />
+
+      {/* ── New flow steps (designed, screens being built) ── */}
+      <Route path="/customers" element={<AppLayout><ComingSoon step="Step 1 · Sales" title="Customers" tagline="Your customer master — the companies you sell to. This is where an incoming customer PO begins." steps={[ 'Add a customer with GSTIN, contacts and billing/shipping address', 'See each customer’s orders and outstanding balance', 'Reuse customer details on customer orders and sales invoices' ]} /></AppLayout>} />
+      <Route path="/customer-orders" element={<AppLayout><ComingSoon step="Step 2 · Sales" title="Customer Orders" tagline="Log the purchase order your customer places with you, and drive the whole procurement flow from it." steps={[ 'Record a customer PO against a customer', 'Break it into the SKUs / parts required', 'Kick off vendor quotations (Q1/Q2/Q3) for each part' ]} /></AppLayout>} />
+      <Route path="/skus" element={<AppLayout><ComingSoon step="Catalog" title="SKUs" tagline="Your product / part catalog — every sellable item or assembly you quote and deliver." steps={[ 'Define each SKU with code, description, unit and price', 'Map a SKU to the raw materials/parts it needs', 'Pull SKUs straight into customer orders and quotations' ]} /></AppLayout>} />
+      <Route path="/raw-materials" element={<AppLayout><ComingSoon step="Catalog" title="Raw Materials" tagline="The raw material master — the inputs you buy to build your SKUs." steps={[ 'Maintain each material with grade, unit and standard rate', 'Link materials to the SKUs and parts that consume them', 'Feed materials into vendor quotations and purchase orders' ]} /></AppLayout>} />
+      <Route path="/quotations" element={<AppLayout><ComingSoon step="Procurement · Vendor selection" title="Quotations (Q1 / Q2 / Q3)" tagline="Enter multiple vendor quotes per part, compare them side by side, and pick the best — that selection becomes the Vendor PO." steps={[ 'For each required part, capture quotes from up to 3 vendors', 'Compare price / lead time / terms in one view', 'Select the winning vendor → auto-generate the Vendor PO', 'Later: share a link so vendors upload their quoted parts themselves' ]} /></AppLayout>} />
       <Route path="/bills"             element={<AppLayout><Bills /></AppLayout>} />
       <Route path="/bills/:id"         element={<ProtectedRoute><RABillInvoice /></ProtectedRoute>} />
       <Route path="/activity"          element={<AppLayout><ActivityLog /></AppLayout>} />
