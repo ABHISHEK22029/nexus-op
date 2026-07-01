@@ -17,6 +17,7 @@ import MeasurementBook from './pages/MeasurementBook';
 import Milestones from './pages/Milestones';
 import GRN from './pages/GRN';
 import Welcome from './pages/Welcome';
+import KirashiPortal from './pages/KirashiPortal';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
 import Login from './pages/Login';
@@ -306,7 +307,8 @@ const AppRoutes = () => {
       <Route path="/beta-onboarding"  element={<BetaOnboarding />} />
 
       {/* ── Marketing Layer ── */}
-      <Route path="/"              element={<MarketingLayout><Welcome /></MarketingLayout>} />
+      <Route path="/"              element={<KirashiPortal />} />
+      <Route path="/nexus"         element={<MarketingLayout><Welcome /></MarketingLayout>} />
       <Route path="/get-started"   element={<MarketingLayout><GetStarted /></MarketingLayout>} />
       <Route path="/platform"      element={<MarketingLayout><PlatformCapabilities /></MarketingLayout>} />
       <Route path="/how-it-works"  element={<MarketingLayout><HowItWorks /></MarketingLayout>} />

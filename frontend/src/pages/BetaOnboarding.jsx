@@ -12,11 +12,12 @@ export default function BetaOnboarding() {
   const [error, setError] = useState(null);
   const { fetchProjects } = useProject();
 
-  // Force light mode for the Cornerstone UI
+  // Force light mode for the Cornerstone UI, then restore the user's saved theme on exit
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'light');
     return () => {
-      document.documentElement.setAttribute('data-theme', 'dark');
+      // Restore the user's actual preference (default light) — do NOT hardcode dark
+      document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
     };
   }, []);
 

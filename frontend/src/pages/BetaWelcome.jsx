@@ -5,12 +5,12 @@ import '../beta.css';
 export default function BetaWelcome() {
   const navigate = useNavigate();
 
-  // Force light mode for the Cornerstone UI
+  // Force light mode for the Cornerstone UI, then restore the user's saved theme on exit
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'light');
     return () => {
-      // Revert to dark theme when leaving
-      document.documentElement.setAttribute('data-theme', 'dark');
+      // Restore the user's actual preference (default light) — do NOT hardcode dark
+      document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
     };
   }, []);
 
