@@ -36,7 +36,8 @@ router.post('/', async (req, res) => {
     if (po.status !== 'Dispatched') return res.status(400).json({ error: 'PO must be Dispatched before receiving GRN' });
 
     const resolvedProjectId = projectId || po.projectId;
-    const resolvedWorkOrderId = workOrderId || po.workOrderId;
+    // workOrderId is now optional — fall back to the PO's, else null (no WO).
+    const resolvedWorkOrderId = workOrderId || po.workOrderId || null;
 
     // Step 2: Insert GRN record
     const grnResult = await db.query(

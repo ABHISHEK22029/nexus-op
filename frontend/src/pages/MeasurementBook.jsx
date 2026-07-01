@@ -38,8 +38,9 @@ const MeasurementBook = () => {
     e.preventDefault();
     if (!activeProject) return;
 
-    if (!newItem.workOrderId || !newItem.boqId || !newItem.chainage || !newItem.length || !newItem.width || !newItem.depth) {
-      toast.error('Please fill in Work Order, BOQ and all dimension fields');
+    // Work Order is OPTIONAL — SMEs may record measurements without one
+    if (!newItem.boqId || !newItem.chainage || !newItem.length || !newItem.width || !newItem.depth) {
+      toast.error('Please fill in BOQ and all dimension fields');
       return;
     }
 
@@ -117,9 +118,9 @@ const MeasurementBook = () => {
         <h2 className="text-lg font-semibold text-white mb-4">{editingId ? 'Edit MB Vector' : 'Record New MB Vector'}</h2>
         <form onSubmit={handleAdd} className="flex gap-4 items-end flex-wrap">
           <div className="flex-[2] min-w-[200px]">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Target Work Order</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Work Order <span className="text-gray-600">(optional)</span></label>
             <select className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newItem.workOrderId} onChange={e => setNewItem({...newItem, workOrderId: e.target.value})}>
-              <option value="">-- Choose WO --</option>
+              <option value="">— No work order —</option>
               {workOrders.map(w => <option key={w.id} value={w.id}>WO-{w.id}: {w.name}</option>)}
             </select>
           </div>

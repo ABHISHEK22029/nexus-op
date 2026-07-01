@@ -85,17 +85,17 @@ const POInvoice = () => {
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto pb-16">
       {/* Action Bar */}
       <div className="flex justify-between items-center mb-6 print:hidden">
-        <button onClick={() => navigate('/purchase-orders')} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
+        <button onClick={() => navigate('/purchase-orders')} className="inv-act-btn">
           <ArrowLeft size={16} /> Back to POs
         </button>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1A1A1E] border border-white/10 text-gray-300 hover:bg-white/5 text-sm font-medium transition-colors">
+          <button className="inv-act-btn">
             <Mail size={16} /> Email Vendor
           </button>
-          <button onClick={handleDownloadPdf} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1A1A1E] border border-white/10 text-gray-300 hover:bg-white/5 text-sm font-medium transition-colors">
+          <button onClick={handleDownloadPdf} className="inv-act-btn">
             <Download size={16} /> PDF
           </button>
-          <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 text-sm font-medium transition-colors">
+          <button onClick={handlePrint} className="inv-act-btn primary">
             <Printer size={16} /> Print
           </button>
         </div>
@@ -226,8 +226,8 @@ const POInvoice = () => {
                 <td className="tv">{tax.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
               </tr>
               <tr className="tf">
-                <td className="tl" style={{color: '#fff'}}>PO VALUE</td>
-                <td className="tv" style={{color: '#fff'}}>{total.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td className="tl" style={{color: '#000'}}>PO VALUE</td>
+                <td className="tv" style={{color: '#000'}}>{total.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
               </tr>
             </tbody>
           </table>

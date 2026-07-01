@@ -327,7 +327,7 @@ app.post('/indent', async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO indents ("projectId", "workOrderId", "boqId", "requestedQuantity", "requiredDate", chainage, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'Pending') RETURNING id`,
-      [projectId, workOrderId, boqId, requestedQuantity, requiredDate, chainage]
+      [projectId, workOrderId || null, boqId, requestedQuantity, requiredDate, chainage]
     );
     await logActivity(projectId, 'INDENT_CREATED',
       `Indent #${rows[0].id} raised for ${requestedQuantity} units at ${chainage || 'N/A'}`);
@@ -442,7 +442,7 @@ app.post('/mb', async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO measurement_book ("projectId", "workOrderId", "boqId", chainage, length, width, depth, "measuredQuantity")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [projectId, workOrderId, boqId, chainage, length, width, depth, measuredQuantity]
+      [projectId, workOrderId || null, boqId, chainage, length, width, depth, measuredQuantity]
     );
     await logActivity(projectId, 'MB_ENTRY',
       `MB entry at ${chainage || 'N/A'}: ${measuredQuantity} units recorded`);
