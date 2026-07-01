@@ -20,8 +20,8 @@ const getToken = () => localStorage.getItem(TOKEN_KEY);
 function forceLogout() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
-  // Avoid redirect loops on the auth screens themselves.
-  if (!/^\/login/.test(window.location.pathname)) {
+  // Avoid redirect loops on the auth screens themselves (login / signup).
+  if (!/^\/(login|signup)/.test(window.location.pathname)) {
     window.location.assign('/login');
   }
 }

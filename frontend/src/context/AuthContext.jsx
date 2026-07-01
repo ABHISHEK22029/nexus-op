@@ -50,6 +50,31 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const register = async (name, email, password) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sign up failed');
+
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      setToken(data.token);
+      setUser(data.user);
+      return data;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -65,7 +90,7 @@ export function AuthProvider({ children }) {
   const isLoggedIn = () => !!token && !!user;
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, error, login, logout, hasRole, isLoggedIn }}>
+    <AuthContext.Provider value={{ user, token, loading, error, login, register, logout, hasRole, isLoggedIn }}>
       {children}
     </AuthContext.Provider>
   );

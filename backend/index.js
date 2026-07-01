@@ -39,10 +39,31 @@ app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().
    valid Bearer token. /health and /auth/login stay public.
    ══════════════════════════════════════════════════════════ */
 app.post('/auth/login', authController.login);
+app.post('/auth/register', authController.register);
 
 app.use(authenticate); // ⬇ all routes below are protected
 
 app.get('/auth/me', authController.me);
+
+/* Per-user workspace isolation. Any request carrying a projectId (query or
+   body) must reference a project the caller owns — admins bypass. This one
+   guard covers every project-scoped endpoint automatically. */
+async function scopeProjectAccess(req, res, next) {
+  if (req.user?.role === 'Admin') return next();
+  const pid = req.query.projectId || (req.body && req.body.projectId);
+  if (!pid) return next(); // not a project-scoped request
+  try {
+    const { rows } = await db.query('SELECT owner_id FROM projects WHERE id = $1', [pid]);
+    if (!rows[0]) return res.status(404).json({ error: 'Project not found' });
+    if (rows[0].owner_id !== req.user.id) {
+      return res.status(403).json({ error: 'You do not have access to this project' });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+app.use(scopeProjectAccess);
 
 /* ══════════════════════════════════════════════════════════
    PROJECTS

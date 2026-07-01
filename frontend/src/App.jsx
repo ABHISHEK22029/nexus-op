@@ -20,6 +20,7 @@ import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
 import Onboarding from './pages/Onboarding';
 import GetStarted from './pages/GetStarted';
 import POInvoice from './pages/POInvoice';
@@ -35,6 +36,7 @@ import { ToastProvider } from './context/ToastContext';
 import { UserCircle, Settings, Sun, Moon, Plus, LogOut } from 'lucide-react';
 import QuickCreateModal from './components/QuickCreateModal';
 import ProtectedRoute from './components/ProtectedRoute';
+import ProductTour from './components/ProductTour';
 
 /* ─── Top Header (App Layer only) ──────────────────────── */
 const TopHeader = () => {
@@ -268,12 +270,26 @@ const TopHeader = () => {
           display: 'flex', alignItems: 'center', gap: '8px',
           background: 'var(--bg-elevated)',
           border: '1px solid var(--border-default)',
-          borderRadius: '8px', padding: '4px 6px 4px 12px',
+          borderRadius: '8px', padding: '4px 6px 4px 6px',
         }}
       >
-        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {user?.name || user?.email || 'Admin'}
-        </span>
+        {/* Avatar (initial) */}
+        <div style={{
+          width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+          background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))',
+          color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
+        }}>
+          {(user?.role === 'Admin' ? 'A' : (user?.name || user?.email || 'U')).charAt(0)}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15, marginRight: 2 }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {user?.role === 'Admin' ? 'Admin' : (user?.name || user?.email || 'User')}
+          </span>
+          <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--brand-amber)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+            {user?.role === 'Admin' ? 'Full Access' : (user?.role || 'Member')}
+          </span>
+        </div>
         <button
           onClick={() => { logout(); window.location.assign('/login'); }}
           title="Sign out"
@@ -317,6 +333,7 @@ const AppLayout = ({ children }) => (
         <TopHeader />
         {children}
       </main>
+      <ProductTour />
     </div>
   </ProtectedRoute>
 );
@@ -334,6 +351,7 @@ const AppRoutes = () => {
     <Routes>
       {/* ── Auth ── */}
       <Route path="/login"       element={<Login />} />
+      <Route path="/signup"      element={<Signup />} />
       <Route path="/onboarding"  element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
       <Route path="/beta-welcome"  element={<ProtectedRoute><BetaWelcome /></ProtectedRoute>} />
       <Route path="/beta-onboarding"  element={<ProtectedRoute><BetaOnboarding /></ProtectedRoute>} />
