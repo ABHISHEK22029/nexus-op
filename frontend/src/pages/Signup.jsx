@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Loader2, AlertCircle, Building2, UserPlus } from 'lucide-react';
 
 export default function Signup() {
-  const { register, loading, error } = useAuth();
+  const { register, loading, error, token } = useAuth();
   const [name, setName]         = useState('');
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
@@ -38,6 +38,9 @@ export default function Signup() {
   };
   const focusOn  = e => { e.target.style.borderColor = 'var(--brand-amber)'; e.target.style.boxShadow = '0 0 0 3px var(--brand-amber-muted)'; };
   const focusOff = e => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; };
+
+  // Already signed in → skip signup.
+  if (token) return <Navigate to="/dashboard" replace />;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', padding: 24 }}>

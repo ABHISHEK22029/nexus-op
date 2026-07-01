@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { Menu, X, ChevronRight, Zap, Sun, Moon } from 'lucide-react';
+import { Menu, X, ChevronRight, Zap, Sun, Moon, LayoutDashboard } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 const MarketingNav = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const { isDark, toggleTheme } = useTheme();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -114,21 +116,34 @@ const MarketingNav = () => {
             </div>
           </button>
 
-          <button
-            onClick={() => navigate('/login')}
-            className="btn-ghost btn-sm"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            Sign In
-          </button>
-          <button
-            onClick={() => navigate('/login')}
-            className="btn-primary btn-sm"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            Test Beta
-            <ChevronRight size={14} />
-          </button>
+          {token ? (
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="btn-primary btn-sm"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <LayoutDashboard size={14} />
+              {user?.name ? `Dashboard · ${user.role === 'Admin' ? 'Admin' : user.name.split(' ')[0]}` : 'Go to Dashboard'}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => navigate('/login')}
+                className="btn-ghost btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => navigate('/login')}
+                className="btn-primary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                Test Beta
+                <ChevronRight size={14} />
+              </button>
+            </>
+          )}
 
           {/* Mobile hamburger */}
           <button
@@ -167,11 +182,11 @@ const MarketingNav = () => {
             </NavLink>
           ))}
           <button
-            onClick={() => { navigate('/login'); setIsMobileOpen(false); }}
+            onClick={() => { navigate(token ? '/dashboard' : '/login'); setIsMobileOpen(false); }}
             className="btn-primary"
             style={{ width: '100%', justifyContent: 'center', marginTop: '12px' }}
           >
-            Sign In <ChevronRight size={16} />
+            {token ? 'Go to Dashboard' : 'Sign In'} <ChevronRight size={16} />
           </button>
         </div>
       )}

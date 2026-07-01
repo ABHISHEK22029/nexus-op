@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Loader2, AlertCircle, Building2, Sparkles } from 'lucide-react';
 
@@ -8,7 +8,7 @@ const DEMO_PASSWORD = 'admin123';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, loading, error } = useAuth();
+  const { login, loading, error, token } = useAuth();
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -47,6 +47,9 @@ export default function Login() {
     color: 'var(--text-primary)', outline: 'none',
     transition: 'border-color 150ms ease, box-shadow 150ms ease',
   };
+
+  // Already signed in for this session → don't show the form, go straight in.
+  if (token) return <Navigate to="/dashboard" replace />;
 
   return (
     <div style={{
