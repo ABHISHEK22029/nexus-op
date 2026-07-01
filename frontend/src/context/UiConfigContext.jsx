@@ -13,6 +13,8 @@ export function UiConfigProvider({ children }) {
     // Load config from API if available (Spring Boot endpoint — skipped in local/Render mode)
     const apiUrl = import.meta.env.VITE_API_URL;
     if (!apiUrl) return;
+    // Don't call the API before there's a session (avoids pre-login 401s).
+    if (!localStorage.getItem('nexus_token')) return;
 
     fetch(`${apiUrl}/ui-config/all`)
       .then(r => r.ok ? r.json() : {})

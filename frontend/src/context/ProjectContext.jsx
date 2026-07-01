@@ -10,6 +10,8 @@ export const ProjectProvider = ({ children }) => {
   const [workOrders, setWorkOrders] = useState([]);
 
   const fetchProjects = () => {
+    // Skip before login — /projects requires auth; a pre-login call would 401.
+    if (!localStorage.getItem('nexus_token')) return;
     fetch(`${API}/projects`)
       .then(res => res.json())
       .then(data => {

@@ -45,7 +45,10 @@ window.fetch = async (input, init = {}) => {
   }
 
   const res = await nativeFetch(input, opts);
-  if (res.status === 401 && isApiUrl(url) && !isAuthEndpoint(url)) {
+  // Only treat a 401 as a session expiry when we actually HAD a token.
+  // A 401 with no token is just an unauthenticated call (e.g. on /login) and
+  // must never trigger a logout/redirect — that caused bounce loops.
+  if (res.status === 401 && isApiUrl(url) && !isAuthEndpoint(url) && getToken()) {
     forceLogout();
   }
   return res;
@@ -65,7 +68,7 @@ axios.interceptors.response.use(
   (res) => res,
   (error) => {
     const url = error?.config?.url;
-    if (error?.response?.status === 401 && !isAuthEndpoint(url)) {
+    if (error?.response?.status === 401 && !isAuthEndpoint(url) && getToken()) {
       forceLogout();
     }
     return Promise.reject(error);
