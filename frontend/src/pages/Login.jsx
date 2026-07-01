@@ -144,11 +144,6 @@ export default function Login() {
             </button>
           </form>
 
-          <div style={{ marginTop: 20, padding: '12px 14px', background: 'var(--bg-elevated)', borderRadius: 10, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            <strong style={{ color: 'var(--text-secondary)' }}>Demo credentials:</strong>
-            <br/>Email: <code style={{ color: 'var(--brand-amber)' }}>admin@nexusop.com</code>
-            &nbsp; Password: <code style={{ color: 'var(--brand-amber)' }}>admin123</code>
-          </div>
         </div>
 
         <p style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-disabled)', marginTop: 16 }}>
