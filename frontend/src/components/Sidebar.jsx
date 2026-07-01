@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, ShoppingCart, Package, Activity,
   Receipt, Workflow, FileText, ClipboardList, BookOpen, Truck,
-  FolderGit2, Briefcase, Milestone, Zap, Home, Sun, Moon
+  FolderGit2, Briefcase, Milestone, Zap, Home, Sun, Moon, Factory
 } from 'lucide-react';
 import { useRole } from '../context/RoleContext';
 import { useProject } from '../context/ProjectContext';
@@ -22,6 +22,7 @@ const Sidebar = () => {
     { name: 'Purchase Orders', path: '/po', icon: <ShoppingCart size={18} />, group: 'Procurement' },
     { name: 'GRN', path: '/grn', icon: <Truck size={18} />, group: 'Procurement' },
     { name: 'Inventory', path: '/inventory', icon: <Package size={18} />, group: 'Procurement' },
+    { name: 'Production', path: '/production', icon: <Factory size={18} />, group: 'Fabrication' },
     { name: 'RA Bills', path: '/bills', icon: <Receipt size={18} />, group: 'Billing' },
     { name: 'Activity Log', path: '/activity', icon: <Activity size={18} />, group: 'System' },
     { name: 'Process Flow', path: '/flow', icon: <Workflow size={18} />, group: 'System' },
@@ -42,7 +43,7 @@ const Sidebar = () => {
   const getNavItemsForRole = () => {
     switch (role) {
       case 'Engineer':
-        return allNavItems.filter(i => ['Purchase Orders', 'Inventory', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
+        return allNavItems.filter(i => ['Purchase Orders', 'Inventory', 'Production', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
       case 'Finance':
         return allNavItems.filter(i => ['Dashboard', 'RA Bills', 'Activity Log', 'BOQ'].includes(i.name));
       case 'Vendor':
@@ -56,7 +57,7 @@ const Sidebar = () => {
   const navItems = getNavItemsForRole();
 
   // Group items
-  const groups = ['Overview', 'Project', 'Procurement', 'Billing', 'System'];
+  const groups = ['Overview', 'Project', 'Procurement', 'Fabrication', 'Billing', 'System'];
   const grouped = groups.reduce((acc, g) => {
     const items = navItems.filter(i => i.group === g);
     if (items.length) acc[g] = items;

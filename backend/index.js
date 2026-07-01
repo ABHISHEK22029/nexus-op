@@ -7,6 +7,7 @@ const projectController = require('./controllers/ProjectController');
 const workOrderController = require('./controllers/WorkOrderController');
 const billController = require('./controllers/BillController');
 const authController = require('./controllers/AuthController');
+const productionController = require('./controllers/ProductionController');
 const { authenticate } = require('./middleware/auth');
 const grnRouter = require('./routes/grn');
 
@@ -456,6 +457,20 @@ app.post('/mb', async (req, res) => {
    GRN (Router module)
    ══════════════════════════════════════════════════════════ */
 app.use('/grn', grnRouter);
+
+/* ══════════════════════════════════════════════════════════
+   PRODUCTION / FABRICATION YIELD
+   ══════════════════════════════════════════════════════════ */
+app.get('/production',              productionController.getOrders);
+app.post('/production',             productionController.createOrder);
+app.get('/production/summary',      productionController.getSummary);   // before :id
+app.get('/production/:id',          productionController.getOrderById);
+app.patch('/production/:id/status', productionController.updateStatus);
+app.delete('/production/:id',       productionController.deleteOrder);
+app.post('/production/:id/consumption', productionController.addConsumption);
+app.post('/production/:id/output',      productionController.addOutput);
+app.post('/production/:id/scrap',       productionController.addScrap);
+app.delete('/production/:kind/line/:lineId', productionController.deleteLine);
 
 /* ══════════════════════════════════════════════════════════
    RA BILLS — State machine

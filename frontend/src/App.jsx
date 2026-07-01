@@ -16,6 +16,8 @@ import Indent from './pages/Indent';
 import MeasurementBook from './pages/MeasurementBook';
 import Milestones from './pages/Milestones';
 import GRN from './pages/GRN';
+import Production from './pages/Production';
+import ProductionOrder from './pages/ProductionOrder';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
@@ -375,6 +377,8 @@ const AppRoutes = () => {
       <Route path="/po/:id"            element={<ProtectedRoute><POInvoice /></ProtectedRoute>} />
       <Route path="/inventory"         element={<AppLayout><Inventory /></AppLayout>} />
       <Route path="/grn"               element={<AppLayout><GRN /></AppLayout>} />
+      <Route path="/production"        element={<AppLayout><Production /></AppLayout>} />
+      <Route path="/production/:id"    element={<AppLayout><ProductionOrder /></AppLayout>} />
       <Route path="/bills"             element={<AppLayout><Bills /></AppLayout>} />
       <Route path="/bills/:id"         element={<ProtectedRoute><RABillInvoice /></ProtectedRoute>} />
       <Route path="/activity"          element={<AppLayout><ActivityLog /></AppLayout>} />
