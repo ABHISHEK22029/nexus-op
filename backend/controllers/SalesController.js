@@ -1,0 +1,183 @@
+/* ══════════════════════════════════════════════════════════
+   SalesController — customer orders + vendor quotations (Q1/Q2/Q3)
+   Flow: Customer Order → parts → Quotation (3 vendor quotes) →
+         select best → generate Vendor PO (existing purchase_orders)
+   All owner-scoped: admin sees all, a user sees only their own.
+   ══════════════════════════════════════════════════════════ */
+const db = require('../db');
+const isAdmin = (req) => req.user?.role === 'Admin';
+
+/* ── Customer Orders ── */
+exports.getOrders = async (req, res) => {
+  try {
+    const admin = isAdmin(req);
+    const { rows } = await db.query(
+      `SELECT co.*, c.name AS customer_name,
+              (SELECT COUNT(*) FROM customer_order_items WHERE customer_order_id = co.id) AS item_count
+         FROM customer_orders co LEFT JOIN customers c ON c.id = co.customer_id
+        ${admin ? '' : 'WHERE co.owner_id = $1'} ORDER BY co.id DESC`,
+      admin ? [] : [req.user.id]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.createOrder = async (req, res) => {
+  const { customerId, customerPoRef, orderDate, notes, items } = req.body;
+  if (!customerId) return res.status(400).json({ error: 'Pick a customer' });
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const c = await client.query('SELECT COUNT(*) FROM customer_orders WHERE owner_id = $1', [req.user?.id || null]);
+    const orderNumber = `CO-${String(parseInt(c.rows[0].count) + 1).padStart(4, '0')}`;
+    const { rows } = await client.query(
+      `INSERT INTO customer_orders (owner_id, customer_id, order_number, customer_po_ref, order_date, notes)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [req.user?.id || null, customerId, orderNumber, customerPoRef || null, orderDate || null, notes || null]
+    );
+    const orderId = rows[0].id;
+    for (const it of (items || [])) {
+      if (!it.description) continue;
+      await client.query(
+        `INSERT INTO customer_order_items (customer_order_id, sku_id, description, quantity, unit, target_price)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [orderId, it.skuId || null, it.description, it.quantity || null, it.unit || 'nos', it.targetPrice || null]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ id: orderId, orderNumber });
+  } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
+  finally { client.release(); }
+};
+
+exports.getOrderById = async (req, res) => {
+  try {
+    const o = await db.query('SELECT * FROM customer_orders WHERE id = $1', [req.params.id]);
+    if (!o.rows[0]) return res.status(404).json({ error: 'Order not found' });
+    const cust = await db.query('SELECT * FROM customers WHERE id = $1', [o.rows[0].customer_id]);
+    const items = await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [req.params.id]);
+    res.json({ ...o.rows[0], customer: cust.rows[0] || null, items: items.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.updateOrderStatus = async (req, res) => {
+  const { status } = req.body;
+  const allowed = ['Open', 'In Procurement', 'Delivered', 'Closed'];
+  if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
+  try {
+    const r = await db.query('UPDATE customer_orders SET status = $1 WHERE id = $2', [status, req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'not found' });
+    res.json({ success: true, status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.deleteOrder = async (req, res) => {
+  try {
+    const r = await db.query('DELETE FROM customer_orders WHERE id = $1', [req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* ── Quotations (Q1 / Q2 / Q3) ── */
+exports.getQuotations = async (req, res) => {
+  try {
+    const admin = isAdmin(req);
+    const { rows } = await db.query(
+      `SELECT * FROM quotations ${admin ? '' : 'WHERE owner_id = $1'} ORDER BY id DESC`,
+      admin ? [] : [req.user.id]
+    );
+    const withLines = await Promise.all(rows.map(async (q) => {
+      const l = await db.query('SELECT * FROM quote_lines WHERE quotation_id = $1 ORDER BY slot', [q.id]);
+      return { ...q, lines: l.rows };
+    }));
+    res.json(withLines);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.createQuotation = async (req, res) => {
+  const { partDescription, quantity, unit, customerOrderItemId } = req.body;
+  if (!partDescription) return res.status(400).json({ error: 'Enter the part / material to quote' });
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO quotations (owner_id, customer_order_item_id, part_description, quantity, unit)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [req.user?.id || null, customerOrderItemId || null, partDescription, quantity || null, unit || 'nos']
+    );
+    res.json({ id: rows[0].id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.getQuotationById = async (req, res) => {
+  try {
+    const q = await db.query('SELECT * FROM quotations WHERE id = $1', [req.params.id]);
+    if (!q.rows[0]) return res.status(404).json({ error: 'Quotation not found' });
+    const l = await db.query('SELECT * FROM quote_lines WHERE quotation_id = $1 ORDER BY slot', [req.params.id]);
+    res.json({ ...q.rows[0], lines: l.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.addQuoteLine = async (req, res) => {
+  const { vendorId, vendorName, unitPrice, leadTimeDays, terms } = req.body;
+  try {
+    const cnt = await db.query('SELECT COUNT(*) FROM quote_lines WHERE quotation_id = $1', [req.params.id]);
+    const slot = parseInt(cnt.rows[0].count) + 1;
+    if (slot > 3) return res.status(400).json({ error: 'Max 3 quotes (Q1 / Q2 / Q3)' });
+    const { rows } = await db.query(
+      `INSERT INTO quote_lines (quotation_id, slot, vendor_id, vendor_name, unit_price, lead_time_days, terms)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [req.params.id, slot, vendorId || null, vendorName || null, unitPrice || null, leadTimeDays || null, terms || null]
+    );
+    res.json({ id: rows[0].id, slot });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.deleteQuoteLine = async (req, res) => {
+  try { await db.query('DELETE FROM quote_lines WHERE id = $1', [req.params.lineId]); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.selectQuote = async (req, res) => {
+  const { quoteLineId } = req.body;
+  try {
+    await db.query('UPDATE quotations SET selected_quote_id = $1, status = $2 WHERE id = $3', [quoteLineId, 'Selected', req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.deleteQuotation = async (req, res) => {
+  try {
+    const r = await db.query('DELETE FROM quotations WHERE id = $1', [req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// Turn the selected quote into a real Vendor PO (existing purchase_orders).
+exports.generatePO = async (req, res) => {
+  const { projectId } = req.body;
+  try {
+    const quote = (await db.query('SELECT * FROM quotations WHERE id = $1', [req.params.id])).rows[0];
+    if (!quote) return res.status(404).json({ error: 'quotation not found' });
+    if (!quote.selected_quote_id) return res.status(400).json({ error: 'Select a winning vendor quote first' });
+    const line = (await db.query('SELECT * FROM quote_lines WHERE id = $1', [quote.selected_quote_id])).rows[0];
+    if (!line) return res.status(400).json({ error: 'selected quote missing' });
+    if (!line.vendor_id) return res.status(400).json({ error: 'The selected quote has no linked vendor — pick a vendor from your Vendors list on that quote' });
+    if (!projectId) return res.status(400).json({ error: 'Select an active project (top bar) to raise the PO against' });
+
+    const c = await db.query('SELECT COUNT(*) FROM purchase_orders');
+    const poNumber = `Kirashi/FY2026-27/${String(parseInt(c.rows[0].count) + 1).padStart(3, '0')}`;
+    const { rows } = await db.query(
+      `INSERT INTO purchase_orders ("projectId","vendorId","itemName",quantity,"unitPrice","poNumber",status)
+       VALUES ($1,$2,$3,$4,$5,$6,'Pending') RETURNING id`,
+      [projectId, line.vendor_id, quote.part_description, quote.quantity || 1, line.unit_price || 0, poNumber]
+    );
+    await db.query(
+      `INSERT INTO po_line_items ("poId", sno, description, uom, quantity, "unitPrice")
+       VALUES ($1,1,$2,$3,$4,$5)`,
+      [rows[0].id, quote.part_description, quote.unit || 'nos', quote.quantity || 1, line.unit_price || 0]
+    );
+    await db.query('UPDATE quotations SET status = $1 WHERE id = $2', ['PO Raised', req.params.id]);
+    res.json({ poId: rows[0].id, poNumber });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};

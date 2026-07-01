@@ -8,6 +8,7 @@ const workOrderController = require('./controllers/WorkOrderController');
 const billController = require('./controllers/BillController');
 const authController = require('./controllers/AuthController');
 const productionController = require('./controllers/ProductionController');
+const salesController = require('./controllers/SalesController');
 const { authenticate } = require('./middleware/auth');
 const grnRouter = require('./routes/grn');
 
@@ -471,6 +472,74 @@ app.post('/production/:id/consumption', productionController.addConsumption);
 app.post('/production/:id/output',      productionController.addOutput);
 app.post('/production/:id/scrap',       productionController.addScrap);
 app.delete('/production/:kind/line/:lineId', productionController.deleteLine);
+
+/* ══════════════════════════════════════════════════════════
+   SALES & PROCUREMENT MASTERS (owner-scoped CRUD)
+   ══════════════════════════════════════════════════════════ */
+function registerOwnedCrud(route, table, cols) {
+  app.get(`/${route}`, async (req, res) => {
+    try {
+      const isAdmin = req.user?.role === 'Admin';
+      const { rows } = isAdmin
+        ? await db.query(`SELECT * FROM ${table} ORDER BY id DESC`)
+        : await db.query(`SELECT * FROM ${table} WHERE owner_id = $1 ORDER BY id DESC`, [req.user.id]);
+      res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.post(`/${route}`, async (req, res) => {
+    try {
+      const colList = cols.map(c => `"${c}"`).join(', ');
+      const ph = cols.map((_, i) => `$${i + 2}`).join(', ');
+      const vals = cols.map(c => (req.body[c] === undefined ? null : req.body[c]));
+      const { rows } = await db.query(
+        `INSERT INTO ${table} (owner_id, ${colList}) VALUES ($1, ${ph}) RETURNING id`,
+        [req.user?.id || null, ...vals]
+      );
+      res.json({ id: rows[0].id });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.patch(`/${route}/:id`, async (req, res) => {
+    try {
+      const sets = cols.filter(c => c in req.body);
+      if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
+      const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
+      const vals = sets.map(c => req.body[c]);
+      const { rowCount } = await db.query(`UPDATE ${table} SET ${clause} WHERE id = $${sets.length + 1}`, [...vals, req.params.id]);
+      if (!rowCount) return res.status(404).json({ error: 'not found' });
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.delete(`/${route}/:id`, async (req, res) => {
+    try {
+      const { rowCount } = await db.query(`DELETE FROM ${table} WHERE id = $1`, [req.params.id]);
+      if (!rowCount) return res.status(404).json({ error: 'not found' });
+      res.json({ success: true });
+    } catch (e) {
+      if (e.code === '23503') return res.status(409).json({ error: 'In use elsewhere — remove dependents first' });
+      res.status(500).json({ error: e.message });
+    }
+  });
+}
+registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'contact_name', 'phone', 'email', 'billing_address', 'state']);
+registerOwnedCrud('skus',         'skus',          ['sku_code', 'name', 'description', 'unit', 'price', 'hsn']);
+registerOwnedCrud('raw-materials','raw_materials', ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn']);
+
+/* ── Customer Orders ── */
+app.get('/customer-orders',            salesController.getOrders);
+app.post('/customer-orders',           salesController.createOrder);
+app.get('/customer-orders/:id',        salesController.getOrderById);
+app.patch('/customer-orders/:id/status', salesController.updateOrderStatus);
+app.delete('/customer-orders/:id',     salesController.deleteOrder);
+
+/* ── Quotations (Q1/Q2/Q3) ── */
+app.get('/quotations',                 salesController.getQuotations);
+app.post('/quotations',                salesController.createQuotation);
+app.get('/quotations/:id',             salesController.getQuotationById);
+app.delete('/quotations/:id',          salesController.deleteQuotation);
+app.post('/quotations/:id/quote',      salesController.addQuoteLine);
+app.delete('/quotations/quote/:lineId', salesController.deleteQuoteLine);
+app.post('/quotations/:id/select',     salesController.selectQuote);
+app.post('/quotations/:id/generate-po', salesController.generatePO);
 
 /* ══════════════════════════════════════════════════════════
    RA BILLS — State machine
