@@ -19,11 +19,14 @@ export default function Signup() {
     if (password.length < 6)          { setLocalErr('Password must be at least 6 characters'); return; }
     if (password !== confirm)         { setLocalErr('Passwords do not match'); return; }
     try {
-      await register(name, email, password);
-      // Fresh account → guided setup + tour, then dashboard.
+      // Mark the friendly onboarding BEFORE register, so the moment the token
+      // is set the auth-redirect guard sends the new user to the Welcome flow
+      // (Welcome → Get Started → set up first project → tour), not the cold dashboard.
       localStorage.setItem('nexus_tour_pending', '1');
+      await register(name, email, password);
       window.location.assign('/beta-welcome');
     } catch (err) {
+      localStorage.removeItem('nexus_tour_pending');
       setLocalErr(err.message || 'Sign up failed');
     }
   };
@@ -39,8 +42,9 @@ export default function Signup() {
   const focusOn  = e => { e.target.style.borderColor = 'var(--brand-amber)'; e.target.style.boxShadow = '0 0 0 3px var(--brand-amber-muted)'; };
   const focusOff = e => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; };
 
-  // Already signed in → skip signup.
-  if (token) return <Navigate to="/dashboard" replace />;
+  // Already signed in → skip the form. A brand-new signup goes to the friendly
+  // onboarding (flag set above); a returning user goes straight to the dashboard.
+  if (token) return <Navigate to={localStorage.getItem('nexus_tour_pending') === '1' ? '/beta-welcome' : '/dashboard'} replace />;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', padding: 24 }}>
