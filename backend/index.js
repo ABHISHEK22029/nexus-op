@@ -6,6 +6,8 @@ const db = require('./db');
 const projectController = require('./controllers/ProjectController');
 const workOrderController = require('./controllers/WorkOrderController');
 const billController = require('./controllers/BillController');
+const authController = require('./controllers/AuthController');
+const { authenticate } = require('./middleware/auth');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -30,6 +32,17 @@ const logActivity = async (projectId, type, description) => {
    HEALTH CHECK
    ══════════════════════════════════════════════════════════ */
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
+/* ══════════════════════════════════════════════════════════
+   AUTHENTICATION (public: login) + GATE
+   Everything registered AFTER app.use(authenticate) requires a
+   valid Bearer token. /health and /auth/login stay public.
+   ══════════════════════════════════════════════════════════ */
+app.post('/auth/login', authController.login);
+
+app.use(authenticate); // ⬇ all routes below are protected
+
+app.get('/auth/me', authController.me);
 
 /* ══════════════════════════════════════════════════════════
    PROJECTS

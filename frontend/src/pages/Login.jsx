@@ -17,7 +17,9 @@ export default function Login() {
     if (!email || !password) { setLocalErr('Enter email and password'); return; }
     try {
       await login(email, password);
-      navigate('/dashboard');
+      // Hard navigation so all context providers re-init WITH the token
+      // present (ProjectProvider fetches /projects once on mount).
+      window.location.assign('/dashboard');
     } catch (err) {
       setLocalErr(err.message || 'Login failed');
     }

@@ -29,18 +29,20 @@ import BetaOnboarding from './pages/BetaOnboarding';
 import { RoleProvider, useRole } from './context/RoleContext';
 import { ProjectProvider, useProject } from './context/ProjectContext';
 import { useTheme } from './context/ThemeContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { UiConfigProvider } from './context/UiConfigContext';
 import { ToastProvider } from './context/ToastContext';
-import { UserCircle, Settings, Sun, Moon, Plus } from 'lucide-react';
+import { UserCircle, Settings, Sun, Moon, Plus, LogOut } from 'lucide-react';
 import QuickCreateModal from './components/QuickCreateModal';
+import ProtectedRoute from './components/ProtectedRoute';
 
 /* ─── Top Header (App Layer only) ──────────────────────── */
 const TopHeader = () => {
   const { role, setRole } = useRole();
   const { projects, activeProject, setActiveProject } = useProject();
   const { isDark, toggleTheme } = useTheme();
-  
+  const { user, logout } = useAuth();
+
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
   const [activeModal, setActiveModal] = React.useState(null);
 
@@ -260,8 +262,37 @@ const TopHeader = () => {
         </div>
       </button>
 
+      {/* ── User + Logout ── */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border-default)',
+          borderRadius: '8px', padding: '4px 6px 4px 12px',
+        }}
+      >
+        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {user?.name || user?.email || 'Admin'}
+        </span>
+        <button
+          onClick={() => { logout(); window.location.assign('/login'); }}
+          title="Sign out"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '5px',
+            background: 'transparent', border: '1px solid var(--border-default)',
+            borderRadius: '6px', padding: '5px 10px', cursor: 'pointer',
+            fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)',
+            transition: 'all 150ms ease',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent-red, #ef4444)'; e.currentTarget.style.borderColor = 'var(--accent-red, #ef4444)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+        >
+          <LogOut size={12} strokeWidth={2.5} /> Sign out
+        </button>
+      </div>
+
       {/* Render Quick Create Modal Overlay */}
-      <QuickCreateModal 
+      <QuickCreateModal
         type={activeModal} 
         isOpen={activeModal !== null} 
         onClose={() => setActiveModal(null)} 
@@ -274,18 +305,20 @@ const TopHeader = () => {
   );
 };
 
-/* ─── App Layout (with sidebar) ────────────────────────── */
+/* ─── App Layout (with sidebar) — auth-gated ───────────── */
 const AppLayout = ({ children }) => (
-  <div className="app-layout">
-    <Sidebar />
-    <main
-      className="app-main"
-      style={{ padding: '24px 28px 28px', paddingTop: '72px', position: 'relative' }}
-    >
-      <TopHeader />
-      {children}
-    </main>
-  </div>
+  <ProtectedRoute>
+    <div className="app-layout">
+      <Sidebar />
+      <main
+        className="app-main"
+        style={{ padding: '24px 28px 28px', paddingTop: '72px', position: 'relative' }}
+      >
+        <TopHeader />
+        {children}
+      </main>
+    </div>
+  </ProtectedRoute>
 );
 
 /* ─── Marketing Layout (full screen, no sidebar) ────────── */
@@ -301,9 +334,9 @@ const AppRoutes = () => {
     <Routes>
       {/* ── Auth ── */}
       <Route path="/login"       element={<Login />} />
-      <Route path="/onboarding"  element={<Onboarding />} />
-      <Route path="/beta-welcome"  element={<BetaWelcome />} />
-      <Route path="/beta-onboarding"  element={<BetaOnboarding />} />
+      <Route path="/onboarding"  element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+      <Route path="/beta-welcome"  element={<ProtectedRoute><BetaWelcome /></ProtectedRoute>} />
+      <Route path="/beta-onboarding"  element={<ProtectedRoute><BetaOnboarding /></ProtectedRoute>} />
 
       {/* ── Marketing Layer ── */}
       <Route path="/"              element={<MarketingLayout><Welcome /></MarketingLayout>} />
@@ -321,11 +354,11 @@ const AppRoutes = () => {
       <Route path="/vendors/:id/edit"  element={<AppLayout><VendorForm /></AppLayout>} />
       <Route path="/purchase-orders"   element={<AppLayout><PurchaseOrders /></AppLayout>} />
       <Route path="/po"                element={<Navigate to="/purchase-orders" replace />} />
-      <Route path="/po/:id"            element={<POInvoice />} />
+      <Route path="/po/:id"            element={<ProtectedRoute><POInvoice /></ProtectedRoute>} />
       <Route path="/inventory"         element={<AppLayout><Inventory /></AppLayout>} />
       <Route path="/grn"               element={<AppLayout><GRN /></AppLayout>} />
       <Route path="/bills"             element={<AppLayout><Bills /></AppLayout>} />
-      <Route path="/bills/:id"         element={<RABillInvoice />} />
+      <Route path="/bills/:id"         element={<ProtectedRoute><RABillInvoice /></ProtectedRoute>} />
       <Route path="/activity"          element={<AppLayout><ActivityLog /></AppLayout>} />
       <Route path="/flow"              element={<AppLayout><ProcessFlow /></AppLayout>} />
       <Route path="/boq"               element={<AppLayout><BOQ /></AppLayout>} />

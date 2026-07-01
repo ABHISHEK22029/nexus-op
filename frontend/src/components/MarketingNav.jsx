@@ -115,14 +115,14 @@ const MarketingNav = () => {
           </button>
 
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/login')}
             className="btn-ghost btn-sm"
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             Sign In
           </button>
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/login')}
             className="btn-primary btn-sm"
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
@@ -167,11 +167,11 @@ const MarketingNav = () => {
             </NavLink>
           ))}
           <button
-            onClick={() => { navigate('/dashboard'); setIsMobileOpen(false); }}
+            onClick={() => { navigate('/login'); setIsMobileOpen(false); }}
             className="btn-primary"
             style={{ width: '100%', justifyContent: 'center', marginTop: '12px' }}
           >
-            Test Beta <ChevronRight size={16} />
+            Sign In <ChevronRight size={16} />
           </button>
         </div>
       )}
