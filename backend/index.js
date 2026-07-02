@@ -193,8 +193,8 @@ app.get('/po/:id/items', async (req, res) => {
 });
 
 app.post('/po', async (req, res) => {
-  const { projectId, vendorId, workOrderId, itemName, quantity, unitPrice, quoteRef, paymentTerms, priceBasis, pnfInsurance, loadingScope, warranty, amountInWords, indentId } = req.body;
-  
+  const { projectId, vendorId, workOrderId, itemName, quantity, unitPrice, quoteRef, paymentTerms, priceBasis, pnfInsurance, loadingScope, warranty, amountInWords, indentId, gstRate } = req.body;
+
   if (!projectId || !vendorId || !itemName || !quantity)
     return res.status(400).json({ error: 'projectId, vendorId, itemName, quantity required' });
   
@@ -206,16 +206,16 @@ app.post('/po', async (req, res) => {
 
     const { rows } = await db.query(
       `INSERT INTO purchase_orders (
-        "projectId", "vendorId", "workOrderId", "itemName", quantity, "unitPrice", 
-        "poNumber", "quoteRef", "paymentTerms", "priceBasis", "pnfInsurance", 
-        "loadingScope", "warranty", "amountInWords", "indentId", status
+        "projectId", "vendorId", "workOrderId", "itemName", quantity, "unitPrice",
+        "poNumber", "quoteRef", "paymentTerms", "priceBasis", "pnfInsurance",
+        "loadingScope", "warranty", "amountInWords", "indentId", gst_rate, status
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'Pending') RETURNING id`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'Pending') RETURNING id`,
       [
         projectId, vendorId, workOrderId || null, itemName, quantity, unitPrice || null,
         poNumber, quoteRef || null, paymentTerms || null, priceBasis || 'Ex Works',
         pnfInsurance || 'Vendor Scope', loadingScope || 'Kirashi Scope', warranty || '12 months',
-        amountInWords || null, indentId || null
+        amountInWords || null, indentId || null, (gstRate === undefined || gstRate === '' ? 18 : Number(gstRate))
       ]
     );
     await logActivity(projectId, 'PO_CREATED', `${poNumber} created for "${itemName}"`);

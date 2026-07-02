@@ -20,6 +20,8 @@ export default function GrnBillBuilder() {
       if (!d) { toast.error('Could not load GRN'); return; }
       setCtx(d);
       setItems((d.items || []).map(it => ({ ...it, quantity: it.quantity ?? '', rate: it.rate ?? '' })));
+      // Default GST rate + intra/inter from the PO (shared with the PO invoice); still editable.
+      setF(prev => ({ ...prev, gstRate: d.gstRate ?? prev.gstRate, interstate: !!d.interstate }));
     });
   }, [grnId]);
 

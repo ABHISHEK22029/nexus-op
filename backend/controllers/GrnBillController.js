@@ -49,11 +49,21 @@ exports.prefill = async (req, res) => {
       .map(li => ({ description: li.description, hsn: li.hsn || '', uom: li.uom || 'nos', quantity: li.quantity, rate: li.unitPrice }));
     // Fall back to the PO header if no line items.
     if (!items.length && po) items = [{ description: po.itemName, hsn: '', uom: 'nos', quantity: grn.receivedQuantity || po.quantity, rate: po.unitPrice || 0 }];
+
+    // Shared intra/inter rule: derive from vendor vs company state code (GSTIN
+    // first two digits). Same logic the PO invoice uses. The bill can override.
+    let company = null;
+    try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+    const companyState = String(company?.stateCode || (company?.gstin || '').substring(0, 2) || '');
+    const vendorState = String(vendor?.gstin || '').substring(0, 2);
+    const interstate = !!vendorState && !!companyState && vendorState !== companyState;
+
     res.json({
       grn, po, vendor,
       projectId: grn.projectId,
       vendorName: vendor?.name || '',
-      interstate: false,
+      interstate,                        // auto-derived, overridable in the builder
+      gstRate: po?.gst_rate ?? 18,       // default to the PO's GST rate for consistency
       items,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

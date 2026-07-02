@@ -17,10 +17,11 @@ const PurchaseOrders = () => {
   const [showForm, setShowForm] = useState(false);
   const [company, setCompany] = useState(null);
 
-  const initialForm = { 
-    vendorId: '', 
-    itemName: '', 
+  const initialForm = {
+    vendorId: '',
+    itemName: '',
     quoteRef: '',
+    gstRate: 18,
     paymentTerms: '50% Advance, 50% before Delivery',
     priceBasis: 'Ex Works',
     pnfInsurance: 'Vendor Scope',
@@ -83,8 +84,9 @@ const PurchaseOrders = () => {
     setItems(newItems);
   };
 
+  const gstRatePct = Number(formData.gstRate) || 0;
   const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-  const tax = subtotal * 0.18;
+  const tax = subtotal * gstRatePct / 100;
   const totalValue = subtotal + tax;
 
   const handleSubmit = async (e) => {
@@ -181,9 +183,22 @@ const PurchaseOrders = () => {
               </select>
               {gstType && (
                 <div className="mt-1 text-xs text-amber-500/80">
-                  {gstType === 'intra' ? 'Intra-state (SGST 9% + CGST 9%)' : 'Inter-state (IGST 18%)'}
+                  {gstType === 'intra'
+                    ? `Intra-state (CGST ${(Number(formData.gstRate) || 0) / 2}% + SGST ${(Number(formData.gstRate) || 0) / 2}%)`
+                    : `Inter-state (IGST ${Number(formData.gstRate) || 0}%)`}
                 </div>
               )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">GST Rate %</label>
+              <input
+                type="number" min="0" step="0.01"
+                value={formData.gstRate}
+                onChange={e => setFormData({ ...formData, gstRate: e.target.value })}
+                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                placeholder="e.g. 18"
+              />
+              <div className="mt-1 text-xs text-gray-500">Used to compute GST on the PO invoice.</div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">PO Title / Summary <span className="text-red-400">*</span></label>
@@ -263,11 +278,11 @@ const PurchaseOrders = () => {
               <div className="flex justify-between text-sm text-gray-400 mb-1"><span>Subtotal:</span><span>₹{subtotal.toLocaleString('en-IN')}</span></div>
               {gstType === 'intra' ? (
                 <>
-                  <div className="flex justify-between text-sm text-gray-400 mb-1"><span>SGST (9%):</span><span>₹{(subtotal * 0.09).toLocaleString('en-IN')}</span></div>
-                  <div className="flex justify-between text-sm text-gray-400 mb-2"><span>CGST (9%):</span><span>₹{(subtotal * 0.09).toLocaleString('en-IN')}</span></div>
+                  <div className="flex justify-between text-sm text-gray-400 mb-1"><span>CGST ({gstRatePct / 2}%):</span><span>₹{(subtotal * gstRatePct / 200).toLocaleString('en-IN')}</span></div>
+                  <div className="flex justify-between text-sm text-gray-400 mb-2"><span>SGST ({gstRatePct / 2}%):</span><span>₹{(subtotal * gstRatePct / 200).toLocaleString('en-IN')}</span></div>
                 </>
               ) : (
-                <div className="flex justify-between text-sm text-gray-400 mb-2"><span>IGST (18%):</span><span>₹{(subtotal * 0.18).toLocaleString('en-IN')}</span></div>
+                <div className="flex justify-between text-sm text-gray-400 mb-2"><span>IGST ({gstRatePct}%):</span><span>₹{(subtotal * gstRatePct / 100).toLocaleString('en-IN')}</span></div>
               )}
               <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-white/10"><span>PO Value:</span><span>₹{totalValue.toLocaleString('en-IN')}</span></div>
             </div>

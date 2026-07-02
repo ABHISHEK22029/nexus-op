@@ -53,15 +53,25 @@ const POInvoice = () => {
     );
   }
 
-  const subtotal = items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
-  
-  // Determine GST Split
-  const isIntraState = po.vendorGstin && po.vendorGstin.substring(0, 2) === company.stateCode;
-  const sgst = isIntraState ? subtotal * 0.09 : 0;
-  const cgst = isIntraState ? subtotal * 0.09 : 0;
-  const igst = !isIntraState ? subtotal * 0.18 : 0;
-  const tax = sgst + cgst + igst;
-  const total = subtotal + tax;
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const subtotal = round2(items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0));
+
+  // GST rate comes from the PO (whatever the user entered) — never hardcoded.
+  const gstRate = Number(po.gst_rate ?? po.gstRate ?? 18);
+
+  // Intra vs inter-state: derived from vendor GSTIN vs company state — the SAME
+  // rule the GRN bill uses, so the two documents classify GST identically.
+  const companyState = String(company.stateCode || (company.gstin || '').substring(0, 2) || '');
+  const vendorState = String(po.vendorGstin || '').substring(0, 2);
+  const isIntraState = !!vendorState && !!companyState && vendorState === companyState;
+
+  const gstTotal = round2(subtotal * gstRate / 100);
+  const sgst = isIntraState ? round2(gstTotal / 2) : 0;
+  const cgst = isIntraState ? round2(gstTotal - sgst) : 0;   // keep cgst+sgst == gstTotal exactly
+  const igst = isIntraState ? 0 : gstTotal;
+  const tax = round2(sgst + cgst + igst);
+  const total = round2(subtotal + tax);
+  const halfRate = round2(gstRate / 2);
 
   const handleDownloadPdf = () => {
     const element = invoiceRef.current;
@@ -195,7 +205,7 @@ const POInvoice = () => {
           <div className="inv-notes">
             <strong>Other Comments or Special Instructions</strong>
             Payment Terms:<br/>{po.paymentTerms || 'Net 30 Days'}<br/><br/>
-            Note: Standard deduction of 5% applies towards retention/quality assurance unless overridden.
+            Note: This is the <strong>ordered value</strong>. The final payable is confirmed on the GRN bill after material is received (actual quantity + freight/charges).
           </div>
           
           <table className="inv-totals-table">
@@ -207,17 +217,17 @@ const POInvoice = () => {
               {isIntraState ? (
                 <>
                   <tr>
-                    <td className="tl">SGST - 9%</td>
-                    <td className="tv">{sgst.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                    <td className="tl">CGST - {halfRate}%</td>
+                    <td className="tv">{cgst.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
                   </tr>
                   <tr>
-                    <td className="tl">CGST - 9%</td>
-                    <td className="tv">{cgst.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                    <td className="tl">SGST - {halfRate}%</td>
+                    <td className="tv">{sgst.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
                   </tr>
                 </>
               ) : (
                 <tr>
-                  <td className="tl">IGST - 18%</td>
+                  <td className="tl">IGST - {gstRate}%</td>
                   <td className="tv">{igst.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
                 </tr>
               )}
@@ -226,7 +236,7 @@ const POInvoice = () => {
                 <td className="tv">{tax.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
               </tr>
               <tr className="tf">
-                <td className="tl" style={{color: '#000'}}>PO VALUE</td>
+                <td className="tl" style={{color: '#000'}}>PO VALUE (ORDERED)</td>
                 <td className="tv" style={{color: '#000'}}>{total.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
               </tr>
             </tbody>
