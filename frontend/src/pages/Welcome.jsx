@@ -5,7 +5,7 @@ import {
   Truck, ShoppingCart, BookOpen, Receipt, Workflow, Users,
   FolderGit2, CheckCircle, TrendingUp, Package, Shield,
   Play, Star, Building2, HardHat, IndianRupee, Calculator,
-  Activity, Brain
+  Activity, Brain, Factory, ShoppingBag, Files, ReceiptText
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
@@ -24,21 +24,21 @@ const WaveDivider = ({ flip = false, color1 = 'hsl(28,80%,90%)', color2 = 'hsl(2
 /* ── Testimonials data ── */
 const TESTIMONIALS = [
   {
-    quote: 'Nexus Op cut our PO processing time from 3 days to 4 hours. The SCM tracker alone saves our finance team an entire day every week.',
-    name: 'Rajesh Kumar', role: 'Project Manager, ORR Package NW-04', avatar: '👷',
+    quote: 'Nexus Op cut our order-to-PO time from 3 days to a few hours. Comparing three vendor quotes and raising the PO is now one screen.',
+    name: 'Rajesh Kumar', role: 'Operations Head, Precision Fabricators', avatar: '👷',
   },
   {
-    quote: "The RA Bill engine is the most accurate we've used. Retention, TDS, advance recovery — all computed automatically. Zero manual errors.",
+    quote: "The billing is the most accurate we've used. GST, TDS, retention, freight — all computed automatically on a proper tax invoice. Zero manual errors.",
     name: 'Priya Sharma', role: 'Finance Head, Kirashi Business Synergies', avatar: '💼',
   },
   {
-    quote: 'Having the BOQ, MB, and billing in one system means our site engineers and finance team finally look at the same numbers.',
-    name: 'Venkat Rao', role: 'Site Engineer, ORR Package SE-02', avatar: '🏗️',
+    quote: 'Material in, finished goods out, scrap sold — the yield view finally tells us the real cost per piece. We stopped guessing.',
+    name: 'Venkat Rao', role: 'Plant Manager, Metro Steel Works', avatar: '🏗️',
   },
 ];
 
 /* ── Logo marquee data ── */
-const LOGOS = ['HMDA', 'NHAI', 'L&T Infra', 'Shapoorji Pallonji', 'Afcons', 'IRB Infra', 'KEC Intl', 'Welspun Enterprises'];
+const LOGOS = ['Fabrication', 'Steel & Metals', 'Manufacturing', 'EPC Contractors', 'Trading & Distribution', 'Solar & Power', 'Machinery', 'Infrastructure'];
 
 /* ── Intersection Observer hook for scroll-triggered animations ── */
 const useInView = (threshold = 0.1) => {
@@ -281,7 +281,7 @@ const Welcome = () => {
           gap: '12px',
         }}
       >
-        <span>🚀 Nexus Op Beta is Live — Built for HMDA ORR Package Management</span>
+        <span>🚀 Nexus Op Beta is Live — The operations platform for growing SMEs</span>
         <button
           onClick={() => navigate('/login')}
           style={{
@@ -357,7 +357,7 @@ const Welcome = () => {
             style={{ opacity: heroInView ? 1 : 0 }}
           >
             <Zap size={12} />
-            Infrastructure Intelligence Platform
+            SME Operations Intelligence Platform
           </div>
 
           {/* Headline */}
@@ -369,7 +369,7 @@ const Welcome = () => {
             }}
           >
             The Smart Platform for{' '}
-            <span className="gradient-text-amber">Civil Project Delivery</span>
+            <span className="gradient-text-amber">SME Project Delivery</span>
           </h1>
 
           {/* Subtext */}
@@ -383,9 +383,10 @@ const Welcome = () => {
               opacity: heroInView ? 1 : 0,
             }}
           >
-            From material indents to RA Bills — Nexus Op manages the complete lifecycle
-            of infrastructure project operations for{' '}
-            <span style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>HMDA's ORR Corridor</span>.
+            From customer orders and vendor quotations to production, GRN and GST bills —
+            Nexus Op runs the complete{' '}
+            <span style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>buy → make → deliver → bill</span>{' '}
+            operation for growing SMEs. Built for fabricators, manufacturers and contractors.
           </p>
 
           <div
@@ -425,9 +426,9 @@ const Welcome = () => {
             }}
           >
             {[
-              { icon: <Shield size={14} />, text: 'PostgreSQL Powered' },
-              { icon: <TrendingUp size={14} />, text: '15 Core Modules' },
-              { icon: <Building2 size={14} />, text: 'HMDA ORR Ready' },
+              { icon: <Shield size={14} />, text: 'GST-Compliant Billing' },
+              { icon: <TrendingUp size={14} />, text: '20+ Modules' },
+              { icon: <Building2 size={14} />, text: 'Fabrication · Trading · Projects' },
               { icon: <Star size={14} />, text: 'Beta Access Live' },
             ].map(({ icon, text }) => (
               <div
@@ -533,7 +534,7 @@ const Welcome = () => {
                 >
                   <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                     <BarChart3 size={48} style={{ marginBottom: '12px', opacity: 0.4 }} />
-                    <p style={{ fontSize: '0.875rem' }}>S-Curve · Progress Dashboard · ORR Map</p>
+                    <p style={{ fontSize: '0.875rem' }}>Live KPIs · Yield & Cost · Order-to-Bill Flow</p>
                   </div>
                 </div>
               </div>
@@ -550,10 +551,10 @@ const Welcome = () => {
         <div className="container">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1px', background: 'var(--border-subtle)', borderRadius: '16px', overflow: 'hidden' }}>
             {[
-              { val: 5, suffix: '×', label: 'Faster Procurement Cycles', icon: '⚡' },
-              { val: 15, suffix: '', label: 'Integrated Modules', icon: '📋' },
-              { val: 99, suffix: '.8%', label: 'RA Bill Accuracy', icon: '💰' },
-              { val: 4, suffix: '', label: 'Active ORR Packages', icon: '🗺️' },
+              { val: 5, suffix: '×', label: 'Faster Order-to-Bill', icon: '⚡' },
+              { val: 20, suffix: '+', label: 'Integrated Modules', icon: '📋' },
+              { val: 100, suffix: '%', label: 'GST-Accurate Billing', icon: '💰' },
+              { val: 1, suffix: '', label: 'Connected Flow', icon: '🔗' },
             ].map(({ val, suffix, label, icon }) => (
               <div
                 key={label}
@@ -595,7 +596,7 @@ const Welcome = () => {
           <span style={{
             fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-disabled)',
             letterSpacing: '0.12em', textTransform: 'uppercase',
-          }}>Built for India's infrastructure leaders</span>
+          }}>Built for India's growing SMEs</span>
         </div>
         <div style={{ overflow: 'hidden' }}>
           <div style={{ display: 'flex', animation: 'nx-marquee 30s linear infinite', width: 'max-content' }}>
@@ -641,12 +642,12 @@ const Welcome = () => {
               <h2
                 style={{ maxWidth: '600px', margin: '16px auto 0', opacity: featInView ? 1 : 0, transition: 'opacity 0.5s 0.1s' }}
               >
-                Everything for{' '}
-                <span className="gradient-text-amber">Infrastructure Ops</span>
+                Everything to run your{' '}
+                <span className="gradient-text-amber">SME operation</span>
               </h2>
               <p
                 style={{
-                  maxWidth: '540px',
+                  maxWidth: '560px',
                   margin: '16px auto 0',
                   color: 'var(--text-muted)',
                   opacity: featInView ? 1 : 0,
@@ -654,21 +655,21 @@ const Welcome = () => {
                   lineHeight: 1.8,
                 }}
               >
-                15 integrated modules covering every aspect of civil project management,
-                from procurement to billing.
+                One connected flow — customer order → vendor quotations → purchase → goods
+                receipt → production → GST bills. Sales, procurement, fabrication and billing in one place.
               </p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-              <FeatureCard delay={0}   icon={<FolderGit2 size={22} />} title="Project Command Center"       desc="Create and manage multiple infrastructure projects with real-time context switching between active packages." />
-              <FeatureCard delay={80}  icon={<FileText size={22} />}    title="Bill of Quantities (BOQ)"    desc="Define itemized BOQ line items with unit rates. These rates drive all downstream billing calculations automatically." />
-              <FeatureCard delay={160} icon={<Users size={22} />}       title="Vendor Registry"             desc="Onboard contractors with PAN, GSTIN, rating, and capability tags. Bind them to work orders seamlessly." />
-              <FeatureCard delay={240} icon={<ShoppingCart size={22} />} title="Purchase Order Tracking"    desc="Raise and track POs from Pending → Approved → Dispatched → Delivered with one-click status transitions." />
-              <FeatureCard delay={320} icon={<Truck size={22} />}       title="GRN & Inventory"             desc="Record goods receipt notes at site. Inventory auto-updates on each delivery. Full inward material trail." />
-              <FeatureCard delay={400} icon={<BookOpen size={22} />}    title="Measurement Book"            desc="Log chainage-based L×W×D measurements per work order and BOQ item. Yields certified measurable quantities." />
-              <FeatureCard delay={480} icon={<Receipt size={22} />}     title="RA Bills Engine"             desc="Compute running-account bills deterministically: (Cumulative MB Qty - Prev Billed) × Rate - 2% TDS - 5% Retention." />
-              <FeatureCard delay={560} icon={<Map size={22} />}         title="Live ORR Map"                desc="Interactive Leaflet map showing all 4 ORR packages (SW/SE/NE/NW) with site depots and corridor overlays." />
-              <FeatureCard delay={640} icon={<Workflow size={22} />}    title="Process Flow Viz"            desc="ReactFlow + Dagre powered dynamic graph showing Vendor → PO → Bill chain with clickable node details." />
+              <FeatureCard delay={0}   icon={<ShoppingBag size={22} />}  title="Customer Orders"          desc="Log the PO your customer places, break it into parts/SKUs, and drive the whole procurement flow from it." />
+              <FeatureCard delay={80}  icon={<Files size={22} />}        title="Vendor Quotations"        desc="Capture up to 3 vendor quotes per part (Q1/Q2/Q3), compare price & lead time, pick the best — one click raises the Vendor PO." />
+              <FeatureCard delay={160} icon={<ShoppingCart size={22} />} title="Purchase Orders"          desc="Raise POs with your own GST rate, track Pending → Approved → Dispatched → Delivered, and print a clean B&W PO invoice." />
+              <FeatureCard delay={240} icon={<Truck size={22} />}        title="GRN & Inventory"          desc="Record goods receipt against a PO with vehicle & batch; inventory auto-updates on every delivery." />
+              <FeatureCard delay={320} icon={<ReceiptText size={22} />}  title="Customizable GST Bills"   desc="Turn a GRN into an editable bill — adjust lines/rates, add freight/charges/discount, choose GST — as a professional document." />
+              <FeatureCard delay={400} icon={<Factory size={22} />}      title="Production & Yield"       desc="For fabricators: consume raw material, record finished output & scrap, and see live yield %, material balance and cost per piece." />
+              <FeatureCard delay={480} icon={<FolderGit2 size={22} />}   title="Projects & BOQ"           desc="Run multiple projects with itemized BOQ rates that drive every downstream billing calculation — contractors welcome." />
+              <FeatureCard delay={560} icon={<Receipt size={22} />}      title="RA Bills Engine"          desc="Running-account bills with automatic GST, TDS, retention and other deductions — a proper Indian tax invoice, print-ready." />
+              <FeatureCard delay={640} icon={<Users size={22} />}        title="Customers & Vendors"      desc="Full masters for who you sell to and buy from — GSTIN, contacts, bank & compliance — reused across the whole flow." />
             </div>
           </div>
         </div>
@@ -827,15 +828,15 @@ const Welcome = () => {
               <span className="gradient-text-amber">Nexus Op</span>
             </h2>
             <p style={{ maxWidth: '480px', margin: '12px auto 0', color: 'var(--text-muted)', lineHeight: 1.8 }}>
-              Not a generic ERP. Built specifically for Indian civil infrastructure
-              with domain-accurate rules at every step.
+              Not a generic ERP. Built for Indian SMEs — fabricators, traders and
+              contractors — with GST-accurate rules and a flow that connects end to end.
             </p>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
             <DiffCard delay={0}   icon={<IndianRupee size={22} />} color="var(--brand-amber)"   title="GST-Native Calculations" desc="SGST/CGST/IGST auto-computed from GSTIN state codes. All 37 Indian states, TDS sections 194C, 194I, 194J." />
-            <DiffCard delay={80}  icon={<FileText size={22} />}    color="var(--accent-blue)"    title="IS-Standard BBS Engine"  desc="Bar Bending Schedule with cutting length per IS:2502. Unit weight = dia²/162. 5% waste auto-added." />
-            <DiffCard delay={160} icon={<BarChart3 size={22} />}   color="var(--accent-emerald)" title="Real RA Bill Formula"     desc="Gross − Prev Bills = Current. Retention 5%, TDS 2% u/s 194C, advance recovery — all auto-computed." />
-            <DiffCard delay={240} icon={<Calculator size={22} />}  color="#A78BFA"               title="Estimation Templates"    desc="Earth pit, concrete footing, column, beam, slab, road — pre-built formulas from real site engineering data." />
+            <DiffCard delay={80}  icon={<Workflow size={22} />}    color="var(--accent-blue)"    title="One Connected Flow"      desc="Customer order → quotation → PO → GRN → bill, all linked and traceable. No re-typing, no islands — the data flows through." />
+            <DiffCard delay={160} icon={<BarChart3 size={22} />}   color="var(--accent-emerald)" title="Real Billing Math"        desc="RA bills and GRN bills compute GST, TDS, retention, freight and discounts exactly — proper print-ready tax invoices." />
+            <DiffCard delay={240} icon={<Factory size={22} />}     color="#A78BFA"               title="Fabrication Yield"       desc="Track raw material in, finished goods out, and scrap — with live yield %, material reconciliation and true cost per piece." />
             <DiffCard delay={320} icon={<Activity size={22} />}    color="#EC4899"               title="Full Audit Trail"        desc="Every approval, status change, and payment is logged with timestamp, user, and reason. 100% auditable." />
             <DiffCard delay={400} icon={<Brain size={22} />}       color="#06B6D4"               title="Intelligence Alerts"     desc="Overdue PO alerts, milestone delay detection, low-stock warnings, vendor agreement expiry — all automated." />
           </div>
@@ -849,8 +850,8 @@ const Welcome = () => {
             <Star size={12} /> From Our Users
           </span>
           <h2 style={{ maxWidth: '480px', margin: '16px auto 48px' }}>
-            Trusted by ORR{' '}
-            <span className="gradient-text-amber">Corridor Teams</span>
+            Built for teams{' '}
+            <span className="gradient-text-amber">leaving Excel behind</span>
           </h2>
 
           {/* Testimonial carousel */}
@@ -969,8 +970,8 @@ const Welcome = () => {
               marginBottom: '40px',
             }}
           >
-            Access all 15 modules — manage projects, vendors, indents, GRN, and
-            billing in one unified interface. No setup required.
+            Run your full operation — customers, quotations, purchase orders, GRN,
+            production and GST bills — in one connected interface. No setup required.
           </p>
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '32px' }}>
             <button

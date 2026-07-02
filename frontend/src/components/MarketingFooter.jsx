@@ -95,8 +95,8 @@ const MarketingFooter = () => {
                 maxWidth: '280px',
               }}
             >
-              The intelligence platform for civil infrastructure project delivery.
-              Built for HMDA's Outer Ring Road Package Management.
+              The operations platform for growing SMEs — sales, procurement,
+              production and GST billing in one connected flow.
             </p>
             {/* Version pill */}
             <span className="pill pill-amber">⚡ Beta v1.0</span>
@@ -160,7 +160,7 @@ const MarketingFooter = () => {
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
             © 2026 Nexus Op. Built by{' '}
             <span style={{ color: 'var(--brand-amber)' }}>Abhishek Gupta</span>
-            {' '}for HMDA ORR Package Management.
+            {' '}for growing SMEs.
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span
