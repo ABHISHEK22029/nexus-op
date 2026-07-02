@@ -9,6 +9,7 @@ const billController = require('./controllers/BillController');
 const authController = require('./controllers/AuthController');
 const productionController = require('./controllers/ProductionController');
 const salesController = require('./controllers/SalesController');
+const grnBillController = require('./controllers/GrnBillController');
 const { authenticate } = require('./middleware/auth');
 const grnRouter = require('./routes/grn');
 
@@ -540,6 +541,14 @@ app.post('/quotations/:id/quote',      salesController.addQuoteLine);
 app.delete('/quotations/quote/:lineId', salesController.deleteQuoteLine);
 app.post('/quotations/:id/select',     salesController.selectQuote);
 app.post('/quotations/:id/generate-po', salesController.generatePO);
+
+/* ── Customizable GRN bills ── */
+app.get('/grn-bills/prefill/:grnId',   grnBillController.prefill);   // before :id
+app.get('/grn-bills',                  grnBillController.list);
+app.post('/grn-bills',                 grnBillController.create);
+app.get('/grn-bills/:id',              grnBillController.getById);
+app.patch('/grn-bills/:id/status',     grnBillController.setStatus);
+app.delete('/grn-bills/:id',           grnBillController.remove);
 
 /* ══════════════════════════════════════════════════════════
    RA BILLS — State machine

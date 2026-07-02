@@ -165,12 +165,18 @@ exports.generatePO = async (req, res) => {
     if (!line.vendor_id) return res.status(400).json({ error: 'The selected quote has no linked vendor — pick a vendor from your Vendors list on that quote' });
     if (!projectId) return res.status(400).json({ error: 'Select an active project (top bar) to raise the PO against' });
 
+    // Trace back to the customer order (quotation → order item → order).
+    let customerOrderId = null;
+    if (quote.customer_order_item_id) {
+      const oi = await db.query('SELECT customer_order_id FROM customer_order_items WHERE id = $1', [quote.customer_order_item_id]);
+      customerOrderId = oi.rows[0]?.customer_order_id || null;
+    }
     const c = await db.query('SELECT COUNT(*) FROM purchase_orders');
     const poNumber = `Kirashi/FY2026-27/${String(parseInt(c.rows[0].count) + 1).padStart(3, '0')}`;
     const { rows } = await db.query(
-      `INSERT INTO purchase_orders ("projectId","vendorId","itemName",quantity,"unitPrice","poNumber",status)
-       VALUES ($1,$2,$3,$4,$5,$6,'Pending') RETURNING id`,
-      [projectId, line.vendor_id, quote.part_description, quote.quantity || 1, line.unit_price || 0, poNumber]
+      `INSERT INTO purchase_orders ("projectId","vendorId","itemName",quantity,"unitPrice","poNumber",customer_order_id,quotation_id,status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending') RETURNING id`,
+      [projectId, line.vendor_id, quote.part_description, quote.quantity || 1, line.unit_price || 0, poNumber, customerOrderId, quote.id]
     );
     await db.query(
       `INSERT INTO po_line_items ("poId", sno, description, uom, quantity, "unitPrice")
@@ -178,6 +184,10 @@ exports.generatePO = async (req, res) => {
       [rows[0].id, quote.part_description, quote.unit || 'nos', quote.quantity || 1, line.unit_price || 0]
     );
     await db.query('UPDATE quotations SET status = $1 WHERE id = $2', ['PO Raised', req.params.id]);
-    res.json({ poId: rows[0].id, poNumber });
+    // Move the customer order into procurement automatically.
+    if (customerOrderId) {
+      await db.query(`UPDATE customer_orders SET status = 'In Procurement' WHERE id = $1 AND status = 'Open'`, [customerOrderId]);
+    }
+    res.json({ poId: rows[0].id, poNumber, customerOrderId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

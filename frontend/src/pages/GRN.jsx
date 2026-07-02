@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { PackageCheck, AlertTriangle, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { PackageCheck, AlertTriangle, Trash2, ReceiptText } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
 
 const GRN = () => {
   const { activeProject } = useProject();
   const toast = useToast();
+  const navigate = useNavigate();
   const [pos, setPos] = useState([]);
   const [grns, setGrns] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -159,6 +161,9 @@ const GRN = () => {
                   <td className="px-6 py-4 font-bold text-emerald-400">{req.receivedQuantity}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
+                      <button type="button" onClick={() => navigate(`/grn/${req.id}/bill`)} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.76rem', padding: '5px 11px' }}>
+                        <ReceiptText size={14} /> Generate Bill
+                      </button>
                       <button type="button" onClick={() => handleDelete(req.id)} title="Delete" className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors">
                         <Trash2 size={16} />
                       </button>

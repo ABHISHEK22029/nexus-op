@@ -23,6 +23,8 @@ import CustomerOrders from './pages/CustomerOrders';
 import SKUs from './pages/SKUs';
 import RawMaterials from './pages/RawMaterials';
 import Quotations from './pages/Quotations';
+import GrnBillBuilder from './pages/GrnBillBuilder';
+import GrnBillDoc from './pages/GrnBillDoc';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
@@ -382,6 +384,8 @@ const AppRoutes = () => {
       <Route path="/po/:id"            element={<ProtectedRoute><POInvoice /></ProtectedRoute>} />
       <Route path="/inventory"         element={<AppLayout><Inventory /></AppLayout>} />
       <Route path="/grn"               element={<AppLayout><GRN /></AppLayout>} />
+      <Route path="/grn/:grnId/bill"   element={<AppLayout><GrnBillBuilder /></AppLayout>} />
+      <Route path="/grn-bills/:id"     element={<AppLayout><GrnBillDoc /></AppLayout>} />
       <Route path="/production"        element={<AppLayout><Production /></AppLayout>} />
       <Route path="/production/:id"    element={<AppLayout><ProductionOrder /></AppLayout>} />
 

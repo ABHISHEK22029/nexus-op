@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -7,6 +8,7 @@ const STATUSES = ['Open', 'In Procurement', 'Delivered', 'Closed'];
 
 export default function CustomerOrders() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [skus, setSkus] = useState([]);
@@ -63,6 +65,19 @@ export default function CustomerOrders() {
   const del = async (id) => {
     if (!window.confirm('Delete this customer order?')) return;
     await fetch(`${API}/customer-orders/${id}`, { method: 'DELETE' }); load();
+  };
+
+  // One click: turn a customer-order line into a linked vendor quotation.
+  const raiseQuotation = async (item) => {
+    try {
+      const res = await fetch(`${API}/quotations`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partDescription: item.description, quantity: item.quantity, unit: item.unit, customerOrderItemId: item.id }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      toast.success(`Quotation raised for “${item.description}”`);
+      navigate('/quotations');
+    } catch (err) { toast.error(err.message); }
   };
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
@@ -161,6 +176,11 @@ export default function CustomerOrders() {
                               <td style={{ padding: '7px 4px', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.84rem' }}>{it.description}</td>
                               <td style={{ padding: '7px 4px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{it.quantity} {it.unit}</td>
                               <td style={{ padding: '7px 4px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{it.target_price ? `target ₹${Number(it.target_price).toLocaleString('en-IN')}` : ''}</td>
+                              <td style={{ padding: '7px 4px', textAlign: 'right' }}>
+                                <button onClick={() => raiseQuotation(it)} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                  <Files size={13} /> Raise Quotation
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
