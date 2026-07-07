@@ -8,6 +8,7 @@ export default function RawMaterials() {
       title="Raw Materials"
       subtitle="The inputs you buy to build your SKUs."
       endpoint="raw-materials"
+      attachEntity="raw_material"
       icon={Boxes}
       fields={[
         { key: 'material_code', label: 'Material Code', placeholder: 'MSA-50' },

@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, X, Check } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Check, Paperclip } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import Attachments from './Attachments';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 /* Reusable owner-scoped master (Customers / SKUs / Raw Materials).
-   config: { title, subtitle, endpoint, icon, fields[], columns[] } */
-export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns }) {
+   config: { title, subtitle, endpoint, icon, fields[], columns[], attachEntity } */
+export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity }) {
   const toast = useToast();
   const [rows, setRows] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
+  const [attachRow, setAttachRow] = useState(null);
 
   const empty = () => Object.fromEntries(fields.map(f => [f.key, '']));
 
@@ -115,6 +117,7 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
                 <tr key={row.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                   {columns.map(c => <td key={c.key} style={{ padding: '11px 14px', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{c.render ? c.render(row) : (row[c.key] ?? '—')}</td>)}
                   <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {attachEntity && <button onClick={() => setAttachRow(row)} title="Attachments" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 4 }}><Paperclip size={15} /></button>}
                     <button onClick={() => openEdit(row)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 4 }}><Pencil size={15} /></button>
                     <button onClick={() => del(row)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Trash2 size={15} /></button>
                   </td>
@@ -124,6 +127,18 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
           </table>
         )}
       </div>
+
+      {attachRow && (
+        <div onClick={() => setAttachRow(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 16, boxShadow: 'var(--shadow-md)', padding: 22 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{attachRow[fields[0].key] || attachRow.name}</div>
+              <button onClick={() => setAttachRow(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
+            </div>
+            <Attachments entityType={attachEntity} entityId={attachRow.id} label="Documents" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ export default function Customers() {
       title="Customers"
       subtitle="The companies you sell to — a customer order starts here."
       endpoint="customers"
+      attachEntity="customer"
       icon={Contact}
       fields={[
         { key: 'name', label: 'Customer Name', required: true, placeholder: 'e.g. TSTRANSCO' },

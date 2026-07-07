@@ -10,6 +10,9 @@ const authController = require('./controllers/AuthController');
 const productionController = require('./controllers/ProductionController');
 const salesController = require('./controllers/SalesController');
 const grnBillController = require('./controllers/GrnBillController');
+const attachmentController = require('./controllers/AttachmentController');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate } = require('./middleware/auth');
 const grnRouter = require('./routes/grn');
 
@@ -541,6 +544,12 @@ app.post('/quotations/:id/quote',      salesController.addQuoteLine);
 app.delete('/quotations/quote/:lineId', salesController.deleteQuoteLine);
 app.post('/quotations/:id/select',     salesController.selectQuote);
 app.post('/quotations/:id/generate-po', salesController.generatePO);
+
+/* ── Attachments (files on any record) ── */
+app.post('/attachments',            upload.single('file'), attachmentController.create);
+app.get('/attachments',             attachmentController.list);
+app.get('/attachments/:id/download', attachmentController.download);
+app.delete('/attachments/:id',      attachmentController.remove);
 
 /* ── Customizable GRN bills ── */
 app.get('/grn-bills/prefill/:grnId',   grnBillController.prefill);   // before :id

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
+import Attachments from '../components/Attachments';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -36,6 +37,11 @@ export default function GrnBillDoc() {
           <button onClick={pdf} className="inv-act-btn"><Download size={15} /> PDF</button>
           <button onClick={() => window.print()} className="inv-act-btn primary"><Printer size={15} /> Print</button>
         </div>
+      </div>
+
+      {/* Attachments — challan / vendor bill (hidden on print) */}
+      <div className="print:hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <Attachments entityType="grn_bill" entityId={id} label="Challan & Documents" compact />
       </div>
 
       {/* B&W document */}

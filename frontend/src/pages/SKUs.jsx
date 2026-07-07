@@ -8,6 +8,7 @@ export default function SKUs() {
       title="SKUs"
       subtitle="Your product / part catalog — what you quote and deliver."
       endpoint="skus"
+      attachEntity="sku"
       icon={Tags}
       fields={[
         { key: 'sku_code', label: 'SKU Code', placeholder: 'CA-VT' },
