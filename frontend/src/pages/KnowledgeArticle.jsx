@@ -5,7 +5,7 @@ import { Markdown, parseMarkdown } from '../lib/miniMarkdown';
 import { useToast } from '../context/ToastContext';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const CAT_COLOR = { Overview: '#0ea5e9', Sales: '#3b82f6', Catalog: '#8b5cf6', Procurement: '#f59e0b', Production: '#a855f7', Billing: '#10b981', Setup: '#64748b' };
+const CAT_COLOR = { Overview: '#0ea5e9', Sales: '#3b82f6', Catalog: '#8b5cf6', Procurement: '#f59e0b', Production: '#a855f7', Billing: '#10b981', Project: '#6366f1', System: '#0891b2', Setup: '#64748b' };
 const catColor = (c) => CAT_COLOR[c] || '#64748b';
 const RECENT_KEY = 'nexus.kb.recent';
 
