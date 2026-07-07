@@ -70,6 +70,18 @@ export default function AskAi() {
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, loading, open]);
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 100); }, [open]);
 
+  // Let any screen open + seed the assistant (e.g. an article's "Ask AI a follow-up").
+  useEffect(() => {
+    const onOpen = (e) => {
+      setOpen(true);
+      const seed = e?.detail?.seed;
+      if (seed) setInput(seed);
+      setTimeout(() => { inputRef.current?.focus(); const el = inputRef.current; if (el) el.selectionStart = el.selectionEnd = el.value.length; }, 120);
+    };
+    window.addEventListener('askai:open', onOpen);
+    return () => window.removeEventListener('askai:open', onOpen);
+  }, []);
+
   if (hidden) return null;
 
   const send = async (text) => {

@@ -33,6 +33,8 @@ import Reports from './pages/Reports';
 import Users from './pages/Users';
 import ImportData from './pages/Import';
 import Automation from './pages/Automation';
+import SmartKnowledge from './pages/SmartKnowledge';
+import KnowledgeArticle from './pages/KnowledgeArticle';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
@@ -414,6 +416,8 @@ const AppRoutes = () => {
       <Route path="/bills"             element={<AppLayout><Bills /></AppLayout>} />
       <Route path="/expenses"          element={<AppLayout><Expenses /></AppLayout>} />
       <Route path="/reports"           element={<AppLayout><Reports /></AppLayout>} />
+      <Route path="/knowledge"         element={<AppLayout><SmartKnowledge /></AppLayout>} />
+      <Route path="/knowledge/:slug"   element={<AppLayout><KnowledgeArticle /></AppLayout>} />
       <Route path="/users"             element={<AppLayout><Users /></AppLayout>} />
       <Route path="/import"            element={<AppLayout><ImportData /></AppLayout>} />
       <Route path="/automation"        element={<AppLayout><Automation /></AppLayout>} />

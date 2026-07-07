@@ -587,6 +587,39 @@ const Welcome = () => {
         </div>
       </section>
 
+      {/* ── AI & SMART KNOWLEDGE HIGHLIGHT (new) ── */}
+      <section className="section" style={{ paddingTop: '56px', paddingBottom: '24px' }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+            <span className="pill pill-amber" style={{ marginBottom: '16px' }}><Brain size={12} /> New in Beta · Intelligence</span>
+            <h2 style={{ maxWidth: '620px', margin: '16px auto 0' }}>
+              Answers and guidance, <span className="gradient-text-amber">built in</span>
+            </h2>
+            <p style={{ maxWidth: '580px', margin: '16px auto 0', color: 'var(--text-muted)', lineHeight: 1.8 }}>
+              Never get stuck. <b>Ask AI</b> knows your data and your workflow, and <b>Smart Knowledge</b> documents
+              every step — all inside Nexus-OP, on every screen.
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', maxWidth: '900px', margin: '0 auto' }}>
+            {[
+              { icon: <Brain size={24} />, title: 'Ask AI', to: '/knowledge', cta: 'Try Ask AI',
+                desc: 'A read-only assistant on every screen. Ask "what\'s overdue?", "what needs approval?", or "how do I raise a PO?" — grounded in your own data, and it points you to the right screen. Stays strictly on Nexus-OP topics.' },
+              { icon: <BookOpen size={24} />, title: 'Smart Knowledge', to: '/knowledge', cta: 'Browse guides',
+                desc: 'A searchable library of guides and how-tos for every part of the platform — orders, procurement, production, GST billing and more. One click to "Ask AI a follow-up" from any article.' },
+            ].map((c) => (
+              <div key={c.title} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '20px', padding: '28px', boxShadow: '0 8px 40px hsl(28,40%,50%,0.06)' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))', marginBottom: '16px' }}>{c.icon}</div>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', fontWeight: 800, margin: '0 0 8px' }}>{c.title}</h3>
+                <p style={{ color: 'var(--text-muted)', lineHeight: 1.7, margin: '0 0 18px', fontSize: '0.92rem' }}>{c.desc}</p>
+                <Link to={c.to} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--brand-amber)', fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none' }}>
+                  {c.cta} <ArrowRight size={15} />
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── LOGO MARQUEE (CSOD-style trust strip) ── */}
       <div style={{
         background: 'var(--bg-base)', borderBottom: '1px solid var(--border-subtle)',
@@ -670,6 +703,8 @@ const Welcome = () => {
               <FeatureCard delay={480} icon={<FolderGit2 size={22} />}   title="Projects & BOQ"           desc="Run multiple projects with itemized BOQ rates that drive every downstream billing calculation — contractors welcome." />
               <FeatureCard delay={560} icon={<Receipt size={22} />}      title="RA Bills Engine"          desc="Running-account bills with automatic GST, TDS, retention and other deductions — a proper Indian tax invoice, print-ready." />
               <FeatureCard delay={640} icon={<Users size={22} />}        title="Customers & Vendors"      desc="Full masters for who you sell to and buy from — GSTIN, contacts, bank & compliance — reused across the whole flow." />
+              <FeatureCard delay={720} icon={<Brain size={22} />}        title="Ask AI"                   desc="A read-only assistant on every screen — answers about your own data ('what's overdue?', 'what needs approval?') and how to use any feature, grounded and on-topic." />
+              <FeatureCard delay={800} icon={<BookOpen size={22} />}     title="Smart Knowledge"          desc="A searchable library of guides and how-tos for the whole platform, with a one-click 'Ask AI a follow-up' from any article." />
             </div>
           </div>
         </div>
