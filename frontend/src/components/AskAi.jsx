@@ -100,11 +100,18 @@ export default function AskAi() {
           context: PAGE_NAMES[location.pathname] || '',
         }),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Something went wrong');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Never surface internal/config details to end-users — show a friendly note.
+        const friendly = res.status === 503
+          ? "Ask AI isn't switched on yet — please check back shortly."
+          : "I couldn't reach the assistant just now. Please try again in a moment.";
+        setMessages([...next, { role: 'assistant', content: friendly, sources: [] }]);
+        return;
+      }
       setMessages([...next, { role: 'assistant', content: d.answer || '…', sources: d.sources || [] }]);
     } catch (e) {
-      setMessages([...next, { role: 'assistant', content: `⚠️ ${e.message}`, sources: [] }]);
+      setMessages([...next, { role: 'assistant', content: "I couldn't reach the assistant just now. Please try again in a moment.", sources: [] }]);
     } finally { setLoading(false); }
   };
 
