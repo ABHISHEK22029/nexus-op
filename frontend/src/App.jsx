@@ -25,6 +25,9 @@ import RawMaterials from './pages/RawMaterials';
 import Quotations from './pages/Quotations';
 import GrnBillBuilder from './pages/GrnBillBuilder';
 import GrnBillDoc from './pages/GrnBillDoc';
+import SalesInvoices from './pages/SalesInvoices';
+import SalesInvoiceBuilder from './pages/SalesInvoiceBuilder';
+import SalesInvoiceDoc from './pages/SalesInvoiceDoc';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
@@ -392,6 +395,9 @@ const AppRoutes = () => {
       {/* ── Customer-order → procurement flow ── */}
       <Route path="/customers"       element={<AppLayout><Customers /></AppLayout>} />
       <Route path="/customer-orders" element={<AppLayout><CustomerOrders /></AppLayout>} />
+      <Route path="/customer-orders/:coId/invoice" element={<AppLayout><SalesInvoiceBuilder /></AppLayout>} />
+      <Route path="/sales-invoices"  element={<AppLayout><SalesInvoices /></AppLayout>} />
+      <Route path="/sales-invoices/:id" element={<AppLayout><SalesInvoiceDoc /></AppLayout>} />
       <Route path="/skus"            element={<AppLayout><SKUs /></AppLayout>} />
       <Route path="/raw-materials"   element={<AppLayout><RawMaterials /></AppLayout>} />
       <Route path="/quotations"      element={<AppLayout><Quotations /></AppLayout>} />

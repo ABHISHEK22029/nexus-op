@@ -185,7 +185,12 @@ export default function CustomerOrders() {
                           ))}
                         </tbody>
                       </table>
-                      <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 8 }}>Next: raise <b>Quotations</b> for these parts to select vendors →</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 8 }}>
+                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Raise <b>Quotations</b> per line to source vendors, or bill the customer →</div>
+                        <button onClick={() => navigate(`/customer-orders/${o.id}/invoice`)} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <Files size={14} /> Create Invoice
+                        </button>
+                      </div>
                     </td></tr>
                   )}
                 </React.Fragment>

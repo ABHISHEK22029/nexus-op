@@ -10,6 +10,7 @@ const authController = require('./controllers/AuthController');
 const productionController = require('./controllers/ProductionController');
 const salesController = require('./controllers/SalesController');
 const grnBillController = require('./controllers/GrnBillController');
+const salesInvoiceController = require('./controllers/SalesInvoiceController');
 const attachmentController = require('./controllers/AttachmentController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
@@ -558,6 +559,15 @@ app.post('/grn-bills',                 grnBillController.create);
 app.get('/grn-bills/:id',              grnBillController.getById);
 app.patch('/grn-bills/:id/status',     grnBillController.setStatus);
 app.delete('/grn-bills/:id',           grnBillController.remove);
+
+/* ── Customer Sales Invoices + payments ── */
+app.get('/sales-invoices/prefill/:customerOrderId', salesInvoiceController.prefill);  // before :id
+app.get('/sales-invoices',             salesInvoiceController.list);
+app.post('/sales-invoices',            salesInvoiceController.create);
+app.get('/sales-invoices/:id',         salesInvoiceController.getById);
+app.post('/sales-invoices/:id/payment', salesInvoiceController.addPayment);
+app.patch('/sales-invoices/:id/status', salesInvoiceController.setStatus);
+app.delete('/sales-invoices/:id',      salesInvoiceController.remove);
 
 /* ══════════════════════════════════════════════════════════
    RA BILLS — State machine

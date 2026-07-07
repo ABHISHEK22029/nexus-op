@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, ShoppingCart, Package, Activity,
   Receipt, Workflow, FileText, ClipboardList, BookOpen, Truck,
   FolderGit2, Briefcase, Milestone, Zap, Home, Sun, Moon, Factory,
-  Contact, ShoppingBag, Tags, Boxes, Files
+  Contact, ShoppingBag, Tags, Boxes, Files, ReceiptIndianRupee
 } from 'lucide-react';
 import { useRole } from '../context/RoleContext';
 import { useProject } from '../context/ProjectContext';
@@ -21,6 +21,7 @@ const Sidebar = () => {
     // ── Sales & customer orders (NEW) ──
     { name: 'Customers', path: '/customers', icon: <Contact size={18} />, group: 'Sales' },
     { name: 'Customer Orders', path: '/customer-orders', icon: <ShoppingBag size={18} />, group: 'Sales' },
+    { name: 'Sales Invoices', path: '/sales-invoices', icon: <ReceiptIndianRupee size={18} />, group: 'Sales' },
 
     // ── Catalog (NEW) ──
     { name: 'SKUs', path: '/skus', icon: <Tags size={18} />, group: 'Catalog' },
@@ -65,7 +66,7 @@ const Sidebar = () => {
       case 'Engineer':
         return allNavItems.filter(i => ['Purchase Orders', 'Inventory', 'Raw Materials', 'SKUs', 'Quotations', 'Production', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
       case 'Finance':
-        return allNavItems.filter(i => ['Dashboard', 'Customers', 'Customer Orders', 'Quotations', 'RA Bills', 'Activity Log', 'BOQ'].includes(i.name));
+        return allNavItems.filter(i => ['Dashboard', 'Customers', 'Customer Orders', 'Sales Invoices', 'Quotations', 'RA Bills', 'Activity Log', 'BOQ'].includes(i.name));
       case 'Vendor':
         return allNavItems.filter(i => ['Purchase Orders'].includes(i.name));
       case 'Admin':
