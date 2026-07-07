@@ -76,11 +76,11 @@ const TopHeader = () => {
   return (
     <div
       style={{
-        position: 'absolute',
+        position: 'sticky',
         top: 0,
-        right: 0,
-        left: 0,
-        padding: '12px 20px',
+        minHeight: '60px',
+        boxSizing: 'border-box',
+        padding: '12px 28px',
         zIndex: 50,
         display: 'flex',
         alignItems: 'center',
@@ -347,12 +347,11 @@ const AppLayout = ({ children }) => (
   <ProtectedRoute>
     <div className="app-layout">
       <Sidebar />
-      <main
-        className="app-main"
-        style={{ padding: '24px 28px 28px', paddingTop: '72px', position: 'relative' }}
-      >
+      <main className="app-main" style={{ position: 'relative' }}>
         <TopHeader />
-        {children}
+        <div className="app-page">
+          {children}
+        </div>
       </main>
       <ProductTour />
     </div>
