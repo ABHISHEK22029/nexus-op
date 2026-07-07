@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, Sparkles, Link2, Printer, Building2, Hash, BookOpen } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Sparkles, Link2, Printer, Building2, Hash, BookOpen, Info, CheckSquare, ListChecks, KeyRound, Lightbulb, HelpCircle, Check } from 'lucide-react';
 import { Markdown, parseMarkdown } from '../lib/miniMarkdown';
 import { useToast } from '../context/ToastContext';
 
@@ -8,6 +8,111 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const CAT_COLOR = { Overview: '#0ea5e9', Sales: '#3b82f6', Catalog: '#8b5cf6', Procurement: '#f59e0b', Production: '#a855f7', Billing: '#10b981', Project: '#6366f1', System: '#0891b2', Setup: '#64748b' };
 const catColor = (c) => CAT_COLOR[c] || '#64748b';
 const RECENT_KEY = 'nexus.kb.recent';
+
+/* ── structured content model → sections + TOC ── */
+const SECTION_META = {
+  overview:    { id: 'overview',       title: 'Overview',        icon: Info },
+  whatYouNeed: { id: 'what-youll-need', title: "What you'll need", icon: CheckSquare },
+  steps:       { id: 'how-to-do-it',   title: 'How to do it',    icon: ListChecks },
+  keyPoints:   { id: 'key-points',     title: 'Key points',      icon: KeyRound },
+  tips:        { id: 'tips',           title: 'Tips',            icon: Lightbulb },
+  faqs:        { id: 'faqs',           title: 'Common questions', icon: HelpCircle },
+};
+const STRUCTURED_ORDER = ['overview', 'whatYouNeed', 'steps', 'keyPoints', 'tips', 'faqs'];
+const hasContent = (v) => (Array.isArray(v) ? v.length > 0 : !!v);
+
+function isStructured(a) {
+  return a?.structured && STRUCTURED_ORDER.some((k) => hasContent(a.structured[k]));
+}
+function structuredToc(a) {
+  return STRUCTURED_ORDER.filter((k) => hasContent(a.structured[k])).map((k) => ({ id: SECTION_META[k].id, text: SECTION_META[k].title }));
+}
+
+function Section({ meta, children }) {
+  const Icon = meta.icon;
+  return (
+    <section id={meta.id} style={{ scrollMarginTop: 90, marginBottom: 30 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <span style={{ width: 30, height: 30, borderRadius: 8, background: 'hsl(28,100%,54%,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--brand-amber)', flexShrink: 0 }}><Icon size={16} /></span>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>{meta.title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Stepper({ steps }) {
+  return (
+    <div>
+      {steps.map((s, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '38px 1fr', gap: 16, position: 'relative', paddingBottom: i < steps.length - 1 ? 22 : 0 }}>
+          {i < steps.length - 1 && <div style={{ position: 'absolute', left: 18, top: 36, bottom: 0, width: 2, background: 'var(--border-default)' }} />}
+          <div style={{ width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.95rem', color: '#fff', background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))', boxShadow: '0 2px 8px hsl(28,100%,54%,0.3)', zIndex: 1 }}>{i + 1}</div>
+          <div style={{ paddingTop: 5 }}>
+            <div style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '1rem', marginBottom: 3 }}>{s.title}</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.65 }}>{s.detail}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StructuredBody({ s }) {
+  return (
+    <div>
+      {hasContent(s.overview) && (
+        <Section meta={SECTION_META.overview}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.96rem', lineHeight: 1.75, margin: 0 }}>{s.overview}</p>
+        </Section>
+      )}
+      {hasContent(s.whatYouNeed) && (
+        <Section meta={SECTION_META.whatYouNeed}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {s.whatYouNeed.map((w, i) => (
+              <div key={i} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+                <span style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px solid var(--border-default)', flexShrink: 0, marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Check size={11} style={{ color: 'var(--text-muted)' }} /></span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.55 }}>{w}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+      {hasContent(s.steps) && <Section meta={SECTION_META.steps}><Stepper steps={s.steps} /></Section>}
+      {hasContent(s.keyPoints) && (
+        <Section meta={SECTION_META.keyPoints}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            {s.keyPoints.map((k, i) => (
+              <div key={i} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--brand-amber)', flexShrink: 0, marginTop: 8 }} />
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.6 }}>{k}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+      {hasContent(s.tips) && (
+        <Section meta={SECTION_META.tips}>
+          <div style={{ background: 'hsl(28,100%,54%,0.07)', border: '1px solid hsl(28,100%,54%,0.2)', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {s.tips.map((t, i) => <div key={i} style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6 }}>💡 {t}</div>)}
+          </div>
+        </Section>
+      )}
+      {hasContent(s.faqs) && (
+        <Section meta={SECTION_META.faqs}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {s.faqs.map((f, i) => (
+              <div key={i}>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.92rem', marginBottom: 3 }}>{f.q}</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6 }}>{f.a}</div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+    </div>
+  );
+}
 
 export default function KnowledgeArticle() {
   const { slug } = useParams();
@@ -41,7 +146,11 @@ export default function KnowledgeArticle() {
     return [...m.entries()];
   }, [nav]);
 
-  const headings = useMemo(() => (article ? parseMarkdown(article.body).headings : []), [article]);
+  const structured = article ? isStructured(article) : false;
+  const headings = useMemo(() => {
+    if (!article) return [];
+    return structured ? structuredToc(article) : parseMarkdown(article.body).headings;
+  }, [article, structured]);
 
   const askFollowUp = () => {
     if (!article) return;
@@ -106,7 +215,9 @@ export default function KnowledgeArticle() {
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 10px', lineHeight: 1.15 }}>{article.title}</h1>
         {article.summary && <p style={{ fontSize: '1.02rem', color: 'var(--text-secondary)', margin: '0 0 22px', lineHeight: 1.6 }}>{article.summary}</p>}
         <div style={{ height: 1, background: 'var(--border-subtle)', margin: '0 0 22px' }} />
-        <div style={{ fontSize: '0.92rem' }}><Markdown>{article.body}</Markdown></div>
+        {structured
+          ? <StructuredBody s={article.structured} />
+          : <div style={{ fontSize: '0.92rem' }}><Markdown>{article.body}</Markdown></div>}
 
         <div style={{ marginTop: 32, padding: 18, ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, background: 'linear-gradient(135deg, hsl(28,100%,54%,0.06), transparent)' }}>
           <div>
