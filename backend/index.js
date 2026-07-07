@@ -13,6 +13,7 @@ const grnBillController = require('./controllers/GrnBillController');
 const salesInvoiceController = require('./controllers/SalesInvoiceController');
 const attachmentController = require('./controllers/AttachmentController');
 const recurringController = require('./controllers/RecurringController');
+const aiController = require('./controllers/AiController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -77,6 +78,8 @@ app.use(scopeProjectAccess);
 /* Enforced RBAC (Phase 0): a "Viewer" is read-only. Everyone else
    (Admin / Manager / Staff / User) can write. Real, enforced, and safe. */
 app.use((req, res, next) => {
+  // Ask AI is a POST but strictly read-only, so everyone (incl. Viewer) may use it.
+  if (req.path === '/ai/ask') return next();
   if (req.user?.role === 'Viewer' && ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) {
     return res.status(403).json({ error: 'Your role (Viewer) has read-only access' });
   }
@@ -400,6 +403,11 @@ app.patch('/recurring/:id', requireRole('Admin', 'Manager'), recurringController
 app.delete('/recurring/:id', requireRole('Admin', 'Manager'), recurringController.remove);
 app.get('/recurring/:id/runs', recurringController.runs);
 app.post('/recurring/run-now', requireRole('Admin', 'Manager'), recurringController.runNow);
+
+// ── Ask AI + shared Knowledge Base ──
+app.post('/ai/ask', aiController.ask);
+app.get('/kb/articles', aiController.kbList);
+app.get('/kb/articles/:slug', aiController.kbGet);
 
 app.patch('/po/:id/dispatch', async (req, res) => {
   try {

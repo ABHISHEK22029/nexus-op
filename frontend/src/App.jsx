@@ -54,6 +54,7 @@ import { UserCircle, Settings, Sun, Moon, Plus, LogOut } from 'lucide-react';
 import QuickCreateModal from './components/QuickCreateModal';
 import ProtectedRoute from './components/ProtectedRoute';
 import ProductTour from './components/ProductTour';
+import AskAi from './components/AskAi';
 import NotificationBell from './components/NotificationBell';
 
 /* ─── Top Header (App Layer only) ──────────────────────── */
@@ -354,6 +355,7 @@ const AppLayout = ({ children }) => (
         </div>
       </main>
       <ProductTour />
+      <AskAi />
     </div>
   </ProtectedRoute>
 );
