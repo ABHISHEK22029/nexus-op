@@ -7,7 +7,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 /* Reusable owner-scoped master (Customers / SKUs / Raw Materials).
    config: { title, subtitle, endpoint, icon, fields[], columns[], attachEntity } */
-export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity }) {
+export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity, summaryField, summaryLabel }) {
   const toast = useToast();
   const [rows, setRows] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -95,6 +95,15 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
             <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancel</button>
           </div>
         </form>
+      )}
+
+      {summaryField && rows.length > 0 && (
+        <div style={{ ...card, padding: '14px 18px', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{summaryLabel || `Total ${title}`}</span>
+          <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--brand-amber)', fontFamily: 'var(--font-mono)' }}>
+            ₹{rows.reduce((s, r) => s + (Number(r[summaryField]) || 0), 0).toLocaleString('en-IN')}
+          </span>
+        </div>
       )}
 
       <div style={{ ...card, overflow: 'hidden' }}>

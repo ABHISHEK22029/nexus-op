@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Users, ShoppingCart, Package, Activity,
   Receipt, Workflow, FileText, ClipboardList, BookOpen, Truck,
   FolderGit2, Briefcase, Milestone, Zap, Home, Sun, Moon, Factory,
-  Contact, ShoppingBag, Tags, Boxes, Files, ReceiptIndianRupee
+  Contact, ShoppingBag, Tags, Boxes, Files, ReceiptIndianRupee,
+  Wallet, BarChart3, FileSpreadsheet, UserCog
 } from 'lucide-react';
 import { useRole } from '../context/RoleContext';
 import { useProject } from '../context/ProjectContext';
@@ -36,6 +37,7 @@ const Sidebar = () => {
 
     // ── Billing ──
     { name: 'RA Bills', path: '/bills', icon: <Receipt size={18} />, group: 'Billing' },
+    { name: 'Expenses', path: '/expenses', icon: <Wallet size={18} />, group: 'Billing' },
 
     // ── Projects ──
     { name: 'Projects', path: '/projects', icon: <FolderGit2 size={18} />, group: 'Project' },
@@ -45,6 +47,9 @@ const Sidebar = () => {
     { name: 'Production', path: '/production', icon: <Factory size={18} />, group: 'Fabrication' },
 
     // ── System ──
+    { name: 'Reports', path: '/reports', icon: <BarChart3 size={18} />, group: 'System' },
+    { name: 'Import Data', path: '/import', icon: <FileSpreadsheet size={18} />, group: 'System' },
+    { name: 'Team & Access', path: '/users', icon: <UserCog size={18} />, group: 'System' },
     { name: 'Activity Log', path: '/activity', icon: <Activity size={18} />, group: 'System' },
     { name: 'Process Flow', path: '/flow', icon: <Workflow size={18} />, group: 'System' },
   ];
@@ -66,7 +71,7 @@ const Sidebar = () => {
       case 'Engineer':
         return allNavItems.filter(i => ['Purchase Orders', 'Inventory', 'Raw Materials', 'SKUs', 'Quotations', 'Production', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
       case 'Finance':
-        return allNavItems.filter(i => ['Dashboard', 'Customers', 'Customer Orders', 'Sales Invoices', 'Quotations', 'RA Bills', 'Activity Log', 'BOQ'].includes(i.name));
+        return allNavItems.filter(i => ['Dashboard', 'Customers', 'Customer Orders', 'Sales Invoices', 'Quotations', 'RA Bills', 'Expenses', 'Reports', 'Activity Log', 'BOQ'].includes(i.name));
       case 'Vendor':
         return allNavItems.filter(i => ['Purchase Orders'].includes(i.name));
       case 'Admin':

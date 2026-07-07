@@ -28,6 +28,10 @@ import GrnBillDoc from './pages/GrnBillDoc';
 import SalesInvoices from './pages/SalesInvoices';
 import SalesInvoiceBuilder from './pages/SalesInvoiceBuilder';
 import SalesInvoiceDoc from './pages/SalesInvoiceDoc';
+import Expenses from './pages/Expenses';
+import Reports from './pages/Reports';
+import Users from './pages/Users';
+import ImportData from './pages/Import';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
@@ -402,6 +406,10 @@ const AppRoutes = () => {
       <Route path="/raw-materials"   element={<AppLayout><RawMaterials /></AppLayout>} />
       <Route path="/quotations"      element={<AppLayout><Quotations /></AppLayout>} />
       <Route path="/bills"             element={<AppLayout><Bills /></AppLayout>} />
+      <Route path="/expenses"          element={<AppLayout><Expenses /></AppLayout>} />
+      <Route path="/reports"           element={<AppLayout><Reports /></AppLayout>} />
+      <Route path="/users"             element={<AppLayout><Users /></AppLayout>} />
+      <Route path="/import"            element={<AppLayout><ImportData /></AppLayout>} />
       <Route path="/bills/:id"         element={<ProtectedRoute><RABillInvoice /></ProtectedRoute>} />
       <Route path="/activity"          element={<AppLayout><ActivityLog /></AppLayout>} />
       <Route path="/flow"              element={<AppLayout><ProcessFlow /></AppLayout>} />

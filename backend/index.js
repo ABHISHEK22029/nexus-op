@@ -14,7 +14,7 @@ const salesInvoiceController = require('./controllers/SalesInvoiceController');
 const attachmentController = require('./controllers/AttachmentController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
-const { authenticate } = require('./middleware/auth');
+const { authenticate, requireRole } = require('./middleware/auth');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -71,6 +71,36 @@ async function scopeProjectAccess(req, res, next) {
   }
 }
 app.use(scopeProjectAccess);
+
+/* Enforced RBAC (Phase 0): a "Viewer" is read-only. Everyone else
+   (Admin / Manager / Staff / User) can write. Real, enforced, and safe. */
+app.use((req, res, next) => {
+  if (req.user?.role === 'Viewer' && ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) {
+    return res.status(403).json({ error: 'Your role (Viewer) has read-only access' });
+  }
+  next();
+});
+
+/* ── Team / users management (Admin only) ── */
+app.get('/users', requireRole('Admin'), async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT id, email, name, role, department, is_active, last_login, created_at FROM users ORDER BY id');
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.patch('/users/:id', requireRole('Admin'), async (req, res) => {
+  const allowed = ['name', 'role', 'department', 'is_active'];
+  const roles = ['Admin', 'Manager', 'Staff', 'User', 'Viewer'];
+  if (req.body.role && !roles.includes(req.body.role)) return res.status(400).json({ error: `role must be one of ${roles.join(', ')}` });
+  const sets = allowed.filter(c => c in req.body);
+  if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
+  try {
+    const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
+    const { rowCount } = await db.query(`UPDATE users SET ${clause} WHERE id = $${sets.length + 1}`, [...sets.map(c => req.body[c]), req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'User not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 /* ══════════════════════════════════════════════════════════
    PROJECTS
@@ -525,9 +555,10 @@ function registerOwnedCrud(route, table, cols) {
     }
   });
 }
-registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'contact_name', 'phone', 'email', 'billing_address', 'state']);
+registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'contact_name', 'phone', 'email', 'billing_address', 'state', 'opening_balance']);
 registerOwnedCrud('skus',         'skus',          ['sku_code', 'name', 'description', 'unit', 'price', 'hsn']);
 registerOwnedCrud('raw-materials','raw_materials', ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn']);
+registerOwnedCrud('expenses',     'expenses',      ['project_id', 'category', 'description', 'amount', 'expense_date', 'paid_to', 'payment_mode', 'reference', 'notes']);
 
 /* ── Customer Orders ── */
 app.get('/customer-orders',            salesController.getOrders);
