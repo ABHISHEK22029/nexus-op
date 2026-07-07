@@ -15,6 +15,7 @@ const attachmentController = require('./controllers/AttachmentController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
+const { notify } = require('./notify');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -79,6 +80,24 @@ app.use((req, res, next) => {
     return res.status(403).json({ error: 'Your role (Viewer) has read-only access' });
   }
   next();
+});
+
+/* ── Notifications (Phase 1) ── */
+app.get('/notifications', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT * FROM notifications WHERE user_id = $1 ORDER BY id DESC LIMIT 40', [req.user.id]);
+    const unread = await db.query('SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = FALSE', [req.user.id]);
+    res.json({ items: rows, unread: parseInt(unread.rows[0].count) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.patch('/notifications/:id/read', async (req, res) => {
+  try { await db.query('UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/notifications/read-all', async (req, res) => {
+  try { await db.query('UPDATE notifications SET is_read = TRUE WHERE user_id = $1', [req.user.id]); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 /* ── Team / users management (Admin only) ── */
@@ -253,6 +272,8 @@ app.post('/po', async (req, res) => {
       ]
     );
     await logActivity(projectId, 'PO_CREATED', `${poNumber} created for "${itemName}"`);
+    const poValue = (Number(quantity) || 0) * (Number(unitPrice) || 0);
+    notify('admins', { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${itemName} · ₹${poValue.toLocaleString('en-IN')}`, entityType: 'po', entityId: rows[0].id, link: `/po/${rows[0].id}` });
     res.json({ id: rows[0].id, poNumber });
   } catch (err) {
     res.status(500).json({ error: err.message });

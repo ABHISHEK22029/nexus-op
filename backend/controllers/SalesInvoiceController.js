@@ -4,6 +4,7 @@
    customer order; editable; records payments; owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { notify } = require('../notify');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => req.user?.role === 'Admin';
 
@@ -135,7 +136,9 @@ exports.addPayment = async (req, res) => {
     const inv = (await client.query('SELECT net_amount FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0];
     const status = paid >= (inv?.net_amount || 0) ? 'Paid' : 'Partially Paid';
     await client.query('UPDATE sales_invoices SET amount_paid = $1, status = $2 WHERE id = $3', [r2(paid), status, req.params.id]);
+    const invNo = (await client.query('SELECT invoice_number FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0]?.invoice_number;
     await client.query('COMMIT');
+    notify('admins', { type: 'PAYMENT_RECEIVED', title: `Payment received · ${invNo}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank'} — invoice ${status}`, entityType: 'sales_invoice', entityId: Number(req.params.id), link: `/sales-invoices/${req.params.id}` });
     res.json({ success: true, amountPaid: r2(paid), status });
   } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
   finally { client.release(); }

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { notify } = require('../notify');
 
 // List GRN records filtered by projectId
 router.get('/', async (req, res) => {
@@ -71,6 +72,7 @@ router.post('/', async (req, res) => {
       [resolvedProjectId, `GRN-${String(grnId).padStart(5, '0')} received for PO-${String(poId).padStart(4, '0')} (${receivedQuantity} units of ${po.itemName})`, 'GRN']
     );
 
+    notify('admins', { type: 'GRN_RECEIVED', title: `Goods received · GRN-${String(grnId).padStart(5, '0')}`, message: `${receivedQuantity} of ${po.itemName} received against PO-${poId}`, entityType: 'grn', entityId: grnId, link: `/grn/${grnId}/bill` });
     res.json({ message: 'GRN completed successfully', grnId, poId });
   } catch (err) {
     res.status(500).json({ error: err.message });

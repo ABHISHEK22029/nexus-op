@@ -53,6 +53,7 @@ import { UserCircle, Settings, Sun, Moon, Plus, LogOut } from 'lucide-react';
 import QuickCreateModal from './components/QuickCreateModal';
 import ProtectedRoute from './components/ProtectedRoute';
 import ProductTour from './components/ProductTour';
+import NotificationBell from './components/NotificationBell';
 
 /* ─── Top Header (App Layer only) ──────────────────────── */
 const TopHeader = () => {
@@ -226,6 +227,9 @@ const TopHeader = () => {
           <option value="Vendor">Vendor 🏢</option>
         </select>
       </div>
+
+      {/* ── Notifications ── */}
+      <NotificationBell />
 
       {/* ── Theme Toggle ── */}
       <button
