@@ -14,6 +14,7 @@ const salesInvoiceController = require('./controllers/SalesInvoiceController');
 const attachmentController = require('./controllers/AttachmentController');
 const recurringController = require('./controllers/RecurringController');
 const aiController = require('./controllers/AiController');
+const salesQuotationController = require('./controllers/SalesQuotationController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -403,6 +404,14 @@ app.patch('/recurring/:id', requireRole('Admin', 'Manager'), recurringController
 app.delete('/recurring/:id', requireRole('Admin', 'Manager'), recurringController.remove);
 app.get('/recurring/:id/runs', recurringController.runs);
 app.post('/recurring/run-now', requireRole('Admin', 'Manager'), recurringController.runNow);
+
+// ── Sales Quotations (Wave 1A) → convert to Customer Order ──
+app.get('/sales-quotations', salesQuotationController.list);
+app.get('/sales-quotations/:id', salesQuotationController.getById);
+app.post('/sales-quotations', salesQuotationController.create);
+app.patch('/sales-quotations/:id/status', salesQuotationController.setStatus);
+app.post('/sales-quotations/:id/convert', salesQuotationController.convertToOrder);
+app.delete('/sales-quotations/:id', salesQuotationController.remove);
 
 // ── Ask AI + shared Knowledge Base ──
 app.post('/ai/ask', aiController.ask);

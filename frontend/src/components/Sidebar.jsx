@@ -22,6 +22,7 @@ const Sidebar = () => {
 
     // ── Sales & customer orders (NEW) ──
     { name: 'Customers', path: '/customers', icon: <Contact size={18} />, group: 'Sales' },
+    { name: 'Sales Quotations', path: '/sales-quotations', icon: <FileText size={18} />, group: 'Sales' },
     { name: 'Customer Orders', path: '/customer-orders', icon: <ShoppingBag size={18} />, group: 'Sales' },
     { name: 'Sales Invoices', path: '/sales-invoices', icon: <ReceiptIndianRupee size={18} />, group: 'Sales' },
 
@@ -73,7 +74,7 @@ const Sidebar = () => {
       case 'Engineer':
         return allNavItems.filter(i => ['Smart Knowledge', 'Purchase Orders', 'Inventory', 'Raw Materials', 'SKUs', 'Quotations', 'Production', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
       case 'Finance':
-        return allNavItems.filter(i => ['Dashboard', 'Smart Knowledge', 'Customers', 'Customer Orders', 'Sales Invoices', 'Quotations', 'RA Bills', 'Expenses', 'Reports', 'Activity Log', 'BOQ'].includes(i.name));
+        return allNavItems.filter(i => ['Dashboard', 'Smart Knowledge', 'Customers', 'Sales Quotations', 'Customer Orders', 'Sales Invoices', 'Quotations', 'RA Bills', 'Expenses', 'Reports', 'Activity Log', 'BOQ'].includes(i.name));
       case 'Vendor':
         return allNavItems.filter(i => ['Purchase Orders'].includes(i.name));
       case 'Admin':

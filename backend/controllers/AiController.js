@@ -42,6 +42,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'find_customer_order', description: 'Look up customer orders by order number or customer name; returns status and line items.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Order number (e.g. CO-0007) or customer name.' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'search_customers', description: 'Find customers by name; returns GSTIN, state, contact.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'get_sku_bom', description: 'Get the recipe / bill of materials (components + qty per unit) for a product/SKU by name.', parameters: { type: 'object', properties: { sku: { type: 'string' } }, required: ['sku'] } } },
+  { type: 'function', function: { name: 'list_open_quotations', description: 'Customer quotations that are still open (not yet converted to an order or rejected), with customer, amount and status.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'search_knowledge_base', description: 'Search Nexus-OP help articles (how-to / guides) for answering "how do I…" questions.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
 ];
 
@@ -148,6 +149,19 @@ const HANDLERS = {
     const lines = (await db.query('SELECT component_name, qty_per_unit, uom FROM sku_bom WHERE sku_id = $1 ORDER BY id', [sku.id])).rows;
     if (!lines.length) return { sku: sku.name, message: 'No recipe (BOM) set for this product yet. Set one on Catalog → SKUs → Recipe.' };
     return { sku: sku.name, perUnit: lines.map(l => `${l.qty_per_unit} ${l.uom} ${l.component_name}`) };
+  },
+
+  async list_open_quotations(_args, req) {
+    const admin = isAdmin(req);
+    const { rows } = await db.query(
+      `SELECT sq.quote_number, c.name AS customer, sq.net_amount, sq.status, sq.valid_until
+         FROM sales_quotations sq LEFT JOIN customers c ON c.id = sq.customer_id
+        WHERE sq.status NOT IN ('Converted','Rejected')
+        ${admin ? '' : 'AND sq.owner_id = $1'}
+        ORDER BY sq.id DESC LIMIT 25`,
+      admin ? [] : [req.user.id]);
+    if (!rows.length) return { message: 'No open quotations.' };
+    return rows.map(r => ({ quote: r.quote_number, customer: r.customer, amount: inr(r.net_amount), status: r.status, validUntil: r.valid_until }));
   },
 
   async search_knowledge_base(args, req) {

@@ -283,6 +283,29 @@ const A = [
     },
   },
   {
+    slug: 'sales-quotations', title: 'Quoting a customer (and winning the order)', category: 'Sales', article_type: 'How-to',
+    summary: 'Send a customer a priced quotation, then convert a won quote straight into a customer order.',
+    keywords: 'quotation, quote, proposal, estimate, customer quote, convert to order, sales quotation',
+    tags: ['sales', 'quotations'],
+    structured: {
+      overview: 'A customer quotation is the price you offer a client before they place an order. When they accept, one click turns it into a Customer Order — no re-typing — so the whole flow starts clean.',
+      whatYouNeed: ['The customer added under Sales → Customers (with GSTIN/state for correct GST)', 'The products/parts, quantities and your rates'],
+      steps: [
+        { title: 'Open the new-quotation form', detail: 'Go to Sales → Sales Quotations and click New Quotation.' },
+        { title: 'Pick the customer and validity', detail: 'Choose the customer and (optionally) a "valid until" date. GST (CGST/SGST vs IGST) is derived from their state.' },
+        { title: 'Add priced line items', detail: 'For each item pick a SKU (auto-fills rate) or type it, with quantity and rate. The running total and GST preview as you type.' },
+        { title: 'Set discount and terms', detail: 'Add any discount and your terms/validity note, then Create Quotation — it gets a number like QT-0001.' },
+        { title: 'Send and track', detail: 'Open it to print/share, and move its status Draft → Sent → Accepted as the deal progresses.' },
+        { title: 'Convert the won quote', detail: 'When accepted, click Convert — Nexus-OP creates a Customer Order with the same lines and marks the quote Converted.' },
+      ],
+      keyPoints: ['A converted quote links to the order it created.', 'You can only convert a quote once.'],
+      faqs: [
+        { q: 'What is the difference from vendor Quotations?', a: 'Sales Quotations are what YOU send customers. The vendor Quotations (Q1/Q2/Q3) under Procurement are for comparing supplier prices when you buy.' },
+        { q: 'Is a quotation a tax invoice?', a: 'No — it is a price offer. The GST invoice is raised later, after the order is fulfilled.' },
+      ],
+    },
+  },
+  {
     slug: 'skus-create', title: 'Creating a product (SKU)', category: 'Catalog', article_type: 'How-to',
     summary: 'Add the products/parts you quote, sell and (optionally) fabricate.',
     keywords: 'SKU, product, part, create, add, catalog, HSN, recipe, BOM',
