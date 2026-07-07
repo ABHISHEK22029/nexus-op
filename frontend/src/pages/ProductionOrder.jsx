@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Plus, PackageMinus, PackagePlus, Recycle, Scale } from 'lucide-react';
+import { ArrowLeft, Trash2, Plus, PackageMinus, PackagePlus, Recycle, Scale, ShoppingBag } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -83,6 +83,11 @@ export default function ProductionOrder() {
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', fontWeight: 700, color: 'var(--brand-amber)' }}>{order.prod_number}</div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', margin: '2px 0 0' }}>{order.product_name}</h1>
           {order.planned_qty && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>Planned: {order.planned_qty} {order.output_uom}</div>}
+          {order.sourceOrder && (
+            <button onClick={() => navigate('/customer-orders')} title="Open customer orders" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, background: 'hsl(28,100%,54%,0.1)', border: '1px solid hsl(28,100%,54%,0.25)', borderRadius: 20, padding: '4px 11px', fontSize: '0.74rem', fontWeight: 700, color: 'var(--brand-amber)', cursor: 'pointer' }}>
+              <ShoppingBag size={12} /> From {order.sourceOrder.order_number}{order.sourceOrder.customer_name ? ` · ${order.sourceOrder.customer_name}` : ''}
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {['Planned', 'In Progress', 'Completed'].map(s => (

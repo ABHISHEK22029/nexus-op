@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files } from 'lucide-react';
+import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files, Factory } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useProject } from '../context/ProjectContext';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Open', 'In Procurement', 'Delivered', 'Closed'];
@@ -9,7 +10,9 @@ const STATUSES = ['Open', 'In Procurement', 'Delivered', 'Closed'];
 export default function CustomerOrders() {
   const toast = useToast();
   const navigate = useNavigate();
+  const { activeProject } = useProject();
   const [orders, setOrders] = useState([]);
+  const [making, setMaking] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [skus, setSkus] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -78,6 +81,26 @@ export default function CustomerOrders() {
       toast.success(`Quotation raised for “${item.description}”`);
       navigate('/quotations');
     } catch (err) { toast.error(err.message); }
+  };
+
+  // One click: fabricate this line in-house — spins up a production order and
+  // pre-fills what to consume from the SKU's recipe (BOM) × ordered qty.
+  const makeProduction = async (item) => {
+    if (!activeProject) { toast.error('Pick an active project in the top bar to make against'); return; }
+    setMaking(item.id);
+    try {
+      const res = await fetch(`${API}/production/from-order-item/${item.id}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: activeProject.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed');
+      toast.success(d.bomLines > 0
+        ? `${d.prodNumber} created — ${d.bomLines} material(s) from recipe`
+        : `${d.prodNumber} created — set a recipe (BOM) on the SKU to auto-fill materials`);
+      navigate('/production');
+    } catch (err) { toast.error(err.message); }
+    finally { setMaking(null); }
   };
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
@@ -176,7 +199,10 @@ export default function CustomerOrders() {
                               <td style={{ padding: '7px 4px', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.84rem' }}>{it.description}</td>
                               <td style={{ padding: '7px 4px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{it.quantity} {it.unit}</td>
                               <td style={{ padding: '7px 4px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{it.target_price ? `target ₹${Number(it.target_price).toLocaleString('en-IN')}` : ''}</td>
-                              <td style={{ padding: '7px 4px', textAlign: 'right' }}>
+                              <td style={{ padding: '7px 4px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                <button onClick={() => makeProduction(it)} disabled={making === it.id} title="Fabricate this line in-house" className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 6, opacity: making === it.id ? 0.6 : 1 }}>
+                                  <Factory size={13} /> {making === it.id ? 'Making…' : 'Make'}
+                                </button>
                                 <button onClick={() => raiseQuotation(it)} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                   <Files size={13} /> Raise Quotation
                                 </button>
@@ -186,7 +212,7 @@ export default function CustomerOrders() {
                         </tbody>
                       </table>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 8 }}>
-                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Raise <b>Quotations</b> per line to source vendors, or bill the customer →</div>
+                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}><b>Make</b> to fabricate in-house · <b>Raise Quotation</b> to buy-out from vendors · then bill the customer →</div>
                         <button onClick={() => navigate(`/customer-orders/${o.id}/invoice`)} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                           <Files size={14} /> Create Invoice
                         </button>

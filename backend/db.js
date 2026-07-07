@@ -1,5 +1,11 @@
 require('dotenv').config();
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// DATE columns (oid 1082) should stay calendar dates, not shift by timezone.
+// Without this, node-pg parses a DATE to a local-midnight JS Date and then
+// serializes it to UTC — turning 2026-08-01 into "2026-07-31T18:30:00Z" for
+// IST users (an off-by-one). Return the raw 'YYYY-MM-DD' string instead.
+types.setTypeParser(1082, (v) => v);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

@@ -92,11 +92,21 @@ exports.getOrderById = async (req, res) => {
       db.query('SELECT * FROM production_output WHERE production_order_id = $1 ORDER BY id', [req.params.id]),
       db.query('SELECT * FROM production_scrap WHERE production_order_id = $1 ORDER BY id', [req.params.id]),
     ]);
+    // Traceability: if this was made from a customer order, surface its number + customer.
+    let sourceOrder = null;
+    if (o.rows[0].customer_order_id) {
+      const so = await db.query(
+        `SELECT co.id, co.order_number, c.name AS customer_name
+         FROM customer_orders co LEFT JOIN customers c ON c.id = co.customer_id
+         WHERE co.id = $1`, [o.rows[0].customer_order_id]);
+      sourceOrder = so.rows[0] || null;
+    }
     res.json({
       ...o.rows[0],
       consumption: cons.rows,
       output: out.rows,
       scrap: scrap.rows,
+      sourceOrder,
       yield: await computeYield(req.params.id),
     });
   } catch (err) {
@@ -234,6 +244,39 @@ exports.getSummary = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+};
+
+// POST /production/from-order-item/:itemId — fabricate a customer-order line,
+// pre-filling raw-material consumption from the SKU's Bill of Materials.
+exports.createFromOrderItem = async (req, res) => {
+  const { projectId } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'Select an active project (top bar) to make against' });
+  try {
+    const item = (await db.query('SELECT * FROM customer_order_items WHERE id = $1', [req.params.itemId])).rows[0];
+    if (!item) return res.status(404).json({ error: 'Order line not found' });
+    const c = await db.query('SELECT COUNT(*) FROM production_orders WHERE "projectId" = $1', [projectId]);
+    const prodNumber = `PROD-${String(parseInt(c.rows[0].count) + 1).padStart(4, '0')}`;
+    const po = await db.query(
+      `INSERT INTO production_orders ("projectId", prod_number, product_name, planned_qty, output_uom, customer_order_id, sku_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [projectId, prodNumber, item.description, item.quantity || null, item.unit || 'nos', item.customer_order_id, item.sku_id]
+    );
+    const prodId = po.rows[0].id;
+    let bomLines = 0;
+    if (item.sku_id) {
+      const bom = (await db.query('SELECT * FROM sku_bom WHERE sku_id = $1', [item.sku_id])).rows;
+      for (const b of bom) {
+        const consumedQty = round((b.qty_per_unit || 0) * (item.quantity || 0));
+        await db.query(
+          `INSERT INTO production_consumption (production_order_id, item_name, consumed_qty, uom) VALUES ($1,$2,$3,$4)`,
+          [prodId, b.component_name, consumedQty, b.uom || 'kg']
+        );
+        bomLines++;
+      }
+    }
+    await db.query(`UPDATE customer_orders SET status = 'In Procurement' WHERE id = $1 AND status = 'Open'`, [item.customer_order_id]);
+    res.json({ id: prodId, prodNumber, bomLines });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
 exports.computeYield = computeYield;

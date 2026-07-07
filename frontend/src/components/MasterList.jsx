@@ -7,7 +7,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 /* Reusable owner-scoped master (Customers / SKUs / Raw Materials).
    config: { title, subtitle, endpoint, icon, fields[], columns[], attachEntity } */
-export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity, summaryField, summaryLabel }) {
+export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity, summaryField, summaryLabel, rowAction }) {
   const toast = useToast();
   const [rows, setRows] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -126,6 +126,11 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
                 <tr key={row.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                   {columns.map(c => <td key={c.key} style={{ padding: '11px 14px', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{c.render ? c.render(row) : (row[c.key] ?? '—')}</td>)}
                   <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {rowAction && (
+                      <button onClick={() => rowAction.onClick(row)} title={rowAction.title} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', cursor: 'pointer', color: 'var(--brand-amber)', padding: '5px 10px', borderRadius: 7, fontSize: '0.75rem', fontWeight: 700, marginRight: 8 }}>
+                        {rowAction.icon} {rowAction.label}
+                      </button>
+                    )}
                     {attachEntity && <button onClick={() => setAttachRow(row)} title="Attachments" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 4 }}><Paperclip size={15} /></button>}
                     <button onClick={() => openEdit(row)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 4 }}><Pencil size={15} /></button>
                     <button onClick={() => del(row)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Trash2 size={15} /></button>

@@ -12,6 +12,7 @@ const salesController = require('./controllers/SalesController');
 const grnBillController = require('./controllers/GrnBillController');
 const salesInvoiceController = require('./controllers/SalesInvoiceController');
 const attachmentController = require('./controllers/AttachmentController');
+const recurringController = require('./controllers/RecurringController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -392,6 +393,14 @@ app.put('/automation-settings', requireRole('Admin', 'Manager'), async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Recurring transactions + reminder engine ──
+app.get('/recurring', recurringController.list);
+app.post('/recurring', requireRole('Admin', 'Manager'), recurringController.create);
+app.patch('/recurring/:id', requireRole('Admin', 'Manager'), recurringController.update);
+app.delete('/recurring/:id', requireRole('Admin', 'Manager'), recurringController.remove);
+app.get('/recurring/:id/runs', recurringController.runs);
+app.post('/recurring/run-now', requireRole('Admin', 'Manager'), recurringController.runNow);
+
 app.patch('/po/:id/dispatch', async (req, res) => {
   try {
     const poResult = await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id]);
@@ -567,8 +576,36 @@ app.use('/grn', grnRouter);
 /* ══════════════════════════════════════════════════════════
    PRODUCTION / FABRICATION YIELD
    ══════════════════════════════════════════════════════════ */
+app.post('/production/from-order-item/:itemId', productionController.createFromOrderItem);
 app.get('/production',              productionController.getOrders);
 app.post('/production',             productionController.createOrder);
+
+/* ── Bill of Materials (per SKU) ── */
+app.get('/skus/:id/bom', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT b.*, rm.name AS raw_material_name FROM sku_bom b
+         LEFT JOIN raw_materials rm ON rm.id = b.raw_material_id WHERE b.sku_id = $1 ORDER BY b.id`, [req.params.id]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/skus/:id/bom', async (req, res) => {
+  const lines = req.body.lines || [];
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM sku_bom WHERE sku_id = $1', [req.params.id]);
+    for (const l of lines) {
+      if (!l.componentName) continue;
+      await client.query(
+        `INSERT INTO sku_bom (sku_id, raw_material_id, component_name, qty_per_unit, uom) VALUES ($1,$2,$3,$4,$5)`,
+        [req.params.id, l.rawMaterialId || null, l.componentName, l.qtyPerUnit || 0, l.uom || 'kg']);
+    }
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
+  finally { client.release(); }
+});
 app.get('/production/summary',      productionController.getSummary);   // before :id
 app.get('/production/:id',          productionController.getOrderById);
 app.patch('/production/:id/status', productionController.updateStatus);
@@ -860,4 +897,6 @@ app.listen(PORT, () => {
     'GET/POST /boq', 'GET/POST /mb', '/grn', 'GET/POST /bills',
     'PATCH /bills/:id/(submit|approve|pay)', 'GET /activities', 'GET /dashboard'
   ].join(' · ')}`);
+  // Recurring transactions + overdue-invoice reminders run on an in-process schedule.
+  try { recurringController.startScheduler(); } catch (e) { console.error('scheduler start failed:', e.message); }
 });
