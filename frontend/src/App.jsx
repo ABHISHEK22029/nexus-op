@@ -32,6 +32,7 @@ import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import Users from './pages/Users';
 import ImportData from './pages/Import';
+import Automation from './pages/Automation';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
@@ -414,6 +415,7 @@ const AppRoutes = () => {
       <Route path="/reports"           element={<AppLayout><Reports /></AppLayout>} />
       <Route path="/users"             element={<AppLayout><Users /></AppLayout>} />
       <Route path="/import"            element={<AppLayout><ImportData /></AppLayout>} />
+      <Route path="/automation"        element={<AppLayout><Automation /></AppLayout>} />
       <Route path="/bills/:id"         element={<ProtectedRoute><RABillInvoice /></ProtectedRoute>} />
       <Route path="/activity"          element={<AppLayout><ActivityLog /></AppLayout>} />
       <Route path="/flow"              element={<AppLayout><ProcessFlow /></AppLayout>} />

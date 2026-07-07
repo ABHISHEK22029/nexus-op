@@ -293,15 +293,25 @@ app.post('/po/:id/items', async (req, res) => {
       // Delete existing to allow pure replacement on edit
       await client.query('DELETE FROM po_line_items WHERE "poId" = $1', [poId]);
       
+      let subtotal = 0;
       for (const item of items) {
+        subtotal += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
         await client.query(
-          `INSERT INTO po_line_items ("poId", sno, description, uom, hsn, quantity, "unitPrice") 
+          `INSERT INTO po_line_items ("poId", sno, description, uom, hsn, quantity, "unitPrice")
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [poId, item.sno, item.description, item.uom || "No's", item.hsn || null, item.quantity, item.unitPrice]
         );
       }
+      // Approval gate: if the PO value exceeds the owner's threshold, hold it for sign-off.
+      const thr = (await client.query('SELECT po_approval_threshold FROM automation_settings WHERE owner_id = $1', [req.user?.id || 0])).rows[0]?.po_approval_threshold || 0;
+      const needsApproval = thr > 0 && subtotal > thr;
+      await client.query(`UPDATE purchase_orders SET approval_status = $1 WHERE id = $2`, [needsApproval ? 'Pending Approval' : 'Not Required', poId]);
       await client.query('COMMIT');
-      res.json({ success: true });
+      if (needsApproval) {
+        const po = (await db.query('SELECT "poNumber" FROM purchase_orders WHERE id = $1', [poId])).rows[0];
+        notify('admins', { type: 'APPROVAL_NEEDED', title: `Approval needed · ${po?.poNumber}`, message: `PO value ₹${subtotal.toLocaleString('en-IN')} exceeds the ₹${Number(thr).toLocaleString('en-IN')} limit`, entityType: 'po', entityId: Number(poId), link: `/po/${poId}` });
+      }
+      res.json({ success: true, approvalStatus: needsApproval ? 'Pending Approval' : 'Not Required' });
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
@@ -335,12 +345,51 @@ app.patch('/po/:id/approve', async (req, res) => {
     if (!po) return res.status(404).json({ error: 'PO not found' });
     if (po.status !== 'Pending')
       return res.status(400).json({ error: `Cannot approve a PO with status "${po.status}"` });
+    // Approval gate: hold if it still needs sign-off, or was rejected.
+    if (po.approval_status === 'Pending Approval')
+      return res.status(409).json({ error: 'This PO is awaiting sign-off — approve the request first' });
+    if (po.approval_status === 'Rejected')
+      return res.status(409).json({ error: 'This PO was rejected in sign-off and cannot proceed' });
     await db.query(`UPDATE purchase_orders SET status = 'Approved' WHERE id = $1`, [req.params.id]);
     await logActivity(po.projectId, 'PO_APPROVED', `PO-${po.id} "${po.itemName}" approved`);
     res.json({ success: true, status: 'Approved' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+/* ── Approval sign-off (Admin/Manager) + automation settings ── */
+app.patch('/po/:id/approval', requireRole('Admin', 'Manager'), async (req, res) => {
+  const { decision, remark } = req.body;
+  if (!['Approved', 'Rejected'].includes(decision)) return res.status(400).json({ error: 'decision must be Approved or Rejected' });
+  try {
+    const po = (await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id])).rows[0];
+    if (!po) return res.status(404).json({ error: 'PO not found' });
+    await db.query(`UPDATE purchase_orders SET approval_status = $1, approval_remark = $2 WHERE id = $3`, [decision, remark || null, req.params.id]);
+    await logActivity(po.projectId, 'PO_APPROVAL', `PO-${po.id} sign-off: ${decision}${remark ? ' — ' + remark : ''}`);
+    notify('admins', { type: 'APPROVAL_NEEDED', title: `PO ${po.poNumber} ${decision.toLowerCase()}`, message: `${req.user.name || 'A manager'} ${decision === 'Approved' ? 'signed off' : 'rejected'} this PO`, entityType: 'po', entityId: Number(req.params.id), link: `/po/${req.params.id}` });
+    res.json({ success: true, approvalStatus: decision });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/automation-settings', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM automation_settings WHERE owner_id = $1', [req.user.id]);
+    res.json(rows[0] || { owner_id: req.user.id, po_approval_threshold: 0 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/automation-settings', requireRole('Admin', 'Manager'), async (req, res) => {
+  const t = Number(req.body.po_approval_threshold) || 0;
+  try {
+    await db.query(
+      `INSERT INTO automation_settings (owner_id, po_approval_threshold, updated_at) VALUES ($1,$2,NOW())
+       ON CONFLICT (owner_id) DO UPDATE SET po_approval_threshold = EXCLUDED.po_approval_threshold, updated_at = NOW()`,
+      [req.user.id, t]
+    );
+    res.json({ success: true, po_approval_threshold: t });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.patch('/po/:id/dispatch', async (req, res) => {

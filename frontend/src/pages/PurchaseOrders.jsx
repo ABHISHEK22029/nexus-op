@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2 } from 'lucide-react';
+import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2, ShieldCheck } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
 import { numberToWords } from '../utils/numberToWords';
@@ -135,6 +135,14 @@ const PurchaseOrders = () => {
     axios[action === 'grn' ? 'post' : 'patch'](`${API}/${endpoint}`, payload)
       .then(() => { fetchData(); toast.success(`PO ${action === 'grn' ? 'received' : action + 'd'}`); })
       .catch(err => toast.error(`Failed to ${action} PO: ` + (err.response?.data?.error || err.message)));
+  };
+
+  // Approval sign-off (Admin/Manager) for POs held above the threshold.
+  const signOff = (poId, decision) => {
+    const remark = decision === 'Rejected' ? (window.prompt('Reason for rejection (optional):') || '') : '';
+    axios.patch(`${API}/po/${poId}/approval`, { decision, remark })
+      .then(() => { fetchData(); toast.success(`PO ${decision.toLowerCase()}`); })
+      .catch(err => toast.error(err.response?.data?.error || 'Failed to record decision'));
   };
 
   const StatusBadge = ({ status }) => {
@@ -342,9 +350,25 @@ const PurchaseOrders = () => {
                 </td>
                 <td className="px-6 py-4">
                   <StatusBadge status={po.status} />
+                  {po.approval_status === 'Pending Approval' && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'hsl(28,100%,54%,0.12)', color: 'hsl(28,92%,45%)' }}><ShieldCheck size={11} /> Needs sign-off</span>}
                 </td>
                 <td className="px-6 py-4 text-right">
-                  {po.status === 'Pending' && (
+                  {po.status === 'Pending' && po.approval_status === 'Pending Approval' && (
+                    <span style={{ display: 'inline-flex', gap: 6, marginRight: 8 }}>
+                      <button onClick={() => signOff(po.id, 'Approved')} title="Sign off (above approval limit)"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: '1px solid hsl(158,64%,45%,0.4)', background: 'hsl(158,64%,45%,0.12)', color: 'hsl(158,64%,38%)' }}>
+                        <ShieldCheck size={13} /> Sign off
+                      </button>
+                      <button onClick={() => signOff(po.id, 'Rejected')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: '1px solid hsl(0,80%,55%,0.4)', background: 'hsl(0,80%,55%,0.1)', color: 'hsl(0,72%,50%)' }}>
+                        Reject
+                      </button>
+                    </span>
+                  )}
+                  {po.status === 'Pending' && po.approval_status === 'Rejected' && (
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'hsl(0,72%,50%)', marginRight: 8 }}>Rejected in sign-off</span>
+                  )}
+                  {po.status === 'Pending' && po.approval_status !== 'Pending Approval' && po.approval_status !== 'Rejected' && (
                     <button
                       onClick={() => handleAction(po.id, 'approve')}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: '1px solid hsl(158,64%,45%,0.4)', background: 'hsl(158,64%,45%,0.1)', color: 'hsl(158,64%,38%)', transition: 'all 180ms' }}
