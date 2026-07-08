@@ -708,9 +708,12 @@ app.get('/attachments/:id/download', attachmentController.download);
 app.delete('/attachments/:id',      attachmentController.remove);
 
 /* ── Customizable GRN bills ── */
+app.get('/payables',                   grnBillController.payables);       // AP dashboard
 app.get('/grn-bills/prefill/:grnId',   grnBillController.prefill);   // before :id
 app.get('/grn-bills',                  grnBillController.list);
 app.post('/grn-bills',                 grnBillController.create);
+app.get('/grn-bills/:id/payments',     grnBillController.payments);
+app.post('/grn-bills/:id/payment',     grnBillController.addPayment);
 app.get('/grn-bills/:id',              grnBillController.getById);
 app.patch('/grn-bills/:id/status',     grnBillController.setStatus);
 app.delete('/grn-bills/:id',           grnBillController.remove);

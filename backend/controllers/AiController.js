@@ -43,6 +43,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'search_customers', description: 'Find customers by name; returns GSTIN, state, contact.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'get_sku_bom', description: 'Get the recipe / bill of materials (components + qty per unit) for a product/SKU by name.', parameters: { type: 'object', properties: { sku: { type: 'string' } }, required: ['sku'] } } },
   { type: 'function', function: { name: 'list_open_quotations', description: 'Customer quotations that are still open (not yet converted to an order or rejected), with customer, amount and status.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'list_vendor_payables', description: 'What the business owes vendors: outstanding GRN bills with amount due, days overdue, and total payable.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'search_knowledge_base', description: 'Search Nexus-OP help articles (how-to / guides) for answering "how do I…" questions.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
 ];
 
@@ -54,17 +55,19 @@ const HANDLERS = {
     const own = admin ? '' : ' AND owner_id = $1';
     const proj = admin ? '' : ' AND "projectId" IN (SELECT id FROM projects WHERE owner_id = $1)';
     const p = admin ? [] : [uid];
-    const [orders, pos, inv, low, proj_c] = await Promise.all([
+    const [orders, pos, inv, low, proj_c, pay] = await Promise.all([
       db.query(`SELECT COUNT(*) c FROM customer_orders WHERE status <> 'Closed'${own}`, p),
       db.query(`SELECT COUNT(*) c FROM purchase_orders WHERE approval_status = 'Pending Approval'${proj}`, p),
       db.query(`SELECT COUNT(*) c, COALESCE(SUM(net_amount - COALESCE(amount_paid,0)),0) t FROM sales_invoices WHERE due_date < CURRENT_DATE AND status <> 'Paid' AND net_amount > COALESCE(amount_paid,0)${own}`, p),
       db.query(`SELECT COUNT(*) c FROM inventory WHERE quantity <= 10${proj}`, p),
       db.query(admin ? 'SELECT COUNT(*) c FROM projects' : 'SELECT COUNT(*) c FROM projects WHERE owner_id = $1', p),
+      db.query(`SELECT COALESCE(SUM(net_amount - COALESCE(amount_paid,0)),0) t FROM grn_bills gb WHERE net_amount > COALESCE(amount_paid,0)${admin ? '' : ' AND gb."projectId" IN (SELECT id FROM projects WHERE owner_id = $1)'}`, p),
     ]);
     return {
       openCustomerOrders: Number(orders.rows[0].c),
       posPendingApproval: Number(pos.rows[0].c),
-      overdueInvoices: { count: Number(inv.rows[0].c), outstanding: inr(inv.rows[0].t) },
+      receivablesOverdue: { count: Number(inv.rows[0].c), outstanding: inr(inv.rows[0].t) },
+      payablesToVendors: inr(pay.rows[0].t),
       lowStockItems: Number(low.rows[0].c),
       activeProjects: Number(proj_c.rows[0].c),
     };
@@ -149,6 +152,21 @@ const HANDLERS = {
     const lines = (await db.query('SELECT component_name, qty_per_unit, uom FROM sku_bom WHERE sku_id = $1 ORDER BY id', [sku.id])).rows;
     if (!lines.length) return { sku: sku.name, message: 'No recipe (BOM) set for this product yet. Set one on Catalog → SKUs → Recipe.' };
     return { sku: sku.name, perUnit: lines.map(l => `${l.qty_per_unit} ${l.uom} ${l.component_name}`) };
+  },
+
+  async list_vendor_payables(_args, req) {
+    const admin = isAdmin(req);
+    const scope = admin ? '' : 'AND gb."projectId" IN (SELECT id FROM projects WHERE owner_id = $1)';
+    const params = admin ? [] : [req.user.id];
+    const { rows } = await db.query(
+      `SELECT gb.bill_number, v.name AS vendor, (gb.net_amount - COALESCE(gb.amount_paid,0)) AS outstanding,
+              (CURRENT_DATE - COALESCE(gb.due_date, gb.bill_date)) AS days_overdue, gb.payment_status
+         FROM grn_bills gb LEFT JOIN vendors v ON v.id = gb.vendor_id
+        WHERE gb.net_amount > COALESCE(gb.amount_paid,0) ${scope}
+        ORDER BY COALESCE(gb.due_date, gb.bill_date) ASC LIMIT 25`, params);
+    if (!rows.length) return { message: 'Nothing outstanding to vendors. 🎉' };
+    const total = rows.reduce((s, r) => s + (Number(r.outstanding) || 0), 0);
+    return { totalPayable: inr(total), bills: rows.map(r => ({ bill: r.bill_number, vendor: r.vendor, outstanding: inr(r.outstanding), daysOverdue: r.days_overdue > 0 ? r.days_overdue : 0, status: r.payment_status })) };
   },
 
   async list_open_quotations(_args, req) {

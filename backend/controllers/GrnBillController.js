@@ -119,9 +119,10 @@ exports.getById = async (req, res) => {
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
     const items = (await db.query('SELECT * FROM grn_bill_items WHERE grn_bill_id = $1 ORDER BY sort_order', [req.params.id])).rows;
     const vendor = bill.vendor_id ? (await db.query('SELECT * FROM vendors WHERE id = $1', [bill.vendor_id])).rows[0] : null;
+    const payments = (await db.query('SELECT * FROM vendor_payments WHERE grn_bill_id = $1 ORDER BY id', [req.params.id])).rows;
     let company = null;
     try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
-    res.json({ ...bill, items, vendor, company });
+    res.json({ ...bill, items, vendor, payments, company });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
@@ -142,5 +143,79 @@ exports.remove = async (req, res) => {
     const r = await db.query('DELETE FROM grn_bills WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* ══════════════ Accounts Payable — vendor payments (Wave 1B) ══════════════ */
+const { notify } = require('../notify');
+const isAdmin = (req) => req.user?.role === 'Admin';
+// grn_bills are project-scoped (no owner_id); non-admins see their projects' bills.
+const projScope = (req, alias = 'gb') => isAdmin(req)
+  ? { clause: '', params: [] }
+  : { clause: ` AND ${alias}."projectId" IN (SELECT id FROM projects WHERE owner_id = $1)`, params: [req.user.id] };
+
+// POST /grn-bills/:id/payment — record a payment to the vendor
+exports.addPayment = async (req, res) => {
+  const { amount, mode, reference, paidDate, notes } = req.body;
+  if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'Enter a payment amount' });
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO vendor_payments (grn_bill_id, amount, mode, reference, paid_date, notes) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [req.params.id, Number(amount), mode || 'Bank', reference || null, paidDate || null, notes || null]);
+    const paid = (await client.query('SELECT COALESCE(SUM(amount),0) s FROM vendor_payments WHERE grn_bill_id = $1', [req.params.id])).rows[0].s;
+    const bill = (await client.query('SELECT net_amount, bill_number, vendor_id FROM grn_bills WHERE id = $1', [req.params.id])).rows[0];
+    if (!bill) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bill not found' }); }
+    const pstatus = paid >= (bill.net_amount || 0) ? 'Paid' : paid > 0 ? 'Partially Paid' : 'Unpaid';
+    await client.query('UPDATE grn_bills SET amount_paid = $1, payment_status = $2 WHERE id = $3', [r2(paid), pstatus, req.params.id]);
+    await client.query('COMMIT');
+    notify('admins', { type: 'VENDOR_PAID', title: `Vendor payment · ${bill.bill_number}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank'} — ${pstatus}`, entityType: 'grn_bill', entityId: Number(req.params.id), link: '/payables' });
+    res.json({ success: true, amountPaid: r2(paid), paymentStatus: pstatus });
+  } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
+  finally { client.release(); }
+};
+
+// GET /grn-bills/:id/payments
+exports.payments = async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM vendor_payments WHERE grn_bill_id = $1 ORDER BY id', [req.params.id]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// GET /payables — AP dashboard: outstanding bills + per-vendor summary + ageing
+exports.payables = async (req, res) => {
+  try {
+    const s = projScope(req);
+    const { rows } = await db.query(
+      `SELECT gb.id, gb.bill_number, gb.bill_date, gb.due_date, gb.net_amount,
+              COALESCE(gb.amount_paid,0) AS amount_paid, gb.payment_status, v.name AS vendor_name, gb.vendor_id,
+              (gb.net_amount - COALESCE(gb.amount_paid,0)) AS outstanding,
+              (CURRENT_DATE - COALESCE(gb.due_date, gb.bill_date)) AS age_days
+         FROM grn_bills gb LEFT JOIN vendors v ON v.id = gb.vendor_id
+        WHERE gb.net_amount > COALESCE(gb.amount_paid,0)${s.clause}
+        ORDER BY COALESCE(gb.due_date, gb.bill_date) ASC`, s.params);
+
+    const bucket = (d) => (d == null ? '0-30' : d <= 30 ? '0-30' : d <= 60 ? '31-60' : d <= 90 ? '61-90' : '90+');
+    const ageing = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 };
+    const vendors = new Map();
+    let totalOutstanding = 0;
+    for (const r of rows) {
+      const out = Number(r.outstanding) || 0;
+      totalOutstanding += out;
+      ageing[bucket(r.age_days)] += out;
+      const key = r.vendor_id || 0;
+      if (!vendors.has(key)) vendors.set(key, { vendorId: r.vendor_id, vendor: r.vendor_name || 'Unknown', outstanding: 0, bills: 0 });
+      const vv = vendors.get(key); vv.outstanding += out; vv.bills += 1;
+    }
+    Object.keys(ageing).forEach(k => ageing[k] = r2(ageing[k]));
+    res.json({
+      totalOutstanding: r2(totalOutstanding),
+      billCount: rows.length,
+      ageing,
+      vendors: [...vendors.values()].map(v => ({ ...v, outstanding: r2(v.outstanding) })).sort((a, b) => b.outstanding - a.outstanding),
+      bills: rows.map(r => ({ ...r, outstanding: r2(Number(r.outstanding)), amount_paid: r2(Number(r.amount_paid)) })),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

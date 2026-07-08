@@ -37,6 +37,7 @@ import SmartKnowledge from './pages/SmartKnowledge';
 import KnowledgeArticle from './pages/KnowledgeArticle';
 import SalesQuotations from './pages/SalesQuotations';
 import SalesQuotationDoc from './pages/SalesQuotationDoc';
+import Payables from './pages/Payables';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
@@ -422,6 +423,7 @@ const AppRoutes = () => {
       <Route path="/knowledge/:slug"   element={<AppLayout><KnowledgeArticle /></AppLayout>} />
       <Route path="/sales-quotations"     element={<AppLayout><SalesQuotations /></AppLayout>} />
       <Route path="/sales-quotations/:id" element={<AppLayout><SalesQuotationDoc /></AppLayout>} />
+      <Route path="/payables"             element={<AppLayout><Payables /></AppLayout>} />
       <Route path="/users"             element={<AppLayout><Users /></AppLayout>} />
       <Route path="/import"            element={<AppLayout><ImportData /></AppLayout>} />
       <Route path="/automation"        element={<AppLayout><Automation /></AppLayout>} />

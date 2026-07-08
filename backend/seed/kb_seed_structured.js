@@ -306,6 +306,24 @@ const A = [
     },
   },
   {
+    slug: 'vendor-payments', title: 'Paying vendors (Accounts Payable)', category: 'Billing', article_type: 'How-to',
+    summary: 'Track what you owe vendors from GRN bills, see ageing, and record payments.',
+    keywords: 'payables, accounts payable, vendor payment, pay vendor, ageing, outstanding, AP, dues',
+    tags: ['billing', 'procurement', 'payments'],
+    structured: {
+      overview: 'Payables is the money-out mirror of your customer invoices. Every GRN bill you generate becomes a payable; the Payables page shows what is outstanding, how overdue it is, and lets you record payments.',
+      whatYouNeed: ['A GRN bill for the goods received (Procurement → GRN → generate bill)', 'The payment amount, mode and reference'],
+      steps: [
+        { title: 'Open Payables', detail: 'Go to Billing → Payables. You see total payable, an ageing breakdown (0–30 / 31–60 / 61–90 / 90+ days) and the vendors you owe most.' },
+        { title: 'Find the bill', detail: 'The outstanding-bills table lists each unpaid GRN bill with its vendor, due date, net, paid and outstanding amounts. Overdue bills are flagged.' },
+        { title: 'Record a payment', detail: 'Click Pay on a bill, enter the amount (defaults to the outstanding), mode (Bank/NEFT/UPI/Cheque/Cash), date and reference, then Record payment.' },
+        { title: 'Watch the status update', detail: 'The bill moves Unpaid → Partially Paid → Paid automatically, and admins get a notification.' },
+      ],
+      keyPoints: ['Payables come from GRN bills — generate a bill from a GRN first.', 'Ageing buckets help you pay the most overdue vendors first.'],
+      faqs: [{ q: 'How do I see what I owe overall?', a: 'The Total payable figure on the Payables page, or ask Ask AI "what do I owe vendors?".' }],
+    },
+  },
+  {
     slug: 'skus-create', title: 'Creating a product (SKU)', category: 'Catalog', article_type: 'How-to',
     summary: 'Add the products/parts you quote, sell and (optionally) fabricate.',
     keywords: 'SKU, product, part, create, add, catalog, HSN, recipe, BOM',

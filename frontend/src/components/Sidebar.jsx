@@ -39,6 +39,7 @@ const Sidebar = () => {
 
     // ── Billing ──
     { name: 'RA Bills', path: '/bills', icon: <Receipt size={18} />, group: 'Billing' },
+    { name: 'Payables', path: '/payables', icon: <ReceiptIndianRupee size={18} />, group: 'Billing' },
     { name: 'Expenses', path: '/expenses', icon: <Wallet size={18} />, group: 'Billing' },
 
     // ── Projects ──
@@ -74,7 +75,7 @@ const Sidebar = () => {
       case 'Engineer':
         return allNavItems.filter(i => ['Smart Knowledge', 'Purchase Orders', 'Inventory', 'Raw Materials', 'SKUs', 'Quotations', 'Production', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
       case 'Finance':
-        return allNavItems.filter(i => ['Dashboard', 'Smart Knowledge', 'Customers', 'Sales Quotations', 'Customer Orders', 'Sales Invoices', 'Quotations', 'RA Bills', 'Expenses', 'Reports', 'Activity Log', 'BOQ'].includes(i.name));
+        return allNavItems.filter(i => ['Dashboard', 'Smart Knowledge', 'Customers', 'Sales Quotations', 'Customer Orders', 'Sales Invoices', 'Quotations', 'RA Bills', 'Payables', 'Expenses', 'Reports', 'Activity Log', 'BOQ'].includes(i.name));
       case 'Vendor':
         return allNavItems.filter(i => ['Purchase Orders'].includes(i.name));
       case 'Admin':
