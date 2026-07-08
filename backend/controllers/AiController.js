@@ -44,6 +44,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'get_sku_bom', description: 'Get the recipe / bill of materials (components + qty per unit) for a product/SKU by name.', parameters: { type: 'object', properties: { sku: { type: 'string' } }, required: ['sku'] } } },
   { type: 'function', function: { name: 'list_open_quotations', description: 'Customer quotations that are still open (not yet converted to an order or rejected), with customer, amount and status.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'list_vendor_payables', description: 'What the business owes vendors: outstanding GRN bills with amount due, days overdue, and total payable.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'list_recent_dispatches', description: 'Recent delivery challans (goods dispatched to customers) with customer, value and status.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'search_knowledge_base', description: 'Search Nexus-OP help articles (how-to / guides) for answering "how do I…" questions.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
 ];
 
@@ -167,6 +168,18 @@ const HANDLERS = {
     if (!rows.length) return { message: 'Nothing outstanding to vendors. 🎉' };
     const total = rows.reduce((s, r) => s + (Number(r.outstanding) || 0), 0);
     return { totalPayable: inr(total), bills: rows.map(r => ({ bill: r.bill_number, vendor: r.vendor, outstanding: inr(r.outstanding), daysOverdue: r.days_overdue > 0 ? r.days_overdue : 0, status: r.payment_status })) };
+  },
+
+  async list_recent_dispatches(_args, req) {
+    const admin = isAdmin(req);
+    const { rows } = await db.query(
+      `SELECT dc.challan_number, c.name AS customer, dc.total_value, dc.status, dc.vehicle_no, dc.challan_date
+         FROM delivery_challans dc LEFT JOIN customers c ON c.id = dc.customer_id
+        ${admin ? '' : 'WHERE dc.owner_id = $1'}
+        ORDER BY dc.id DESC LIMIT 20`,
+      admin ? [] : [req.user.id]);
+    if (!rows.length) return { message: 'No delivery challans yet.' };
+    return rows.map(r => ({ challan: r.challan_number, customer: r.customer, value: inr(r.total_value), status: r.status, vehicle: r.vehicle_no, date: r.challan_date }));
   },
 
   async list_open_quotations(_args, req) {

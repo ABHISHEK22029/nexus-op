@@ -5,7 +5,7 @@ import {
   Receipt, Workflow, FileText, ClipboardList, BookOpen, Truck,
   FolderGit2, Briefcase, Milestone, Zap, Home, Sun, Moon, Factory,
   Contact, ShoppingBag, Tags, Boxes, Files, ReceiptIndianRupee,
-  Wallet, BarChart3, FileSpreadsheet, UserCog, Cog
+  Wallet, BarChart3, FileSpreadsheet, UserCog, Cog, FileMinus, PackageCheck
 } from 'lucide-react';
 import { useRole } from '../context/RoleContext';
 import { useProject } from '../context/ProjectContext';
@@ -24,6 +24,7 @@ const Sidebar = () => {
     { name: 'Customers', path: '/customers', icon: <Contact size={18} />, group: 'Sales' },
     { name: 'Sales Quotations', path: '/sales-quotations', icon: <FileText size={18} />, group: 'Sales' },
     { name: 'Customer Orders', path: '/customer-orders', icon: <ShoppingBag size={18} />, group: 'Sales' },
+    { name: 'Delivery Challans', path: '/delivery-challans', icon: <PackageCheck size={18} />, group: 'Sales' },
     { name: 'Sales Invoices', path: '/sales-invoices', icon: <ReceiptIndianRupee size={18} />, group: 'Sales' },
 
     // ── Catalog (NEW) ──
@@ -40,6 +41,7 @@ const Sidebar = () => {
     // ── Billing ──
     { name: 'RA Bills', path: '/bills', icon: <Receipt size={18} />, group: 'Billing' },
     { name: 'Payables', path: '/payables', icon: <ReceiptIndianRupee size={18} />, group: 'Billing' },
+    { name: 'Credit/Debit Notes', path: '/credit-debit-notes', icon: <FileMinus size={18} />, group: 'Billing' },
     { name: 'Expenses', path: '/expenses', icon: <Wallet size={18} />, group: 'Billing' },
 
     // ── Projects ──
@@ -73,9 +75,9 @@ const Sidebar = () => {
   const getNavItemsForRole = () => {
     switch (role) {
       case 'Engineer':
-        return allNavItems.filter(i => ['Smart Knowledge', 'Purchase Orders', 'Inventory', 'Raw Materials', 'SKUs', 'Quotations', 'Production', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
+        return allNavItems.filter(i => ['Smart Knowledge', 'Purchase Orders', 'Inventory', 'Raw Materials', 'SKUs', 'Quotations', 'Production', 'Delivery Challans', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
       case 'Finance':
-        return allNavItems.filter(i => ['Dashboard', 'Smart Knowledge', 'Customers', 'Sales Quotations', 'Customer Orders', 'Sales Invoices', 'Quotations', 'RA Bills', 'Payables', 'Expenses', 'Reports', 'Activity Log', 'BOQ'].includes(i.name));
+        return allNavItems.filter(i => ['Dashboard', 'Smart Knowledge', 'Customers', 'Sales Quotations', 'Customer Orders', 'Delivery Challans', 'Sales Invoices', 'Quotations', 'RA Bills', 'Payables', 'Credit/Debit Notes', 'Expenses', 'Reports', 'Activity Log', 'BOQ'].includes(i.name));
       case 'Vendor':
         return allNavItems.filter(i => ['Purchase Orders'].includes(i.name));
       case 'Admin':

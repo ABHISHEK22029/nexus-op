@@ -38,6 +38,10 @@ import KnowledgeArticle from './pages/KnowledgeArticle';
 import SalesQuotations from './pages/SalesQuotations';
 import SalesQuotationDoc from './pages/SalesQuotationDoc';
 import Payables from './pages/Payables';
+import DeliveryChallans from './pages/DeliveryChallans';
+import DeliveryChallanDoc from './pages/DeliveryChallanDoc';
+import CreditDebitNotes from './pages/CreditDebitNotes';
+import CreditDebitNoteDoc from './pages/CreditDebitNoteDoc';
 import Welcome from './pages/Welcome';
 import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
@@ -424,6 +428,10 @@ const AppRoutes = () => {
       <Route path="/sales-quotations"     element={<AppLayout><SalesQuotations /></AppLayout>} />
       <Route path="/sales-quotations/:id" element={<AppLayout><SalesQuotationDoc /></AppLayout>} />
       <Route path="/payables"             element={<AppLayout><Payables /></AppLayout>} />
+      <Route path="/delivery-challans"     element={<AppLayout><DeliveryChallans /></AppLayout>} />
+      <Route path="/delivery-challans/:id" element={<AppLayout><DeliveryChallanDoc /></AppLayout>} />
+      <Route path="/credit-debit-notes"     element={<AppLayout><CreditDebitNotes /></AppLayout>} />
+      <Route path="/credit-debit-notes/:id" element={<AppLayout><CreditDebitNoteDoc /></AppLayout>} />
       <Route path="/users"             element={<AppLayout><Users /></AppLayout>} />
       <Route path="/import"            element={<AppLayout><ImportData /></AppLayout>} />
       <Route path="/automation"        element={<AppLayout><Automation /></AppLayout>} />

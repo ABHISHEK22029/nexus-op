@@ -15,6 +15,8 @@ const attachmentController = require('./controllers/AttachmentController');
 const recurringController = require('./controllers/RecurringController');
 const aiController = require('./controllers/AiController');
 const salesQuotationController = require('./controllers/SalesQuotationController');
+const deliveryChallanController = require('./controllers/DeliveryChallanController');
+const creditDebitNoteController = require('./controllers/CreditDebitNoteController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -412,6 +414,20 @@ app.post('/sales-quotations', salesQuotationController.create);
 app.patch('/sales-quotations/:id/status', salesQuotationController.setStatus);
 app.post('/sales-quotations/:id/convert', salesQuotationController.convertToOrder);
 app.delete('/sales-quotations/:id', salesQuotationController.remove);
+
+// ── Delivery challans (Wave 1C) ──
+app.get('/delivery-challans', deliveryChallanController.list);
+app.get('/delivery-challans/prefill/:orderId', deliveryChallanController.prefill);  // before :id
+app.get('/delivery-challans/:id', deliveryChallanController.getById);
+app.post('/delivery-challans', deliveryChallanController.create);
+app.patch('/delivery-challans/:id/status', deliveryChallanController.setStatus);
+app.delete('/delivery-challans/:id', deliveryChallanController.remove);
+
+// ── Credit / debit notes (Wave 1D) ──
+app.get('/credit-debit-notes', creditDebitNoteController.list);
+app.get('/credit-debit-notes/:id', creditDebitNoteController.getById);
+app.post('/credit-debit-notes', creditDebitNoteController.create);
+app.delete('/credit-debit-notes/:id', creditDebitNoteController.remove);
 
 // ── Ask AI + shared Knowledge Base ──
 app.post('/ai/ask', aiController.ask);
