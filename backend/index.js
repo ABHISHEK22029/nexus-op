@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
+const cache = require('./cache');
+const metalPricesController = require('./controllers/MetalPricesController');
 
 const projectController = require('./controllers/ProjectController');
 const workOrderController = require('./controllers/WorkOrderController');
@@ -46,6 +48,10 @@ const logActivity = async (projectId, type, description) => {
    ══════════════════════════════════════════════════════════ */
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
+/* Public metal rates for the Kirashi site (no auth; CORS is open above).
+   The backend does the 12h refresh + caching; the static site just reads this. */
+app.get('/public/metal-prices', metalPricesController.get);
+
 /* ══════════════════════════════════════════════════════════
    AUTHENTICATION (public: login) + GATE
    Everything registered AFTER app.use(authenticate) requires a
@@ -86,6 +92,29 @@ app.use((req, res, next) => {
   if (req.user?.role === 'Viewer' && ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) {
     return res.status(403).json({ error: 'Your role (Viewer) has read-only access' });
   }
+  next();
+});
+
+/* ── Optional Redis response cache (per-user, self-invalidating) ──
+   No-ops entirely unless REDIS_URL is set. GET responses are cached per user
+   for 45s; any successful write by that user bumps their version so the next
+   read is fresh. Volatile paths are skipped. */
+app.use(async (req, res, next) => {
+  if (!cache.enabled() || !req.user) return next();
+  const uid = req.user.id;
+  if (req.method === 'GET') {
+    if (/^\/(notifications|ai|health|attachments|activities|dashboard)/.test(req.path)) return next();
+    try {
+      const v = await cache.version(uid);
+      const key = `u:${uid}:${v}:${req.originalUrl}`;
+      const hit = await cache.get(key);
+      if (hit !== null) { res.set('X-Cache', 'HIT'); return res.json(hit); }
+      const orig = res.json.bind(res);
+      res.json = (body) => { if (res.statusCode === 200) cache.set(key, body, 45); res.set('X-Cache', 'MISS'); return orig(body); };
+    } catch { /* fall through uncached */ }
+    return next();
+  }
+  res.on('finish', () => { if (res.statusCode >= 200 && res.statusCode < 300) cache.bump(uid); });
   next();
 });
 
