@@ -888,18 +888,6 @@ app.get('/activities', async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   UI CONFIG
-   ══════════════════════════════════════════════════════════ */
-app.get('/ui-config/all', async (req, res) => {
-  try {
-    const { rows } = await db.query('SELECT component_id, config FROM ui_config');
-    res.json(rows || []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/* ══════════════════════════════════════════════════════════
    DASHBOARD
    ══════════════════════════════════════════════════════════ */
 app.get('/dashboard', async (req, res) => {

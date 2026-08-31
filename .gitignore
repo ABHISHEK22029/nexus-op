@@ -10,6 +10,9 @@ backend/database.sqlite-journal
 # Production build outputs
 frontend/dist/
 
+# Java build output (nexus-backend is not deployed; target/ is regenerable)
+nexus-backend/target/
+
 # Logs
 logs
 *.log
