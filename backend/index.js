@@ -373,6 +373,41 @@ app.get('/company-profile', async (req, res) => {
   }
 });
 
+/* PUT /company-profile — the single source of truth printed on every document
+   (identity, tax IDs, bank details, default terms). Until now this was
+   GET-only, so bank details had nowhere to live and no invoice could tell a
+   customer where to pay. Admin-only: these values appear on legal documents. */
+const COMPANY_PROFILE_COLUMNS = [
+  'name', 'tradeName', 'address', 'phone', 'email', 'gstin', 'pan', 'stateCode', 'fyStart',
+  'bank_name', 'bank_account_name', 'bank_account_no', 'bank_ifsc', 'bank_branch', 'upi_id',
+  'udyam_msme_no', 'cin', 'trade_license_no', 'logo_url', 'website',
+  'default_payment_terms_days', 'invoice_terms', 'invoice_footer_note',
+];
+app.put('/company-profile', requireRole('Admin'), async (req, res) => {
+  const sets = COMPANY_PROFILE_COLUMNS.filter(c => c in req.body);
+  if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
+  try {
+    // Singleton row — create it on first save if it doesn't exist yet.
+    const existing = await db.query('SELECT id FROM company_profile ORDER BY id LIMIT 1');
+    const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
+    const values = sets.map(c => (req.body[c] === '' ? null : req.body[c]));
+    let row;
+    if (existing.rows.length === 0) {
+      const cols = sets.map(c => `"${c}"`).join(', ');
+      const ph = sets.map((_, i) => `$${i + 1}`).join(', ');
+      row = (await db.query(`INSERT INTO company_profile (${cols}) VALUES (${ph}) RETURNING *`, values)).rows[0];
+    } else {
+      row = (await db.query(
+        `UPDATE company_profile SET ${clause} WHERE id = $${sets.length + 1} RETURNING *`,
+        [...values, existing.rows[0].id]
+      )).rows[0];
+    }
+    res.json(row);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PO State Transitions
 app.patch('/po/:id/approve', async (req, res) => {
   try {

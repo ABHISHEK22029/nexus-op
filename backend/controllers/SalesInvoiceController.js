@@ -5,6 +5,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { notify } = require('../notify');
+const { toStateCode, toStateName, isInterstate } = require('../shared/gstStates');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => req.user?.role === 'Admin';
 
@@ -37,14 +38,44 @@ function compute(items, { discount = 0, gstRate = 18, interstate = false, roundO
   return { lines, subTotal, taxable, gstTotal, cgst, sgst, igst, net };
 }
 
-async function deriveInterstate(customerId) {
+/**
+ * Resolve the tax treatment for an invoice.
+ *
+ * Under GST the CGST+SGST vs IGST split follows the PLACE OF SUPPLY — where
+ * the goods actually go — not the billing address. A fabricator billing a
+ * head office in one state but delivering to a site in another owes IGST.
+ * We previously compared the customer's own GSTIN state, which silently
+ * charged the wrong tax on every ship-to-elsewhere order.
+ *
+ * Precedence for place of supply: explicit override → customer's shipping
+ * state → customer's billing state → the state in their GSTIN.
+ */
+async function resolveTax(customerId, placeOfSupplyOverride) {
   let company = null, customer = null;
   try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
   if (customerId) customer = (await db.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
-  const companyState = String(company?.stateCode || (company?.gstin || '').substring(0, 2) || '');
-  const custState = String(customer?.gstin || '').substring(0, 2);
-  return { interstate: !!custState && !!companyState && custState !== companyState, customer };
+
+  const supplierState = company?.stateCode || company?.gstin || null;
+  const placeOfSupply =
+    placeOfSupplyOverride ||
+    customer?.shipping_state ||
+    customer?.state ||
+    customer?.gstin ||
+    null;
+
+  const interstate = isInterstate(supplierState, placeOfSupply);
+  return {
+    customer,
+    company,
+    // null (undeterminable) is treated as intra-state, the safer default for a
+    // local SME — but the UI flags a blank place of supply before issue.
+    interstate: interstate === true,
+    interstateKnown: interstate !== null,
+    placeOfSupply: toStateName(placeOfSupply),
+    placeOfSupplyCode: toStateCode(placeOfSupply),
+  };
 }
+
 
 // GET /sales-invoices/prefill/:customerOrderId — draft from a customer order
 exports.prefill = async (req, res) => {
@@ -53,28 +84,67 @@ exports.prefill = async (req, res) => {
     if (!co) return res.status(404).json({ error: 'Customer order not found' });
     const items = (await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [co.id])).rows
       .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0 }));
-    const { interstate, customer } = await deriveInterstate(co.customer_id);
-    res.json({ customerOrder: co, customer, customerId: co.customer_id, interstate, gstRate: 18, items });
+    const t = await resolveTax(co.customer_id);
+    const c = t.customer || {};
+    const termsDays = c.payment_terms_days ?? t.company?.default_payment_terms_days ?? 30;
+    const due = new Date(); due.setDate(due.getDate() + Number(termsDays || 0));
+    res.json({
+      customerOrder: co, customer: t.customer, customerId: co.customer_id,
+      interstate: t.interstate, interstateKnown: t.interstateKnown,
+      placeOfSupply: t.placeOfSupply, placeOfSupplyCode: t.placeOfSupplyCode,
+      // Snapshots — what gets printed, so later edits to the master don't
+      // silently rewrite an already-issued document.
+      billTo: { name: c.name, address: c.billing_address, gstin: c.gstin, state: c.state },
+      shipTo: {
+        name: c.name,
+        address: c.shipping_address || c.billing_address,
+        gstin: c.gstin,
+        state: c.shipping_state || c.state,
+      },
+      dueDate: due.toISOString().slice(0, 10),
+      paymentTermsDays: termsDays,
+      terms: t.company?.invoice_terms || null,
+      reverseCharge: false,
+      gstRate: 18, items,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
 // POST /sales-invoices
 exports.create = async (req, res) => {
-  const { customerId, customerOrderId, invoiceDate, items, discount, gstRate, interstate, roundOff, notes } = req.body;
+  const {
+    customerId, customerOrderId, invoiceDate, items, discount, gstRate, interstate, roundOff, notes,
+    placeOfSupply, billTo, shipTo, dueDate, reverseCharge, terms, ewayBillNo,
+  } = req.body;
   if (!customerId) return res.status(400).json({ error: 'Pick a customer' });
   if (!items || !items.length) return res.status(400).json({ error: 'Add at least one line item' });
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-    const t = compute(items, { discount, gstRate, interstate, roundOff });
+    // Place of supply drives the tax split. Trust an explicit choice from the
+    // form; otherwise resolve it from the customer's shipping/billing state.
+    const tax = await resolveTax(customerId, placeOfSupply);
+    const isInter = interstate === undefined || interstate === null ? tax.interstate : !!interstate;
+    const t = compute(items, { discount, gstRate, interstate: isInter, roundOff });
     const cnt = await client.query('SELECT COUNT(*) FROM sales_invoices');
     const invNumber = `INV-${String(parseInt(cnt.rows[0].count) + 1).padStart(4, '0')}`;
+    const c = tax.customer || {};
+    const bt = billTo || {};
+    const st = shipTo || {};
     const { rows } = await client.query(
       `INSERT INTO sales_invoices (owner_id, customer_id, customer_order_id, invoice_number, invoice_date,
-         sub_total, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+         sub_total, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes,
+         place_of_supply, place_of_supply_code, reverse_charge, due_date, terms, eway_bill_no,
+         bill_to_name, bill_to_address, bill_to_gstin, bill_to_state,
+         ship_to_name, ship_to_address, ship_to_gstin, ship_to_state)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+               $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31) RETURNING id`,
       [req.user?.id || null, customerId, customerOrderId || null, invNumber, invoiceDate || null,
-       t.subTotal, discount || 0, gstRate ?? 18, !!interstate, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null]
+       t.subTotal, discount || 0, gstRate ?? 18, isInter, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null,
+       tax.placeOfSupply || null, tax.placeOfSupplyCode || null, !!reverseCharge, dueDate || null, terms || null, ewayBillNo || null,
+       bt.name || c.name || null, bt.address || c.billing_address || null, bt.gstin || c.gstin || null, bt.state || c.state || null,
+       st.name || c.name || null, st.address || c.shipping_address || c.billing_address || null,
+       st.gstin || c.gstin || null, st.state || c.shipping_state || c.state || null]
     );
     const invId = rows[0].id;
     let so = 0;
