@@ -5,7 +5,8 @@ import {
   Receipt, Workflow, FileText, ClipboardList, BookOpen, Truck,
   FolderGit2, Briefcase, Milestone, Zap, Home, Sun, Moon, Factory,
   Contact, ShoppingBag, Tags, Boxes, Files, ReceiptIndianRupee,
-  Wallet, BarChart3, FileSpreadsheet, UserCog, Cog, FileMinus, PackageCheck
+  Wallet, BarChart3, FileSpreadsheet, UserCog, Cog, FileMinus, PackageCheck,
+  Building2
 } from 'lucide-react';
 import { useRole } from '../context/RoleContext';
 import { useProject } from '../context/ProjectContext';
@@ -52,6 +53,7 @@ const Sidebar = () => {
     { name: 'Production', path: '/production', icon: <Factory size={18} />, group: 'Fabrication' },
 
     // ── System ──
+    { name: 'Company Profile', path: '/company-profile', icon: <Building2 size={18} />, group: 'System' },
     { name: 'Automation', path: '/automation', icon: <Cog size={18} />, group: 'System' },
     { name: 'Reports', path: '/reports', icon: <BarChart3 size={18} />, group: 'System' },
     { name: 'Import Data', path: '/import', icon: <FileSpreadsheet size={18} />, group: 'System' },
