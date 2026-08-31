@@ -148,7 +148,7 @@ export default function AskAi() {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.94rem', lineHeight: 1.1 }}>Ask AI</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Answers about your Nexus-OP data</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Answers about your Maks Ops data</div>
             </div>
             <button onClick={() => setOpen(false)} aria-label="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={18} /></button>
           </div>
@@ -204,7 +204,7 @@ export default function AskAi() {
 
           {/* Composer */}
           <div style={{ borderTop: '1px solid var(--border-subtle)', padding: 10, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <textarea ref={inputRef} value={input} rows={1} placeholder="Ask about Nexus-OP…"
+            <textarea ref={inputRef} value={input} rows={1} placeholder="Ask about Maks Ops…"
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
               style={{ flex: 1, resize: 'none', maxHeight: 90, padding: '9px 11px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',

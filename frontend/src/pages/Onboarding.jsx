@@ -129,7 +129,7 @@ export default function Onboarding() {
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '6px 16px', borderRadius: 999, background: 'var(--brand-amber-muted)', border: '1px solid var(--brand-amber)' }}>
             <Sparkles size={14} style={{ color: 'var(--brand-amber)' }}/>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--brand-amber)' }}>Welcome to Nexus-OP</span>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--brand-amber)' }}>Welcome to Maks Ops</span>
           </div>
           <h1 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', margin: 0 }}>
             Let's get you set up

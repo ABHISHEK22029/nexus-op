@@ -300,7 +300,7 @@ const HowItWorks = () => {
               transition: 'opacity 0.6s ease 0.2s',
             }}
           >
-            A step-by-step walkthrough of how Nexus Op handles every stage of civil
+            A step-by-step walkthrough of how Maks Ops handles every stage of civil
             project procurement and billing — from project creation to RA Bill generation.
           </p>
           {/* Step counter badges */}

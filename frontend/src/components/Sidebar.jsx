@@ -144,7 +144,7 @@ const Sidebar = () => {
               WebkitTextFillColor: 'transparent',
             }}
           >
-            Nexus Op
+            Maks Ops
           </div>
           <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '1px' }}>
             Beta v1.0

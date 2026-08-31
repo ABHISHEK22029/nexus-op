@@ -22,12 +22,12 @@ function buildBody(s) {
 const A = [
   // ═══════════ ORIENTATION / MINDSET (Hi-MAK: fragmented tools → one system) ═══════════
   {
-    slug: 'why-nexus-op', title: 'Why Nexus-OP: from scattered tools to one connected flow', category: 'Overview', article_type: 'Guide',
+    slug: 'why-nexus-op', title: 'Why Maks Ops: from scattered tools to one connected flow', category: 'Overview', article_type: 'Guide',
     summary: 'The real problem for a growing SME isn\'t missing software — it\'s that Excel, Tally and per-department logs don\'t talk to each other.',
     keywords: 'why, benefits, connected, single source of truth, excel, tally, silos, integration, transformation',
     tags: ['overview', 'adoption'],
     structured: {
-      overview: 'Most growing SMEs already have "software" — an old ERP, Excel sheets, Word docs, Tally, and a separate log in every department. The pain isn\'t a missing tool; it\'s that none of them are connected. The same data gets typed three times, reports are stitched together by hand, and nobody has one true picture. Nexus-OP replaces that patchwork with a single connected flow, so information you enter once follows the work from order to payment.',
+      overview: 'Most growing SMEs already have "software" — an old ERP, Excel sheets, Word docs, Tally, and a separate log in every department. The pain isn\'t a missing tool; it\'s that none of them are connected. The same data gets typed three times, reports are stitched together by hand, and nobody has one true picture. Maks Ops replaces that patchwork with a single connected flow, so information you enter once follows the work from order to payment.',
       keyPoints: [
         'One entry, reused everywhere — a customer order feeds quotations, production, GRN and the invoice without re-typing.',
         'A single source of truth — everyone sees the same live numbers instead of emailing spreadsheets.',
@@ -35,7 +35,7 @@ const A = [
         'Real-time visibility for decisions — no more manually consolidating department reports.',
       ],
       faqs: [
-        { q: 'Do we have to stop using Tally?', a: 'You can keep accounting where it is at first. Start with the operational flow (orders → procurement → production → billing) in Nexus-OP, and export what your accountant needs.' },
+        { q: 'Do we have to stop using Tally?', a: 'You can keep accounting where it is at first. Start with the operational flow (orders → procurement → production → billing) in Maks Ops, and export what your accountant needs.' },
         { q: 'Is this a big-bang switch?', a: 'It doesn\'t have to be. Start with one flow (say customer orders → invoices), get comfortable, then add procurement and production.' },
       ],
     },
@@ -46,7 +46,7 @@ const A = [
     keywords: 'flow, connected, order to cash, single source, integration, end to end',
     tags: ['overview', 'flow'],
     structured: {
-      overview: 'Everything in Nexus-OP hangs off one thread: the customer order. Follow it and you\'ll see how each team\'s work links to the next — no re-keying, no separate logs.',
+      overview: 'Everything in Maks Ops hangs off one thread: the customer order. Follow it and you\'ll see how each team\'s work links to the next — no re-keying, no separate logs.',
       steps: [
         { title: 'A customer order is logged', detail: 'Sales records the PO the customer placed. This is the anchor everything links back to.' },
         { title: 'Each line is made or bought', detail: 'Fabricate in-house with a production order (using the SKU recipe), or raise vendor quotations and a purchase order.' },
@@ -66,7 +66,7 @@ const A = [
     structured: {
       overview: 'The Hi-MAK case is clear: the software rarely fails — adoption does. These are the traps to avoid.',
       keyPoints: [
-        'Keeping a "shadow" Excel on the side — pick Nexus-OP as the source of truth or the silos come straight back.',
+        'Keeping a "shadow" Excel on the side — pick Maks Ops as the source of truth or the silos come straight back.',
         'Skipping master setup — thin customer/vendor/SKU data makes every later screen painful. Set masters up first.',
         'Not entering GSTIN/state — GST (CGST/SGST vs IGST) depends on it; fill it in once and billing is automatic.',
         'One person doing all data entry — let each role own their step, like Hi-MAK\'s department involvement.',
@@ -102,12 +102,12 @@ const A = [
     keywords: 'import, migrate, excel, tally, csv, bulk, upload, data transfer, onboarding',
     tags: ['system', 'onboarding', 'data'],
     structured: {
-      overview: 'Hi-MAK\'s biggest day-to-day pain was manual data entry with no import facility. Nexus-OP fixes that: bring your existing lists in from CSV instead of typing them again.',
+      overview: 'Hi-MAK\'s biggest day-to-day pain was manual data entry with no import facility. Maks Ops fixes that: bring your existing lists in from CSV instead of typing them again.',
       whatYouNeed: ['Your existing data exported to CSV (from Excel or Tally)', 'A column for each field you want to load (e.g. name, GSTIN, state)'],
       steps: [
         { title: 'Export from your current tool', detail: 'From Excel/Tally, save the list (customers, vendors, items) as a .csv file.' },
         { title: 'Open Import Data', detail: 'Go to System → Import Data and choose what you\'re importing.' },
-        { title: 'Upload the CSV', detail: 'Select your file. Nexus-OP parses the rows and shows you a preview.' },
+        { title: 'Upload the CSV', detail: 'Select your file. Maks Ops parses the rows and shows you a preview.' },
         { title: 'Review and confirm', detail: 'Check the parsed rows look right, then confirm to create them all in bulk.' },
         { title: 'Spot-check the result', detail: 'Open the matching master screen (e.g. Customers) and confirm the records landed.' },
       ],
@@ -133,7 +133,7 @@ const A = [
     },
   },
   {
-    slug: 'rollout-change-management', title: 'Rolling Nexus-OP out to your team', category: 'Setup', article_type: 'How-to',
+    slug: 'rollout-change-management', title: 'Rolling Maks Ops out to your team', category: 'Setup', article_type: 'How-to',
     summary: 'A short change-management playbook — the part that decided Hi-MAK\'s ~90% adoption.',
     keywords: 'rollout, change management, training, adoption, go live, resistance, team',
     tags: ['setup', 'adoption'],
@@ -141,7 +141,7 @@ const A = [
       overview: 'The Hi-MAK case is blunt: the software was fine; adoption was the challenge. A little change management is what gets your team actually using it.',
       steps: [
         { title: 'Name an owner', detail: 'Pick one person (or a small team, like Hi-MAK\'s ERP team) to champion the rollout and answer questions.' },
-        { title: 'Involve each department early', detail: 'Ask each team what they do today; map it to a Nexus-OP screen so they see themselves in it.' },
+        { title: 'Involve each department early', detail: 'Ask each team what they do today; map it to a Maks Ops screen so they see themselves in it.' },
         { title: 'Set masters and import data first', detail: 'Go live on a system that already has your customers, vendors and items — not an empty one.' },
         { title: 'Run short, role-based training', detail: 'Keep sessions to each role\'s daily flow. Point everyone at Smart Knowledge + Ask AI for self-serve help.' },
         { title: 'Start with one flow, then expand', detail: 'Prove it on orders → invoices, celebrate the win, then add procurement and production.' },
@@ -235,12 +235,12 @@ const A = [
     keywords: 'production, BOM, bill of materials, recipe, make, fabricate, consume',
     tags: ['production', 'bom', 'fabrication'],
     structured: {
-      overview: 'Nexus-OP can fabricate items in-house. Set a recipe (bill of materials) once, and every time you Make that product the system knows what to consume.',
+      overview: 'Maks Ops can fabricate items in-house. Set a recipe (bill of materials) once, and every time you Make that product the system knows what to consume.',
       whatYouNeed: ['The SKU you fabricate (Catalog → SKUs)', 'The raw materials it uses (Catalog → Raw Materials)', 'An active project selected in the top bar'],
       steps: [
         { title: 'Set the recipe (BOM)', detail: 'On Catalog → SKUs, click Recipe on the product and add each raw material with its quantity per unit (e.g. 4 kg MS Angle per cross-arm).' },
         { title: 'Open the customer order', detail: 'Go to Sales → Customer Orders and expand the order you\'re fulfilling.' },
-        { title: 'Click Make on the line', detail: 'Nexus-OP creates a production order and pre-fills consumption = recipe × ordered quantity (e.g. 4 kg × 200 = 800 kg).' },
+        { title: 'Click Make on the line', detail: 'Maks Ops creates a production order and pre-fills consumption = recipe × ordered quantity (e.g. 4 kg × 200 = 800 kg).' },
         { title: 'Run production', detail: 'On the production order, record material consumed, finished output and scrap — see "Running a production order".' },
       ],
       keyPoints: ['A production order links back to the customer order it fulfils (traceability badge).', 'No active project selected? Pick one in the top bar first.'],
@@ -296,7 +296,7 @@ const A = [
         { title: 'Add priced line items', detail: 'For each item pick a SKU (auto-fills rate) or type it, with quantity and rate. The running total and GST preview as you type.' },
         { title: 'Set discount and terms', detail: 'Add any discount and your terms/validity note, then Create Quotation — it gets a number like QT-0001.' },
         { title: 'Send and track', detail: 'Open it to print/share, and move its status Draft → Sent → Accepted as the deal progresses.' },
-        { title: 'Convert the won quote', detail: 'When accepted, click Convert — Nexus-OP creates a Customer Order with the same lines and marks the quote Converted.' },
+        { title: 'Convert the won quote', detail: 'When accepted, click Convert — Maks Ops creates a Customer Order with the same lines and marks the quote Converted.' },
       ],
       keyPoints: ['A converted quote links to the order it created.', 'You can only convert a quote once.'],
       faqs: [

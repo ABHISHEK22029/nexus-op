@@ -145,7 +145,7 @@ const GetStarted = () => {
             </div>
             <div>
               <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '16px', color: 'var(--text-primary)' }}>
-                Nexus-OP
+                Maks Ops
               </div>
               <div style={{ fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                 Infrastructure Intelligence
@@ -186,7 +186,7 @@ const GetStarted = () => {
               lineHeight: 1.7,
             }}
           >
-            Set up your own organization from scratch, or explore with pre-loaded sample data to see how Nexus-OP works.
+            Set up your own organization from scratch, or explore with pre-loaded sample data to see how Maks Ops works.
           </p>
 
           {/* ── Two Cards ── */}

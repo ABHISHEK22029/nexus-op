@@ -1,4 +1,4 @@
-/* Seed the shared Knowledge Base with Nexus-OP help articles.
+/* Seed the shared Knowledge Base with Maks Ops help articles.
    Run: node seed/kb_seed.js   (uses backend/.env DATABASE_URL — the live DB)
    Idempotent: upserts by slug. */
 require('dotenv').config();
@@ -7,11 +7,11 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejec
 
 const ARTICLES = [
   {
-    slug: 'getting-started', title: 'Getting started with Nexus-OP', category: 'Overview', article_type: 'Guide',
-    summary: 'What Nexus-OP is and the end-to-end flow: customer order → make or buy → receive → bill → get paid.',
+    slug: 'getting-started', title: 'Getting started with Maks Ops', category: 'Overview', article_type: 'Guide',
+    summary: 'What Maks Ops is and the end-to-end flow: customer order → make or buy → receive → bill → get paid.',
     keywords: 'overview, flow, start, introduction, erp, sme, fabrication',
     tags: ['overview', 'start'],
-    body: `Nexus-OP is an operations platform for Indian SME manufacturers and fabricators. It connects your whole order-to-cash flow in one place.
+    body: `Maks Ops is an operations platform for Indian SME manufacturers and fabricators. It connects your whole order-to-cash flow in one place.
 
 ## The core flow
 1. **Customer Order** — log the PO your customer places with you (Sales → Customer Orders).
@@ -138,13 +138,13 @@ Find it under **Procurement → Inventory**. Ask AI "what's low on stock?" to ge
     summary: 'Set a recipe (bill of materials) on a SKU, then Make it from a customer order — consumption auto-fills.',
     keywords: 'production, BOM, bill of materials, recipe, make, fabricate, yield, scrap',
     tags: ['production', 'bom', 'fabrication'],
-    body: `Nexus-OP can fabricate items in-house and track material, yield and scrap.
+    body: `Maks Ops can fabricate items in-house and track material, yield and scrap.
 
 ## 1. Set the Recipe (BOM)
 On **Catalog → SKUs**, click **Recipe** on a product. Add each raw material and the **quantity per unit** (e.g. 4 kg MS Angle per cross-arm). Save.
 
 ## 2. Make from an order
-On a **Customer Order** line, click **Make**. Nexus-OP creates a **Production Order** and pre-fills what to consume = recipe × ordered quantity (e.g. 4 kg × 200 = 800 kg). You must have an **active project** selected in the top bar.
+On a **Customer Order** line, click **Make**. Maks Ops creates a **Production Order** and pre-fills what to consume = recipe × ordered quantity (e.g. 4 kg × 200 = 800 kg). You must have an **active project** selected in the top bar.
 
 ## 3. Run production
 On the production order, record **Raw Material Consumed**, **Finished Output**, and **Scrap/Remnant**. The **Yield & Material Balance** panel shows yield %, recovered %, scrap, net material cost and cost per unit. A badge links the production order back to the customer order it fulfils.`,
@@ -173,7 +173,7 @@ Open the invoice and **record a payment** (amount, mode, reference). The status 
 Open a **Sales Invoice** and add a payment. The invoice auto-updates to Partially Paid or Paid.
 
 ## Overdue reminders
-If an invoice passes its **due date** and isn't fully paid, Nexus-OP notifies your admins once — with the outstanding amount and how many days it's overdue. Ask AI "which invoices are overdue?" for the current list.`,
+If an invoice passes its **due date** and isn't fully paid, Maks Ops notifies your admins once — with the outstanding amount and how many days it's overdue. Ask AI "which invoices are overdue?" for the current list.`,
   },
   {
     slug: 'recurring', title: 'Recurring transactions and reminders', category: 'Billing', article_type: 'How-to',
@@ -187,7 +187,7 @@ Go to **System → Automation → Recurring transactions → New schedule**. Cho
 - **Expense we pay** (rent, subscriptions) → creates an Expense on the cadence.
 - **Invoice we bill** (AMC / monthly retainer) → creates a GST Sales Invoice for the customer, with your GST rate and payment terms.
 
-Pick daily / weekly / monthly and the first run date. Nexus-OP generates them automatically and notifies you. Use **Run now** to process anything due today immediately. Pause or delete a schedule any time.`,
+Pick daily / weekly / monthly and the first run date. Maks Ops generates them automatically and notifies you. Use **Run now** to process anything due today immediately. Pause or delete a schedule any time.`,
   },
   {
     slug: 'expenses', title: 'Tracking expenses', category: 'Billing', article_type: 'How-to',
@@ -228,27 +228,27 @@ Click the bell to open the panel; click an item to jump to it.`,
   },
   {
     slug: 'ask-ai', title: 'Using Ask AI', category: 'Overview', article_type: 'Guide',
-    summary: 'The built-in assistant answers questions about your Nexus-OP data and how to use features.',
+    summary: 'The built-in assistant answers questions about your Maks Ops data and how to use features.',
     keywords: 'ask ai, assistant, chatbot, help, ada',
     tags: ['overview', 'ai'],
     body: `**Ask AI** is the assistant button at the bottom-right of every screen.
 
 ## What it can do
 - Answer questions about **your own data** — "which invoices are overdue?", "what needs approval?", "what's low on stock?", "status of order CO-0007?".
-- Explain **how to use Nexus-OP** — "how do I raise a vendor PO?", "how does BOM work?".
+- Explain **how to use Maks Ops** — "how do I raise a vendor PO?", "how does BOM work?".
 - Point you to the right screen.
 
 ## What it won't do
-It only helps with **Nexus-OP and your operations here** — it won't answer general/unrelated questions, and it never changes your data (it's read-only, and guides you to where you can act).`,
+It only helps with **Maks Ops and your operations here** — it won't answer general/unrelated questions, and it never changes your data (it's read-only, and guides you to where you can act).`,
   },
 
   // ── Portal basics ──────────────────────────────────────────
   {
-    slug: 'portal-navigation', title: 'Finding your way around Nexus-OP', category: 'Overview', article_type: 'Guide',
+    slug: 'portal-navigation', title: 'Finding your way around Maks Ops', category: 'Overview', article_type: 'Guide',
     summary: 'How the app is organised — the sidebar groups, the top bar, and where each feature lives.',
     keywords: 'navigation, sidebar, menu, layout, where, find, top bar, header',
     tags: ['overview', 'navigation'],
-    body: `Nexus-OP has three fixed areas: the left **sidebar**, the top **header**, and the main page.
+    body: `Maks Ops has three fixed areas: the left **sidebar**, the top **header**, and the main page.
 
 ## The sidebar (left)
 Grouped by stage so you follow the natural flow:
@@ -503,7 +503,7 @@ The top panel shows live **Yield %**, **Recovered %** (incl. reusable remnant), 
     body: `To load many records at once:
 1. Go to **System → Import Data**.
 2. Choose what you're importing and upload a **CSV** file.
-3. Review the parsed rows and confirm — Nexus-OP creates them in bulk.
+3. Review the parsed rows and confirm — Maks Ops creates them in bulk.
 
 Great for bringing in existing customers, vendors, SKUs or materials when you start.`,
   },

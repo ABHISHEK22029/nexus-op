@@ -27,12 +27,12 @@ export default function BetaWelcome() {
             <div className="wc-logo">
               <div className="wc-logo-icon">N</div>
               <div style={{ textAlign: 'left' }}>
-                <div className="wc-logo-text">Nexus-OP</div>
+                <div className="wc-logo-text">Maks Ops</div>
                 <div className="wc-logo-sub">Operational Intelligence</div>
               </div>
             </div>
             
-            <h1 className="wc-heading">Welcome to <span>Nexus-OP</span></h1>
+            <h1 className="wc-heading">Welcome to <span>Maks Ops</span></h1>
             <p className="wc-sub">
               The operational intelligence platform for infrastructure project execution. Procurement, billing, site progress, and material tracking — all in one place.
             </p>

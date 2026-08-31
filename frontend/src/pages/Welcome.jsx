@@ -24,7 +24,7 @@ const WaveDivider = ({ flip = false, color1 = 'hsl(28,80%,90%)', color2 = 'hsl(2
 /* ── Testimonials data ── */
 const TESTIMONIALS = [
   {
-    quote: 'Nexus Op cut our order-to-PO time from 3 days to a few hours. Comparing three vendor quotes and raising the PO is now one screen.',
+    quote: 'Maks Ops cut our order-to-PO time from 3 days to a few hours. Comparing three vendor quotes and raising the PO is now one screen.',
     name: 'Rajesh Kumar', role: 'Operations Head, Precision Fabricators', avatar: '👷',
   },
   {
@@ -198,7 +198,7 @@ const flowSteps = [
   { label: 'Generate Bill', icon: <Receipt size={18} />, desc: 'RA Bills are computed from cumulative MB quantities × BOQ rate, minus TDS (2%) and Retention (5%).' },
 ];
 
-/* ── Differentiator card (Why Nexus-OP) ── */
+/* ── Differentiator card (Why Maks Ops) ── */
 const DiffCard = ({ icon, color, title, desc, delay = 0 }) => {
   const [ref, inView] = useInView(0.1);
   return (
@@ -281,7 +281,7 @@ const Welcome = () => {
           gap: '12px',
         }}
       >
-        <span>🚀 Nexus Op Beta is Live — The operations platform for growing SMEs</span>
+        <span>🚀 Maks Ops Beta is Live — The operations platform for growing SMEs</span>
         <button
           onClick={() => navigate('/login')}
           style={{
@@ -384,7 +384,7 @@ const Welcome = () => {
             }}
           >
             From customer orders and vendor quotations to production, GRN and GST bills —
-            Nexus Op runs the complete{' '}
+            Maks Ops runs the complete{' '}
             <span style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>buy → make → deliver → bill</span>{' '}
             operation for growing SMEs. Built for fabricators, manufacturers and contractors.
           </p>
@@ -488,7 +488,7 @@ const Welcome = () => {
             <div style={{ paddingTop: '32px', background: 'var(--bg-base)' }}>
               <img
                 src={`/nexus-preview.png`}
-                alt="Nexus Op Dashboard Preview"
+                alt="Maks Ops Dashboard Preview"
                 style={{ width: '100%', display: 'block' }}
                 onError={(e) => {
                   e.target.style.display = 'none';
@@ -597,13 +597,13 @@ const Welcome = () => {
             </h2>
             <p style={{ maxWidth: '580px', margin: '16px auto 0', color: 'var(--text-muted)', lineHeight: 1.8 }}>
               Never get stuck. <b>Ask AI</b> knows your data and your workflow, and <b>Smart Knowledge</b> documents
-              every step — all inside Nexus-OP, on every screen.
+              every step — all inside Maks Ops, on every screen.
             </p>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', maxWidth: '900px', margin: '0 auto' }}>
             {[
               { icon: <Brain size={24} />, title: 'Ask AI', to: '/knowledge', cta: 'Try Ask AI',
-                desc: 'A read-only assistant on every screen. Ask "what\'s overdue?", "what needs approval?", or "how do I raise a PO?" — grounded in your own data, and it points you to the right screen. Stays strictly on Nexus-OP topics.' },
+                desc: 'A read-only assistant on every screen. Ask "what\'s overdue?", "what needs approval?", or "how do I raise a PO?" — grounded in your own data, and it points you to the right screen. Stays strictly on Maks Ops topics.' },
               { icon: <BookOpen size={24} />, title: 'Smart Knowledge', to: '/knowledge', cta: 'Browse guides',
                 desc: 'A searchable library of guides and how-tos for every part of the platform — orders, procurement, production, GST billing and more. One click to "Ask AI a follow-up" from any article.' },
             ].map((c) => (
@@ -851,7 +851,7 @@ const Welcome = () => {
         </div>
       </section>
 
-      {/* ── WHY NEXUS-OP — Differentiator grid (CSOD-inspired) ── */}
+      {/* ── WHY MAKS OPS — Differentiator grid (CSOD-inspired) ── */}
       <section className="section" style={{ paddingTop: '48px' }}>
         <div className="container">
           <div style={{ textAlign: 'center', marginBottom: '56px' }}>
@@ -860,7 +860,7 @@ const Welcome = () => {
             </span>
             <h2 style={{ maxWidth: '580px', margin: '16px auto 0' }}>
               Why Teams Choose{' '}
-              <span className="gradient-text-amber">Nexus Op</span>
+              <span className="gradient-text-amber">Maks Ops</span>
             </h2>
             <p style={{ maxWidth: '480px', margin: '12px auto 0', color: 'var(--text-muted)', lineHeight: 1.8 }}>
               Not a generic ERP. Built for Indian SMEs — fabricators, traders and

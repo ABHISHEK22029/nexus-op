@@ -199,7 +199,7 @@ export default function Login() {
 
           {/* Sign up */}
           <p style={{ textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 20, marginBottom: 0 }}>
-            New to Nexus-OP?{' '}
+            New to Maks Ops?{' '}
             <Link to="/signup" style={{ color: 'var(--brand-amber)', fontWeight: 700, textDecoration: 'none' }}>
               Create an account
             </Link>
@@ -207,7 +207,7 @@ export default function Login() {
         </div>
 
         <p style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-disabled)', marginTop: 16 }}>
-          Nexus-OP v2.0 · Secured with JWT · Roles: Admin, PM, Finance, Site Engineer
+          Maks Ops v2.0 · Secured with JWT · Roles: Admin, PM, Finance, Site Engineer
         </p>
       </div>
     </div>

@@ -83,7 +83,7 @@ const MarketingFooter = () => {
                   WebkitTextFillColor: 'transparent',
                 }}
               >
-                Nexus Op
+                Maks Ops
               </span>
             </Link>
             <p
@@ -158,7 +158,7 @@ const MarketingFooter = () => {
           }}
         >
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            © 2026 Nexus Op. Built by{' '}
+            © 2026 Maks Ops. Built by{' '}
             <span style={{ color: 'var(--brand-amber)' }}>Abhishek Gupta</span>
             {' '}for growing SMEs.
           </p>

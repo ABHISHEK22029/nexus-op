@@ -57,7 +57,7 @@ const MarketingNav = () => {
             background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--brand-amber) 100%)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
           }}>
-            Nexus Op
+            Maks Ops
           </span>
         </Link>
 

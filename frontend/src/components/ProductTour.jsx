@@ -5,7 +5,7 @@ import { LayoutDashboard, FolderKanban, ClipboardList, Truck, ReceiptText, Rocke
    after they finish onboarding. Triggered by the `nexus_tour_pending` flag
    (set at signup) — existing users and the admin never see it. */
 const STEPS = [
-  { icon: Rocket,         color: '#f97316', title: 'Welcome to Nexus-OP 👋', body: 'This is your own workspace. Everything you create — projects, bills, materials — is private to you. Let’s take 30 seconds to see how it fits together.' },
+  { icon: Rocket,         color: '#f97316', title: 'Welcome to Maks Ops 👋', body: 'This is your own workspace. Everything you create — projects, bills, materials — is private to you. Let’s take 30 seconds to see how it fits together.' },
   { icon: FolderKanban,   color: '#3b82f6', title: 'Projects are your home base', body: 'Every workflow lives inside a project. Use the “Context” selector at the top to switch between projects. You just created your first one during setup.' },
   { icon: ClipboardList,  color: '#8b5cf6', title: 'Plan the work: BOQ → Indent', body: 'Add your Bill of Quantities (BOQ), then raise Indents when the site needs materials. This is where execution starts.' },
   { icon: Truck,          color: '#10b981', title: 'Procure & receive: PO → GRN', body: 'Turn indents into Purchase Orders for vendors, then record Goods Receipt Notes (GRN) as materials arrive on site.' },
@@ -71,7 +71,7 @@ export default function ProductTour() {
                 </button>
               )}
               <button onClick={() => (last ? close() : setI(i + 1))} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', borderRadius: 10, background: step.color, border: 'none', color: '#fff', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', boxShadow: `0 4px 14px ${step.color}55` }}>
-                {last ? 'Start using Nexus-OP' : 'Next'} {!last && <ArrowRight size={14} />}
+                {last ? 'Start using Maks Ops' : 'Next'} {!last && <ArrowRight size={14} />}
               </button>
             </div>
           </div>

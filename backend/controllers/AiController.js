@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════
    AiController — "Ask AI" assistant (OpenRouter, read-only, grounded)
-   • Domain-restricted: only Nexus-OP + the signed-in user's own
+   • Domain-restricted: only Maks Ops + the signed-in user's own
      operations/data (and their clients like Hi-MAK). Refuses off-topic.
    • Grounded via a catalog of READ-ONLY tools over the live DB + a
      full-text Knowledge Base search. Never writes/mutates anything.
@@ -15,17 +15,17 @@ const MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
 const isAdmin = (req) => req.user?.role === 'Admin';
 const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
-const SYSTEM_PROMPT = `You are "Ask AI", the built-in assistant inside Nexus-OP — an operations/ERP platform for Indian SME manufacturers and fabricators (clients include Hi-MAK and Kirashi).
+const SYSTEM_PROMPT = `You are "Ask AI", the built-in assistant inside Maks Ops — an operations/ERP platform for Indian SME manufacturers and fabricators (clients include Hi-MAK and Kirashi).
 
 WHAT YOU DO
-- Help the signed-in user operate Nexus-OP and understand THEIR OWN business data inside it.
+- Help the signed-in user operate Maks Ops and understand THEIR OWN business data inside it.
 - Answer questions about their live data (customer orders, quotations, purchase orders, GRN, inventory, production/BOM, sales invoices, payments, expenses, approvals) using the read-only tools provided.
-- Explain how to use Nexus-OP features using the search_knowledge_base tool.
+- Explain how to use Maks Ops features using the search_knowledge_base tool.
 - Point the user to the exact screen to use (e.g. "Open Procurement → Purchase Orders").
 
 HARD RULES
 - READ-ONLY: you never create, edit, delete, approve, or change anything. If asked to perform an action, explain where the user can do it themselves.
-- STRICTLY ON-TOPIC: only answer questions about Nexus-OP, how to use it, and the user's business/operations within it (their orders, vendors, customers like Hi-MAK, invoices, production, etc.). If a question is NOT about Nexus-OP or the user's use of it — general knowledge, science, math, trivia, coding help, current events, personal advice (e.g. "what is the value of Planck length") — politely decline in ONE sentence and steer back, e.g.: "I can only help with Nexus-OP and your operations here — try asking about your orders, invoices, inventory, production, or how to use a feature."
+- STRICTLY ON-TOPIC: only answer questions about Maks Ops, how to use it, and the user's business/operations within it (their orders, vendors, customers like Hi-MAK, invoices, production, etc.). If a question is NOT about Maks Ops or the user's use of it — general knowledge, science, math, trivia, coding help, current events, personal advice (e.g. "what is the value of Planck length") — politely decline in ONE sentence and steer back, e.g.: "I can only help with Maks Ops and your operations here — try asking about your orders, invoices, inventory, production, or how to use a feature."
 - GROUNDED: base data answers on tool results only. Never invent order numbers, IDs, amounts, or dates. If the data isn't available, say so plainly.
 
 STYLE
@@ -45,7 +45,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'list_open_quotations', description: 'Customer quotations that are still open (not yet converted to an order or rejected), with customer, amount and status.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'list_vendor_payables', description: 'What the business owes vendors: outstanding GRN bills with amount due, days overdue, and total payable.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'list_recent_dispatches', description: 'Recent delivery challans (goods dispatched to customers) with customer, value and status.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'search_knowledge_base', description: 'Search Nexus-OP help articles (how-to / guides) for answering "how do I…" questions.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+  { type: 'function', function: { name: 'search_knowledge_base', description: 'Search Maks Ops help articles (how-to / guides) for answering "how do I…" questions.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
 ];
 
 /* ── tool handlers (owner/project scoped; admin sees all) ── */
@@ -218,7 +218,7 @@ async function callOnce(messages, useTools) {
       'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': process.env.OPENROUTER_REFERRER || 'https://nexus-op.app',
-      'X-Title': 'Nexus-OP Ask AI',
+      'X-Title': 'Maks Ops Ask AI',
     },
     body: JSON.stringify(body),
   });

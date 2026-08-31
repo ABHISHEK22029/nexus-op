@@ -85,7 +85,7 @@ export default function SmartKnowledge() {
         <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font-display)', fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
           <BookOpen size={24} style={{ color: 'var(--brand-amber)' }} /> Smart Knowledge
         </h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: 4 }}>Guides and how-tos for every part of Nexus-OP. Stuck? Hit <b>Ask AI</b> anytime.</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: 4 }}>Guides and how-tos for every part of Maks Ops. Stuck? Hit <b>Ask AI</b> anytime.</p>
       </div>
 
       {/* Controls */}

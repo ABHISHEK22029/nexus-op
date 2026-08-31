@@ -942,7 +942,7 @@ app.get('/dashboard', async (req, res) => {
    ══════════════════════════════════════════════════════════ */
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`✅ Nexus Op Backend running on http://localhost:${PORT}`);
+  console.log(`✅ Maks Ops Backend running on http://localhost:${PORT}`);
   console.log(`   Routes: ${[
     'GET/POST /projects', 'GET/POST /work-orders', 'GET/PATCH /milestones',
     'GET/POST /vendors', 'GET/POST /po', 'PATCH /po/:id/approve', 'PATCH /po/:id/dispatch',
