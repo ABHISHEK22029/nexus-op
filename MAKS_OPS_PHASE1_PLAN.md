@@ -97,12 +97,18 @@ DB restructure (canonical `items` master, tenancy unification, FKs, NUMERIC mone
 
 ## Progress
 
-- [x] **Phase 0** — cleanup (committed `d363af8`)
-- [x] Cosmetic rename → Maks Ops (committed `c391eb0`)
-- [ ] **1A.1** Schema migration 026
-- [ ] **1A.2** Backend company-profile write + invoice logic
-- [ ] **1A.3** Company Profile settings page
-- [ ] **1A.4** Print templates
-- [ ] **1A.5** Draft-editable / issued-locked
-- [ ] **1A.6** Missing-fields banner
+- [x] **Phase 0** — cleanup (`d363af8`, pushed)
+- [x] Cosmetic rename → Maks Ops (`c391eb0`, pushed)
+- [x] **1A.1** Schema migration 026 — applied to live Supabase (`791ab16`)
+- [x] **1A.2** `PUT /company-profile` + place-of-supply tax fix (`791ab16`)
+      ↳ **fixed a real bug:** interstate was derived from the customer's GSTIN
+        state instead of the place of supply, so ship-to-another-state orders
+        were charged the wrong tax
+- [x] **1A.3** Company Profile settings page (`31a4fae`, pushed)
+- [x] **1A.6** Missing-fields warnings — on Company Profile *and* on the invoice
+- [x] **1A.4a** Tax Invoice template rebuilt — Bill To/Ship To, place of supply,
+      reverse charge, bank details box, due date, terms, signature, IRN slot
+- [ ] **1A.4b** Apply the same treatment to the other 6 documents
+      (quotation, delivery challan, GRN bill, credit/debit note, PO, RA bill)
+- [ ] **1A.5** Draft-editable / issued-locked (edit-after-issue → Credit/Debit Note)
 - [ ] 1B, 1C, 1D
