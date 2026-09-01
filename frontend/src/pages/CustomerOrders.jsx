@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files, Factory } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useProject } from '../context/ProjectContext';
+import OrderReadiness from '../components/OrderReadiness';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Open', 'In Procurement', 'Delivered', 'Closed'];
@@ -191,7 +192,13 @@ export default function CustomerOrders() {
                   </tr>
                   {expanded === o.id && detail[o.id] && (
                     <tr><td colSpan={7} style={{ padding: '0 14px 14px', background: 'var(--bg-elevated)' }}>
-                      <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', padding: '10px 0 6px' }}>Line items</div>
+                      {/* Can we actually build this, and what's stopping us?
+                          Answered before the line items, because it decides
+                          whether starting the job is even possible today. */}
+                      <div style={{ paddingTop: 12 }}>
+                        <OrderReadiness orderId={o.id} />
+                      </div>
+                      <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', padding: '4px 0 6px' }}>Line items</div>
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <tbody>
                           {(detail[o.id].items || []).map(it => (

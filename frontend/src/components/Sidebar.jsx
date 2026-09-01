@@ -50,6 +50,7 @@ const Sidebar = () => {
     { name: 'Work Orders', path: '/workorders', icon: <Briefcase size={18} />, group: 'Project' },
 
     // ── Fabrication ──
+    { name: 'Material Requirements', path: '/material-requirements', icon: <Layers size={18} />, group: 'Fabrication' },
     { name: 'Production', path: '/production', icon: <Factory size={18} />, group: 'Fabrication' },
 
     // ── System ──
