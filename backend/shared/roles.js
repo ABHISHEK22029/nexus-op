@@ -232,6 +232,26 @@ function isCrossTenant(role) {
   return roleDef(normaliseRole(role))?.crossTenant === true;
 }
 
+/**
+ * Every stored role STRING that resolves to `target` — the canonical name
+ * plus any legacy alias mapping to it.
+ *
+ * Needed because normaliseRole() lives in JavaScript while the questions
+ * that matter ("how many administrators are there?") are asked in SQL.
+ * Counting `WHERE role = 'Administrator'` misses the account stored as the
+ * legacy 'Admin', which is how the health check came to report "no active
+ * Administrator" on an installation whose only administrator was signed in
+ * and looking at the warning. A safety check that cries wolf is worse than
+ * no check, because it teaches people to scroll past the real one.
+ */
+function rolesResolvingTo(target) {
+  const out = new Set();
+  for (const name of effectiveRoleNames()) if (normaliseRole(name) === target) out.add(name);
+  for (const alias of Object.keys(LEGACY)) if (normaliseRole(alias) === target) out.add(alias);
+  if (roleDef(target)) out.add(target);
+  return [...out];
+}
+
 function normaliseRole(role) {
   if (!role) return 'Viewer';
   if (roleDef(role)) return role;
@@ -369,7 +389,7 @@ async function initRoles(db) {
 module.exports = {
   READ, WRITE, DELETE, ALL,
   RESOURCES, ROLES, COMMON_READ, LEGACY,
-  can, normaliseRole, permissionsFor, isCrossTenant,
+  can, normaliseRole, permissionsFor, isCrossTenant, rolesResolvingTo,
   roleNames: () => effectiveRoleNames(),
   codeRoleNames: () => Object.keys(ROLES),
   roleDef, effectiveRoleNames, overlayLoaded, getOverlay, setOverlay,

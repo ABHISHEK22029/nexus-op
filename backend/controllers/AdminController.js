@@ -26,6 +26,22 @@ const R = require('../shared/roles');
 
 const SYSTEM_IMMUTABLE = 'Administrator';
 
+/* Every stored role string that resolves to Administrator, legacy aliases
+   included. Counting `WHERE role = 'Administrator'` misses the account
+   stored as 'Admin' — which is how the production health check reported
+   "no active Administrator" to the one administrator who was reading it. */
+const ADMIN_ROLE_STRINGS = () => R.rolesResolvingTo('Administrator');
+
+/** Active administrators other than `exceptId`, counted by EFFECTIVE role. */
+async function otherActiveAdmins(exceptId) {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::int n FROM users
+     WHERE role = ANY($1) AND is_active = TRUE AND id <> $2`,
+    [ADMIN_ROLE_STRINGS(), exceptId]
+  );
+  return rows[0].n;
+}
+
 /* Reload the in-memory overlay after any write, so the next request is
    judged by the new rules rather than the ones the process booted with. */
 async function refresh() { await R.loadRoles(db); }
@@ -66,10 +82,21 @@ exports.catalogue = async (req, res) => {
 exports.listRoles = async (req, res) => {
   try {
     const defs = await db.query(
-      `SELECT rd.role, rd.label, rd.description, rd.is_system, rd.cross_tenant, rd.sort_order,
-              (SELECT COUNT(*)::int FROM users u WHERE u.role = rd.role) AS user_count
+      `SELECT rd.role, rd.label, rd.description, rd.is_system, rd.cross_tenant, rd.sort_order
        FROM role_definitions rd ORDER BY rd.sort_order, rd.role`
     );
+
+    /* Counted by EFFECTIVE role, in JS, because normaliseRole lives here and
+       not in SQL. A plain `u.role = rd.role` showed "Administrator — 0 users"
+       on an installation whose administrator is stored under the legacy value
+       'Admin'. Deletability is decided by this count, so an undercount would
+       have offered to delete a role people are actually using. */
+    const allUsers = (await db.query('SELECT role FROM users')).rows;
+    const effectiveCount = {};
+    for (const u of allUsers) {
+      const r = R.normaliseRole(u.role);
+      effectiveCount[r] = (effectiveCount[r] || 0) + 1;
+    }
     const perms = await db.query('SELECT role, resource, actions FROM role_permissions');
     const byRole = {};
     for (const p of perms.rows) (byRole[p.role] ||= {})[p.resource] = p.actions || [];
@@ -91,9 +118,9 @@ exports.listRoles = async (req, res) => {
         description: r.description,
         isSystem: r.is_system,
         crossTenant: r.cross_tenant,
-        userCount: r.user_count,
+        userCount: effectiveCount[r.role] || 0,
         editable: r.role !== SYSTEM_IMMUTABLE,
-        deletable: !r.is_system && r.user_count === 0,
+        deletable: !r.is_system && (effectiveCount[r.role] || 0) === 0,
         permissions: byRole[r.role] || {},
       })),
       legacyRolesInUse: legacy.rows.map(l => ({
@@ -272,9 +299,7 @@ exports.setUserRole = async (req, res) => {
 
     // Never leave the installation without an administrator.
     if (R.normaliseRole(user.role) === 'Administrator' && role !== 'Administrator') {
-      const others = (await db.query(
-        `SELECT COUNT(*)::int n FROM users WHERE role = 'Administrator' AND is_active = TRUE AND id <> $1`, [id]
-      )).rows[0].n;
+      const others = await otherActiveAdmins(id);
       if (others === 0) {
         return res.status(400).json({
           error: 'This is the last active administrator',
@@ -303,9 +328,7 @@ exports.setUserActive = async (req, res) => {
       });
     }
     if (!active && R.normaliseRole(user.role) === 'Administrator') {
-      const others = (await db.query(
-        `SELECT COUNT(*)::int n FROM users WHERE role = 'Administrator' AND is_active = TRUE AND id <> $1`, [id]
-      )).rows[0].n;
+      const others = await otherActiveAdmins(id);
       if (others === 0) {
         return res.status(400).json({ error: 'This is the last active administrator' });
       }
@@ -332,19 +355,31 @@ exports.auditLog = async (req, res) => {
 exports.rolesHealth = async (req, res) => {
   try {
     const issues = [];
+    /* By EFFECTIVE role. The literal comparison this replaced reported
+       "no active Administrator" on an installation whose only administrator
+       was stored under the legacy value 'Admin' — and was signed in reading
+       the warning at the time. */
     const admins = (await db.query(
-      `SELECT COUNT(*)::int n FROM users WHERE role = 'Administrator' AND is_active = TRUE`
+      `SELECT COUNT(*)::int n FROM users WHERE role = ANY($1) AND is_active = TRUE`,
+      [ADMIN_ROLE_STRINGS()]
     )).rows[0].n;
     if (admins === 0) issues.push('No active Administrator — nobody can administer this installation.');
 
+    /* NOTICES, not issues. A legacy role resolves correctly and nothing is
+       broken — it is worth tidying, not worth a red banner. Folding these
+       into `issues` kept the warning permanently on screen, which is how a
+       real problem gets scrolled past. Separated so `healthy` means "some-
+       thing is actually wrong". */
+    const notices = [];
     const legacy = (await db.query(
       `SELECT role, COUNT(*)::int n FROM users
        WHERE role IS NOT NULL AND role NOT IN (SELECT role FROM role_definitions) GROUP BY role`
     )).rows;
     for (const l of legacy) {
-      issues.push(`${l.n} user(s) still hold the legacy role "${l.role}" — treated as "${R.normaliseRole(l.role)}".`);
+      notices.push(`${l.n} user(s) still hold the legacy role "${l.role}" — working correctly as "${R.normaliseRole(l.role)}", but worth reassigning on the People tab.`);
     }
 
+    // This one IS a fault: a grant that silently does nothing.
     const orphan = (await db.query(
       `SELECT DISTINCT resource FROM role_permissions WHERE resource <> ALL($1)`,
       [Object.keys(R.RESOURCES)]
@@ -357,6 +392,7 @@ exports.rolesHealth = async (req, res) => {
       source: R.overlayLoaded() ? 'database' : 'code defaults',
       activeAdministrators: admins,
       issues,
+      notices,
       healthy: issues.length === 0,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

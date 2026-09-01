@@ -106,19 +106,39 @@ export default function Configurator() {
 }
 
 /* ── Health ──────────────────────────────────────────────── */
+/* Two severities, deliberately. A red banner that is always on is a banner
+   nobody reads — so faults are red and tidy-ups are a quiet note. */
 function HealthBanner() {
   const [h, setH] = useState(null);
   useEffect(() => { api('/admin/roles/health').then(setH).catch(() => {}); }, []);
-  if (!h || h.healthy) return null;
+  if (!h) return null;
+  const issues = h.issues || [];
+  const notices = h.notices || [];
+  if (!issues.length && !notices.length) return null;
+
   return (
-    <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#b45309', fontWeight: 700, fontSize: '0.88rem' }}>
-        <AlertTriangle size={16} /> Needs attention
-      </div>
-      <ul style={{ margin: '6px 0 0 20px', fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
-        {h.issues.map((i, n) => <li key={n}>{i}</li>)}
-      </ul>
-    </div>
+    <>
+      {issues.length > 0 && (
+        <div style={{ background: 'rgba(220,38,38,0.10)', border: '1px solid rgba(220,38,38,0.4)', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#dc2626', fontWeight: 700, fontSize: '0.88rem' }}>
+            <AlertTriangle size={16} /> Needs fixing
+          </div>
+          <ul style={{ margin: '6px 0 0 20px', fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+            {issues.map((i, n) => <li key={n}>{i}</li>)}
+          </ul>
+        </div>
+      )}
+      {notices.length > 0 && (
+        <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '11px 14px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.82rem' }}>
+            <Info size={14} /> Worth tidying
+          </div>
+          <ul style={{ margin: '5px 0 0 20px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+            {notices.map((i, n) => <li key={n}>{i}</li>)}
+          </ul>
+        </div>
+      )}
+    </>
   );
 }
 
