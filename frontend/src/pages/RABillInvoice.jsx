@@ -102,9 +102,16 @@ export default function RABillInvoice() {
             </table>
           </div>
 
-          {/* Bill-to (contractor / vendor) */}
+          {/* The contractor is the SUPPLIER on this document, not the
+              bill-to. It read "BILL TO — CONTRACTOR", which inverts the
+              transaction: an RA bill is raised BY the contractor for work
+              done, and we certify it against the measurement book and
+              deduct TDS and retention from it. The deductions are the proof
+              of direction — TDS under 194C is withheld by the payer, and we
+              are the one withholding it. Anyone reading "bill to" here would
+              have had the payment direction backwards. */}
           <div className="ra-party">
-            <div className="ra-party-h">BILL TO — CONTRACTOR</div>
+            <div className="ra-party-h">CONTRACTOR — WORK BILLED BY</div>
             <div className="ra-party-b">
               <div className="ra-party-name">{bill.vendorName || '—'}</div>
               {bill.vendorAddress && <div>{bill.vendorAddress}</div>}
@@ -112,7 +119,24 @@ export default function RABillInvoice() {
                 {bill.vendorGstin && <span><b>GSTIN:</b> {bill.vendorGstin}&nbsp;&nbsp;</span>}
                 {bill.vendorPan && <span><b>PAN:</b> {bill.vendorPan}</span>}
               </div>
-              <div><b>Place of Supply:</b> {company.stateCode} ({intra ? 'Intra-State' : 'Inter-State'})</div>
+              {/* Works contract: place of supply follows the site, which is
+                  ours — so the company's own state is right here, unlike on
+                  an outward sales invoice where it must follow the customer. */}
+              <div><b>Place of Supply:</b> {company.stateCode} ({intra ? 'Intra-State' : 'Inter-State'}) — project site</div>
+            </div>
+          </div>
+
+          {/* Who is paying, stated plainly. Without this the document names
+              only one party and leaves the reader to infer the other. */}
+          <div className="ra-party">
+            <div className="ra-party-h">CERTIFIED &amp; PAYABLE BY</div>
+            <div className="ra-party-b">
+              <div className="ra-party-name">{company.name}</div>
+              {company.address && <div>{company.address}</div>}
+              <div>
+                {company.gstin && <span><b>GSTIN:</b> {company.gstin}&nbsp;&nbsp;</span>}
+                {company.pan && <span><b>PAN:</b> {company.pan}</span>}
+              </div>
             </div>
           </div>
 
