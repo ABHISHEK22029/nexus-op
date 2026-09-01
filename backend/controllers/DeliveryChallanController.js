@@ -43,7 +43,13 @@ exports.list = async (req, res) => {
 // GET /delivery-challans/prefill/:orderId — build a challan from a customer order
 exports.prefill = async (req, res) => {
   try {
-    const co = (await db.query('SELECT * FROM customer_orders WHERE id = $1', [req.params.orderId])).rows[0];
+    /* Scoped on the SOURCE order. A prefill endpoint is a read of somebody's
+       order dressed up as a form helper — this one returned the customer,
+       their state, and every line with quantity and rate for any order id.
+       Guarding the destination document is not enough when the thing being
+       copied is the sensitive part. */
+    const s = scopedById(req, req.params.orderId);
+    const co = (await db.query(`SELECT * FROM customer_orders WHERE ${s.where}`, s.params)).rows[0];
     if (!co) return res.status(404).json({ error: 'Customer order not found' });
     const items = (await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [co.id])).rows
       .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0 }));

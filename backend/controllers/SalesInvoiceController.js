@@ -83,7 +83,11 @@ async function resolveTax(customerId, placeOfSupplyOverride) {
 // GET /sales-invoices/prefill/:customerOrderId — draft from a customer order
 exports.prefill = async (req, res) => {
   try {
-    const co = (await db.query('SELECT * FROM customer_orders WHERE id = $1', [req.params.customerOrderId])).rows[0];
+    /* Scoped on the SOURCE order — see DeliveryChallanController.prefill.
+       This one leaked the most: customer, GSTIN, place of supply, payment
+       terms and every line with its rate. */
+    const s = scopedById(req, req.params.customerOrderId);
+    const co = (await db.query(`SELECT * FROM customer_orders WHERE ${s.where}`, s.params)).rows[0];
     if (!co) return res.status(404).json({ error: 'Customer order not found' });
     const items = (await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [co.id])).rows
       .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0 }));

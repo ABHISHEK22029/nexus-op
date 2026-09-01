@@ -5,6 +5,7 @@
    All owner-scoped: admin sees all, a user sees only their own.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { scopedById } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { runList } = require('../shared/listQuery');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
@@ -75,7 +76,13 @@ exports.createOrder = async (req, res) => {
 
 exports.getOrderById = async (req, res) => {
   try {
-    const o = await db.query('SELECT * FROM customer_orders WHERE id = $1', [req.params.id]);
+    /* Owner-scoped. This read `WHERE id = $1` with no owner check, and a
+       probe from a second tenant confirmed it returned the order number,
+       the customer's name and GSTIN, and every line with its description
+       and rate — a customer list and a price book, reachable by counting
+       integers. */
+    const s = scopedById(req, req.params.id);
+    const o = await db.query(`SELECT * FROM customer_orders WHERE ${s.where}`, s.params);
     if (!o.rows[0]) return res.status(404).json({ error: 'Order not found' });
     const cust = await db.query('SELECT * FROM customers WHERE id = $1', [o.rows[0].customer_id]);
     const items = await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [req.params.id]);
@@ -158,7 +165,9 @@ exports.createQuotation = async (req, res) => {
 
 exports.getQuotationById = async (req, res) => {
   try {
-    const q = await db.query('SELECT * FROM quotations WHERE id = $1', [req.params.id]);
+    // Owner-scoped: vendor quotes carry competitors' pricing.
+    const s = scopedById(req, req.params.id);
+    const q = await db.query(`SELECT * FROM quotations WHERE ${s.where}`, s.params);
     if (!q.rows[0]) return res.status(404).json({ error: 'Quotation not found' });
     const l = await db.query('SELECT * FROM quote_lines WHERE quotation_id = $1 ORDER BY slot', [req.params.id]);
     res.json({ ...q.rows[0], lines: l.rows });
