@@ -6,14 +6,14 @@ import {
   FolderGit2, Briefcase, Milestone, Zap, Home, Sun, Moon, Factory,
   Contact, ShoppingBag, Tags, Boxes, Files, ReceiptIndianRupee,
   Wallet, BarChart3, FileSpreadsheet, UserCog, Cog, FileMinus, PackageCheck,
-  Building2
+  Building2, Layers, Link2
 } from 'lucide-react';
-import { useRole } from '../context/RoleContext';
+import { usePermissions } from '../context/PermissionContext';
 import { useProject } from '../context/ProjectContext';
 import { useTheme } from '../context/ThemeContext';
 
 const Sidebar = () => {
-  const { role } = useRole();
+  const { can } = usePermissions();
   const { enabledModules } = useProject();
   const { theme, toggleTheme, isDark } = useTheme();
 
@@ -22,53 +22,53 @@ const Sidebar = () => {
     { name: 'Smart Knowledge', path: '/knowledge', icon: <BookOpen size={18} />, group: 'Overview' },
 
     // ── Sales & customer orders (NEW) ──
-    { name: 'Customers', path: '/customers', icon: <Contact size={18} />, group: 'Sales' },
-    { name: 'Sales Quotations', path: '/sales-quotations', icon: <FileText size={18} />, group: 'Sales' },
-    { name: 'Customer Orders', path: '/customer-orders', icon: <ShoppingBag size={18} />, group: 'Sales' },
-    { name: 'Delivery Challans', path: '/delivery-challans', icon: <PackageCheck size={18} />, group: 'Sales' },
-    { name: 'Sales Invoices', path: '/sales-invoices', icon: <ReceiptIndianRupee size={18} />, group: 'Sales' },
+    { name: 'Customers', path: '/customers', resource: 'customers', icon: <Contact size={18} />, group: 'Sales' },
+    { name: 'Sales Quotations', path: '/sales-quotations', resource: 'sales-quotations', icon: <FileText size={18} />, group: 'Sales' },
+    { name: 'Customer Orders', path: '/customer-orders', resource: 'customer-orders', icon: <ShoppingBag size={18} />, group: 'Sales' },
+    { name: 'Delivery Challans', path: '/delivery-challans', resource: 'delivery-challans', icon: <PackageCheck size={18} />, group: 'Sales' },
+    { name: 'Sales Invoices', path: '/sales-invoices', resource: 'sales-invoices', icon: <ReceiptIndianRupee size={18} />, group: 'Sales' },
 
     // ── Catalog (NEW) ──
-    { name: 'SKUs', path: '/skus', icon: <Tags size={18} />, group: 'Catalog' },
-    { name: 'Raw Materials', path: '/raw-materials', icon: <Boxes size={18} />, group: 'Catalog' },
+    { name: 'SKUs', path: '/skus', resource: 'skus', icon: <Tags size={18} />, group: 'Catalog' },
+    { name: 'Raw Materials', path: '/raw-materials', resource: 'raw-materials', icon: <Boxes size={18} />, group: 'Catalog' },
 
     // ── Procurement (flow order: Vendors → Quotations → Vendor PO → GRN → Inventory) ──
-    { name: 'Vendors', path: '/vendors', icon: <Users size={18} />, group: 'Procurement' },
-    { name: 'Vendor Supplies', path: '/vendor-supplies', icon: <Link2 size={18} />, group: 'Procurement' },
-    { name: 'Quotations', path: '/quotations', icon: <Files size={18} />, group: 'Procurement' },
-    { name: 'Purchase Orders', path: '/po', icon: <ShoppingCart size={18} />, group: 'Procurement' },
-    { name: 'GRN', path: '/grn', icon: <Truck size={18} />, group: 'Procurement' },
-    { name: 'Inventory', path: '/inventory', icon: <Package size={18} />, group: 'Procurement' },
+    { name: 'Vendors', path: '/vendors', resource: 'vendors', icon: <Users size={18} />, group: 'Procurement' },
+    { name: 'Vendor Supplies', path: '/vendor-supplies', resource: 'vendor-items', icon: <Link2 size={18} />, group: 'Procurement' },
+    { name: 'Quotations', path: '/quotations', resource: 'quotations', icon: <Files size={18} />, group: 'Procurement' },
+    { name: 'Purchase Orders', path: '/po', resource: 'po', icon: <ShoppingCart size={18} />, group: 'Procurement' },
+    { name: 'GRN', path: '/grn', resource: 'grn-bills', icon: <Truck size={18} />, group: 'Procurement' },
+    { name: 'Inventory', path: '/inventory', resource: 'inventory', icon: <Package size={18} />, group: 'Procurement' },
 
     // ── Billing ──
-    { name: 'RA Bills', path: '/bills', icon: <Receipt size={18} />, group: 'Billing' },
-    { name: 'Payables', path: '/payables', icon: <ReceiptIndianRupee size={18} />, group: 'Billing' },
-    { name: 'Credit/Debit Notes', path: '/credit-debit-notes', icon: <FileMinus size={18} />, group: 'Billing' },
+    { name: 'RA Bills', path: '/bills', resource: 'bills', icon: <Receipt size={18} />, group: 'Billing' },
+    { name: 'Payables', path: '/payables', resource: 'payables', icon: <ReceiptIndianRupee size={18} />, group: 'Billing' },
+    { name: 'Credit/Debit Notes', path: '/credit-debit-notes', resource: 'credit-debit-notes', icon: <FileMinus size={18} />, group: 'Billing' },
     { name: 'Expenses', path: '/expenses', icon: <Wallet size={18} />, group: 'Billing' },
 
     // ── Projects ──
-    { name: 'Projects', path: '/projects', icon: <FolderGit2 size={18} />, group: 'Project' },
-    { name: 'Work Orders', path: '/workorders', icon: <Briefcase size={18} />, group: 'Project' },
+    { name: 'Projects', path: '/projects', resource: 'projects', icon: <FolderGit2 size={18} />, group: 'Project' },
+    { name: 'Work Orders', path: '/workorders', resource: 'work-orders', icon: <Briefcase size={18} />, group: 'Project' },
 
     // ── Fabrication ──
-    { name: 'Material Requirements', path: '/material-requirements', icon: <Layers size={18} />, group: 'Fabrication' },
-    { name: 'Production', path: '/production', icon: <Factory size={18} />, group: 'Fabrication' },
+    { name: 'Material Requirements', path: '/material-requirements', resource: 'material-requirements', icon: <Layers size={18} />, group: 'Fabrication' },
+    { name: 'Production', path: '/production', resource: 'production', icon: <Factory size={18} />, group: 'Fabrication' },
 
     // ── System ──
-    { name: 'Company Profile', path: '/company-profile', icon: <Building2 size={18} />, group: 'System' },
-    { name: 'Automation', path: '/automation', icon: <Cog size={18} />, group: 'System' },
+    { name: 'Company Profile', path: '/company-profile', resource: 'company-profile', icon: <Building2 size={18} />, group: 'System' },
+    { name: 'Automation', path: '/automation', resource: 'automation-settings', icon: <Cog size={18} />, group: 'System' },
     { name: 'Reports', path: '/reports', icon: <BarChart3 size={18} />, group: 'System' },
     { name: 'Import Data', path: '/import', icon: <FileSpreadsheet size={18} />, group: 'System' },
-    { name: 'Team & Access', path: '/users', icon: <UserCog size={18} />, group: 'System' },
+    { name: 'Team & Access', path: '/users', resource: 'users', icon: <UserCog size={18} />, group: 'System' },
     { name: 'Activity Log', path: '/activity', icon: <Activity size={18} />, group: 'System' },
     { name: 'Process Flow', path: '/flow', icon: <Workflow size={18} />, group: 'System' },
   ];
 
   const moduleNavItems = [
-    { name: 'BOQ', path: '/boq', icon: <FileText size={18} />, requiredModule: 'BOQ', group: 'Project' },
-    { name: 'Indent', path: '/indent', icon: <ClipboardList size={18} />, requiredModule: 'Indent', group: 'Procurement' },
-    { name: 'Measurement Book', path: '/mb', icon: <BookOpen size={18} />, requiredModule: 'Measurement Book', group: 'Billing' },
-    { name: 'Milestones', path: '/milestones', icon: <Milestone size={18} />, requiredModule: 'Milestones', group: 'Project' },
+    { name: 'BOQ', path: '/boq', resource: 'boq', icon: <FileText size={18} />, requiredModule: 'BOQ', group: 'Project' },
+    { name: 'Indent', path: '/indent', resource: 'indent', icon: <ClipboardList size={18} />, requiredModule: 'Indent', group: 'Procurement' },
+    { name: 'Measurement Book', path: '/mb', resource: 'mb', icon: <BookOpen size={18} />, requiredModule: 'Measurement Book', group: 'Billing' },
+    { name: 'Milestones', path: '/milestones', resource: 'milestones', icon: <Milestone size={18} />, requiredModule: 'Milestones', group: 'Project' },
   ];
 
   const allNavItems = [
@@ -76,21 +76,19 @@ const Sidebar = () => {
     ...moduleNavItems.filter((item) => enabledModules.includes(item.requiredModule)),
   ];
 
-  const getNavItemsForRole = () => {
-    switch (role) {
-      case 'Engineer':
-        return allNavItems.filter(i => ['Smart Knowledge', 'Purchase Orders', 'Inventory', 'Raw Materials', 'SKUs', 'Quotations', 'Production', 'Delivery Challans', 'Process Flow', 'Indent', 'GRN', 'Measurement Book'].includes(i.name));
-      case 'Finance':
-        return allNavItems.filter(i => ['Dashboard', 'Smart Knowledge', 'Customers', 'Sales Quotations', 'Customer Orders', 'Delivery Challans', 'Sales Invoices', 'Quotations', 'RA Bills', 'Payables', 'Credit/Debit Notes', 'Expenses', 'Reports', 'Activity Log', 'BOQ'].includes(i.name));
-      case 'Vendor':
-        return allNavItems.filter(i => ['Purchase Orders'].includes(i.name));
-      case 'Admin':
-      default:
-        return allNavItems;
-    }
-  };
+  /* Show a link only if the server says this user may read that resource.
 
-  const navItems = getNavItemsForRole();
+     What was here instead: a switch over a role that came from
+     RoleContext, whose entire implementation was useState('Admin'). It was
+     hardcoded, so the "Engineer" and "Finance" branches were unreachable in
+     practice and the nav always rendered in full — including for people the
+     API would refuse. Clicking through then produced empty tables and failed
+     requests, which reads as a broken product rather than a locked door.
+
+     Permissions come from /auth/me, so this list can't disagree with what
+     the server will actually allow. Items with no `resource` are ungated
+     (dashboard, knowledge base, activity) and always show. */
+  const navItems = allNavItems.filter(i => !i.resource || can(i.resource, 'read'));
 
   // Group items
   const groups = ['Overview', 'Sales', 'Catalog', 'Procurement', 'Billing', 'Project', 'Fabrication', 'System'];

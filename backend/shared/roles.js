@@ -223,7 +223,21 @@ function permissionsFor(role) {
     const actions = ALL.filter(a => can(r, resource, a));
     if (actions.length) out[resource] = actions;
   }
-  for (const resource of COMMON_READ) out[resource] = [READ];
+  /* Grant read, don't REPLACE what was computed. This loop used to assign
+     `[READ]` outright, which was harmless while COMMON_READ held only
+     non-resources — then `users` joined the list and silently stripped
+     Administrator's write on it. Server-side can() was still correct, so
+     enforcement never broke; the UI just stopped offering a button the API
+     would have accepted. Exactly the drift that having one source of truth
+     is supposed to prevent, so it gets fixed at the source. */
+  for (const resource of COMMON_READ) {
+    /* Ask can() rather than hardcoding [READ], so the map is exactly what
+       the server would answer — Administrator's blanket grant included.
+       READ is unioned in because that is what membership of this list
+       means. */
+    const actions = ALL.filter(a => can(r, resource, a));
+    out[resource] = actions.includes(READ) ? actions : [READ, ...actions];
+  }
   return { role: r, label: ROLES[r]?.label || r, permissions: out };
 }
 

@@ -57,7 +57,7 @@ import POInvoice from './pages/POInvoice';
 import RABillInvoice from './pages/RABillInvoice';
 import BetaWelcome from './pages/BetaWelcome';
 import BetaOnboarding from './pages/BetaOnboarding';
-import { RoleProvider, useRole } from './context/RoleContext';
+import { PermissionProvider } from './context/PermissionContext';
 import { ProjectProvider, useProject } from './context/ProjectContext';
 import { useTheme } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -66,13 +66,13 @@ import { ToastProvider } from './context/ToastContext';
 import { UserCircle, Settings, Sun, Moon, Plus, LogOut } from 'lucide-react';
 import QuickCreateModal from './components/QuickCreateModal';
 import ProtectedRoute from './components/ProtectedRoute';
+import RoleBadge from './components/RoleBadge';
 import ProductTour from './components/ProductTour';
 import AskAi from './components/AskAi';
 import NotificationBell from './components/NotificationBell';
 
 /* ─── Top Header (App Layer only) ──────────────────────── */
 const TopHeader = () => {
-  const { role, setRole } = useRole();
   const { projects, activeProject, setActiveProject } = useProject();
   const { isDark, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
@@ -216,32 +216,18 @@ const TopHeader = () => {
         </select>
       </div>
 
-      {/* Role selector */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-default)',
-          borderRadius: '8px', padding: '6px 14px',
-        }}
-      >
-        <UserCircle size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-        <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>View as:</span>
-        <select
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-          style={{
-            background: 'transparent', border: 'none',
-            fontSize: '0.8rem', fontWeight: 700, color: 'var(--brand-amber)',
-            outline: 'none', cursor: 'pointer',
-          }}
-        >
-          <option value="Admin">Admin 👑</option>
-          <option value="Engineer">Engineer 👷</option>
-          <option value="Finance">Finance 💼</option>
-          <option value="Vendor">Vendor 🏢</option>
-        </select>
-      </div>
+      {/* The signed-in user's actual role — not a picker.
+
+          What stood here was a dropdown offering "Admin 👑 / Engineer /
+          Finance / Vendor". It set a local variable and never touched the
+          token, so choosing a role changed precisely nothing a server would
+          ever see. Worse than useless: it implied access control existed,
+          and the four names it offered matched neither the roles the backend
+          checked nor the ones the database stored.
+
+          Your role now comes from /auth/me and is a fact, not a preference.
+          Switching roles means signing in as someone who has that role. */}
+      <RoleBadge />
 
       {/* ── Notifications ── */}
       <NotificationBell />
@@ -476,15 +462,18 @@ function App() {
   return (
     <ToastProvider>
       <AuthProvider>
-        <UiConfigProvider>
-          <ProjectProvider>
-            <RoleProvider>
+        {/* Permissions sit just inside auth: they're fetched with the
+            session and everything below — nav, route guards, action
+            buttons — asks this rather than guessing from a role name. */}
+        <PermissionProvider>
+          <UiConfigProvider>
+            <ProjectProvider>
               <Router>
                 <AppRoutes />
               </Router>
-            </RoleProvider>
-          </ProjectProvider>
-        </UiConfigProvider>
+            </ProjectProvider>
+          </UiConfigProvider>
+        </PermissionProvider>
       </AuthProvider>
     </ToastProvider>
   );
