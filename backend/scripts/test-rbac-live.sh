@@ -11,10 +11,35 @@
 # was silently returning an empty token: it was measuring an anonymous
 # client and proving nothing. So every token is asserted non-empty and its
 # identity echoed before a single permission is checked.
+#
+# CREDENTIALS COME FROM THE ENVIRONMENT, NEVER FROM THIS FILE.
+# The first version hardcoded them. This repository is public, and the
+# accounts it created were on the live database — so committing it published
+# working logins for a production system. Those accounts have been
+# deactivated. A test fixture is not a safe place for a password, even a
+# throwaway one, because "throwaway" describes the intent and not the
+# database it authenticates against.
+#
+#   RBAC_ADMIN_EMAIL=…  RBAC_ADMIN_PASSWORD=…  RBAC_TEST_PASSWORD=…  \
+#     bash scripts/test-rbac-live.sh
+#
+# Run it against a local server. Pointing it at production creates accounts
+# there, which is how this went wrong the first time.
 # ══════════════════════════════════════════════════════════
 set -u
 B="${BASE_URL:-http://localhost:5099}"
 pass=0; fail=0
+
+: "${RBAC_ADMIN_EMAIL:?set RBAC_ADMIN_EMAIL}"
+: "${RBAC_ADMIN_PASSWORD:?set RBAC_ADMIN_PASSWORD}"
+: "${RBAC_TEST_PASSWORD:?set RBAC_TEST_PASSWORD (used for the throwaway role accounts)}"
+
+case "$B" in
+  *onrender.com*|*vercel.app*|https://*)
+    echo "❌ refusing to run against what looks like a deployed host: $B"
+    echo "   This script registers users. Run it against a local server."
+    exit 1;;
+esac
 
 tok() {  # tok <email> <password>
   curl -s -m 25 -X POST "$B/auth/login" -H 'Content-Type: application/json' \
@@ -53,14 +78,14 @@ assert_role() {  # assert_role <name> <token> <expected role>
 }
 
 echo "── tokens ──"
-ADMIN=$(tok "admin@nexusop.com" "admin123")
+ADMIN=$(tok "$RBAC_ADMIN_EMAIL" "$RBAC_ADMIN_PASSWORD")
 [ -z "$ADMIN" ] && { echo "❌ no admin token — aborting, every result would be meaningless"; exit 1; }
 echo "  admin  : $(curl -s -m 25 "$B/auth/me" -H "Authorization: Bearer $ADMIN" | node -pe "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); d.email+' -> '+d.role+' ('+Object.keys(d.permissions||{}).length+' resources)'")"
 
 for spec in "rbac-viewer@test.local:Viewer" "rbac-sales@test.local:Sales" "rbac-proc@test.local:Procurement"; do
   email="${spec%%:*}"; role="${spec##*:}"
   curl -s -m 25 -X POST "$B/auth/register" -H 'Content-Type: application/json' \
-    -d "{\"name\":\"$role Test\",\"email\":\"$email\",\"password\":\"Rbac!2026\"}" -o /dev/null
+    -d "{\"name\":\"$role Test\",\"email\":\"$email\",\"password\":\"$RBAC_TEST_PASSWORD\"}" -o /dev/null
   # Run from the backend root, not scripts/ — an earlier version used
   # require('../db') while cwd was already backend/, so every UPDATE failed
   # silently and all three users kept the default role. The test then
@@ -75,9 +100,9 @@ for spec in "rbac-viewer@test.local:Viewer" "rbac-sales@test.local:Sales" "rbac-
     " ) || { echo "❌ could not set role $role for $email — aborting"; exit 1; }
 done
 
-VIEWER=$(tok "rbac-viewer@test.local" "Rbac!2026")
-SALES=$(tok "rbac-sales@test.local" "Rbac!2026")
-PROC=$(tok "rbac-proc@test.local" "Rbac!2026")
+VIEWER=$(tok "rbac-viewer@test.local" "$RBAC_TEST_PASSWORD")
+SALES=$(tok "rbac-sales@test.local" "$RBAC_TEST_PASSWORD")
+PROC=$(tok "rbac-proc@test.local" "$RBAC_TEST_PASSWORD")
 for pair in "VIEWER:$VIEWER" "SALES:$SALES" "PROC:$PROC"; do
   name="${pair%%:*}"; t="${pair#*:}"
   [ -z "$t" ] && { echo "❌ no token for $name — aborting"; exit 1; }
