@@ -52,13 +52,28 @@ export const MODULES = [
     label: 'Sales',
     icon: 'ShoppingBag',
     landing: '/customers',
+    /* Grouped in the order the work actually happens: win it, ship it, bill
+       it. A flat list of six gives no clue that a quotation becomes an order
+       becomes a challan becomes an invoice. The menu can show the flow
+       rather than merely listing the screens.
+
+       `badge` points at a field the list endpoint's summary already
+       computes, so the menu can say where work is waiting without inventing
+       a second source for the number. */
     items: [
+      { group: 'Sell' },
       { label: 'Customers', path: '/customers', resource: 'customers' },
-      { label: 'Quotations', path: '/sales-quotations', resource: 'sales-quotations' },
-      { label: 'Orders', path: '/customer-orders', resource: 'customer-orders' },
-      { label: 'Delivery challans', path: '/delivery-challans', resource: 'delivery-challans' },
+      { label: 'Quotations', path: '/sales-quotations', resource: 'sales-quotations',
+        badge: { endpoint: 'sales-quotations', field: 'expired', tone: 'warn', title: 'expired' } },
+      { label: 'Orders', path: '/customer-orders', resource: 'customer-orders',
+        badge: { endpoint: 'customer-orders', field: 'open', tone: 'info', title: 'still open' } },
+      { group: 'Ship' },
+      { label: 'Delivery challans', path: '/delivery-challans', resource: 'delivery-challans',
+        badge: { endpoint: 'delivery-challans', field: 'eway_missing', tone: 'danger', title: 'missing an e-way bill' } },
+      { group: 'Bill' },
       { label: 'Invoices', path: '/sales-invoices', resource: 'sales-invoices' },
-      { label: 'Credit & debit notes', path: '/credit-debit-notes', resource: 'credit-debit-notes' },
+      { label: 'Credit & debit notes', path: '/credit-debit-notes', resource: 'credit-debit-notes',
+        badge: { endpoint: 'credit-debit-notes', field: 'unreferenced', tone: 'danger', title: 'missing an invoice reference' } },
     ],
   },
   {
@@ -67,16 +82,22 @@ export const MODULES = [
     icon: 'ShoppingCart',
     landing: '/vendors',
     items: [
+      { group: 'Source' },
       /* Was two menu entries. A vendor and what that vendor supplies are the
          same subject, and splitting them meant answering "who sells us
          plate" from a different screen than "who are our vendors". */
       { label: 'Vendors', path: '/vendors', resource: 'vendors',
         hint: 'Directory and what each one supplies' },
       { label: 'Indents', path: '/indent', resource: 'indent' },
-      { label: 'Vendor quotes', path: '/quotations', resource: 'quotations' },
-      { label: 'Purchase orders', path: '/purchase-orders', resource: 'po' },
+      { label: 'Vendor quotes', path: '/quotations', resource: 'quotations',
+        badge: { endpoint: 'quotations', field: 'awaiting_quotes', tone: 'info', title: 'still short of three quotes' } },
+      { group: 'Buy & receive' },
+      { label: 'Purchase orders', path: '/purchase-orders', resource: 'po',
+        badge: { endpoint: 'po', field: 'awaiting_approval', tone: 'warn', title: 'awaiting approval' } },
       { label: 'Goods received', path: '/grn', resource: 'grn' },
-      { label: 'Vendor bills', path: '/bills', resource: 'bills' },
+      { group: 'Pay' },
+      { label: 'Vendor bills', path: '/bills', resource: 'bills',
+        badge: { endpoint: 'bills', field: 'pending_approval', tone: 'warn', title: 'pending approval' } },
       { label: 'Payables', path: '/payables', resource: 'payables' },
     ],
   },
@@ -99,10 +120,15 @@ export const MODULES = [
     icon: 'Factory',
     landing: '/production',
     items: [
-      { label: 'Production orders', path: '/production', resource: 'production' },
-      { label: 'Projects', path: '/projects', resource: 'projects' },
+      { group: 'Make' },
+      { label: 'Production orders', path: '/production', resource: 'production',
+        badge: { endpoint: 'production', field: 'no_output', tone: 'warn', title: 'with nothing produced yet' } },
       { label: 'Work orders', path: '/workorders', resource: 'work-orders' },
-      { label: 'Milestones', path: '/milestones', resource: 'milestones' },
+      { group: 'Plan' },
+      { label: 'Projects', path: '/projects', resource: 'projects' },
+      { label: 'Milestones', path: '/milestones', resource: 'milestones',
+        badge: { endpoint: 'milestones', field: 'behind_plan', tone: 'danger', title: 'behind plan' } },
+      { group: 'Measure' },
       { label: 'Bill of quantities', path: '/boq', resource: 'boq' },
       { label: 'Measurement book', path: '/mb', resource: 'mb' },
     ],
@@ -124,11 +150,14 @@ export const MODULES = [
     icon: 'Settings',
     landing: '/company-profile',
     items: [
+      { group: 'Company' },
       { label: 'Company profile', path: '/company-profile', resource: 'company-profile' },
+      { label: 'Automation', path: '/automation', resource: 'automation-settings' },
+      { group: 'People' },
       { label: 'Team', path: '/users', resource: 'users' },
       { label: 'Configurator', path: '/configurator', adminOnly: true,
         hint: 'Roles and permissions' },
-      { label: 'Automation', path: '/automation', resource: 'automation-settings' },
+      { group: 'Data' },
       { label: 'Import data', path: '/import' },
       { label: 'Process flow', path: '/flow' },
     ],
@@ -156,7 +185,8 @@ const DETAIL_ROUTES = {
 /* ── path -> permission ───────────────────────────────────── */
 export const PATH_RESOURCES = (() => {
   const map = {};
-  for (const m of MODULES) for (const i of m.items) if (i.resource) map[i.path] = i.resource;
+  // Group rows are headings, not destinations — they have no path.
+  for (const m of MODULES) for (const i of m.items) if (i.path && i.resource) map[i.path] = i.resource;
   // Detail and legacy paths that still need guarding.
   Object.assign(map, {
     '/vendor-supplies': 'vendor-items',
@@ -197,12 +227,12 @@ export function isAdminOnlyPath(pathname = '') {
 export function moduleForPath(pathname = '') {
   const p = String(pathname);
   // Exact panel entries win.
-  for (const m of MODULES) for (const i of m.items) if (p === i.path) return m.key;
+  for (const m of MODULES) for (const i of m.items) if (i.path && p === i.path) return m.key;
   // Then longest prefix among panel entries.
   let best = null, bestLen = 0;
   for (const m of MODULES) {
     for (const i of m.items) {
-      if (p.startsWith(i.path + '/') && i.path.length > bestLen) { best = m.key; bestLen = i.path.length; }
+      if (i.path && p.startsWith(i.path + '/') && i.path.length > bestLen) { best = m.key; bestLen = i.path.length; }
     }
   }
   if (best) return best;
@@ -212,17 +242,47 @@ export function moduleForPath(pathname = '') {
   return 'home';
 }
 
-/** Panel entries this user may actually open. */
+/** Panel entries this user may actually open, group headings included. */
 export function visibleItems(moduleKey, can, role) {
   const m = MODULES.find(x => x.key === moduleKey);
   if (!m) return [];
-  return m.items.filter(i => {
+
+  const allowed = m.items.filter(i => {
+    if (i.group) return true;                       // decided below
     if (i.adminOnly) return role === 'Administrator';
     return !i.resource || can(i.resource, 'read');
   });
+
+  /* Drop a heading whose whole group was filtered away by permissions —
+     otherwise a Sales user sees "Buy & receive" with nothing under it, which
+     reads as a broken menu rather than a restricted one. */
+  return allowed.filter((item, idx) => {
+    if (!item.group) return true;
+    const next = allowed.slice(idx + 1).find(x => !x.group || x.group);
+    return Boolean(next && !next.group);
+  });
+}
+
+/** Just the navigable entries — no headings. */
+export function visibleLinks(moduleKey, can, role) {
+  return visibleItems(moduleKey, can, role).filter(i => i.path);
 }
 
 /** Modules with at least one reachable screen. */
 export function visibleModules(can, role) {
-  return MODULES.filter(m => visibleItems(m.key, can, role).length > 0);
+  return MODULES.filter(m => visibleLinks(m.key, can, role).length > 0);
+}
+
+/** Every badge declared across the nav, deduped by endpoint so the panel
+    fetches each summary once rather than once per entry. */
+export function badgeEndpoints() {
+  const out = new Map();
+  for (const m of MODULES) {
+    for (const i of m.items) {
+      if (!i.badge) continue;
+      if (!out.has(i.badge.endpoint)) out.set(i.badge.endpoint, []);
+      out.get(i.badge.endpoint).push({ path: i.path, ...i.badge });
+    }
+  }
+  return out;
 }

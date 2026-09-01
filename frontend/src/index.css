@@ -860,3 +860,23 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
   .nav-rail { width: 58px; }
   .nav-rail-item { width: 46px; }
 }
+
+/* Panel group heading — the flow, not just a list */
+.nav-panel-group {
+  font-size: 0.63rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted);
+  padding: 12px 10px 4px; opacity: 0.75;
+}
+.nav-panel-items > .nav-panel-group:first-child { padding-top: 2px; }
+
+.nav-panel-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* Where work is waiting. Zero is never rendered — a badge reading "0" is
+   noise pretending to be signal. */
+.nav-badge {
+  font-size: 0.65rem; font-weight: 800; line-height: 1;
+  padding: 3px 6px; border-radius: 99px; min-width: 18px; text-align: center;
+}
+.nav-badge-info   { background: rgba(59,130,246,0.15);  color: #3b82f6; }
+.nav-badge-warn   { background: rgba(245,158,11,0.18);  color: #b45309; }
+.nav-badge-danger { background: rgba(220,38,38,0.15);   color: #dc2626; }

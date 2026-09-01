@@ -21,11 +21,70 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../context/PermissionContext';
 import { useTheme } from '../context/ThemeContext';
-import { MODULES, moduleForPath, visibleItems, visibleModules } from '../lib/navigation';
+import { getToken } from '../lib/apiAuth';
+import {
+  MODULES, moduleForPath, visibleItems, visibleLinks, visibleModules, badgeEndpoints,
+} from '../lib/navigation';
 
 const ICONS = { LayoutDashboard, ShoppingBag, ShoppingCart, Package, Factory, Wallet, Settings };
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const PANEL_KEY = 'maks_nav_panel_open';
+
+/* ══════════════════════════════════════════════════════════
+   Badge counts — where work is waiting, in the menu itself.
+
+   Every number here comes from the list endpoint's OWN summary aggregate,
+   the same one the page header renders. That matters: a menu that counts
+   things a different way than the page it links to will eventually disagree
+   with it, and the person looking at both has no way to know which is
+   right.
+
+   Only the module currently open is fetched, and only once per endpoint —
+   seven modules' worth of counts on every page load would be a lot of
+   requests to tell someone something they may not be looking at.
+   ══════════════════════════════════════════════════════════ */
+function useBadges(moduleKey, items) {
+  const [counts, setCounts] = useState({});
+
+  useEffect(() => {
+    const wanted = items.filter(i => i.badge);
+    if (!wanted.length) { setCounts({}); return; }
+
+    let cancelled = false;
+    const byEndpoint = new Map();
+    for (const i of wanted) {
+      if (!byEndpoint.has(i.badge.endpoint)) byEndpoint.set(i.badge.endpoint, []);
+      byEndpoint.get(i.badge.endpoint).push(i);
+    }
+
+    (async () => {
+      const token = getToken();
+      const next = {};
+      await Promise.all([...byEndpoint.entries()].map(async ([endpoint, entries]) => {
+        try {
+          // limit=1: we want the summary, not the rows.
+          const res = await fetch(`${API}/${endpoint}?limit=1`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok) return;
+          const d = await res.json();
+          const s = d?.summary;
+          if (!s) return;
+          for (const e of entries) {
+            const v = Number(s[e.badge.field]);
+            if (Number.isFinite(v) && v > 0) next[e.path] = v;
+          }
+        } catch { /* a badge is a nicety; never break the nav for one */ }
+      }));
+      if (!cancelled) setCounts(next);
+    })();
+
+    return () => { cancelled = true; };
+  }, [moduleKey]);
+
+  return counts;
+}
 
 export default function AppNav() {
   const location = useLocation();
@@ -46,16 +105,21 @@ export default function AppNav() {
     try { localStorage.setItem(PANEL_KEY, panelOpen ? 'open' : 'closed'); } catch { /* private mode */ }
   }, [panelOpen]);
 
-  if (loading) return <div className="nav-rail" aria-hidden />;
-
+  /* Every hook runs BEFORE the loading early-return. useBadges was below it
+     for a few minutes, which is a conditional hook call — React throws
+     "rendered more hooks than during the previous render" the moment
+     `loading` flips from true to false, i.e. on every first paint. */
   const modules = visibleModules(can, role);
   const items = visibleItems(activeModule, can, role);
+  const badges = useBadges(activeModule, items);
   const current = MODULES.find(m => m.key === activeModule);
+
+  if (loading) return <div className="nav-rail" aria-hidden />;
 
   /* Clicking a rail module goes to its first screen the user can actually
      open — not a hardcoded landing page they may not have access to. */
   const goToModule = (m) => {
-    const allowed = visibleItems(m.key, can, role);
+    const allowed = visibleLinks(m.key, can, role);
     if (allowed.length) navigate(allowed[0].path);
   };
 
@@ -91,7 +155,7 @@ export default function AppNav() {
         </button>
       </nav>
 
-      {panelOpen && items.length > 0 && (
+      {panelOpen && items.some(i => i.path) && (
         <aside className="nav-panel" aria-label={`${current?.label} screens`}>
           <div className="nav-panel-head">
             <span>{current?.label}</span>
@@ -100,20 +164,39 @@ export default function AppNav() {
             </button>
           </div>
           <div className="nav-panel-items">
-            {items.map(i => (
-              <NavLink
-                key={i.path}
-                to={i.path}
-                className={({ isActive }) => `nav-panel-item${isActive ? ' is-active' : ''}`}
-                end={i.path === '/dashboard'}
-              >
-                <span className="nav-panel-label">{i.label}</span>
-                {/* The hint says what a consolidated screen now contains, so
-                    someone hunting for "Vendor Supplies" can see where it went
-                    rather than concluding it was removed. */}
-                {i.hint && <span className="nav-panel-hint">{i.hint}</span>}
-              </NavLink>
-            ))}
+            {items.map((i, idx) => {
+              /* A heading, not a destination. Grouped by the order the work
+                 happens — Source, Buy & receive, Pay — so the menu shows the
+                 flow rather than just listing seven screens. */
+              if (i.group) {
+                return <div key={`g${idx}`} className="nav-panel-group">{i.group}</div>;
+              }
+              const count = badges[i.path];
+              return (
+                <NavLink
+                  key={i.path}
+                  to={i.path}
+                  className={({ isActive }) => `nav-panel-item${isActive ? ' is-active' : ''}`}
+                  end={i.path === '/dashboard'}
+                  title={count ? `${count} ${i.badge?.title || 'need attention'}` : undefined}
+                >
+                  <span className="nav-panel-row">
+                    <span className="nav-panel-label">{i.label}</span>
+                    {/* The count comes from the list endpoint's own summary,
+                        so the menu and the page can never disagree about how
+                        many things need attention. Zero is not shown — a
+                        badge reading "0" is noise pretending to be signal. */}
+                    {count > 0 && (
+                      <span className={`nav-badge nav-badge-${i.badge.tone || 'info'}`}>{count}</span>
+                    )}
+                  </span>
+                  {/* The hint says what a consolidated screen now contains, so
+                      someone hunting for "Vendor Supplies" can see where it went
+                      rather than concluding it was removed. */}
+                  {i.hint && <span className="nav-panel-hint">{i.hint}</span>}
+                </NavLink>
+              );
+            })}
           </div>
         </aside>
       )}
