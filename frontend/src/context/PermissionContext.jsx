@@ -13,6 +13,7 @@
    ══════════════════════════════════════════════════════════ */
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
+import { getToken } from '../lib/apiAuth';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const PermissionContext = createContext(null);
 
@@ -20,7 +21,7 @@ export function PermissionProvider({ children }) {
   const [state, setState] = useState({ loading: true, user: null, permissions: {}, role: null });
 
   const load = useCallback(async () => {
-    const token = localStorage.getItem('token');
+    const token = getToken();
     if (!token) { setState({ loading: false, user: null, permissions: {}, role: null }); return; }
     try {
       const res = await fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });

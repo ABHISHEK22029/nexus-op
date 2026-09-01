@@ -75,4 +75,16 @@ axios.interceptors.response.use(
   }
 );
 
-export { forceLogout };
+/* Exported so call sites stop guessing the key.
+
+   Several files read the key "token" directly — which is not the key; it is
+   TOKEN_KEY above. Those reads always returned null, so their carefully
+   added Authorization headers were no-ops. The requests worked anyway,
+   because the fetch patch above attaches the real header regardless. That
+   is the dangerous kind of wrong: the code looks correct, behaves
+   correctly, and is held up entirely by a global side effect nobody reading
+   the call site can see. Remove the patch and auth breaks everywhere at
+   once, for reasons that would look unrelated.
+
+   Import getToken from here rather than naming the key again. */
+export { forceLogout, getToken, TOKEN_KEY };

@@ -15,6 +15,7 @@ import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
+import { getToken } from '../lib/apiAuth';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const statusColor = (s) => s === 'Paid' ? '#10b981' : s === 'Partially Paid' ? 'var(--brand-amber)' : s === 'Sent' ? '#3b82f6' : 'var(--text-muted)';
@@ -28,7 +29,7 @@ export default function SalesInvoices() {
   const del = async (e, id) => {
     e.stopPropagation();
     if (!window.confirm('Delete this invoice?')) return;
-    const token = localStorage.getItem('token');
+    const token = getToken();
     const res = await fetch(`${API}/sales-invoices/${id}`, {
       method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
     });

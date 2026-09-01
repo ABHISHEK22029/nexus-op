@@ -1,30 +1,54 @@
+/* ══════════════════════════════════════════════════════════
+   Credit & Debit Notes — searchable, filterable, paginated.
+
+   Totals come from `q.summary`, never from summing the rows on screen —
+   after pagination the rows are one page, so a locally summed total would
+   quietly mean "total on page 1".
+
+   Two deliberate choices here:
+
+   · Credit and debit are shown as SEPARATE cards and are never added
+     together. They move in opposite directions — one reduces what a
+     customer owes us, the other increases what we owe a vendor — so a
+     single combined figure would be a number with no meaning.
+
+   · `unreferenced` counts notes with no original invoice number or date.
+     Section 34 read with Rule 53(1A) requires both, and the date is what
+     ties the note to a tax period for the GSTR-1 credit note table. A note
+     missing them cannot be filed as it stands.
+   ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileMinus, Plus, Trash2, X, Eye } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
+import { getToken } from '../lib/apiAuth';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function CreditDebitNotes() {
   const toast = useToast();
   const navigate = useNavigate();
-  const [notes, setNotes] = useState([]);
+  const { can } = usePermissions();
+  const q = useListQuery('credit-debit-notes', { pageSize: 25 });
   const [customers, setCustomers] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [head, setHead] = useState({ noteType: 'credit', partyType: 'customer', partyId: '', noteDate: '', refNumber: '', gstRate: '18', reason: '' });
   const [lines, setLines] = useState([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
 
-  const load = async () => {
-    const [n, c, v] = await Promise.all([
-      fetch(`${API}/credit-debit-notes`).then(r => r.ok ? r.json() : []),
-      fetch(`${API}/customers`).then(r => r.ok ? r.json() : []),
-      fetch(`${API}/vendors`).then(r => r.ok ? r.json() : []),
-    ]);
-    setNotes(Array.isArray(n) ? n : []); setCustomers(c); setVendors(Array.isArray(v) ? v : []);
-  };
-  useEffect(() => { load(); }, []);
+  // Only the pick-lists for the form load here; the list itself is q's job.
+  useEffect(() => {
+    (async () => {
+      const [c, v] = await Promise.all([
+        fetch(`${API}/customers`).then(r => r.ok ? r.json() : []),
+        fetch(`${API}/vendors`).then(r => r.ok ? r.json() : []),
+      ]);
+      setCustomers(Array.isArray(c) ? c : []); setVendors(Array.isArray(v) ? v : []);
+    })();
+  }, []);
 
   // A credit note usually goes to a customer, a debit note to a vendor — default sensibly but stay flexible.
   const onType = (noteType) => setHead(h => ({ ...h, noteType, partyType: noteType === 'credit' ? 'customer' : 'vendor', partyId: '' }));
@@ -38,21 +62,40 @@ export default function CreditDebitNotes() {
     if (!head.partyId) { toast.error(`Pick a ${head.partyType}`); return; }
     const items = lines.filter(l => l.description.trim());
     if (!items.length) { toast.error('Add at least one line'); return; }
-    try {
-      const res = await fetch(`${API}/credit-debit-notes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...head, items }) });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Failed');
-      toast.success(`${d.noteNumber} created`);
-      setShowForm(false); setHead({ noteType: 'credit', partyType: 'customer', partyId: '', noteDate: '', refNumber: '', gstRate: '18', reason: '' });
-      setLines([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]); load();
-    } catch (err) { toast.error(err.message); }
+    const token = getToken();
+    const res = await fetch(`${API}/credit-debit-notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ ...head, items }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(d.detail || d.error || 'Could not create the note');
+    toast.success(`${d.noteNumber} created`);
+    setShowForm(false); setHead({ noteType: 'credit', partyType: 'customer', partyId: '', noteDate: '', refNumber: '', gstRate: '18', reason: '' });
+    setLines([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
+    q.reload();
   };
-  const del = async (n) => { if (!window.confirm(`Delete ${n.note_number}?`)) return; await fetch(`${API}/credit-debit-notes/${n.id}`, { method: 'DELETE' }); load(); };
+
+  const del = async (n) => {
+    if (!window.confirm(`Delete ${n.note_number}?`)) return;
+    const token = getToken();
+    const res = await fetch(`${API}/credit-debit-notes/${n.id}`, {
+      method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      return toast.error(b.detail || b.error || 'Could not delete');
+    }
+    toast.success('Deleted');
+    q.reload();
+  };
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
   const input = { width: '100%', padding: '9px 11px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 8, color: 'var(--text-primary)', fontSize: '0.83rem', outline: 'none' };
   const lbl = { display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 };
   const typeBadge = (t) => ({ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', padding: '3px 9px', borderRadius: 6, color: t === 'credit' ? '#10b981' : '#f59e0b', background: (t === 'credit' ? '#10b981' : '#f59e0b') + '1f' });
+  const s = q.summary || {};
+  const canDelete = can('credit-debit-notes', 'delete');
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -64,6 +107,17 @@ export default function CreditDebitNotes() {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>Adjustments for returns, short-supply and rate corrections — credit note to a customer, debit note to a vendor.</p>
         </div>
         <button onClick={() => setShowForm(!showForm)} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Plus size={16} /> New Note</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14, marginBottom: 18 }}>
+        <Kpi card={card} label={q.isFiltered ? 'Notes (filtered)' : 'Notes'} value={s.count ?? q.total} />
+        {/* Kept apart on purpose: opposite signs, so a combined total would
+            mean nothing. */}
+        <Kpi card={card} label="Credit notes" value={rupee(s.credit_total)} tone="#10b981" note="Issued to customers" />
+        <Kpi card={card} label="Debit notes" value={rupee(s.debit_total)} tone="#f59e0b" note="Issued to vendors" />
+        <Kpi card={card} label="Missing invoice ref" value={s.unreferenced ?? 0}
+          tone={Number(s.unreferenced) > 0 ? '#ef4444' : '#10b981'}
+          note={Number(s.unreferenced) > 0 ? 'No original invoice no. / date — Section 34 requires both' : 'All notes carry their original invoice'} />
       </div>
 
       {showForm && (
@@ -113,38 +167,66 @@ export default function CreditDebitNotes() {
         </form>
       )}
 
+      {/* Note type, not status: every note is stored 'Issued', so status chips
+          would filter nothing. Credit vs debit is the real split. */}
+      <ListToolbar
+        q={q}
+        placeholder="Search note no., party, invoice ref, reason…"
+        filters={[{
+          key: 'note_type',
+          label: 'Type',
+          options: [
+            { value: 'credit', label: 'Credit' },
+            { value: 'debit', label: 'Debit' },
+          ],
+        }]}
+      />
+
       <div style={{ ...card, overflow: 'hidden' }}>
-        {notes.length === 0 ? (
-          <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>
-            <FileMinus size={38} style={{ opacity: 0.35, marginBottom: 10 }} />
-            <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No credit/debit notes yet</div>
-          </div>
+        {q.rows.length === 0 ? (
+          <EmptyState q={q} icon={FileMinus} noun="notes"
+            hint="Raise one against an invoice or bill when goods come back or a rate is corrected." />
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-                {['Note', 'Type', 'Party', 'Against', 'Total', 'Reason', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {notes.map(n => (
-                <tr key={n.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                  <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }} onClick={() => navigate(`/credit-debit-notes/${n.id}`)}>{n.note_number}</td>
-                  <td style={{ padding: '11px 14px' }}><span style={typeBadge(n.note_type)}>{n.note_type}</span></td>
-                  <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{n.party_name || '—'}</td>
-                  <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{n.ref_number || '—'}</td>
-                  <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>{rupee(n.total)}</td>
-                  <td style={{ padding: '11px 14px', color: 'var(--text-muted)', fontSize: '0.82rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.reason || '—'}</td>
-                  <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button onClick={() => navigate(`/credit-debit-notes/${n.id}`)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 6 }}><Eye size={15} /></button>
-                    <button onClick={() => del(n)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Trash2 size={15} /></button>
-                  </td>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
+                  {['Note', 'Type', 'Party', 'Against', 'Total', 'Reason', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>)}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {q.rows.map(n => (
+                  <tr key={n.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }} onClick={() => navigate(`/credit-debit-notes/${n.id}`)}>{n.note_number}</td>
+                    <td style={{ padding: '11px 14px' }}><span style={typeBadge(n.note_type)}>{n.note_type}</span></td>
+                    <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{n.party_name || '—'}</td>
+                    <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{n.ref_number || '—'}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>{rupee(n.total)}</td>
+                    <td style={{ padding: '11px 14px', color: 'var(--text-muted)', fontSize: '0.82rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.reason || '—'}</td>
+                    <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button onClick={() => navigate(`/credit-debit-notes/${n.id}`)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 6 }}><Eye size={15} /></button>
+                      {/* Hidden when the API would refuse it anyway. */}
+                      {canDelete && (
+                        <button onClick={() => del(n)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Trash2 size={15} /></button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
+
+      <Pagination q={q} />
     </div>
   );
 }
+
+const Kpi = ({ card, label, value, tone, note }) => (
+  <div style={{ ...card, padding: 18 }}>
+    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    {note && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>{note}</div>}
+  </div>
+);

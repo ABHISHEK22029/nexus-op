@@ -23,6 +23,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, X, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
 
+import { getToken } from '../lib/apiAuth';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 /** Data hook. Owns the query string so pages don't each reinvent it. */
@@ -51,7 +52,7 @@ export function useListQuery(endpoint, { pageSize = 25, initialFilters = {} } = 
     if (debounced.trim()) qs.set('search', debounced.trim());
     for (const [k, v] of Object.entries(filters)) if (v) qs.set(k, v);
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
       const res = await fetch(`${API}/${endpoint}?${qs}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

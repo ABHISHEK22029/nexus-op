@@ -1,8 +1,23 @@
+/* ══════════════════════════════════════════════════════════
+   Quotations — searchable, filterable, paginated.
+
+   The totals come from `q.summary`, not from summing the rows on screen.
+   Summing rows was only ever correct while every row was on screen; with
+   pagination "Quoted" would quietly mean "quoted on page 1" — a number that
+   looks authoritative and changes when you click Next.
+
+   `expired` is the one worth a card of its own: a quote past its validity
+   date that nobody has closed is either a sale going cold or a price you no
+   longer honour, and both need someone to look.
+   ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Plus, Trash2, X, ChevronRight, ArrowRightLeft, Eye } from 'lucide-react';
+import { FileText, Plus, Trash2, X, ArrowRightLeft, Eye } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
+import { getToken } from '../lib/apiAuth';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Draft', 'Sent', 'Accepted', 'Rejected', 'Converted'];
 const STATUS_COLOR = { Draft: '#64748b', Sent: '#2563eb', Accepted: '#10b981', Rejected: '#ef4444', Converted: '#8b5cf6' };
@@ -11,22 +26,24 @@ const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 export default function SalesQuotations() {
   const toast = useToast();
   const navigate = useNavigate();
-  const [quotes, setQuotes] = useState([]);
+  const { can } = usePermissions();
+  const q = useListQuery('sales-quotations', { pageSize: 25 });
   const [customers, setCustomers] = useState([]);
   const [skus, setSkus] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [head, setHead] = useState({ customerId: '', quoteDate: '', validUntil: '', gstRate: '18', discount: '', terms: '' });
   const [lines, setLines] = useState([{ skuId: '', description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
 
-  const load = async () => {
-    const [q, c, s] = await Promise.all([
-      fetch(`${API}/sales-quotations`).then(r => r.ok ? r.json() : []),
-      fetch(`${API}/customers`).then(r => r.ok ? r.json() : []),
-      fetch(`${API}/skus`).then(r => r.ok ? r.json() : []),
-    ]);
-    setQuotes(Array.isArray(q) ? q : []); setCustomers(c); setSkus(s);
-  };
-  useEffect(() => { load(); }, []);
+  // Only the pick-lists for the form load here; the list itself is q's job.
+  useEffect(() => {
+    (async () => {
+      const [c, s] = await Promise.all([
+        fetch(`${API}/customers`).then(r => r.ok ? r.json() : []),
+        fetch(`${API}/skus`).then(r => r.ok ? r.json() : []),
+      ]);
+      setCustomers(Array.isArray(c) ? c : []); setSkus(Array.isArray(s) ? s : []);
+    })();
+  }, []);
 
   const setLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
   const pickSku = (i, skuId) => {
@@ -45,39 +62,65 @@ export default function SalesQuotations() {
     if (!head.customerId) { toast.error('Pick a customer'); return; }
     const items = lines.filter(l => l.description.trim());
     if (!items.length) { toast.error('Add at least one line item'); return; }
-    try {
-      const res = await fetch(`${API}/sales-quotations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...head, items }) });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Failed');
-      toast.success(`Quotation ${d.quoteNumber} created`);
-      setShowForm(false); setHead({ customerId: '', quoteDate: '', validUntil: '', gstRate: '18', discount: '', terms: '' });
-      setLines([{ skuId: '', description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
-      load();
-    } catch (err) { toast.error(err.message); }
+    const token = getToken();
+    const res = await fetch(`${API}/sales-quotations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ ...head, items }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(d.detail || d.error || 'Could not create the quotation');
+    toast.success(`Quotation ${d.quoteNumber} created`);
+    setShowForm(false); setHead({ customerId: '', quoteDate: '', validUntil: '', gstRate: '18', discount: '', terms: '' });
+    setLines([{ skuId: '', description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
+    q.reload();
   };
 
-  const convert = async (q) => {
-    if (!window.confirm(`Convert ${q.quote_number} into a customer order?`)) return;
-    try {
-      const res = await fetch(`${API}/sales-quotations/${q.id}/convert`, { method: 'POST' });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Failed');
-      toast.success(`Won! Created order ${d.orderNumber}`);
-      navigate('/customer-orders');
-    } catch (err) { toast.error(err.message); }
+  const convert = async (qt) => {
+    if (!window.confirm(`Convert ${qt.quote_number} into a customer order?`)) return;
+    const token = getToken();
+    const res = await fetch(`${API}/sales-quotations/${qt.id}/convert`, {
+      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(d.detail || d.error || 'Could not convert this quotation');
+    toast.success(`Won! Created order ${d.orderNumber}`);
+    navigate('/customer-orders');
   };
+
   const setStatus = async (id, status) => {
-    await fetch(`${API}/sales-quotations/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
-    load();
+    const token = getToken();
+    const res = await fetch(`${API}/sales-quotations/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      return toast.error(b.detail || b.error || 'Could not update the status');
+    }
+    q.reload();
   };
-  const del = async (q) => {
-    if (!window.confirm(`Delete ${q.quote_number}?`)) return;
-    await fetch(`${API}/sales-quotations/${q.id}`, { method: 'DELETE' }); load();
+
+  const del = async (qt) => {
+    if (!window.confirm(`Delete ${qt.quote_number}?`)) return;
+    const token = getToken();
+    const res = await fetch(`${API}/sales-quotations/${qt.id}`, {
+      method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      return toast.error(b.detail || b.error || 'Could not delete');
+    }
+    toast.success('Deleted');
+    q.reload();
   };
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
   const input = { width: '100%', padding: '9px 11px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 8, color: 'var(--text-primary)', fontSize: '0.83rem', outline: 'none' };
   const lbl = { display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 };
+  const s = q.summary || {};
+  const canDelete = can('sales-quotations', 'delete');
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -89,6 +132,16 @@ export default function SalesQuotations() {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>Quote your customers up front — then convert a won quote straight into an order.</p>
         </div>
         <button onClick={() => setShowForm(!showForm)} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Plus size={16} /> New Quotation</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 14, marginBottom: 18 }}>
+        <Kpi card={card} label={q.isFiltered ? 'Quotations (filtered)' : 'Quotations'} value={s.count ?? q.total} />
+        <Kpi card={card} label="Quoted value" value={rupee(s.quoted)} />
+        <Kpi card={card} label="Open value" value={rupee(s.open_value)} tone="#2563eb" />
+        <Kpi card={card} label="Won" value={s.won ?? 0} tone="#10b981" />
+        {/* Past its validity date and still not closed — a price we may no
+            longer honour, sitting in front of a customer. */}
+        <Kpi card={card} label="Expired" value={s.expired ?? 0} tone={Number(s.expired) > 0 ? '#ef4444' : 'var(--text-muted)'} />
       </div>
 
       {showForm && (
@@ -111,7 +164,7 @@ export default function SalesQuotations() {
               <div style={{ flex: 1.2 }}><label style={lbl}>SKU</label>
                 <select style={input} value={l.skuId} onChange={e => pickSku(i, e.target.value)}>
                   <option value="">— free text —</option>
-                  {skus.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {skus.map(sk => <option key={sk.id} value={sk.id}>{sk.name}</option>)}
                 </select>
               </div>
               <div style={{ flex: 2 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} /></div>
@@ -143,52 +196,73 @@ export default function SalesQuotations() {
         </form>
       )}
 
+      <ListToolbar
+        q={q}
+        placeholder="Search quote no., customer, status…"
+        filters={[{
+          key: 'status',
+          label: 'Status',
+          options: STATUSES.map(st => ({ value: st, label: st })),
+        }]}
+      />
+
       <div style={{ ...card, overflow: 'hidden' }}>
-        {quotes.length === 0 ? (
-          <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>
-            <FileText size={38} style={{ opacity: 0.35, marginBottom: 10 }} />
-            <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No quotations yet</div>
-            <div style={{ fontSize: '0.85rem', marginTop: 4 }}>Create one to quote a customer, then convert it to an order when you win.</div>
-          </div>
+        {q.rows.length === 0 ? (
+          <EmptyState q={q} icon={FileText} noun="quotations"
+            hint="Create one to quote a customer, then convert it to an order when you win." />
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-                {['Quote', 'Customer', 'Valid until', 'Amount', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {quotes.map(q => (
-                <tr key={q.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                  <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }} onClick={() => navigate(`/sales-quotations/${q.id}`)}>{q.quote_number}</td>
-                  <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{q.customer_name || '—'}</td>
-                  <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{q.valid_until ? String(q.valid_until).slice(0, 10) : '—'}</td>
-                  <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>{rupee(q.net_amount)}</td>
-                  <td style={{ padding: '11px 14px' }}>
-                    {q.status === 'Converted'
-                      ? <span style={{ fontSize: '0.72rem', fontWeight: 700, color: STATUS_COLOR.Converted, background: STATUS_COLOR.Converted + '1f', padding: '3px 9px', borderRadius: 999 }}>Converted</span>
-                      : <select value={q.status} onChange={e => setStatus(q.id, e.target.value)} style={{ ...input, width: 'auto', padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700, color: STATUS_COLOR[q.status] }}>
-                          {STATUSES.filter(s => s !== 'Converted').map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>}
-                  </td>
-                  <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button onClick={() => navigate(`/sales-quotations/${q.id}`)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 4 }}><Eye size={15} /></button>
-                    {q.status !== 'Converted' && (
-                      <button onClick={() => convert(q)} title="Convert to order" className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 6, color: 'var(--brand-amber)' }}>
-                        <ArrowRightLeft size={13} /> Convert
-                      </button>
-                    )}
-                    {q.status === 'Converted' && q.converted_order_id && (
-                      <button onClick={() => navigate('/customer-orders')} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', marginRight: 6 }}>View order →</button>
-                    )}
-                    <button onClick={() => del(q)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Trash2 size={15} /></button>
-                  </td>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
+                  {['Quote', 'Customer', 'Valid until', 'Amount', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>)}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {q.rows.map(qt => (
+                  <tr key={qt.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }} onClick={() => navigate(`/sales-quotations/${qt.id}`)}>{qt.quote_number}</td>
+                    <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{qt.customer_name || '—'}</td>
+                    <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{qt.valid_until ? String(qt.valid_until).slice(0, 10) : '—'}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>{rupee(qt.net_amount)}</td>
+                    <td style={{ padding: '11px 14px' }}>
+                      {qt.status === 'Converted'
+                        ? <span style={{ fontSize: '0.72rem', fontWeight: 700, color: STATUS_COLOR.Converted, background: STATUS_COLOR.Converted + '1f', padding: '3px 9px', borderRadius: 999 }}>Converted</span>
+                        : <select value={qt.status} onChange={e => setStatus(qt.id, e.target.value)} style={{ ...input, width: 'auto', padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700, color: STATUS_COLOR[qt.status] }}>
+                            {STATUSES.filter(st => st !== 'Converted').map(st => <option key={st} value={st}>{st}</option>)}
+                          </select>}
+                    </td>
+                    <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button onClick={() => navigate(`/sales-quotations/${qt.id}`)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 4 }}><Eye size={15} /></button>
+                      {qt.status !== 'Converted' && (
+                        <button onClick={() => convert(qt)} title="Convert to order" className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 6, color: 'var(--brand-amber)' }}>
+                          <ArrowRightLeft size={13} /> Convert
+                        </button>
+                      )}
+                      {qt.status === 'Converted' && qt.converted_order_id && (
+                        <button onClick={() => navigate('/customer-orders')} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', marginRight: 6 }}>View order →</button>
+                      )}
+                      {/* Hidden when the API would refuse it anyway. */}
+                      {canDelete && (
+                        <button onClick={() => del(qt)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Trash2 size={15} /></button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
+
+      <Pagination q={q} />
     </div>
   );
 }
+
+const Kpi = ({ card, label, value, tone }) => (
+  <div style={{ ...card, padding: 18 }}>
+    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+  </div>
+);
