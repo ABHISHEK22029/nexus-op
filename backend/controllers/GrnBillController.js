@@ -4,6 +4,7 @@
    rates, add freight / other charges / discount, pick GST.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { scopedById } = require('../shared/ownerScope');
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -115,7 +116,8 @@ exports.list = async (req, res) => {
 // GET /grn-bills/:id
 exports.getById = async (req, res) => {
   try {
-    const bill = (await db.query('SELECT * FROM grn_bills WHERE id = $1', [req.params.id])).rows[0];
+    const s = scopedById(req, req.params.id);
+    const bill = (await db.query(`SELECT * FROM grn_bills WHERE ${s.where}`, s.params)).rows[0];
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
     const items = (await db.query('SELECT * FROM grn_bill_items WHERE grn_bill_id = $1 ORDER BY sort_order', [req.params.id])).rows;
     const vendor = bill.vendor_id ? (await db.query('SELECT * FROM vendors WHERE id = $1', [bill.vendor_id])).rows[0] : null;

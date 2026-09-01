@@ -5,6 +5,7 @@
    sales-invoice logic; owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { scopedById } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -53,7 +54,7 @@ exports.list = async (req, res) => {
   try {
     const admin = isAdmin(req);
     const where = [], params = [];
-    if (!admin) { params.push(req.user.id); where.push(`owner_id = ${params.length}`); }
+    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
     // Joined in a subquery so the customer/party name is searchable too —
     // people look for "Apollo", not for an invoice number they don't have.
     const result = await runList(db, {
@@ -72,7 +73,8 @@ exports.list = async (req, res) => {
 // GET /sales-quotations/:id
 exports.getById = async (req, res) => {
   try {
-    const q = (await db.query('SELECT * FROM sales_quotations WHERE id = $1', [req.params.id])).rows[0];
+    const s = scopedById(req, req.params.id);
+    const q = (await db.query(`SELECT * FROM sales_quotations WHERE ${s.where}`, s.params)).rows[0];
     if (!q) return res.status(404).json({ error: 'Quotation not found' });
     const items = (await db.query('SELECT * FROM sales_quotation_items WHERE sales_quotation_id = $1 ORDER BY sort_order', [req.params.id])).rows;
     const customer = q.customer_id ? (await db.query('SELECT * FROM customers WHERE id = $1', [q.customer_id])).rows[0] : null;

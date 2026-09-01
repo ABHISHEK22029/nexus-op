@@ -5,6 +5,7 @@
    source invoice / bill. Documents (statements/exports net them).
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { scopedById } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => req.user?.role === 'Admin';
@@ -43,7 +44,7 @@ exports.list = async (req, res) => {
   try {
     const admin = isAdmin(req);
     const where = [], params = [];
-    if (!admin) { params.push(req.user.id); where.push(`owner_id = ${params.length}`); }
+    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
     // Joined in a subquery so the customer/party name is searchable too —
     // people look for "Apollo", not for an invoice number they don't have.
     const result = await runList(db, {
@@ -62,7 +63,8 @@ exports.list = async (req, res) => {
 // GET /credit-debit-notes/:id
 exports.getById = async (req, res) => {
   try {
-    const n = (await db.query('SELECT * FROM credit_debit_notes WHERE id = $1', [req.params.id])).rows[0];
+    const s = scopedById(req, req.params.id);
+    const n = (await db.query(`SELECT * FROM credit_debit_notes WHERE ${s.where}`, s.params)).rows[0];
     if (!n) return res.status(404).json({ error: 'Note not found' });
     const items = (await db.query('SELECT * FROM credit_debit_note_items WHERE note_id = $1 ORDER BY sort_order', [req.params.id])).rows;
     let party = null;

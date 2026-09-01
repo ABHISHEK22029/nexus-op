@@ -4,6 +4,7 @@
    customer order; editable; records payments; owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { scopedById } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const { toStateCode, toStateName, isInterstate } = require('../shared/gstStates');
@@ -169,7 +170,7 @@ exports.list = async (req, res) => {
   try {
     const admin = isAdmin(req);
     const where = [], params = [];
-    if (!admin) { params.push(req.user.id); where.push(`owner_id = ${params.length}`); }
+    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
     // Joined in a subquery so the customer/party name is searchable too —
     // people look for "Apollo", not for an invoice number they don't have.
     const result = await runList(db, {
@@ -188,7 +189,8 @@ exports.list = async (req, res) => {
 // GET /sales-invoices/:id
 exports.getById = async (req, res) => {
   try {
-    const inv = (await db.query('SELECT * FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0];
+    const s = scopedById(req, req.params.id);
+    const inv = (await db.query(`SELECT * FROM sales_invoices WHERE ${s.where}`, s.params)).rows[0];
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
     const items = (await db.query('SELECT * FROM sales_invoice_items WHERE sales_invoice_id = $1 ORDER BY sort_order', [req.params.id])).rows;
     const payments = (await db.query('SELECT * FROM sales_payments WHERE sales_invoice_id = $1 ORDER BY id', [req.params.id])).rows;
