@@ -5,10 +5,11 @@
    source invoice / bill. Documents (statements/exports net them).
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { isCrossTenant } = require('../shared/roles');
 const { scopedById } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
-const isAdmin = (req) => req.user?.role === 'Admin';
+const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 function amountInWords(num) {
   num = Math.round(Number(num) || 0);

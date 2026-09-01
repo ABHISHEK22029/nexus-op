@@ -9,7 +9,8 @@
    end they happen to be looking at.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
-const isAdmin = (req) => req.user?.role === 'Admin';
+const { isCrossTenant } = require('../shared/roles');
+const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 const COLS = ['vendor_id', 'raw_material_id', 'vendor_item_code', 'price', 'price_uom', 'moq', 'lead_time_days', 'is_preferred', 'last_quoted_at', 'notes'];
 

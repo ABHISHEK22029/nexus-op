@@ -4,6 +4,7 @@
    rates, add freight / other charges / discount, pick GST.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { isCrossTenant } = require('../shared/roles');
 const { scopedById } = require('../shared/ownerScope');
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -150,7 +151,7 @@ exports.remove = async (req, res) => {
 
 /* ══════════════ Accounts Payable — vendor payments (Wave 1B) ══════════════ */
 const { notify } = require('../notify');
-const isAdmin = (req) => req.user?.role === 'Admin';
+const isAdmin = (req) => isCrossTenant(req.user?.role);
 // grn_bills are project-scoped (no owner_id); non-admins see their projects' bills.
 const projScope = (req, alias = 'gb') => isAdmin(req)
   ? { clause: '', params: [] }

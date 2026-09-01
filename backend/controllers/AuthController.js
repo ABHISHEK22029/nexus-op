@@ -4,6 +4,7 @@
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { signToken } = require('../middleware/auth');
+const { permissionsFor } = require('../shared/roles');
 
 // POST /auth/login  { email, password } -> { token, user }
 async function login(req, res) {
@@ -80,7 +81,12 @@ async function me(req, res) {
       [req.user.id]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Session no longer valid' });
-    return res.json(result.rows[0]);
+    /* Ship the permission map with the identity. The UI must never keep its
+       own copy of the rules — a second copy is a copy that drifts, and a
+       drifted permission table is worse than none because it gets trusted.
+       Here the UI can only ever render what the server already agreed to. */
+    const { role, label, permissions } = permissionsFor(result.rows[0].role);
+    return res.json({ ...result.rows[0], role, roleLabel: label, permissions });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

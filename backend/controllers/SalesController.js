@@ -5,7 +5,8 @@
    All owner-scoped: admin sees all, a user sees only their own.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
-const isAdmin = (req) => req.user?.role === 'Admin';
+const { isCrossTenant } = require('../shared/roles');
+const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 /* ── Customer Orders ── */
 exports.getOrders = async (req, res) => {

@@ -24,10 +24,11 @@
       and we always name the line that limits it.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { isCrossTenant } = require('../shared/roles');
 const { convert, loadUoms } = require('../shared/uom');
 
 const r4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
-const isAdmin = (req) => req.user?.role === 'Admin';
+const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 /* Order states that still represent real demand. Delivered/Closed/Cancelled
    orders have already consumed (or released) their material. */

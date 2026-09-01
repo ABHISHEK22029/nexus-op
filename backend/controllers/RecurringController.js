@@ -9,9 +9,10 @@
    what the user entered on the profile.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { isCrossTenant } = require('../shared/roles');
 const { notify } = require('../notify');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
-const isAdmin = (req) => req.user?.role === 'Admin';
+const isAdmin = (req) => isCrossTenant(req.user?.role);
 const DOC_TYPES = ['expense', 'sales_invoice'];
 const FREQ = ['daily', 'weekly', 'monthly'];
 

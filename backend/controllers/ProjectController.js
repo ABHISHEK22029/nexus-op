@@ -1,9 +1,10 @@
 const db = require('../db');
+const { isCrossTenant } = require('../shared/roles');
 
 // Admins see every project; a normal user sees only the projects they own.
 exports.getProjects = async (req, res) => {
   try {
-    const isAdmin = req.user?.role === 'Admin';
+    const isAdmin = isCrossTenant(req.user?.role);
     const { rows } = isAdmin
       ? await db.query('SELECT * FROM projects ORDER BY id')
       : await db.query('SELECT * FROM projects WHERE owner_id = $1 ORDER BY id', [req.user.id]);

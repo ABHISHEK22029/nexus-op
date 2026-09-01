@@ -25,6 +25,12 @@ const customerSummaryController = require('./controllers/CustomerSummaryControll
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
+/* Roles up here with the other requires, not beside the middleware that
+   happens to use them: scopeProjectAccess sits ~30 lines earlier and calls
+   isCrossTenant. That only worked because the call happens per-request,
+   long after module load — a distinction too subtle to rely on. */
+const { can, isCrossTenant, READ, WRITE, DELETE } = require('./shared/roles');
+const { ACTION_FOR_METHOD, allow } = require('./middleware/permissions');
 const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
 const grnRouter = require('./routes/grn');
@@ -72,7 +78,7 @@ app.get('/auth/me', authController.me);
    body) must reference a project the caller owns — admins bypass. This one
    guard covers every project-scoped endpoint automatically. */
 async function scopeProjectAccess(req, res, next) {
-  if (req.user?.role === 'Admin') return next();
+  if (isCrossTenant(req.user?.role)) return next();
   const pid = req.query.projectId || (req.body && req.body.projectId);
   if (!pid) return next(); // not a project-scoped request
   try {
@@ -88,15 +94,41 @@ async function scopeProjectAccess(req, res, next) {
 }
 app.use(scopeProjectAccess);
 
-/* Enforced RBAC (Phase 0): a "Viewer" is read-only. Everyone else
-   (Admin / Manager / Staff / User) can write. Real, enforced, and safe. */
+/* ── Enforced RBAC ────────────────────────────────────────────
+   This used to be a single rule: "Viewer is read-only, everyone else can
+   write". That is not access control, it is one special case — a
+   Procurement user could raise AND approve their own purchase order, and a
+   Sales user could edit the company's bank details.
+
+   Now every request is matched to a resource by its first path segment and
+   checked against the role's grants in shared/roles.js. Deny by default:
+   a route whose resource is not granted is refused, so adding an endpoint
+   without thinking about permissions fails closed rather than open.
+
+   One middleware rather than 129 route edits, so a new route cannot be
+   added and quietly miss its guard. (can / isCrossTenant / allow are
+   required at the top of the file with everything else.) */
+
+/* Paths every signed-in user reaches regardless of role. These carry no
+   business authority; gating them only makes the product hostile. */
+const UNGATED = new Set([
+  'auth', 'health', 'public', 'dashboard', 'activities', 'notifications',
+  'attachments', 'kb', 'ai', 'uploads', 'metal-prices',
+]);
+
 app.use((req, res, next) => {
-  // Ask AI is a POST but strictly read-only, so everyone (incl. Viewer) may use it.
-  if (req.path === '/ai/ask') return next();
-  if (req.user?.role === 'Viewer' && ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) {
-    return res.status(403).json({ error: 'Your role (Viewer) has read-only access' });
-  }
-  next();
+  const segment = req.path.split('/').filter(Boolean)[0];
+  if (!segment || UNGATED.has(segment)) return next();
+
+  const action = ACTION_FOR_METHOD[req.method] || WRITE;
+  if (can(req.user?.role, segment, action)) return next();
+
+  return res.status(403).json({
+    error: 'Not permitted',
+    detail: `Your role cannot ${action} ${segment}.`,
+    resource: segment,
+    action,
+  });
 });
 
 /* ── Optional Redis response cache (per-user, self-invalidating) ──
@@ -141,13 +173,13 @@ app.post('/notifications/read-all', async (req, res) => {
 });
 
 /* ── Team / users management (Admin only) ── */
-app.get('/users', requireRole('Admin'), async (req, res) => {
+app.get('/users', allow('users', 'read'), async (req, res) => {
   try {
     const { rows } = await db.query('SELECT id, email, name, role, department, is_active, last_login, created_at FROM users ORDER BY id');
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.patch('/users/:id', requireRole('Admin'), async (req, res) => {
+app.patch('/users/:id', allow('users', 'write'), async (req, res) => {
   const allowed = ['name', 'role', 'department', 'is_active'];
   const roles = ['Admin', 'Manager', 'Staff', 'User', 'Viewer'];
   if (req.body.role && !roles.includes(req.body.role)) return res.status(400).json({ error: `role must be one of ${roles.join(', ')}` });
@@ -409,7 +441,7 @@ const COMPANY_PROFILE_COLUMNS = [
   'udyam_msme_no', 'cin', 'trade_license_no', 'logo_url', 'website',
   'default_payment_terms_days', 'invoice_terms', 'invoice_footer_note',
 ];
-app.put('/company-profile', requireRole('Admin'), async (req, res) => {
+app.put('/company-profile', allow('company-profile', 'write'), async (req, res) => {
   const sets = COMPANY_PROFILE_COLUMNS.filter(c => c in req.body);
   if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
   try {
@@ -456,7 +488,7 @@ app.patch('/po/:id/approve', async (req, res) => {
 });
 
 /* ── Approval sign-off (Admin/Manager) + automation settings ── */
-app.patch('/po/:id/approval', requireRole('Admin', 'Manager'), async (req, res) => {
+app.patch('/po/:id/approval', allow('po-approval', 'write'), async (req, res) => {
   const { decision, remark } = req.body;
   if (!['Approved', 'Rejected'].includes(decision)) return res.status(400).json({ error: 'decision must be Approved or Rejected' });
   try {
@@ -477,7 +509,7 @@ app.get('/automation-settings', async (req, res) => {
     res.json(rows[0] || { owner_id: req.user.id, po_approval_threshold: 0 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.put('/automation-settings', requireRole('Admin', 'Manager'), async (req, res) => {
+app.put('/automation-settings', allow('automation-settings', 'write'), async (req, res) => {
   const t = Number(req.body.po_approval_threshold) || 0;
   try {
     await db.query(
@@ -491,11 +523,11 @@ app.put('/automation-settings', requireRole('Admin', 'Manager'), async (req, res
 
 // ── Recurring transactions + reminder engine ──
 app.get('/recurring', recurringController.list);
-app.post('/recurring', requireRole('Admin', 'Manager'), recurringController.create);
-app.patch('/recurring/:id', requireRole('Admin', 'Manager'), recurringController.update);
-app.delete('/recurring/:id', requireRole('Admin', 'Manager'), recurringController.remove);
+app.post('/recurring', allow('recurring', 'write'), recurringController.create);
+app.patch('/recurring/:id', allow('recurring', 'write'), recurringController.update);
+app.delete('/recurring/:id', allow('recurring', 'delete'), recurringController.remove);
 app.get('/recurring/:id/runs', recurringController.runs);
-app.post('/recurring/run-now', requireRole('Admin', 'Manager'), recurringController.runNow);
+app.post('/recurring/run-now', allow('recurring', 'write'), recurringController.runNow);
 
 // ── Sales Quotations (Wave 1A) → convert to Customer Order ──
 app.get('/sales-quotations', salesQuotationController.list);
@@ -824,7 +856,7 @@ app.delete('/production/:kind/line/:lineId', productionController.deleteLine);
 function registerOwnedCrud(route, table, cols, searchCols) {
   app.get(`/${route}`, async (req, res) => {
     try {
-      const isAdmin = req.user?.role === 'Admin';
+      const isAdmin = isCrossTenant(req.user?.role);
       // Owner scoping stays a WHERE fragment so search/filter/sort compose on top.
       const scope = isAdmin ? { where: [], params: [] }
         : { where: ['owner_id = $1'], params: [req.user.id] };
@@ -1000,7 +1032,7 @@ app.delete('/bills/:id', async (req, res) => {
    Returns 404 rather than 403 on a mismatch — telling someone a record
    exists but belongs to somebody else is itself a leak. */
 function ownerClause(req, startIndex) {
-  if (req.user?.role === 'Admin') return { sql: '', params: [] };
+  if (isCrossTenant(req.user?.role)) return { sql: '', params: [] };
   return { sql: ` AND owner_id = $${startIndex}`, params: [req.user.id] };
 }
 

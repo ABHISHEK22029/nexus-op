@@ -37,10 +37,21 @@ function authenticate(req, res, next) {
   }
 }
 
-// Optional role guard: requireRole('Admin', 'Finance')
+/* Optional role guard: requireRole('Admin', 'Finance')
+
+   Prefer allow(resource, action) from middleware/permissions — naming a
+   resource survives the role list changing, naming roles does not.
+
+   Kept for existing call sites, but both sides are normalised now. The
+   plain `roles.includes(req.user.role)` this replaced compared raw strings,
+   so a user whose role was stored as "Administrator" failed
+   requireRole('Admin') — locked out by a rename rather than by a rule. */
 function requireRole(...roles) {
+  const { normaliseRole } = require('../shared/roles');
+  const wanted = new Set(roles.map(normaliseRole));
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user) return res.status(401).json({ error: 'Not signed in' });
+    if (!wanted.has(normaliseRole(req.user.role))) {
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
     next();

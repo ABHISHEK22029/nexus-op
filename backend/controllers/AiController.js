@@ -9,10 +9,11 @@
      is OPENROUTER_API_KEY (in the gitignored .env / Render env).
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { isCrossTenant } = require('../shared/roles');
 
 const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
-const isAdmin = (req) => req.user?.role === 'Admin';
+const isAdmin = (req) => isCrossTenant(req.user?.role);
 const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 const SYSTEM_PROMPT = `You are "Ask AI", the built-in assistant inside Maks Ops — an operations/ERP platform for Indian SME manufacturers and fabricators (clients include Hi-MAK and Kirashi).

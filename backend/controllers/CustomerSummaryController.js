@@ -7,7 +7,8 @@
    computed from the transactions we already have.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
-const isAdmin = (req) => req.user?.role === 'Admin';
+const { isCrossTenant } = require('../shared/roles');
+const isAdmin = (req) => isCrossTenant(req.user?.role);
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 /* GET /customers/:id/summary */
