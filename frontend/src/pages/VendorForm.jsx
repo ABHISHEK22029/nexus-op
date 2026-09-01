@@ -206,26 +206,65 @@ export default function VendorForm() {
       const token = localStorage.getItem('nexus_token');
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       
+      /* Map the whole form onto the vendor record. This previously sent only
+         name/type/pan/gstin, so every other field the user filled in across
+         the five tabs — contact, address, bank, capability, compliance — was
+         silently discarded on save. */
+      const joinAddress = [form.addrLine1, form.addrLine2].filter(Boolean).join(', ');
       const payload = {
         projectId: activeProject?.id || 1,
         name: form.name,
         type: form.type,
-        pan: form.pan,
-        gstin: form.gstin,
-        rating: 90
+        display_name: form.displayName || null,
+        vendor_code: form.vendorCode || null,
+        // Identity / tax
+        pan: form.pan || null,
+        gstin: form.gstin || null,
+        class: form.contractorClass || null,
+        // What they actually supply — the answer to "who sells us steel?"
+        capability_tags: form.capabilityScope || null,
+        // Contact
+        contactName: form.contactPerson || null,
+        contactPhone: form.mobile || null,
+        contactEmail: form.email || null,
+        website: form.website || null,
+        // Address
+        address: joinAddress || null,
+        city: form.city || null,
+        state: form.state || null,
+        pincode: form.pincode || null,
+        // Commercial terms
+        payment_terms: form.paymentTerms || null,
+        credit_limit: form.creditLimit === '' ? null : form.creditLimit,
+        currency: form.currency || 'INR',
+        // Bank — needed to pay them and reconcile vendor payments
+        bank_name: form.bankName || null,
+        account_holder: form.accountHolder || null,
+        account_number: form.accountNumber || null,
+        ifsc_code: form.ifscCode || null,
+        branch_name: form.branchName || null,
+        // Registration / compliance
+        is_msme: !!form.isMsme,
+        msme_number: form.msmeNumber || null,
+        labour_license: form.labourLicense || null,
+        iso_cert: form.isoCert || null,
+        status: 'Active',
       };
 
       if (!savedId) {
         const res = await fetch(`${API}/vendors`, { method: 'POST', headers, body: JSON.stringify(payload) });
-        if (!res.ok) throw new Error('Failed to create');
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Could not save the vendor. Please try again.');
+        }
         const data = await res.json();
         setSavedId(data.id);
       } else {
-        // Node backend currently might not have a generic PATCH /vendors/:id implemented in index.js for all fields, 
-        // but we'll try hitting it or just mock it to keep the UI flowing.
-        try {
-            await fetch(`${API}/vendors/${savedId}`, { method: 'PATCH', headers, body: JSON.stringify(payload) });
-        } catch (e) { console.warn("Patch not fully supported yet on mock backend", e); }
+        const res = await fetch(`${API}/vendors/${savedId}`, { method: 'PATCH', headers, body: JSON.stringify(payload) });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Could not update the vendor. Please try again.');
+        }
       }
       setTabSaved(t => ({ ...t, [activeTab]: true }));
       showToast(`${TABS[activeTab].label} saved`);

@@ -214,14 +214,30 @@ app.get('/vendors', async (req, res) => {
   }
 });
 
+/* Every column a vendor record can carry. The multi-tab vendor form collects
+   all of this; until now the save silently dropped everything except
+   name/type/pan/gstin, so contact, address, bank and capability data the user
+   had typed was thrown away. */
+const VENDOR_COLUMNS = [
+  'name', 'type', 'pan', 'gstin', 'class', 'capability_tags', 'status',
+  'address', 'contactName', 'contactPhone', 'contactEmail',
+  'vendor_code', 'display_name', 'website', 'city', 'state', 'pincode',
+  'payment_terms', 'credit_limit', 'currency', 'lead_time_days',
+  'bank_name', 'account_holder', 'account_number', 'ifsc_code', 'branch_name',
+  'is_msme', 'msme_number', 'labour_license', 'iso_cert', 'notes',
+];
+
 app.post('/vendors', async (req, res) => {
-  const { projectId, name, type, pan, gstin, contact, rating } = req.body;
+  const { projectId, name, type } = req.body;
   if (!name || !type) return res.status(400).json({ error: 'name and type are required' });
   try {
+    const cols = VENDOR_COLUMNS.filter(c => c in req.body);
+    const values = cols.map(c => (req.body[c] === '' ? null : req.body[c]));
+    const quoted = ['"projectId"', ...cols.map(c => `"${c}"`)].join(', ');
+    const ph = ['$1', ...cols.map((_, i) => `$${i + 2}`)].join(', ');
     const { rows } = await db.query(
-      `INSERT INTO vendors ("projectId", name, type, pan, gstin, status, rating)
-       VALUES ($1, $2, $3, $4, $5, 'Active', $6) RETURNING id`,
-      [projectId, name, type, pan || null, gstin || null, rating || 90]
+      `INSERT INTO vendors (${quoted}) VALUES (${ph}) RETURNING id`,
+      [projectId || null, ...values]
     );
     await logActivity(projectId, 'VENDOR_ADDED', `Vendor "${name}" added to project`);
     res.json({ id: rows[0].id });
@@ -574,16 +590,54 @@ app.put('/indent/:id/status', async (req, res) => {
 /* ══════════════════════════════════════════════════════════
    INVENTORY
    ══════════════════════════════════════════════════════════ */
+/* Stock list. The UI has always rendered a Low-Stock badge driven by
+   `status` and `reorderLevel` — fields nothing ever returned, so every item
+   showed "Healthy" regardless of the real level. Now that inventory carries
+   min_stock_level, both are computed here and the badge means something.
+   `stock_value` (qty x unit cost) answers "how much money is sitting on the
+   shelf", which nothing surfaced before. */
 app.get('/inventory', async (req, res) => {
   try {
-    let query = 'SELECT * FROM inventory';
-    let params = [];
+    let query = `
+      SELECT *,
+             COALESCE(min_stock_level, 0)                       AS "reorderLevel",
+             ROUND((quantity * COALESCE(unit_cost, 0))::numeric, 2) AS stock_value,
+             CASE
+               WHEN quantity <= 0                                        THEN 'Out of Stock'
+               WHEN COALESCE(min_stock_level, 0) <= 0                    THEN 'Healthy'
+               WHEN quantity <= min_stock_level                          THEN 'Low Stock'
+               WHEN quantity <= min_stock_level * 1.2                    THEN 'Near threshold'
+               ELSE 'Healthy'
+             END AS status
+      FROM inventory`;
+    const params = [];
     if (req.query.projectId) {
       query += ' WHERE "projectId" = $1';
       params.push(req.query.projectId);
     }
+    query += ' ORDER BY "itemName"';
     const { rows } = await db.query(query, params);
     res.json(rows || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* Set a reorder level / category on a stock item. There was previously NO
+   write endpoint for inventory at all, which is why unit_cost was never
+   populated and every material cost computed to zero. */
+app.patch('/inventory/:id', async (req, res) => {
+  const allowed = ['min_stock_level', 'category', 'location', 'unit_cost', 'uom'];
+  const sets = allowed.filter(c => c in req.body);
+  if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
+  try {
+    const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
+    const { rows } = await db.query(
+      `UPDATE inventory SET ${clause} WHERE id = $${sets.length + 1} RETURNING *`,
+      [...sets.map(c => (req.body[c] === '' ? null : req.body[c])), req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Stock item not found' });
+    res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -759,7 +813,10 @@ function registerOwnedCrud(route, table, cols) {
     }
   });
 }
-registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'contact_name', 'phone', 'email', 'billing_address', 'state', 'opening_balance']);
+registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'pan', 'contact_name', 'phone', 'email', 'billing_address', 'state', 'opening_balance',
+  // Ship-to is separate from bill-to: goods go there, and the GST place of
+  // supply (CGST+SGST vs IGST) follows it rather than the billing address.
+  'shipping_address', 'shipping_state', 'payment_terms_days', 'credit_limit', 'tags']);
 registerOwnedCrud('skus',         'skus',          ['sku_code', 'name', 'description', 'unit', 'price', 'hsn']);
 registerOwnedCrud('raw-materials','raw_materials', ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn']);
 registerOwnedCrud('expenses',     'expenses',      ['project_id', 'category', 'description', 'amount', 'expense_date', 'paid_to', 'payment_mode', 'reference', 'notes']);
@@ -897,7 +954,7 @@ function registerCrud(route, table, cols, logType) {
 }
 
 registerCrud('projects', 'projects', ['name', 'clientName', 'type', 'startDate', 'endDate', 'status'], 'PROJECT_UPDATED');
-registerCrud('vendors', 'vendors', ['name', 'type', 'pan', 'gstin', 'class', 'capability_tags', 'rating', 'status', 'address', 'contactName', 'contactPhone', 'contactEmail'], 'VENDOR_UPDATED');
+registerCrud('vendors', 'vendors', VENDOR_COLUMNS, 'VENDOR_UPDATED');
 registerCrud('work-orders', 'work_orders', ['name', 'vendorId', 'boqId', 'startDate', 'endDate', 'contractValue', 'status'], 'WO_UPDATED');
 registerCrud('boq', 'boq_items', ['itemCode', 'description', 'unit', 'estimatedQuantity', 'rate'], 'BOQ_UPDATED');
 registerCrud('indent', 'indents', ['workOrderId', 'boqId', 'requestedQuantity', 'requiredDate', 'chainage', 'status'], 'INDENT_UPDATED');

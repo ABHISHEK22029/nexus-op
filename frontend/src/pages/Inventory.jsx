@@ -25,6 +25,37 @@ const Inventory = () => {
 
   const filteredInventory = inventory.filter(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()));
 
+  /* Reorder level is what makes the low-stock badge mean anything. Until now
+     there was no write endpoint for inventory at all, so it could never be
+     set and every item permanently read "Healthy". */
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState('');
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+  const saveReorder = async (item) => {
+    const value = draft === '' ? 0 : Number(draft);
+    if (Number.isNaN(value) || value < 0) { toast.error('Enter a valid reorder level'); return; }
+    try {
+      const res = await axios.patch(`${API_BASE}/inventory/${item.id}`, { min_stock_level: value });
+      setInventory(list => list.map(i => (i.id === item.id ? { ...i, ...res.data, reorderLevel: value } : i)));
+      // Re-fetch so the recomputed status badge reflects the new threshold.
+      const fresh = await axios.get(`${API_BASE}/inventory?projectId=${activeProject.id}`);
+      setInventory(fresh.data);
+      toast.success(`Reorder level set for ${item.itemName}`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not save the reorder level');
+    } finally {
+      setEditingId(null);
+    }
+  };
+
+  const TONE = {
+    'Out of Stock':   { border: 'border-red-500/40',    icon: 'text-red-400',     chip: 'text-red-400 bg-red-400/10',         num: 'from-red-400 to-red-600' },
+    'Low Stock':      { border: 'border-red-500/30',    icon: 'text-red-400',     chip: 'text-red-400 bg-red-400/10',         num: 'from-red-400 to-red-600' },
+    'Near threshold': { border: 'border-amber-500/30',  icon: 'text-amber-400',   chip: 'text-amber-400 bg-amber-400/10',     num: 'from-amber-300 to-amber-500' },
+    'Healthy':        { border: 'border-white/5',       icon: 'text-amber-400/80', chip: 'text-emerald-400 bg-emerald-400/10', num: 'from-white to-gray-400' },
+  };
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto">
       <div className="flex justify-between items-start mb-8">
@@ -56,42 +87,57 @@ const Inventory = () => {
             Loading…
           </div>
         ) : filteredInventory.length > 0 ? filteredInventory.map((item) => {
-          const isLowStock = item.status === 'Near threshold';
+          const status = item.status || 'Healthy';
+          const tone = TONE[status] || TONE.Healthy;
+          const alert = status !== 'Healthy';
+          const qty = item.totalQuantity ?? item.quantity ?? 0;
+          const isEditing = editingId === item.id;
           return (
-          <div key={item.itemName} className={`bg-[#111113] border rounded-xl p-5 transition-colors group relative overflow-hidden \${isLowStock ? 'border-red-500/30 hover:border-red-500/50 hover:bg-red-500/[0.02]' : 'border-white/5 hover:border-amber-500/30 hover:bg-amber-500/[0.02]'}`}>
-            {isLowStock && <div className="absolute top-0 right-0 w-16 h-16 bg-red-500/10 rounded-bl-full pointer-events-none"></div>}
-            
-            <div className={`w-10 h-10 rounded flex items-center justify-center mb-4 group-hover:scale-110 transition-transform \${isLowStock ? 'bg-red-500/10' : 'bg-white/5'}`}>
-              <Package size={20} className={isLowStock ? 'text-red-400' : 'text-amber-400/80'} />
+          <div key={item.id || item.itemName} className={`bg-[#111113] border rounded-xl p-5 transition-colors group relative overflow-hidden ${tone.border} hover:bg-white/[0.02]`}>
+            {alert && <div className="absolute top-0 right-0 w-16 h-16 bg-red-500/10 rounded-bl-full pointer-events-none"></div>}
+
+            <div className={`w-10 h-10 rounded flex items-center justify-center mb-4 group-hover:scale-110 transition-transform ${alert ? 'bg-red-500/10' : 'bg-white/5'}`}>
+              <Package size={20} className={tone.icon} />
             </div>
-            
+
             <h3 className="text-lg font-medium text-white mb-1">{item.itemName}</h3>
-            
+            {Number(item.stock_value) > 0 && (
+              <p className="text-xs text-gray-500">Stock value ₹{Number(item.stock_value).toLocaleString('en-IN')}</p>
+            )}
+
             <div className="flex justify-between items-end mt-4">
                 <div className="flex items-end gap-1.5">
-                  <span className={`text-3xl font-bold bg-gradient-to-br bg-clip-text text-transparent \${isLowStock ? 'from-red-400 to-red-600' : 'from-white to-gray-400'}`}>
-                    {item.totalQuantity || item.quantity || 0}
+                  <span className={`text-3xl font-bold bg-gradient-to-br bg-clip-text text-transparent ${tone.num}`}>
+                    {qty}
                   </span>
-                  <span className="text-sm text-gray-500 mb-1">units</span>
+                  <span className="text-sm text-gray-500 mb-1">{item.uom || 'units'}</span>
                 </div>
-                
-                {isLowStock ? (
-                   <div className="flex flex-col items-end">
-                       <span className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Reorder: {item.reorderLevel}</span>
-                       <div className="flex items-center gap-1 text-red-400 bg-red-400/10 px-2 py-0.5 rounded text-xs font-medium">
-                           <AlertTriangle size={12} />
-                           Low Stock
-                       </div>
-                   </div>
-                ) : (
-                   <div className="flex flex-col items-end">
-                       <span className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Reorder: {item.reorderLevel}</span>
-                       <div className="flex items-center gap-1 text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded text-xs font-medium">
-                           <CheckCircle2 size={12} />
-                           Healthy
-                       </div>
-                   </div>
-                )}
+
+                <div className="flex flex-col items-end">
+                  {/* Click the reorder level to set it — this is what turns the
+                      badge from decoration into a real signal. */}
+                  {isEditing ? (
+                    <input
+                      autoFocus type="number" min="0" value={draft}
+                      onChange={e => setDraft(e.target.value)}
+                      onBlur={() => saveReorder(item)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveReorder(item); if (e.key === 'Escape') setEditingId(null); }}
+                      className="w-20 mb-1 bg-black/40 border border-amber-500/40 rounded px-1.5 py-0.5 text-xs text-white text-right focus:outline-none"
+                    />
+                  ) : (
+                    <button
+                      onClick={() => { setEditingId(item.id); setDraft(String(item.reorderLevel ?? 0)); }}
+                      title="Click to set the reorder level"
+                      className="text-[10px] text-gray-500 hover:text-amber-400 uppercase tracking-wider mb-0.5 underline decoration-dotted underline-offset-2"
+                    >
+                      Reorder: {Number(item.reorderLevel) > 0 ? Number(item.reorderLevel) : 'not set'}
+                    </button>
+                  )}
+                  <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${tone.chip}`}>
+                    {alert ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+                    {status}
+                  </div>
+                </div>
             </div>
           </div>
         )}) : (

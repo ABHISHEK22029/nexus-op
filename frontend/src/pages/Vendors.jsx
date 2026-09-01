@@ -194,7 +194,8 @@ const Vendors = () => {
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor Name</th>
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Sector / Type</th>
-              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Performance</th>
+              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Supplies</th>
+              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
@@ -211,13 +212,35 @@ const Vendors = () => {
                     {vendor.type}
                   </span>
                 </td>
+                {/* What this vendor actually supplies — previously invisible,
+                    so raising a PO meant remembering who sells what. */}
                 <td className="px-6 py-4">
-                  <div className="flex items-center gap-1.5">
-                      <Star size={14} className={vendor.performanceScore > 90 ? 'text-amber-400 fill-amber-400' : 'text-gray-500'} />
-                      <span className={`text-sm font-medium ${vendor.performanceScore > 90 ? 'text-amber-400' : 'text-gray-400'}`}>
-                          {vendor.performanceScore}%
-                      </span>
-                  </div>
+                  {vendor.capability_tags ? (
+                    <div className="flex flex-wrap gap-1">
+                      {String(vendor.capability_tags).split(',').map(t => t.trim()).filter(Boolean).slice(0, 3).map(tag => (
+                        <span key={tag} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          {tag}
+                        </span>
+                      ))}
+                      {String(vendor.capability_tags).split(',').filter(t => t.trim()).length > 3 && (
+                        <span className="text-[11px] text-gray-500 self-center">
+                          +{String(vendor.capability_tags).split(',').filter(t => t.trim()).length - 3}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-600 italic">Not specified</span>
+                  )}
+                </td>
+                <td className="px-6 py-4">
+                  {vendor.contactName || vendor.contactPhone ? (
+                    <div className="text-sm text-gray-300">
+                      {vendor.contactName && <div>{vendor.contactName}</div>}
+                      {vendor.contactPhone && <div className="text-xs text-gray-500">{vendor.contactPhone}</div>}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-600 italic">—</span>
+                  )}
                 </td>
                 <td className="px-6 py-4 text-right">
                   <button
