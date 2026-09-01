@@ -6,20 +6,42 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { isCrossTenant } = require('../shared/roles');
+const { runList } = require('../shared/listQuery');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 /* ── Customer Orders ── */
 exports.getOrders = async (req, res) => {
   try {
     const admin = isAdmin(req);
-    const { rows } = await db.query(
-      `SELECT co.*, c.name AS customer_name,
-              (SELECT COUNT(*) FROM customer_order_items WHERE customer_order_id = co.id) AS item_count
-         FROM customer_orders co LEFT JOIN customers c ON c.id = co.customer_id
-        ${admin ? '' : 'WHERE co.owner_id = $1'} ORDER BY co.id DESC`,
-      admin ? [] : [req.user.id]
-    );
-    res.json(rows);
+    const where = [], params = [];
+    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    /* Customer name joined in a subquery so it is searchable — people look
+       for "Apollo", not for CO-0004. order_value is derived from the lines
+       because the header carries no total of its own; the page needs it for
+       the summary tile above the table. */
+    const result = await runList(db, {
+      table: `(SELECT co.*, c.name AS customer_name,
+                      (SELECT COUNT(*) FROM customer_order_items WHERE customer_order_id = co.id) AS item_count,
+                      (SELECT COALESCE(SUM(COALESCE(quantity,0) * COALESCE(target_price,0)),0)
+                         FROM customer_order_items WHERE customer_order_id = co.id) AS order_value
+                 FROM customer_orders co LEFT JOIN customers c ON c.id = co.customer_id) AS co`,
+      query: req.query,
+      searchColumns: ["order_number", "customer_name", "customer_po_ref", "status", "notes"],
+      filterColumns: ["status", "customer_id"],
+      allowedSort: ["id", "order_number", "order_date", "status", "order_value"],
+      defaultSort: 'id', defaultDir: 'DESC',
+      where, params,
+      /* Aggregated over the whole filtered set, not the page — otherwise
+         "Order value" would silently mean "value on page 1".
+         `empty_orders` is the needs-attention count: an order taken with no
+         lines on it cannot be quoted, made or invoiced. */
+      summary: `COUNT(*)::int AS count,
+                COALESCE(SUM(order_value),0)::numeric AS value,
+                COUNT(*) FILTER (WHERE status = 'Open')::int AS open,
+                COUNT(*) FILTER (WHERE status = 'In Procurement')::int AS in_procurement,
+                COUNT(*) FILTER (WHERE COALESCE(item_count,0) = 0)::int AS empty_orders`,
+    });
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
@@ -84,15 +106,40 @@ exports.deleteOrder = async (req, res) => {
 exports.getQuotations = async (req, res) => {
   try {
     const admin = isAdmin(req);
-    const { rows } = await db.query(
-      `SELECT * FROM quotations ${admin ? '' : 'WHERE owner_id = $1'} ORDER BY id DESC`,
-      admin ? [] : [req.user.id]
-    );
+    const where = [], params = [];
+    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    /* The quoted vendors are the human-readable handle here — "who did we
+       ask for the flange?" — so their names are rolled up in a subquery and
+       made searchable alongside the part description. quote_count drives the
+       "still waiting on quotes" figure. */
+    const result = await runList(db, {
+      table: `(SELECT q.*,
+                      (SELECT string_agg(DISTINCT ql.vendor_name, ', ')
+                         FROM quote_lines ql WHERE ql.quotation_id = q.id) AS vendor_names,
+                      (SELECT COUNT(*) FROM quote_lines ql WHERE ql.quotation_id = q.id) AS quote_count
+                 FROM quotations q) AS q`,
+      query: req.query,
+      searchColumns: ["part_description", "vendor_names", "status", "unit"],
+      filterColumns: ["status"],
+      allowedSort: ["id", "part_description", "quantity", "status", "created_at"],
+      defaultSort: 'id', defaultDir: 'DESC',
+      where, params,
+      /* Three quotes is the rule this screen enforces (Q1/Q2/Q3), so the
+         count that needs action is the one still short of three. */
+      summary: `COUNT(*)::int AS count,
+                COUNT(*) FILTER (WHERE status = 'Selected')::int AS selected,
+                COUNT(*) FILTER (WHERE status = 'PO Raised')::int AS po_raised,
+                COUNT(*) FILTER (WHERE COALESCE(quote_count,0) < 3)::int AS awaiting_quotes,
+                COALESCE(SUM(quote_count),0)::int AS quote_lines`,
+    });
+
+    // Attach the vendor quote lines, exactly as before.
+    const rows = Array.isArray(result) ? result : result.items;
     const withLines = await Promise.all(rows.map(async (q) => {
       const l = await db.query('SELECT * FROM quote_lines WHERE quotation_id = $1 ORDER BY slot', [q.id]);
       return { ...q, lines: l.rows };
     }));
-    res.json(withLines);
+    res.json(Array.isArray(result) ? withLines : { ...result, items: withLines });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

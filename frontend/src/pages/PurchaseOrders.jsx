@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import VendorPicker from '../components/VendorPicker';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2, ShieldCheck } from 'lucide-react';
@@ -177,18 +178,16 @@ const PurchaseOrders = () => {
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div>
-              <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Vendor <span className="text-red-400">*</span></label>
-              <select 
-                required
+              {/* Was a flat alphabetical list of every vendor, which tells a
+                  buyer nothing about who actually stocks the item, their
+                  minimum order, or lead time — the facts the decision turns
+                  on. Those were already in vendor_items; they just weren't
+                  shown where the choice is made. */}
+              <VendorPicker
+                vendors={vendors}
                 value={formData.vendorId}
-                onChange={e => setFormData({...formData, vendorId: e.target.value})}
-                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-              >
-                <option value="" disabled>Select Vendor...</option>
-                {vendors.map(v => (
-                  <option key={v.id} value={v.id}>{v.name} {v.gstin ? `(GST: ${v.gstin})` : '(No GST)'}</option>
-                ))}
-              </select>
+                onChange={id => setFormData({ ...formData, vendorId: id })}
+              />
               {gstType && (
                 <div className="mt-1 text-xs text-amber-500/80">
                   {gstType === 'intra'

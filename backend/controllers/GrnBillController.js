@@ -6,6 +6,7 @@
 const db = require('../db');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById } = require('../shared/ownerScope');
+const { runList } = require('../shared/listQuery');
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -106,11 +107,41 @@ exports.create = async (req, res) => {
 // GET /grn-bills?projectId=
 exports.list = async (req, res) => {
   try {
-    const { projectId } = req.query;
-    const { rows } = projectId
-      ? await db.query(`SELECT gb.*, v.name AS vendor_name FROM grn_bills gb LEFT JOIN vendors v ON v.id = gb.vendor_id WHERE gb."projectId" = $1 ORDER BY gb.id DESC`, [projectId])
-      : await db.query(`SELECT gb.*, v.name AS vendor_name FROM grn_bills gb LEFT JOIN vendors v ON v.id = gb.vendor_id ORDER BY gb.id DESC`);
-    res.json(rows);
+    /* OWNER SCOPED. This list previously applied no owner filter at all,
+       and scopeProjectAccess only engages when the request carries a
+       projectId — so a plain GET /grn-bills returned every tenant's
+       purchase bills, vendor names and amounts included. The column has
+       existed since migration 031 and is fully backfilled; nothing was
+       filtering on it.
+
+       The vendor name is joined in a subquery so it is searchable: a
+       purchase bill is remembered by who sent it, or by their own bill
+       reference, long before anyone recalls "GB-0007". */
+    const where = [], params = [];
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user.id);
+      where.push(`owner_id = $${params.length}`);
+    }
+    const result = await runList(db, {
+      where, params,
+      table: `(SELECT gb.*, v.name AS vendor_name
+                 FROM grn_bills gb LEFT JOIN vendors v ON v.id = gb.vendor_id) AS gb`,
+      query: req.query,
+      searchColumns: ["bill_number", "vendor_name", "vendor_bill_ref", "status", "payment_status"],
+      filterColumns: ["status", "payment_status", "projectId", "vendor_id", "po_id"],
+      allowedSort: ["id", "bill_number", "bill_date", "due_date", "net_amount", "amount_paid", "status", "payment_status"],
+      defaultSort: 'id', defaultDir: 'DESC',
+      /* Billed and paid stay separate figures; outstanding is floored at
+         zero so an overpayment on one bill cannot net off what is genuinely
+         owed on another. `overdue` is the count that needs chasing. */
+      summary: `COUNT(*)::int AS count,
+                COALESCE(SUM(net_amount),0)::numeric AS billed,
+                COALESCE(SUM(COALESCE(amount_paid,0)),0)::numeric AS paid,
+                COALESCE(SUM(GREATEST(net_amount - COALESCE(amount_paid,0), 0)),0)::numeric AS outstanding,
+                COUNT(*) FILTER (WHERE due_date IS NOT NULL AND due_date < CURRENT_DATE
+                                   AND net_amount > COALESCE(amount_paid,0))::int AS overdue`,
+    });
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

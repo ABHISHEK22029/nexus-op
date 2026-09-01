@@ -1,4 +1,5 @@
 const db = require('../db');
+const { runList } = require('../shared/listQuery');
 
 /* ── Indian amount-in-words ───────────────────────────────── */
 function amountInWords(num) {
@@ -190,18 +191,31 @@ exports.generateRABill = async (req, res) => {
 /* ── List bills (with vendor + work order) ────────────────── */
 exports.getBills = async (req, res) => {
   try {
-    const { projectId } = req.query;
-    const params = [];
-    let where = '';
-    if (projectId) { where = 'WHERE b."projectId" = $1'; params.push(projectId); }
-    const { rows } = await db.query(
-      `SELECT b.*, v.name AS "vendorName", wo.name AS "workOrderName"
-         FROM bills b
-         LEFT JOIN vendors v ON v.id = b.vendor_id
-         LEFT JOIN work_orders wo ON wo.id = b."workOrderId"
-         ${where}
-        ORDER BY b.id DESC`, params);
-    res.json(rows);
+    /* Vendor and work-order names live in the subquery so they can be
+       searched: an RA bill is looked up by who it is for, not by "RA-0003".
+       ?projectId keeps working exactly as before, now as an exact filter. */
+    const result = await runList(db, {
+      table: `(SELECT b.*, v.name AS "vendorName", wo.name AS "workOrderName"
+                 FROM bills b
+                 LEFT JOIN vendors v ON v.id = b.vendor_id
+                 LEFT JOIN work_orders wo ON wo.id = b."workOrderId") AS b`,
+      query: req.query,
+      searchColumns: ["bill_number", "vendorName", "workOrderName", "status", "tds_section"],
+      filterColumns: ["status", "projectId", "vendor_id", "workOrderId"],
+      allowedSort: ["id", "bill_number", "bill_date", "ra_number", "grossAmount", "netAmount", "status"],
+      defaultSort: 'id', defaultDir: 'DESC',
+      /* Gross and net are kept apart rather than netted into one figure —
+         a bill's certified value and its payable value are different
+         questions, and deductions are what separates them. */
+      summary: `COUNT(*)::int AS count,
+                COALESCE(SUM("grossAmount"),0)::numeric AS gross,
+                COALESCE(SUM("netAmount"),0)::numeric AS net,
+                COALESCE(SUM(COALESCE(tds,0) + COALESCE(gst_tds,0) + COALESCE(labour_cess,0)
+                           + COALESCE(retention,0) + COALESCE(advance_recovery,0)
+                           + COALESCE(other_deductions,0)),0)::numeric AS deductions,
+                COUNT(*) FILTER (WHERE COALESCE(status,'Draft') IN ('Draft','Under Review'))::int AS pending_approval`,
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

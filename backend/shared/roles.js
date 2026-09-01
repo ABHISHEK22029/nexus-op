@@ -193,22 +193,62 @@ const LEGACY = {
   Vendor: 'Viewer',
 };
 
-/** Does this role see across workspaces? Only the platform role does. */
+/* ── Runtime overlay ──────────────────────────────────────────
+   Roles are administered from the Configurator, so the grants above are
+   DEFAULTS, not the last word. Migration 033 stores the live set, and this
+   module holds it in memory.
+
+   can() STAYS SYNCHRONOUS. It is called from middleware on every request
+   and from permissionsFor() in a loop; making it async would turn a pure
+   predicate into something every call site has to await, and one missed
+   await would silently evaluate a Promise as truthy — which is to say,
+   grant everything. A cache refreshed on write is the safer shape.
+
+   When the overlay is empty — migration not yet run, table unreachable —
+   every lookup falls through to the compiled-in defaults. A failed
+   migration therefore degrades to the previous behaviour rather than to an
+   installation where nobody can do anything. */
+let OVERLAY = null;         // { role: { label, crossTenant, isSystem, grants } }
+
+/** Replace the in-memory role set. Called at boot and after any edit. */
+function setOverlay(roles) {
+  OVERLAY = (roles && Object.keys(roles).length) ? roles : null;
+}
+function getOverlay() { return OVERLAY; }
+function overlayLoaded() { return OVERLAY !== null; }
+
+/** The effective definition for a role — DB if present, else code. */
+function roleDef(name) {
+  return (OVERLAY && OVERLAY[name]) || ROLES[name] || null;
+}
+
+/** Every role name currently in effect. */
+function effectiveRoleNames() {
+  return OVERLAY ? Object.keys(OVERLAY) : Object.keys(ROLES);
+}
+
+/** Does this role see across workspaces? Only the platform role should. */
 function isCrossTenant(role) {
-  return ROLES[normaliseRole(role)]?.crossTenant === true;
+  return roleDef(normaliseRole(role))?.crossTenant === true;
 }
 
 function normaliseRole(role) {
   if (!role) return 'Viewer';
-  if (ROLES[role]) return role;
+  if (roleDef(role)) return role;
   return LEGACY[role] || 'Viewer';
 }
 
 /** Core check. Deny by default. */
 function can(role, resource, action = READ) {
   const r = normaliseRole(role);
+  /* Administrator is short-circuited in code, not read from the overlay.
+     It is the recovery path: if a permission edit goes wrong, someone must
+     still be able to get in and undo it. An Administrator whose access
+     depends on an editable row is an Administrator who can be edited out of
+     existence. */
   if (r === 'Administrator') return true;
-  const grants = ROLES[r]?.grants;
+  const def = roleDef(r);
+  const grants = def?.grants;
   if (!grants || grants === 'all') return grants === 'all';
   if (COMMON_READ.includes(resource) && action === READ) return true;
   const allowed = grants[resource];
@@ -219,6 +259,9 @@ function can(role, resource, action = READ) {
 function permissionsFor(role) {
   const r = normaliseRole(role);
   const out = {};
+  /* Resource list comes from the catalogue, which is code — a role may only
+     ever be granted a resource the product actually routes. An admin cannot
+     invent a permission for something that does not exist. */
   for (const resource of Object.keys(RESOURCES)) {
     const actions = ALL.filter(a => can(r, resource, a));
     if (actions.length) out[resource] = actions;
@@ -241,9 +284,94 @@ function permissionsFor(role) {
   return { role: r, label: ROLES[r]?.label || r, permissions: out };
 }
 
+/* ── Persistence ──────────────────────────────────────────────
+   Kept in this module so the seed can never disagree with the defaults it
+   is seeded from — they are literally the same object.
+   ══════════════════════════════════════════════════════════ */
+
+/** Expand a role's grants into flat (resource, actions) rows. */
+function grantRows(name) {
+  const def = ROLES[name];
+  if (!def) return [];
+  if (def.grants === 'all') {
+    // Administrator is short-circuited in can(); store the full matrix
+    // anyway so the Configurator can display it truthfully.
+    return Object.keys(RESOURCES).map(r => [r, ALL]);
+  }
+  return Object.entries(def.grants).map(([r, a]) => [r, a]);
+}
+
+/**
+ * Seed role_permissions from the code defaults for any role that has no
+ * rows yet. Never overwrites an existing role's grants — an admin's edits
+ * must survive every deploy, or the Configurator is a lie.
+ */
+async function seedRolePermissions(db) {
+  const existing = await db.query('SELECT DISTINCT role FROM role_permissions');
+  const have = new Set(existing.rows.map(r => r.role));
+  let seeded = 0;
+  for (const name of Object.keys(ROLES)) {
+    if (have.has(name)) continue;
+    for (const [resource, actions] of grantRows(name)) {
+      await db.query(
+        `INSERT INTO role_permissions (role, resource, actions)
+         VALUES ($1,$2,$3) ON CONFLICT (role, resource) DO NOTHING`,
+        [name, resource, actions]
+      );
+    }
+    seeded++;
+  }
+  return seeded;
+}
+
+/** Read the live role set into memory. Safe to call repeatedly. */
+async function loadRoles(db) {
+  const defs = await db.query(
+    'SELECT role, label, description, is_system, cross_tenant FROM role_definitions ORDER BY sort_order, role'
+  );
+  if (!defs.rows.length) { setOverlay(null); return 0; }
+
+  const perms = await db.query('SELECT role, resource, actions FROM role_permissions');
+  const byRole = {};
+  for (const d of defs.rows) {
+    byRole[d.role] = {
+      label: d.label,
+      description: d.description,
+      isSystem: d.is_system,
+      crossTenant: d.cross_tenant,
+      grants: {},
+    };
+  }
+  for (const p of perms.rows) {
+    if (!byRole[p.role]) continue;               // orphan row, ignore
+    byRole[p.role].grants[p.resource] = p.actions || [];
+  }
+  setOverlay(byRole);
+  return Object.keys(byRole).length;
+}
+
+/**
+ * Boot-time initialisation. Deliberately never throws: if the migration has
+ * not run, or the database is briefly unreachable, the server must still
+ * start on the compiled-in defaults rather than refuse to serve.
+ */
+async function initRoles(db) {
+  try {
+    await seedRolePermissions(db);
+    const n = await loadRoles(db);
+    return { ok: true, roles: n, source: n ? 'database' : 'code defaults' };
+  } catch (e) {
+    setOverlay(null);
+    return { ok: false, source: 'code defaults', error: e.message };
+  }
+}
+
 module.exports = {
   READ, WRITE, DELETE, ALL,
-  RESOURCES, ROLES, COMMON_READ,
+  RESOURCES, ROLES, COMMON_READ, LEGACY,
   can, normaliseRole, permissionsFor, isCrossTenant,
-  roleNames: () => Object.keys(ROLES),
+  roleNames: () => effectiveRoleNames(),
+  codeRoleNames: () => Object.keys(ROLES),
+  roleDef, effectiveRoleNames, overlayLoaded, getOverlay, setOverlay,
+  seedRolePermissions, loadRoles, initRoles, grantRows,
 };

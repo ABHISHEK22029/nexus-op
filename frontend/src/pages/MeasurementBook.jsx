@@ -2,32 +2,54 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
+import { getToken } from '../lib/apiAuth';
 
 const MeasurementBook = () => {
   const { activeProject, workOrders } = useProject();
   const toast = useToast();
-  const [entries, setEntries] = useState([]);
+  const { can } = usePermissions();
   const [boqs, setBoqs] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [newItem, setNewItem] = useState({ workOrderId: '', boqId: '', chainage: '', length: '', width: '', depth: '' });
 
-  const fetchData = async () => {
+  /* Entries come through the shared list hook — searchable and paginated
+     server-side. The project filter goes in as a filter rather than a hand
+     built query string so it composes with search instead of being
+     overwritten by it. */
+  const q = useListQuery('mb', {
+    pageSize: 25,
+    initialFilters: activeProject ? { projectId: String(activeProject.id) } : {},
+  });
+
+  // Keep the project filter in step when the active project changes.
+  useEffect(() => {
+    q.setFilters(activeProject ? { projectId: String(activeProject.id) } : {});
+  }, [activeProject?.id]);
+
+  const entries = q.rows;
+
+  // The BOQ dropdown still loads whole — it is a picker, not a list, and
+  // a form control that paginates is a form control nobody can use.
+  const fetchBoqs = async () => {
     if (!activeProject) return;
-    setLoading(true);
     try {
-      const eRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/mb?projectId=${activeProject.id}`).then(res => res.json());
-      const bRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/boq?projectId=${activeProject.id}`).then(res => res.json());
-      setEntries(eRes);
-      setBoqs(bRes);
+      const token = getToken();
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/boq?projectId=${activeProject.id}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
+      const d = await res.json();
+      setBoqs(Array.isArray(d) ? d : (d.items || []));
     } catch (err) {
-      toast.error(err.response?.data?.error || err.message || 'Something went wrong');
-    } finally {
-      setLoading(false);
+      toast.error(err.message || 'Could not load BOQ items');
     }
   };
 
-  useEffect(() => { fetchData() }, [activeProject]);
+  const fetchData = () => { fetchBoqs(); q.reload(); };
+
+  useEffect(() => { fetchBoqs(); }, [activeProject?.id]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -158,7 +180,14 @@ const MeasurementBook = () => {
         </form>
       </div>
 
-      <div className="bg-[#111113] border border-white/5 rounded-xl overflow-hidden mt-8">
+      <div className="mt-8">
+        <ListToolbar
+          q={q}
+          placeholder="Search chainage, BOQ item or work order…"
+        />
+      </div>
+
+      <div className="bg-[#111113] border border-white/5 rounded-xl overflow-hidden">
         <table className="w-full text-sm text-left">
           <thead className="text-xs text-gray-400 bg-black/40 uppercase">
             <tr>
@@ -172,10 +201,14 @@ const MeasurementBook = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {loading ? (
-              <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">Loading…</td></tr>
-            ) : entries.length === 0 ? (
-              <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">No measurements yet</td></tr>
+            {entries.length === 0 ? (
+              <tr><td colSpan={7}>
+                {/* Distinguishes "nothing recorded" from "nothing matched
+                    your search" — showing the first when the second is true
+                    is how people conclude their data is gone. */}
+                <EmptyState q={q} icon={BookOpen} noun="measurements"
+                  hint="Record one using the form above." />
+              </td></tr>
             ) : (
               entries.map((req) => (
                 <tr key={req.id} className="hover:bg-white/[0.02] transition-colors text-gray-300">
@@ -186,13 +219,18 @@ const MeasurementBook = () => {
                   <td className="px-6 py-4 text-gray-500">{req.length} × {req.width} × {req.depth}</td>
                   <td className="px-6 py-4 font-bold text-pink-400">{req.measuredQuantity.toFixed(2)}</td>
                   <td className="px-6 py-4">
+                    {/* Hidden when the API would refuse them anyway. */}
                     <div className="flex items-center justify-end gap-2">
-                      <button type="button" onClick={() => handleEdit(req)} title="Edit" className="p-1.5 rounded-lg text-gray-400 hover:text-pink-400 hover:bg-white/5 transition-colors">
-                        <Pencil size={16} />
-                      </button>
-                      <button type="button" onClick={() => handleDelete(req.id)} title="Delete" className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors">
-                        <Trash2 size={16} />
-                      </button>
+                      {can('mb', 'write') && (
+                        <button type="button" onClick={() => handleEdit(req)} title="Edit" className="p-1.5 rounded-lg text-gray-400 hover:text-pink-400 hover:bg-white/5 transition-colors">
+                          <Pencil size={16} />
+                        </button>
+                      )}
+                      {can('mb', 'delete') && (
+                        <button type="button" onClick={() => handleDelete(req.id)} title="Delete" className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -201,6 +239,8 @@ const MeasurementBook = () => {
           </tbody>
         </table>
       </div>
+
+      <Pagination q={q} />
     </div>
   );
 };

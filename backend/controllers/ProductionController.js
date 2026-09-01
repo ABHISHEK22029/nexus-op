@@ -4,6 +4,7 @@
    Yield, reconciliation and cost/piece are computed here.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { runList } = require('../shared/listQuery');
 
 const round = (n, d = 2) => (n == null ? null : Math.round(n * 10 ** d) / 10 ** d);
 
@@ -51,16 +52,43 @@ exports.getOrders = async (req, res) => {
   const { projectId } = req.query;
   if (!projectId) return res.status(400).json({ error: 'projectId required' });
   try {
-    const { rows } = await db.query(
-      `SELECT po.*, wo.name AS work_order_name
-         FROM production_orders po
-         LEFT JOIN work_orders wo ON wo.id = po."workOrderId"
-        WHERE po."projectId" = $1 ORDER BY po.id DESC`,
-      [projectId]
-    );
+    /* Project scoping is unchanged: still a hard WHERE on ?projectId, which
+       scopeProjectAccess has already checked the caller owns.
+       The work order and (where the job came from a sale) the customer are
+       joined in so the shop floor can search by "who is this for". */
+    const params = [projectId];
+    const result = await runList(db, {
+      table: `(SELECT po.*, wo.name AS work_order_name,
+                      co.order_number AS customer_order_number, c.name AS customer_name
+                 FROM production_orders po
+                 LEFT JOIN work_orders wo ON wo.id = po."workOrderId"
+                 LEFT JOIN customer_orders co ON co.id = po.customer_order_id
+                 LEFT JOIN customers c ON c.id = co.customer_id) AS po`,
+      query: req.query,
+      searchColumns: ["prod_number", "product_name", "work_order_name", "customer_name", "customer_order_number", "status"],
+      filterColumns: ["status", "workOrderId", "customer_order_id", "sku_id"],
+      allowedSort: ["id", "prod_number", "product_name", "planned_qty", "status", "created_at", "updated_at"],
+      defaultSort: 'id', defaultDir: 'DESC',
+      where: [`"projectId" = $${params.length}`], params,
+      /* `no_output` is the needs-attention count: an order that is not
+         Completed and has nothing booked against it yet — material may be
+         issued with nothing to show for it. Yield percentages are
+         deliberately not averaged here; /production/summary already does
+         that properly, weighted by input. */
+      summary: `COUNT(*)::int AS count,
+                COUNT(*) FILTER (WHERE status = 'Planned')::int AS planned,
+                COUNT(*) FILTER (WHERE status = 'In Progress')::int AS in_progress,
+                COUNT(*) FILTER (WHERE status = 'Completed')::int AS completed,
+                COALESCE(SUM(planned_qty),0)::numeric AS planned_qty,
+                COUNT(*) FILTER (WHERE COALESCE(status,'') <> 'Completed'
+                                   AND NOT EXISTS (SELECT 1 FROM production_output o
+                                                    WHERE o.production_order_id = po.id))::int AS no_output`,
+    });
+
     // attach a compact yield summary per order
+    const rows = Array.isArray(result) ? result : result.items;
     const withYield = await Promise.all(rows.map(async (o) => ({ ...o, yield: await computeYield(o.id) })));
-    res.json(withYield);
+    res.json(Array.isArray(result) ? withYield : { ...result, items: withYield });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -40,7 +40,10 @@ export default function VendorSupplies() {
       const key = mode === 'material' ? 'materialId' : 'vendorId';
       const r = await fetch(`${API}/vendor-items?${key}=${selected}`);
       const d = await r.json();
-      setLinks(d.items || []);
+      // /vendor-items now follows the shared list contract: a plain array
+      // unless ?limit is passed, an { items, total, summary } envelope when
+      // it is. Accept either, as the material/vendor loads above already do.
+      setLinks(d.items || (Array.isArray(d) ? d : []));
     } catch { toast?.error?.('Could not load supply links'); }
     finally { setLoading(false); }
   };

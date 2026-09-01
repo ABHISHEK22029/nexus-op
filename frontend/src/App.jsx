@@ -34,6 +34,7 @@ import Users from './pages/Users';
 import ImportData from './pages/Import';
 import Automation from './pages/Automation';
 import CompanyProfile from './pages/CompanyProfile';
+import Configurator from './pages/Configurator';
 import MaterialRequirements from './pages/MaterialRequirements';
 import VendorSupplies from './pages/VendorSupplies';
 import CustomerDetail from './pages/CustomerDetail';
@@ -67,6 +68,7 @@ import { UserCircle, Settings, Sun, Moon, Plus, LogOut } from 'lucide-react';
 import QuickCreateModal from './components/QuickCreateModal';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleBadge from './components/RoleBadge';
+import RoleRoute from './components/RoleRoute';
 import ProductTour from './components/ProductTour';
 import AskAi from './components/AskAi';
 import NotificationBell from './components/NotificationBell';
@@ -342,7 +344,20 @@ const TopHeader = () => {
   );
 };
 
-/* ─── App Layout (with sidebar) — auth-gated ───────────── */
+/* ─── App Layout (with sidebar) — auth-gated AND role-gated ─────────
+   RoleRoute sits here rather than on each of the 60 routes below. It works
+   out the governing permission from the URL via lib/navResources, which is
+   the same map the sidebar uses to decide which links to show — so the nav
+   and the guard cannot disagree about what a role may open.
+
+   Wrapping each route individually would have been more explicit and less
+   safe: it guarantees the next route added is the one that forgets. Here a
+   path that isn't in the map is ungated deliberately and visibly, in one
+   file, rather than by omission scattered across sixty lines.
+
+   Still only a courtesy — the server refuses regardless. The point is that
+   someone who cannot use a screen gets a sentence explaining why instead of
+   an empty table and a console full of 403s. */
 const AppLayout = ({ children }) => (
   <ProtectedRoute>
     <div className="app-layout">
@@ -350,7 +365,7 @@ const AppLayout = ({ children }) => (
       <main className="app-main" style={{ position: 'relative' }}>
         <TopHeader />
         <div className="app-page">
-          {children}
+          <RoleRoute>{children}</RoleRoute>
         </div>
       </main>
       <ProductTour />
@@ -422,6 +437,7 @@ const AppRoutes = () => {
       <Route path="/delivery-challans/:id" element={<AppLayout><DeliveryChallanDoc /></AppLayout>} />
       <Route path="/credit-debit-notes"     element={<AppLayout><CreditDebitNotes /></AppLayout>} />
       <Route path="/credit-debit-notes/:id" element={<AppLayout><CreditDebitNoteDoc /></AppLayout>} />
+      <Route path="/configurator"     element={<AppLayout><Configurator /></AppLayout>} />
       <Route path="/users"             element={<AppLayout><Users /></AppLayout>} />
       <Route path="/import"            element={<AppLayout><ImportData /></AppLayout>} />
       <Route path="/automation"        element={<AppLayout><Automation /></AppLayout>} />

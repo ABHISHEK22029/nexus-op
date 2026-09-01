@@ -26,11 +26,23 @@ import { Search, X, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-
 import { getToken } from '../lib/apiAuth';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-/** Data hook. Owns the query string so pages don't each reinvent it. */
+/** Data hook. Owns the query string so pages don't each reinvent it.
+ *
+ *  `initialFilters` is a BASELINE, not a starting position the user can
+ *  clear their way out of. Several pages are scoped to the active project
+ *  and pass it here; if "Clear filters" wiped it, clearing would silently
+ *  widen the list to every project. For the same reason the baseline keys
+ *  don't count towards `isFiltered` — otherwise a scoped page would always
+ *  claim to be filtered, permanently offer a Clear button, and never show
+ *  "no records yet" (only ever "nothing matched your filters", which sends
+ *  people looking for data that was never there).
+ *
+ *  Pages that pass no `initialFilters` are unaffected. */
 export function useListQuery(endpoint, { pageSize = 25, initialFilters = {} } = {}) {
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [filters, setFilters] = useState(initialFilters);
+  const baseKeys = Object.keys(initialFilters);
   const [offset, setOffset] = useState(0);
   const [state, setState] = useState({ rows: [], total: 0, summary: null, loading: true, error: null });
   const reqId = useRef(0);
@@ -78,14 +90,19 @@ export function useListQuery(endpoint, { pageSize = 25, initialFilters = {} } = 
 
   useEffect(() => { load(); }, [load]);
 
-  const isFiltered = Boolean(debounced.trim()) || Object.values(filters).some(Boolean);
+  const isFiltered = Boolean(debounced.trim())
+    || Object.entries(filters).some(([k, v]) => v && !baseKeys.includes(k));
 
   return {
     ...state,
     search, setSearch,
     filters, setFilters,
     setFilter: (k, v) => setFilters(f => ({ ...f, [k]: f[k] === v ? '' : v })),
-    clear: () => { setSearch(''); setFilters({}); },
+    // Keeps the baseline (e.g. the active project); drops everything else.
+    clear: () => {
+      setSearch('');
+      setFilters(f => Object.fromEntries(baseKeys.map(k => [k, f[k]])));
+    },
     isFiltered,
     offset, setOffset, pageSize,
     reload: load,

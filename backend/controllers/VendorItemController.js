@@ -10,6 +10,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { isCrossTenant } = require('../shared/roles');
+const { runList } = require('../shared/listQuery');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 const COLS = ['vendor_id', 'raw_material_id', 'vendor_item_code', 'price', 'price_uom', 'moq', 'lead_time_days', 'is_preferred', 'last_quoted_at', 'notes'];
@@ -18,22 +19,42 @@ const COLS = ['vendor_id', 'raw_material_id', 'vendor_item_code', 'price', 'pric
    Joined both ways so one endpoint serves both views. */
 exports.list = async (req, res) => {
   try {
+    /* Same owner scoping as before — own links plus the unowned (seeded)
+       ones — just expressed against the subquery instead of the raw table.
+       The `$$` in these template literals is load-bearing: `$${params.length}`
+       emits the bind placeholder $1; `${params.length}` would emit the
+       literal 1 and quietly hand back another tenant's links. */
     const where = [], params = [];
-    if (!isAdmin(req)) { params.push(req.user.id); where.push(`(vi.owner_id = $${params.length} OR vi.owner_id IS NULL)`); }
-    if (req.query.vendorId) { params.push(req.query.vendorId); where.push(`vi.vendor_id = $${params.length}`); }
-    if (req.query.materialId) { params.push(req.query.materialId); where.push(`vi.raw_material_id = $${params.length}`); }
+    if (!isAdmin(req)) { params.push(req.user.id); where.push(`(owner_id = $${params.length} OR owner_id IS NULL)`); }
+    if (req.query.vendorId) { params.push(req.query.vendorId); where.push(`vendor_id = $${params.length}`); }
+    if (req.query.materialId) { params.push(req.query.materialId); where.push(`raw_material_id = $${params.length}`); }
 
-    const { rows } = await db.query(`
-      SELECT vi.*,
-             v.name  AS vendor_name, v.gstin AS vendor_gstin, v.city AS vendor_city,
-             rm.name AS material_name, rm.category, rm.base_uom, rm.purchase_uom,
-             rm.standard_rate
-      FROM vendor_items vi
-      JOIN vendors v        ON v.id  = vi.vendor_id
-      JOIN raw_materials rm ON rm.id = vi.raw_material_id
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY vi.is_preferred DESC, vi.price NULLS LAST, v.name`, params);
-    res.json({ items: rows, total: rows.length });
+    const result = await runList(db, {
+      table: `(SELECT vi.*,
+                      v.name  AS vendor_name, v.gstin AS vendor_gstin, v.city AS vendor_city,
+                      rm.name AS material_name, rm.category, rm.base_uom, rm.purchase_uom,
+                      rm.standard_rate
+                 FROM vendor_items vi
+                 JOIN vendors v        ON v.id  = vi.vendor_id
+                 JOIN raw_materials rm ON rm.id = vi.raw_material_id) AS vi`,
+      query: req.query,
+      searchColumns: ["vendor_name", "material_name", "vendor_item_code", "category", "vendor_city", "notes"],
+      filterColumns: ["vendor_id", "raw_material_id", "is_preferred", "category"],
+      allowedSort: ["id", "vendor_name", "material_name", "price", "moq", "lead_time_days", "is_preferred", "last_quoted_at"],
+      /* Preferred supplier first, as before. The helper orders on one column,
+         so the old price/name tiebreakers are now reachable via ?sort. */
+      defaultSort: 'is_preferred', defaultDir: 'DESC',
+      where, params,
+      /* Coverage, not money: this page answers "who can supply this, and do
+         we know what they charge". `missing_price` is the gap that makes a
+         link useless when a PO is being raised. */
+      summary: `COUNT(*)::int AS count,
+                COUNT(DISTINCT vendor_id)::int AS vendors,
+                COUNT(DISTINCT raw_material_id)::int AS materials,
+                COUNT(*) FILTER (WHERE is_preferred)::int AS preferred,
+                COUNT(*) FILTER (WHERE price IS NULL)::int AS missing_price`,
+    });
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

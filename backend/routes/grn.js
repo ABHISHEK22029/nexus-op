@@ -3,19 +3,31 @@ const router = express.Router();
 const db = require('../db');
 const { convert, loadUoms } = require('../shared/uom');
 const { notify } = require('../notify');
+const { runList } = require('../shared/listQuery');
 
-// List GRN records filtered by projectId
+/* List GRN records, scoped to a project.
+
+   The searchable columns are the ones written on the paperwork at the gate —
+   the vehicle that brought the load, the batch stencilled on it, and where it
+   was tipped. Those are what someone has in hand when they come looking for a
+   receipt. Without a `limit` this still returns a plain array. */
 router.get('/', async (req, res) => {
   try {
-    let query = 'SELECT * FROM grn';
-    let params = [];
+    const where = [], params = [];
     if (req.query.projectId) {
-      query += ' WHERE "projectId" = $1';
       params.push(req.query.projectId);
+      where.push(`"projectId" = $${params.length}`);
     }
-    query += ' ORDER BY date DESC';
-    const { rows } = await db.query(query, params);
-    res.json(rows);
+    const result = await runList(db, {
+      table: 'grn',
+      query: req.query,
+      searchColumns: ['vehicleNumber', 'batchNumber', 'chainage'],
+      allowedSort: ['id', 'date', 'receivedQuantity', 'vehicleNumber'],
+      defaultSort: 'date',
+      defaultDir: 'DESC',
+      where, params,
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

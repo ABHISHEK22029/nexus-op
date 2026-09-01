@@ -1,45 +1,54 @@
+/* ══════════════════════════════════════════════════════════
+   Work Orders — searchable, filterable, paginated.
+
+   The list stays scoped to the active project. That scope travels as a
+   filter on the query rather than as a client-side .filter(), so it
+   composes with search and paging instead of fighting them: page 2 of a
+   search inside one project is one request, not every work order in the
+   database narrowed down afterwards.
+
+   The status chips are the two values that exist — 'In Progress' (what
+   createWorkOrder defaults to) and 'Pending'. There is no CHECK constraint
+   behind the column, so anything else here would be a guess offered to the
+   user as a fact.
+   ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Briefcase, Plus, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const WorkOrders = () => {
-  const { activeProject, workOrders } = useProject();
+  const { activeProject } = useProject();
   const toast = useToast();
+  const { can } = usePermissions();
+  /* No active project → ask for project 0, which matches nothing. Sending no
+     projectId at all would quietly widen the list to every project. */
+  const scope = activeProject?.id ? String(activeProject.id) : '0';
+  const q = useListQuery('work-orders', { pageSize: 25, initialFilters: { projectId: scope } });
   const [vendors, setVendors] = useState([]);
   const [boqs, setBoqs] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [localWorkOrders, setLocalWorkOrders] = useState([]);
   const [formData, setFormData] = useState({
      vendorId: '', name: '', boqId: '', startDate: '', endDate: '', contractValue: ''
   });
 
-  // keep local list in sync with context-provided work orders
-  useEffect(() => {
-    setLocalWorkOrders(workOrders || []);
-  }, [workOrders]);
+  const canWrite = can('work-orders', 'write');
+  const canDelete = can('work-orders', 'delete');
 
-  const fetchWorkOrders = async () => {
-    if (!activeProject) return;
-    setLoading(true);
-    try {
-      const res = await axios.get(`${API}/work-orders?projectId=${activeProject.id}`);
-      setLocalWorkOrders(res.data);
-    } catch (err) {
-      toast.error(err.response?.data?.error || err.message || 'Something went wrong');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Follow the global project switcher.
+  useEffect(() => {
+    q.setFilters(f => ({ ...f, projectId: scope }));
+  }, [scope]);
 
   useEffect(() => {
     if (!activeProject) return;
-    axios.get(`${API}/vendors?projectId=${activeProject.id}`).then(res => setVendors(res.data));
-    axios.get(`${API}/boq?projectId=${activeProject.id}`).then(res => setBoqs(res.data));
+    axios.get(`${API}/vendors?projectId=${activeProject.id}`).then(res => setVendors(Array.isArray(res.data) ? res.data : (res.data?.items || [])));
+    axios.get(`${API}/boq?projectId=${activeProject.id}`).then(res => setBoqs(Array.isArray(res.data) ? res.data : (res.data?.items || [])));
   }, [activeProject]);
 
   const handleSubmit = async (e) => {
@@ -53,7 +62,7 @@ const WorkOrders = () => {
       await axios.post(`${API}/work-orders`, { ...formData, projectId: activeProject.id });
       setShowForm(false);
       setFormData({ vendorId: '', name: '', boqId: '', startDate: '', endDate: '', contractValue: '' });
-      await fetchWorkOrders();
+      q.reload();
       toast.success('Work order assigned successfully.');
     } catch (err) {
       toast.error(err.response?.data?.error || err.message || 'Something went wrong');
@@ -64,7 +73,7 @@ const WorkOrders = () => {
     if (!window.confirm('Delete this work order?')) return;
     try {
       await axios.delete(`${API}/work-orders/${w.id}`);
-      await fetchWorkOrders();
+      q.reload();
       toast.success('Work order deleted.');
     } catch (err) {
       toast.error(err.response?.data?.error || err.message || 'Something went wrong');
@@ -83,12 +92,14 @@ const WorkOrders = () => {
           </h1>
           <p className="text-gray-500 mt-1">Bind Vendors and BOQ allocations strictly under <strong className="text-gray-300">{activeProject.name}</strong>.</p>
         </div>
-        <button 
-          onClick={() => setShowForm(!showForm)}
-          className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-        >
-          <Plus size={16} /> Assign Order
-        </button>
+        {canWrite && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          >
+            <Plus size={16} /> Assign Order
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -124,7 +135,7 @@ const WorkOrders = () => {
               <label className="block text-xs font-medium text-gray-500 mb-1">Final Handover Date</label>
               <input required type="date" className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} />
             </div>
-            
+
             <div className="col-span-full pt-4">
               <button type="submit" className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-lg text-sm font-medium transition-colors">
                 Generate Tracker
@@ -134,48 +145,63 @@ const WorkOrders = () => {
         </div>
       )}
 
-      <div className="bg-[#111113] border border-white/5 rounded-xl overflow-hidden mt-8">
-        <table className="w-full text-sm text-left">
-          <thead className="text-xs text-gray-400 bg-black/40 uppercase">
-            <tr>
-              <th className="px-6 py-4 font-medium">Order ID</th>
-              <th className="px-6 py-4 font-medium">Directive</th>
-              <th className="px-6 py-4 font-medium">Vendor Target</th>
-              <th className="px-6 py-4 font-medium">Value Envelope</th>
-              <th className="px-6 py-4 font-medium">Progress Control</th>
-              <th className="px-6 py-4 font-medium">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {loading ? (
-              <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500">Loading…</td>
-              </tr>
-            ) : localWorkOrders.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500">No work orders yet</td>
-              </tr>
-            ) : (
-              localWorkOrders.map((w) => (
-              <tr key={w.id} className="hover:bg-white/[0.02] transition-colors text-gray-300">
-                <td className="px-6 py-4 font-bold text-amber-400">WO-{w.id.toString().padStart(4, '0')}</td>
-                <td className="px-6 py-4 font-medium text-white">{w.name}</td>
-                <td className="px-6 py-4">{w.vendorName}</td>
-                <td className="px-6 py-4 font-mono text-gray-400">₹{parseFloat(w.contractValue)?.toLocaleString() || 'N/A'}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded text-xs ${w.status === 'In Progress' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>{w.status}</span>
-                </td>
-                <td className="px-6 py-4">
-                  <button onClick={() => handleDelete(w)} title="Delete work order" className="text-gray-500 hover:text-red-400 transition-colors">
-                    <Trash2 size={15} />
-                  </button>
-                </td>
-              </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      <div className="mt-8">
+        <ListToolbar
+          q={q}
+          placeholder="Search directive name, vendor, status…"
+          filters={[{
+            key: 'status',
+            label: 'Status',
+            options: [
+              { value: 'In Progress', label: 'In Progress' },
+              { value: 'Pending', label: 'Pending' },
+            ],
+          }]}
+        />
       </div>
+
+      <div className="bg-[#111113] border border-white/5 rounded-xl overflow-hidden">
+        {q.rows.length === 0 ? (
+          <EmptyState q={q} icon={Briefcase} noun="work orders"
+            hint="Assign one to bind a vendor to a slice of this project." />
+        ) : (
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-400 bg-black/40 uppercase">
+              <tr>
+                <th className="px-6 py-4 font-medium">Order ID</th>
+                <th className="px-6 py-4 font-medium">Directive</th>
+                <th className="px-6 py-4 font-medium">Vendor Target</th>
+                <th className="px-6 py-4 font-medium">Value Envelope</th>
+                <th className="px-6 py-4 font-medium">Progress Control</th>
+                <th className="px-6 py-4 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {q.rows.map((w) => (
+                <tr key={w.id} className="hover:bg-white/[0.02] transition-colors text-gray-300">
+                  <td className="px-6 py-4 font-bold text-amber-400">WO-{w.id.toString().padStart(4, '0')}</td>
+                  <td className="px-6 py-4 font-medium text-white">{w.name}</td>
+                  <td className="px-6 py-4">{w.vendorName}</td>
+                  <td className="px-6 py-4 font-mono text-gray-400">₹{parseFloat(w.contractValue)?.toLocaleString() || 'N/A'}</td>
+                  <td className="px-6 py-4">
+                    <span className={`px-2 py-1 rounded text-xs ${w.status === 'In Progress' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>{w.status}</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    {/* Hidden when the API would refuse it anyway. */}
+                    {canDelete && (
+                      <button onClick={() => handleDelete(w)} title="Delete work order" className="text-gray-500 hover:text-red-400 transition-colors">
+                        <Trash2 size={15} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <Pagination q={q} />
     </div>
   );
 };

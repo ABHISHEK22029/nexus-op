@@ -22,6 +22,7 @@ const creditDebitNoteController = require('./controllers/CreditDebitNoteControll
 const materialReqController = require('./controllers/MaterialRequirementsController');
 const vendorItemController = require('./controllers/VendorItemController');
 const customerSummaryController = require('./controllers/CustomerSummaryController');
+const adminController = require('./controllers/AdminController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -175,8 +176,25 @@ app.post('/notifications/read-all', async (req, res) => {
 /* ── Team / users management (Admin only) ── */
 app.get('/users', allow('users', 'read'), async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT id, email, name, role, department, is_active, last_login, created_at FROM users ORDER BY id');
-    res.json(rows);
+    /* Column list is fixed and never includes password_hash — the search,
+       filter and sort whitelists below are all drawn from it, so no query
+       string can widen what this endpoint returns. */
+    const result = await runList(db, {
+      table: 'users',
+      select: 'id, email, name, role, department, is_active, last_login, created_at',
+      query: req.query,
+      searchColumns: ["name", "email", "role", "department"],
+      filterColumns: ["role", "department", "is_active"],
+      allowedSort: ["id", "name", "email", "role", "department", "last_login", "created_at"],
+      defaultSort: 'id', defaultDir: 'ASC',
+      /* The team page header counts seats, not money. `never_logged_in` is
+         the one that needs action: invited accounts nobody ever used. */
+      summary: `COUNT(*)::int AS count,
+                COUNT(*) FILTER (WHERE is_active)::int AS active,
+                COUNT(*) FILTER (WHERE is_active IS NOT TRUE)::int AS inactive,
+                COUNT(*) FILTER (WHERE last_login IS NULL)::int AS never_logged_in`,
+    });
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.patch('/users/:id', allow('users', 'write'), async (req, res) => {
@@ -293,18 +311,29 @@ app.post('/vendors', async (req, res) => {
    ══════════════════════════════════════════════════════════ */
 app.get('/po', async (req, res) => {
   try {
-    let query = `SELECT po.*, v.name as "vendorName", wo.name as "workOrderName"
+    /* Vendor and work-order names are joined in a subquery so they are
+       searchable: nobody remembers "Kirashi/FY2026-27/007", they remember
+       who they bought from and what they bought.
+       Project scoping is unchanged — ?projectId is still an exact filter,
+       and scopeProjectAccess above already refuses another owner's project. */
+    const result = await runList(db, {
+      table: `(SELECT po.*, v.name AS "vendorName", wo.name AS "workOrderName"
                  FROM purchase_orders po
                  LEFT JOIN vendors v ON po."vendorId" = v.id
-                 LEFT JOIN work_orders wo ON po."workOrderId" = wo.id`;
-    let params = [];
-    if (req.query.projectId) {
-      query += ' WHERE po."projectId" = $1';
-      params.push(req.query.projectId);
-    }
-    query += ' ORDER BY po.id DESC';
-    const { rows } = await db.query(query, params);
-    res.json(rows || []);
+                 LEFT JOIN work_orders wo ON po."workOrderId" = wo.id) AS po`,
+      query: req.query,
+      searchColumns: ["poNumber", "vendorName", "itemName", "workOrderName", "status", "quoteRef"],
+      filterColumns: ["status", "approval_status", "projectId", "vendorId", "workOrderId"],
+      allowedSort: ["id", "poNumber", "itemName", "quantity", "unitPrice", "status", "approval_status", "createdAt"],
+      defaultSort: 'id', defaultDir: 'DESC',
+      /* Order value is qty × price (there is no stored total on the header).
+         `awaiting_approval` is the queue the page exists to clear. */
+      summary: `COUNT(*)::int AS count,
+                COALESCE(SUM(COALESCE(quantity,0) * COALESCE("unitPrice",0)),0)::numeric AS value,
+                COUNT(*) FILTER (WHERE COALESCE(approval_status,'Pending') = 'Pending')::int AS awaiting_approval,
+                COUNT(*) FILTER (WHERE status = 'Delivered')::int AS delivered`,
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -574,19 +603,34 @@ app.patch('/po/:id/dispatch', async (req, res) => {
 /* ══════════════════════════════════════════════════════════
    INDENT
    ══════════════════════════════════════════════════════════ */
+/* The BOQ join is wrapped in a derived table so "itemCode" and
+   "itemDescription" are ordinary columns of it — which is what makes them
+   searchable. An indent is looked for by the material it asks for, not by
+   its own id. Without a `limit` this still returns a plain array. */
+const INDENTS = `(
+  SELECT indents.*, boq_items."itemCode", boq_items.description AS "itemDescription"
+  FROM indents
+  LEFT JOIN boq_items ON indents."boqId" = boq_items.id
+) AS i`;
+
 app.get('/indent', async (req, res) => {
   try {
-    let query = `SELECT indents.*, boq_items."itemCode", boq_items.description as "itemDescription"
-                 FROM indents
-                 LEFT JOIN boq_items ON indents."boqId" = boq_items.id`;
-    let params = [];
+    const where = [], params = [];
     if (req.query.projectId) {
-      query += ' WHERE indents."projectId" = $1';
       params.push(req.query.projectId);
+      where.push(`"projectId" = $${params.length}`);
     }
-    query += ' ORDER BY indents.id DESC';
-    const { rows } = await db.query(query, params);
-    res.json(rows || []);
+    const result = await runList(db, {
+      table: INDENTS,
+      query: req.query,
+      searchColumns: ['itemCode', 'itemDescription', 'chainage', 'status'],
+      filterColumns: ['status'],
+      allowedSort: ['id', 'itemCode', 'requestedQuantity', 'requiredDate', 'chainage', 'status'],
+      defaultSort: 'id',
+      defaultDir: 'DESC',
+      where, params,
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -685,6 +729,23 @@ app.get('/material-requirements', materialReqController.list);
 
 /* ── Vendor <-> material: who supplies what ── */
 app.get('/customers/:id/summary', customerSummaryController.summary);
+
+/* ── Configurator (Administrator only) ─────────────────────────
+   'admin' is deliberately absent from RESOURCES in shared/roles.js, so
+   the deny-by-default middleware already restricts every route below to
+   Administrator. That is the intent rather than an accident: a screen
+   that changes who can do what must not itself be a permission that can
+   be granted to a role. */
+app.get('/admin/catalogue',        adminController.catalogue);
+app.get('/admin/roles/health',     adminController.rolesHealth);
+app.get('/admin/roles/audit',      adminController.auditLog);
+app.get('/admin/roles',            adminController.listRoles);
+app.post('/admin/roles',           adminController.createRole);
+app.patch('/admin/roles/:role',    adminController.updateRole);
+app.delete('/admin/roles/:role',   adminController.deleteRole);
+app.get('/admin/users',            adminController.listUsers);
+app.patch('/admin/users/:id/role', adminController.setUserRole);
+app.patch('/admin/users/:id/active', adminController.setUserActive);
 app.get('/vendor-items', vendorItemController.list);
 app.post('/vendor-items', vendorItemController.create);
 app.patch('/vendor-items/:id', vendorItemController.update);
@@ -730,22 +791,39 @@ app.patch('/inventory/:id', async (req, res) => {
 /* ══════════════════════════════════════════════════════════
    BOQ
    ══════════════════════════════════════════════════════════ */
+/* "executedQuantity" is summed here, per item, over the whole measurement
+   book — not over whatever measurements a page happens to be holding. The
+   BOQ screen used to fetch every MB row and add them up in the browser,
+   which stops being possible the moment either list is paginated. */
+const BOQ_ITEMS = `(
+  SELECT boq_items.*,
+    COALESCE((SELECT SUM("measuredQuantity") FROM measurement_book mb
+              WHERE mb."boqId" = boq_items.id), 0) AS "executedQuantity",
+    COALESCE((SELECT SUM("billedQuantity") FROM bills b
+              JOIN work_orders wo ON b."workOrderId" = wo.id
+              WHERE wo."boqId" = boq_items.id), 0) AS "billedQuantity"
+  FROM boq_items
+) AS b`;
+
 app.get('/boq', async (req, res) => {
   try {
-    let query = `SELECT boq_items.*,
-      COALESCE((SELECT SUM("measuredQuantity") FROM measurement_book mb
-                WHERE mb."boqId" = boq_items.id), 0) AS "executedQuantity",
-      COALESCE((SELECT SUM("billedQuantity") FROM bills b
-                JOIN work_orders wo ON b."workOrderId" = wo.id
-                WHERE wo."boqId" = boq_items.id), 0) AS "billedQuantity"
-      FROM boq_items`;
-    let params = [];
+    const where = [], params = [];
     if (req.query.projectId) {
-      query += ' WHERE boq_items."projectId" = $1';
       params.push(req.query.projectId);
+      where.push(`"projectId" = $${params.length}`);
     }
-    const { rows } = await db.query(query, params);
-    res.json(rows || []);
+    const result = await runList(db, {
+      table: BOQ_ITEMS,
+      query: req.query,
+      searchColumns: ['itemCode', 'description', 'unit'],
+      filterColumns: ['unit'],
+      allowedSort: ['id', 'itemCode', 'description', 'unit', 'estimatedQuantity', 'rate'],
+      // Previously unordered; pagination needs a stable sort to page over.
+      defaultSort: 'id',
+      defaultDir: 'ASC',
+      where, params,
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -768,20 +846,33 @@ app.post('/boq', async (req, res) => {
 /* ══════════════════════════════════════════════════════════
    MEASUREMENT BOOK
    ══════════════════════════════════════════════════════════ */
+/* Wrapped so the joined BOQ columns are searchable: a measurement is found
+   by the item it measures or the chainage it was taken at, never by its id. */
+const MEASUREMENT_BOOK = `(
+  SELECT measurement_book.*, boq_items."itemCode",
+         boq_items.description AS "itemDescription", boq_items.unit, boq_items.rate
+  FROM measurement_book
+  LEFT JOIN boq_items ON measurement_book."boqId" = boq_items.id
+) AS m`;
+
 app.get('/mb', async (req, res) => {
   try {
-    let query = `SELECT measurement_book.*, boq_items."itemCode", boq_items.description as "itemDescription",
-                 boq_items.unit, boq_items.rate
-                 FROM measurement_book
-                 LEFT JOIN boq_items ON measurement_book."boqId" = boq_items.id`;
-    let params = [];
+    const where = [], params = [];
     if (req.query.projectId) {
-      query += ' WHERE measurement_book."projectId" = $1';
       params.push(req.query.projectId);
+      where.push(`"projectId" = $${params.length}`);
     }
-    query += ' ORDER BY measurement_book.id DESC';
-    const { rows } = await db.query(query, params);
-    res.json(rows || []);
+    const result = await runList(db, {
+      table: MEASUREMENT_BOOK,
+      query: req.query,
+      searchColumns: ['itemCode', 'itemDescription', 'chainage'],
+      filterColumns: ['unit'],
+      allowedSort: ['id', 'itemCode', 'chainage', 'measuredQuantity', 'date'],
+      defaultSort: 'id',
+      defaultDir: 'DESC',
+      where, params,
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1153,6 +1244,18 @@ app.get('/dashboard', async (req, res) => {
    SERVER
    ══════════════════════════════════════════════════════════ */
 const PORT = process.env.PORT || 5000;
+/* Load the administered role set before serving. Deliberately does not
+   throw: if migration 033 hasn't run or the database is briefly
+   unreachable, the server starts on the compiled-in defaults in
+   shared/roles.js rather than refusing to boot. A permissions table that
+   fails to load should degrade to yesterday's rules, not to an
+   installation where nobody can do anything. */
+require('./shared/roles').initRoles(db).then(r => {
+  console.log(r.ok
+    ? `✅ Roles loaded from ${r.source} (${r.roles} roles)`
+    : `⚠  Roles: using ${r.source} — ${r.error}`);
+});
+
 app.listen(PORT, () => {
   console.log(`✅ Maks Ops Backend running on http://localhost:${PORT}`);
   console.log(`   Routes: ${[
