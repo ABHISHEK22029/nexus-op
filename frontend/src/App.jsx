@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import Sidebar from './components/Sidebar';
+import AppNav from './components/AppNav';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import WorkOrders from './pages/WorkOrders';
@@ -37,6 +37,7 @@ import CompanyProfile from './pages/CompanyProfile';
 import Configurator from './pages/Configurator';
 import MaterialRequirements from './pages/MaterialRequirements';
 import VendorSupplies from './pages/VendorSupplies';
+import Items from './pages/Items';
 import CustomerDetail from './pages/CustomerDetail';
 import SmartKnowledge from './pages/SmartKnowledge';
 import KnowledgeArticle from './pages/KnowledgeArticle';
@@ -368,7 +369,7 @@ const TopHeader = () => {
 const AppLayout = ({ children }) => (
   <ProtectedRoute>
     <div className="app-layout">
-      <Sidebar />
+      <AppNav />
       <main className="app-main" style={{ position: 'relative' }}>
         <TopHeader />
         <div className="app-page">
@@ -450,7 +451,11 @@ const AppRoutes = () => {
       <Route path="/automation"        element={<AppLayout><Automation /></AppLayout>} />
       <Route path="/company-profile"   element={<AppLayout><CompanyProfile /></AppLayout>} />
       <Route path="/material-requirements" element={<AppLayout><MaterialRequirements /></AppLayout>} />
-      <Route path="/vendor-supplies"    element={<AppLayout><VendorSupplies /></AppLayout>} />
+      <Route path="/items"           element={<AppLayout><Items /></AppLayout>} />
+      {/* Vendor Supplies folded into the Vendors screen as a tab. Kept as a
+          redirect so old links and bookmarks still land in the right place. */}
+      <Route path="/vendor-supplies" element={<Navigate to="/vendors?tab=supplies" replace />} />
+      <Route path="/_vendor-supplies"    element={<AppLayout><VendorSupplies /></AppLayout>} />
       <Route path="/customers/:id"      element={<AppLayout><CustomerDetail /></AppLayout>} />
       <Route path="/bills/:id"         element={<ProtectedRoute><RABillInvoice /></ProtectedRoute>} />
       <Route path="/activity"          element={<AppLayout><ActivityLog /></AppLayout>} />

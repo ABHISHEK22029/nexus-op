@@ -21,7 +21,7 @@
    browser already has every row, which is the thing we are fixing.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, X, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { Search, X, ChevronLeft, ChevronRight, SlidersHorizontal, BookmarkPlus } from 'lucide-react';
 
 import { getToken } from '../lib/apiAuth';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -93,6 +93,39 @@ export function useListQuery(endpoint, { pageSize = 25, initialFilters = {} } = 
   const isFiltered = Boolean(debounced.trim())
     || Object.entries(filters).some(([k, v]) => v && !baseKeys.includes(k));
 
+  /* ── Bulk selection ──────────────────────────────────────
+     Selection is keyed by row id and cleared whenever the result set
+     changes. Keeping a selection across a filter change is how someone
+     deletes twelve records they can no longer see — the checkbox said
+     "12 selected" and they had no way to know which twelve. */
+  const [selected, setSelected] = useState(() => new Set());
+  useEffect(() => { setSelected(new Set()); }, [debounced, JSON.stringify(filters), offset]);
+
+  const pageIds = state.rows.map(r => r.id).filter(v => v != null);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every(id => selected.has(id));
+
+  const selection = {
+    ids: [...selected],
+    count: selected.size,
+    has: (id) => selected.has(id),
+    toggle: (id) => setSelected(s => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    }),
+    /* Selects only what is ON SCREEN, never the whole filtered set. "Select
+       all" that silently spans pages you never looked at is how a bulk
+       delete goes wrong. */
+    toggleAllOnPage: () => setSelected(s => {
+      const n = new Set(s);
+      if (allOnPageSelected) pageIds.forEach(id => n.delete(id));
+      else pageIds.forEach(id => n.add(id));
+      return n;
+    }),
+    allOnPageSelected,
+    clear: () => setSelected(new Set()),
+  };
+
   return {
     ...state,
     search, setSearch,
@@ -102,11 +135,50 @@ export function useListQuery(endpoint, { pageSize = 25, initialFilters = {} } = 
     clear: () => {
       setSearch('');
       setFilters(f => Object.fromEntries(baseKeys.map(k => [k, f[k]])));
+      setSelected(new Set());
     },
     isFiltered,
     offset, setOffset, pageSize,
     reload: load,
+    selection,
+    endpoint,
   };
+}
+
+/* ══════════════════════════════════════════════════════════
+   Saved views — a filter combination you use often, given a name.
+
+   Zoho calls these Custom Views and they are the single most-used thing on
+   a list page there, because real work is repetitive: "overdue invoices",
+   "unpaid, this vendor", "low stock". Rebuilding the same filter every
+   morning is the tax a list page charges when it can't remember.
+
+   Stored per endpoint in localStorage — per browser, not per account. That
+   is a deliberate limit for now rather than an oversight: server-side views
+   need a table and a sharing model, and a personal shortcut that works
+   today beats a shared one that doesn't exist.
+   ══════════════════════════════════════════════════════════ */
+const VIEWS_KEY = (endpoint) => `maks_views_${endpoint}`;
+
+export function useSavedViews(q) {
+  const [views, setViews] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(VIEWS_KEY(q.endpoint)) || '[]'); }
+    catch { return []; }
+  });
+
+  const persist = (next) => {
+    setViews(next);
+    try { localStorage.setItem(VIEWS_KEY(q.endpoint), JSON.stringify(next)); } catch { /* private mode */ }
+  };
+
+  const save = (name) => {
+    const view = { name, search: q.search, filters: q.filters };
+    persist([...views.filter(v => v.name !== name), view]);
+  };
+  const apply = (v) => { q.setSearch(v.search || ''); q.setFilters(v.filters || {}); };
+  const remove = (name) => persist(views.filter(v => v.name !== name));
+
+  return { views, save, apply, remove };
 }
 
 /** The visible controls. */
@@ -231,5 +303,142 @@ export function EmptyState({ q, icon: Icon, noun = 'records', hint }) {
       <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No {noun} yet</div>
       {hint && <div style={{ fontSize: '0.85rem', marginTop: 4 }}>{hint}</div>}
     </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   SavedViews — the named-filter strip that sits above a list.
+   ══════════════════════════════════════════════════════════ */
+export function SavedViews({ q }) {
+  const { views, save, apply, remove } = useSavedViews(q);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+
+  const chip = (active) => ({
+    fontSize: '0.75rem', fontWeight: 600, padding: '4px 10px', borderRadius: 999,
+    cursor: 'pointer', whiteSpace: 'nowrap',
+    border: `1px solid ${active ? 'var(--brand-amber)' : 'var(--border-default)'}`,
+    background: active ? 'rgba(245,158,11,0.14)' : 'var(--bg-surface)',
+    color: active ? '#b45309' : 'var(--text-muted)',
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+  });
+
+  const matches = (v) =>
+    (v.search || '') === (q.search || '') &&
+    JSON.stringify(v.filters || {}) === JSON.stringify(q.filters || {});
+
+  if (!views.length && !q.isFiltered) return null;
+
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+      <span style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)' }}>
+        Views
+      </span>
+      {views.map(v => {
+        const active = matches(v);
+        return (
+          <span key={v.name} style={chip(active)}>
+            <button onClick={() => apply(v)}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit' }}>
+              {v.name}
+            </button>
+            <button onClick={() => remove(v.name)} title={`Delete "${v.name}"`} aria-label={`Delete view ${v.name}`}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', display: 'flex', opacity: 0.6 }}>
+              <X size={11} />
+            </button>
+          </span>
+        );
+      })}
+
+      {/* Only offered when something is actually filtered — saving the
+          unfiltered list as a "view" would just be a button that does
+          nothing. */}
+      {q.isFiltered && !naming && (
+        <button onClick={() => { setNaming(true); setName(''); }} style={{ ...chip(false), borderStyle: 'dashed' }}>
+          <BookmarkPlus size={12} /> Save this view
+        </button>
+      )}
+      {naming && (
+        <span style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+          <input
+            autoFocus value={name} onChange={e => setName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && name.trim()) { save(name.trim()); setNaming(false); }
+              if (e.key === 'Escape') setNaming(false);
+            }}
+            placeholder="Name this view…"
+            style={{ fontSize: '0.78rem', padding: '4px 9px', borderRadius: 7, border: '1px solid var(--border-default)', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none', width: 150 }}
+          />
+          <button className="btn-primary btn-sm" style={{ padding: '3px 10px', fontSize: '0.75rem' }}
+            disabled={!name.trim()} onClick={() => { save(name.trim()); setNaming(false); }}>Save</button>
+          <button className="btn-secondary" style={{ padding: '3px 8px', fontSize: '0.75rem' }}
+            onClick={() => setNaming(false)}>Cancel</button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   BulkBar — appears only when rows are selected.
+
+   Replaces the pattern of a delete icon on every single row: acting on
+   twelve records meant twelve confirmations. It states the count in the
+   confirm text, because "Delete 12 vendors?" is a different question from
+   "Delete this vendor?" and deserves to read like one.
+   ══════════════════════════════════════════════════════════ */
+export function BulkBar({ q, actions = [], noun = 'records' }) {
+  if (!q.selection.count) return null;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+      padding: '9px 14px', marginBottom: 10, borderRadius: 10,
+      background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
+    }}>
+      <strong style={{ fontSize: '0.84rem', color: '#b45309' }}>
+        {q.selection.count} {noun.replace(/s$/, '')}{q.selection.count === 1 ? '' : 's'} selected
+      </strong>
+      <span style={{ flex: 1 }} />
+      {actions.map(a => (
+        <button key={a.label} onClick={() => a.onClick(q.selection.ids)}
+          className={a.danger ? 'btn-secondary' : 'btn-secondary'}
+          style={{ fontSize: '0.78rem', padding: '4px 11px', color: a.danger ? '#dc2626' : undefined, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          {a.icon} {a.label}
+        </button>
+      ))}
+      <button onClick={q.selection.clear} className="btn-secondary" style={{ fontSize: '0.78rem', padding: '4px 11px' }}>
+        Clear
+      </button>
+    </div>
+  );
+}
+
+/** Header checkbox — selects only what is on screen. */
+export function SelectAllCell({ q }) {
+  return (
+    <th style={{ padding: '11px 0 11px 14px', width: 34 }}>
+      <input
+        type="checkbox"
+        checked={q.selection.allOnPageSelected}
+        onChange={q.selection.toggleAllOnPage}
+        aria-label="Select all rows on this page"
+        style={{ cursor: 'pointer', width: 15, height: 15 }}
+      />
+    </th>
+  );
+}
+
+/** Row checkbox. stopPropagation so ticking a box never opens the record. */
+export function SelectCell({ q, id }) {
+  return (
+    <td style={{ padding: '12px 0 12px 14px', width: 34 }} onClick={e => e.stopPropagation()}>
+      <input
+        type="checkbox"
+        checked={q.selection.has(id)}
+        onChange={() => q.selection.toggle(id)}
+        aria-label="Select row"
+        style={{ cursor: 'pointer', width: 15, height: 15 }}
+      />
+    </td>
   );
 }

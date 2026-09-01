@@ -16,7 +16,7 @@ import { useToast } from '../context/ToastContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 3 }));
 
-export default function VendorSupplies() {
+export default function VendorSupplies({ embedded = false }) {
   const toast = useToast();
   const [mode, setMode] = useState('material');   // 'material' | 'vendor'
   const [materials, setMaterials] = useState([]);
@@ -95,7 +95,9 @@ export default function VendorSupplies() {
 
   return (
     <div style={{ maxWidth: 1150 }}>
-      <div style={{ marginBottom: 18 }}>
+      {/* Hidden when embedded as a tab of Vendors — the tab already says
+          where you are, and a second title would just repeat it. */}
+      {!embedded && <div style={{ marginBottom: 18 }}>
         <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>
           <Link2 size={22} style={{ color: 'var(--brand-amber)' }} /> Vendor Supplies
         </h1>
@@ -104,7 +106,7 @@ export default function VendorSupplies() {
           Purchase orders then show only the vendors who actually sell the item, and shortfalls round up
           to the right supplier's minimum.
         </p>
-      </div>
+      </div>}
 
       {/* Direction toggle — same data, whichever end you start from */}
       <div style={{ display: 'inline-flex', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 9, padding: 3, marginBottom: 14 }}>

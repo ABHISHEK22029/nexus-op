@@ -704,3 +704,159 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 [data-theme="light"] .leaflet-popup-content-wrapper { background: hsl(0, 0%, 100%) !important; color: hsl(220, 35%, 15%) !important; border: 1px solid hsl(30, 18%, 82%) !important; }
 [data-theme="light"] .leaflet-popup-tip { background: hsl(0, 0%, 100%) !important; }
 [data-theme="light"] .leaflet-control-zoom a { background: hsl(0, 0%, 100%) !important; color: hsl(220, 35%, 15%) !important; border-color: hsl(30, 18%, 82%) !important; }
+
+/* ════════════════════════════════════════════════════════════
+   APP NAV — module rail + contextual panel
+   Replaces the 256px sidebar that held 35 links. The rail answers
+   "which part of the business"; the panel answers "what can I do here".
+   ════════════════════════════════════════════════════════════ */
+
+/* ── Rail ── */
+.nav-rail {
+  width: 76px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0 10px;
+  gap: 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+[data-theme="light"] .nav-rail {
+  background: hsl(222, 40%, 16%);
+  border-right: none;
+}
+
+.nav-rail-logo {
+  width: 34px; height: 34px; border-radius: 9px; border: none;
+  background: linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%));
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; margin-bottom: 8px;
+  box-shadow: 0 2px 10px hsl(28,100%,54%,0.35);
+}
+
+.nav-rail-items {
+  display: flex; flex-direction: column; gap: 3px; width: 100%;
+  align-items: center; flex: 1;
+}
+
+.nav-rail-item {
+  width: 62px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 9px 2px 7px;
+  border: none; border-radius: 10px; cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 140ms ease, color 140ms ease;
+}
+[data-theme="light"] .nav-rail-item { color: hsl(220, 15%, 72%); }
+
+.nav-rail-item span {
+  font-size: 0.62rem; font-weight: 600; letter-spacing: 0.01em;
+  line-height: 1.1; text-align: center;
+}
+.nav-rail-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+[data-theme="light"] .nav-rail-item:hover { background: hsl(222, 38%, 22%); color: #fff; }
+
+.nav-rail-item.is-active {
+  background: hsl(28,100%,54%,0.14);
+  color: var(--brand-amber);
+}
+[data-theme="light"] .nav-rail-item.is-active {
+  background: hsl(28,100%,54%,0.18); color: hsl(35, 95%, 62%);
+}
+
+.nav-rail-theme {
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  border: 1px solid var(--border-default); background: transparent;
+  color: var(--text-muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+[data-theme="light"] .nav-rail-theme {
+  border-color: hsl(222, 30%, 30%); color: hsl(220, 15%, 72%);
+}
+
+/* ── Contextual panel ── */
+.nav-panel {
+  width: 212px; flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; overflow-y: auto;
+}
+[data-theme="light"] .nav-panel {
+  background: #fff;
+  box-shadow: 1px 0 12px hsl(30,30%,60%,0.08);
+}
+
+.nav-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 14px 10px;
+  font-size: 0.92rem; font-weight: 800; color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.nav-panel-head button {
+  background: none; border: none; cursor: pointer; padding: 3px;
+  color: var(--text-muted); border-radius: 6px; display: flex;
+}
+.nav-panel-head button:hover { background: var(--bg-elevated); color: var(--text-primary); }
+
+.nav-panel-items { display: flex; flex-direction: column; padding: 0 8px 14px; gap: 1px; }
+
+.nav-panel-item {
+  display: block; padding: 8px 10px; border-radius: 8px;
+  text-decoration: none; color: var(--text-secondary);
+  transition: background 130ms ease, color 130ms ease;
+}
+.nav-panel-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.nav-panel-item.is-active {
+  background: hsl(28,100%,54%,0.12);
+  color: var(--brand-amber);
+}
+.nav-panel-label { display: block; font-size: 0.845rem; font-weight: 600; }
+/* Says what a consolidated screen absorbed, so someone hunting for a menu
+   entry that no longer exists can see where it went. */
+.nav-panel-hint {
+  display: block; font-size: 0.68rem; color: var(--text-muted);
+  margin-top: 1px; font-weight: 400; line-height: 1.25;
+}
+.nav-panel-item.is-active .nav-panel-hint { color: hsl(28,60%,52%); }
+
+.nav-panel-reopen {
+  position: fixed; left: 82px; top: 74px; z-index: 60;
+  width: 22px; height: 40px; border-radius: 0 8px 8px 0;
+  border: 1px solid var(--border-default); border-left: none;
+  background: var(--bg-surface); color: var(--text-muted);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.nav-panel-reopen:hover { color: var(--brand-amber); }
+
+/* ── Page tabs (consolidated screens) ── */
+.page-tabs {
+  display: flex; gap: 2px; border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 18px; overflow-x: auto;
+}
+.page-tab {
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  padding: 9px 14px; font-size: 0.86rem; font-weight: 600;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); border-bottom: 2px solid transparent;
+}
+.page-tab:hover { color: var(--text-primary); }
+.page-tab.is-active { color: var(--text-primary); border-bottom-color: var(--brand-amber); }
+.page-tab-count {
+  font-size: 0.7rem; font-weight: 700; padding: 1px 7px; border-radius: 99px;
+  background: var(--bg-elevated); color: var(--text-muted);
+}
+.page-tab.is-active .page-tab-count {
+  background: hsl(28,100%,54%,0.15); color: var(--brand-amber);
+}
+
+@media (max-width: 900px) {
+  .nav-panel { position: fixed; left: 76px; top: 0; bottom: 0; z-index: 55; box-shadow: 8px 0 28px rgba(0,0,0,.28); }
+  .nav-rail-item span { display: none; }
+  .nav-rail { width: 58px; }
+  .nav-rail-item { width: 46px; }
+}

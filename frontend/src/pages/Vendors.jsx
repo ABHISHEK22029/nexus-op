@@ -1,269 +1,231 @@
-import React, { useState, useEffect } from 'react';
+/* ══════════════════════════════════════════════════════════
+   Vendors — the directory and what each vendor supplies, in one place.
+
+   These were two sidebar entries, "Vendors" and "Vendor Supplies". They are
+   one subject: who we buy from, and what they sell us. Split across two
+   destinations, "who supplies plate?" was answered on a different screen
+   from "who are our vendors?", and neither showed the other.
+
+   Now one screen, two tabs, tab held in the URL so it can be linked and
+   bookmarked.
+
+   The list itself also moved to server-side search: it previously fetched
+   every vendor for the active project and filtered in the browser, and
+   returned nothing at all when no project was selected — a blank screen
+   that looked like "you have no vendors".
+   ══════════════════════════════════════════════════════════ */
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { Plus, Sparkles, UploadCloud, Search, FileUp, Star, ExternalLink, Trash2 } from 'lucide-react';
-import { useProject } from '../context/ProjectContext';
+import { Plus, FileUp, Trash2, Users, Link2, Building2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import {
+  useListQuery, ListToolbar, Pagination, EmptyState,
+  SavedViews, BulkBar, SelectAllCell, SelectCell,
+} from '../components/ListToolbar';
+import PageTabs, { useActiveTab } from '../components/PageTabs';
+import { getToken } from '../lib/apiAuth';
+import VendorSupplies from './VendorSupplies';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-const Vendors = () => {
-  const navigate = useNavigate();
-  const toast = useToast();
-  const { activeProject } = useProject();
-  const [vendors, setVendors] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ name: '', type: '' });
-  const [aiLoading, setAiLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [bulkLoading, setBulkLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+const TABS = [
+  { key: 'directory', label: 'Directory', icon: <Users size={14} /> },
+  { key: 'supplies', label: 'What they supply', icon: <Link2 size={14} /> },
+];
 
-  const fetchVendors = () => {
-    if (!activeProject) return;
-    axios.get(`${API}/vendors?projectId=${activeProject.id}`)
-      .then(res => setVendors(res.data))
-      .catch(err => console.error("Failed to fetch vendors", err))
-      .finally(() => setLoaded(true));
-  };
-
-  const handleDelete = (e, vendor) => {
-    e.stopPropagation();
-    if (!window.confirm(`Delete vendor "${vendor.name}"? This cannot be undone.`)) return;
-    axios.delete(`${API}/vendors/${vendor.id}`)
-      .then(() => {
-        toast.success('Vendor deleted');
-        fetchVendors();
-      })
-      .catch(err => toast.error(err.response?.data?.error || err.message || 'Something went wrong'));
-  };
-
-  useEffect(() => {
-    fetchVendors();
-  }, [activeProject]);
-
-  const handleFakePdfUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    setAiLoading(true);
-    // Simulate AI extraction delay
-    setTimeout(() => {
-       setFormData({ ...formData, name: 'ABC Infra Pvt Ltd', type: 'Construction' });
-       setAiLoading(false);
-       e.target.value = null; // reset
-    }, 2000);
-  };
-
-  const addVendor = (e) => {
-    e.preventDefault();
-    axios.post(`${API}/vendors`, formData)
-      .then(() => {
-        setFormData({ name: '', type: '' });
-        setShowForm(false);
-        toast.success('Vendor added');
-        fetchVendors();
-      })
-      .catch(err => toast.error(err.response?.data?.error || err.message || 'Something went wrong'));
-  };
-
-  const handleBulkUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setBulkLoading(true);
-    setTimeout(() => {
-      axios.post(`${API}/vendors/bulk`)
-        .then(() => fetchVendors())
-        .finally(() => setBulkLoading(false));
-      e.target.value = null;
-    }, 1500);
-  };
-
-  const filteredVendors = vendors.filter(v => v.name.toLowerCase().includes(searchTerm.toLowerCase()));
+export default function Vendors() {
+  const [tab, setTab] = useActiveTab(TABS, 'directory');
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto">
-      <div className="flex justify-between items-start mb-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-white/90 tracking-tight">Vendors</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage your supplier network and performance ratings.</p>
-        </div>
-        <div className="flex flex-col items-end gap-3">
-            <div className="flex gap-3">
-                <div className="relative group overflow-hidden bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors">
-                    <input type="file" accept=".xls,.xlsx,.csv" onChange={handleBulkUpload} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
-                    <button className="px-4 py-2 text-sm font-medium flex items-center gap-2 text-gray-300 pointer-events-none">
-                        {bulkLoading ? <Sparkles size={16} className="animate-spin-slow text-indigo-400" /> : <FileUp size={16} />}
-                        Bulk Excel Import
-                    </button>
-                    {bulkLoading && <div className="absolute bottom-0 left-0 h-1 bg-indigo-500 animate-pulse w-full"></div>}
-                </div>
-                <button
-                  onClick={() => navigate('/vendors/new')}
-                  className="btn-primary btn-sm"
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Plus size={16} /> Add Vendor
-                </button>
-            </div>
-            <div className="relative w-full max-w-xs">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input 
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search vendors..."
-                    className="w-full bg-[#111113] border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50"
-                />
-            </div>
-        </div>
-      </div>
+    <div style={{ maxWidth: 1150, margin: '0 auto' }}>
+      <header style={{ marginBottom: 16 }}>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+          <Building2 size={24} style={{ color: 'var(--brand-amber)' }} /> Vendors
+        </h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
+          Who you buy from, and what each one sells you — with the price, minimum order and lead time
+          that a purchase order needs.
+        </p>
+      </header>
 
-      {showForm && (
-        <form onSubmit={addVendor} className="bg-[#111113] border border-white/5 p-6 rounded-xl mb-8 animate-in slide-in-from-top-4 fade-in duration-300">
-          <h2 className="text-lg font-medium mb-4">New Vendor</h2>
+      <PageTabs tabs={TABS} active={tab} onChange={setTab} />
 
-          <div className="mb-6 relative overflow-hidden rounded-lg border border-dashed border-indigo-500/30 bg-indigo-500/5 p-6 text-center group hover:bg-indigo-500/10 transition-colors">
-              {aiLoading ? (
-                  <div className="flex flex-col items-center justify-center animate-pulse">
-                      <Sparkles size={24} className="text-indigo-400 mb-2 animate-spin-slow" />
-                      <p className="text-sm font-medium text-indigo-300">Extracting entity data with AI...</p>
-                  </div>
-              ) : (
-                  <>
-                      <input type="file" accept=".pdf" onChange={handleFakePdfUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                      <UploadCloud size={24} className="text-indigo-400 mx-auto mb-2 group-hover:-translate-y-1 transition-transform" />
-                      <p className="text-sm font-medium text-indigo-300 mb-1">Smart PDF Import</p>
-                      <p className="text-xs text-indigo-400/60">Drop vendor onboarding document to auto-fill</p>
-                  </>
-              )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Company Name</label>
-              <input 
-                required
-                type="text" 
-                value={formData.name}
-                onChange={e => setFormData({...formData, name: e.target.value})}
-                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                placeholder="Acme Corp"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Sector / Type</label>
-              <select 
-                required
-                value={formData.type}
-                onChange={e => setFormData({...formData, type: e.target.value})}
-                className="w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors appearance-none"
-              >
-                <option value="" disabled>Select a type...</option>
-                <option value="Material Supply">Material Supply</option>
-                <option value="Logistics">Logistics</option>
-                <option value="Software">Software</option>
-                <option value="Construction">Construction</option>
-                <option value="Maintenance">Maintenance</option>
-              </select>
-            </div>
-          </div>
-          <div className="mt-6 flex justify-end gap-3">
-            <button 
-              type="button" 
-              onClick={() => setShowForm(false)}
-              className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn-primary btn-sm"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              Save Vendor
-            </button>
-          </div>
-        </form>
-      )}
-
-      <div className="bg-[#111113] border border-white/5 rounded-xl overflow-hidden">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="border-b border-white/5 bg-white/[0.02]">
-              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor Name</th>
-              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Sector / Type</th>
-              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Supplies</th>
-              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
-              <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {filteredVendors.length > 0 ? filteredVendors.map((vendor) => (
-              <tr key={vendor.id}
-                className="table-row-animate group cursor-pointer"
-                onClick={() => navigate(`/vendors/${vendor.id}/edit`)}
-              >
-                <td className="px-6 py-4 text-sm text-gray-500">#{vendor.id}</td>
-                <td className="px-6 py-4 text-sm font-medium text-white group-hover:text-blue-400 transition-colors">{vendor.name}</td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/5 text-gray-300 border border-white/10">
-                    {vendor.type}
-                  </span>
-                </td>
-                {/* What this vendor actually supplies — previously invisible,
-                    so raising a PO meant remembering who sells what. */}
-                <td className="px-6 py-4">
-                  {vendor.capability_tags ? (
-                    <div className="flex flex-wrap gap-1">
-                      {String(vendor.capability_tags).split(',').map(t => t.trim()).filter(Boolean).slice(0, 3).map(tag => (
-                        <span key={tag} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          {tag}
-                        </span>
-                      ))}
-                      {String(vendor.capability_tags).split(',').filter(t => t.trim()).length > 3 && (
-                        <span className="text-[11px] text-gray-500 self-center">
-                          +{String(vendor.capability_tags).split(',').filter(t => t.trim()).length - 3}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-gray-600 italic">Not specified</span>
-                  )}
-                </td>
-                <td className="px-6 py-4">
-                  {vendor.contactName || vendor.contactPhone ? (
-                    <div className="text-sm text-gray-300">
-                      {vendor.contactName && <div>{vendor.contactName}</div>}
-                      {vendor.contactPhone && <div className="text-xs text-gray-500">{vendor.contactPhone}</div>}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-gray-600 italic">—</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <button
-                    onClick={(e) => handleDelete(e, vendor)}
-                    title="Delete vendor"
-                    className="text-gray-500 hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-              </tr>
-            )) : (
-              <tr>
-                <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
-                  {loaded ? (vendors.length === 0 ? 'No vendors yet.' : 'No vendors found.') : 'Loading…'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {tab === 'directory' ? <Directory /> : <VendorSupplies embedded />}
     </div>
   );
-};
+}
 
-export default Vendors;
+/* ── Tab 1: the directory ─────────────────────────────────── */
+function Directory() {
+  const navigate = useNavigate();
+  const toast = useToast();
+  const { can } = usePermissions();
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const q = useListQuery('vendors', { pageSize: 25 });
+
+  const del = async (e, vendor) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete vendor "${vendor.name}"? This cannot be undone.`)) return;
+    const token = getToken();
+    const res = await fetch(`${API}/vendors/${vendor.id}`, {
+      method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      return toast.error(b.detail || b.error || 'Could not delete');
+    }
+    toast.success('Vendor deleted');
+    q.reload();
+  };
+
+  const bulkUpload = async (e) => {
+    if (!e.target.files[0]) return;
+    setBulkLoading(true);
+    try {
+      const token = getToken();
+      await fetch(`${API}/vendors/bulk`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      toast.success('Import queued');
+      q.reload();
+    } catch (err) { toast.error(err.message || 'Import failed'); }
+    finally { setBulkLoading(false); e.target.value = null; }
+  };
+
+  const canWrite = can('vendors', 'write');
+  const canDelete = can('vendors', 'delete');
+
+  /* One confirmation for the whole selection, and it names the count —
+     "Delete 12 vendors?" is a different question from "Delete this vendor?"
+     and should read like one. Failures are reported per record rather than
+     as a single "something went wrong": with a foreign key on purchase
+     orders, some will refuse and some will not, and the user needs to know
+     which. */
+  const bulkDelete = async (ids) => {
+    if (!window.confirm(`Delete ${ids.length} vendor${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    const token = getToken();
+    const results = await Promise.all(ids.map(async id => {
+      const res = await fetch(`${API}/vendors/${id}`, {
+        method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      return { id, ok: res.ok };
+    }));
+    const failed = results.filter(r => !r.ok);
+    if (failed.length === 0) toast.success(`Deleted ${ids.length}`);
+    else if (failed.length === ids.length) toast.error('None could be deleted — they may be used on purchase orders');
+    else toast.error(`Deleted ${ids.length - failed.length}; ${failed.length} could not be (in use elsewhere)`);
+    q.selection.clear();
+    q.reload();
+  };
+
+  return (
+    <>
+      <SavedViews q={q} />
+      <ListToolbar
+        q={q}
+        placeholder="Search vendor, type, city, GSTIN or contact…"
+        filters={[{
+          key: 'type',
+          label: 'Type',
+          options: [
+            { value: 'Material Supply', label: 'Material' },
+            { value: 'Logistics', label: 'Logistics' },
+            { value: 'Construction', label: 'Construction' },
+            { value: 'Maintenance', label: 'Maintenance' },
+          ],
+        }]}
+        right={canWrite && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <label className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer', margin: 0 }}>
+              <FileUp size={14} /> {bulkLoading ? 'Importing…' : 'Import'}
+              <input type="file" accept=".xls,.xlsx,.csv" onChange={bulkUpload} style={{ display: 'none' }} />
+            </label>
+            <button onClick={() => navigate('/vendors/new')} className="btn-primary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+              <Plus size={14} /> Add vendor
+            </button>
+          </div>
+        )}
+      />
+
+      <BulkBar
+        q={q}
+        noun="vendors"
+        actions={canDelete ? [{
+          label: 'Delete',
+          danger: true,
+          icon: <Trash2 size={13} />,
+          onClick: bulkDelete,
+        }] : []}
+      />
+
+      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, overflow: 'hidden' }}>
+        {q.rows.length === 0 ? (
+          <EmptyState q={q} icon={Users} noun="vendors" hint="Add your first supplier to start raising purchase orders." />
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
+                {canDelete && <SelectAllCell q={q} />}
+                {['Vendor', 'Type', 'Supplies', 'Contact', ''].map(h => <th key={h} style={th}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {q.rows.map(v => (
+                  <tr key={v.id}
+                      style={{ borderTop: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+                      onClick={() => navigate(`/vendors/${v.id}/edit`)}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    {canDelete && <SelectCell q={q} id={v.id} />}
+                    <td style={td}>
+                      <div style={{ fontWeight: 600 }}>{v.name}</div>
+                      {(v.city || v.state) && (
+                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          {[v.city, v.state].filter(Boolean).join(', ')}
+                        </div>
+                      )}
+                    </td>
+                    <td style={td}>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 600, padding: '3px 9px', borderRadius: 99, background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+                        {v.type || '—'}
+                      </span>
+                    </td>
+                    <td style={td}>
+                      {v.capability_tags ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {String(v.capability_tags).split(',').map(t => t.trim()).filter(Boolean).slice(0, 3).map(tag => (
+                            <span key={tag} style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 7px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#b45309' }}>{tag}</span>
+                          ))}
+                        </div>
+                      ) : <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>—</span>}
+                    </td>
+                    <td style={{ ...td, fontSize: '0.82rem' }}>
+                      {v.contactName || v.contactPhone ? (
+                        <>
+                          {v.contactName && <div>{v.contactName}</div>}
+                          {v.contactPhone && <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{v.contactPhone}</div>}
+                        </>
+                      ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      {canDelete && (
+                        <button onClick={e => del(e, v)} title="Delete vendor"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <Pagination q={q} />
+    </>
+  );
+}
+
+const th = { padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' };
+const td = { padding: '12px 14px', fontSize: '0.86rem', color: 'var(--text-primary)', verticalAlign: 'top' };
