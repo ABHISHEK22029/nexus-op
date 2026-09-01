@@ -35,6 +35,7 @@ import ImportData from './pages/Import';
 import Automation from './pages/Automation';
 import CompanyProfile from './pages/CompanyProfile';
 import MaterialRequirements from './pages/MaterialRequirements';
+import VendorSupplies from './pages/VendorSupplies';
 import SmartKnowledge from './pages/SmartKnowledge';
 import KnowledgeArticle from './pages/KnowledgeArticle';
 import SalesQuotations from './pages/SalesQuotations';
@@ -439,6 +440,7 @@ const AppRoutes = () => {
       <Route path="/automation"        element={<AppLayout><Automation /></AppLayout>} />
       <Route path="/company-profile"   element={<AppLayout><CompanyProfile /></AppLayout>} />
       <Route path="/material-requirements" element={<AppLayout><MaterialRequirements /></AppLayout>} />
+      <Route path="/vendor-supplies"    element={<AppLayout><VendorSupplies /></AppLayout>} />
       <Route path="/bills/:id"         element={<ProtectedRoute><RABillInvoice /></ProtectedRoute>} />
       <Route path="/activity"          element={<AppLayout><ActivityLog /></AppLayout>} />
       <Route path="/flow"              element={<AppLayout><ProcessFlow /></AppLayout>} />

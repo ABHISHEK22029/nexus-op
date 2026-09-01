@@ -20,6 +20,7 @@ const salesQuotationController = require('./controllers/SalesQuotationController
 const deliveryChallanController = require('./controllers/DeliveryChallanController');
 const creditDebitNoteController = require('./controllers/CreditDebitNoteController');
 const materialReqController = require('./controllers/MaterialRequirementsController');
+const vendorItemController = require('./controllers/VendorItemController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -648,6 +649,13 @@ app.get('/inventory', async (req, res) => {
    nothing to join that to. This is the worklist for clearing that backlog. */
 /* ── Material requirements (the deficiency engine) ── */
 app.get('/material-requirements', materialReqController.list);
+
+/* ── Vendor <-> material: who supplies what ── */
+app.get('/vendor-items', vendorItemController.list);
+app.post('/vendor-items', vendorItemController.create);
+app.patch('/vendor-items/:id', vendorItemController.update);
+app.delete('/vendor-items/:id', vendorItemController.remove);
+app.get('/raw-materials/:id/vendors', vendorItemController.vendorsForMaterial);
 app.get('/customer-orders/:id/readiness', materialReqController.orderReadiness);
 
 app.get('/inventory/unmatched', async (req, res) => {

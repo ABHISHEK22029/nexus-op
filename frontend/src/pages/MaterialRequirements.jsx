@@ -155,8 +155,8 @@ export default function MaterialRequirements() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
               <thead>
                 <tr style={{ background: 'var(--bg-elevated)' }}>
-                  {['Material', 'Required', 'In Stock', 'Shortfall', 'On Order', 'Net', 'Status', 'To Order', ''].map((h, i) => (
-                    <th key={h + i} style={{ ...th, textAlign: i === 0 || i === 6 || i === 8 ? 'left' : 'right' }}>{h}</th>
+                  {['Material', 'Required', 'In Stock', 'Shortfall', 'On Order', 'Net', 'Status', 'To Order', 'Buy From', ''].map((h, i) => (
+                    <th key={h + i} style={{ ...th, textAlign: [0, 6, 8, 9].includes(i) ? 'left' : 'right' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -187,11 +187,30 @@ export default function MaterialRequirements() {
                           <>
                             <div style={{ fontWeight: 700 }}>{num(m.suggested_order_qty)} <U>{m.base_uom}</U></div>
                             {m.suggested_order_qty > m.shortfall && (
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>MOQ {num(m.moq)}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                MOQ {num(m.moq)}{m.moq_source === 'vendor' ? ' (vendor)' : ''}
+                              </div>
                             )}
                             {m.shortfall_value != null && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{rupee(m.shortfall_value)}</div>}
                           </>
                         ) : '—'}
+                      </td>
+                      {/* Who to actually buy this from — a shortfall with no
+                          supplier is a question, not an instruction. */}
+                      <td style={td}>
+                        {m.shortfall <= 0 ? <span style={{ color: 'var(--text-muted)' }}>—</span>
+                          : m.preferred_vendor ? (
+                            <>
+                              <div style={{ fontWeight: 600, fontSize: '0.82rem' }}>{m.preferred_vendor.name}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                {m.preferred_vendor.price != null && <>₹{num(m.preferred_vendor.price)} · </>}
+                                {m.lead_time_days != null ? `${m.lead_time_days}d lead` : 'lead unknown'}
+                              </div>
+                            </>
+                          ) : (
+                            <span title="Link a vendor to this material so purchase orders can be raised directly"
+                              style={{ fontSize: '0.75rem', color: '#b45309' }}>No supplier linked</span>
+                          )}
                       </td>
                       <td style={td}>
                         {m.shortfall > 0 && (

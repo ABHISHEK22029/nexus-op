@@ -104,6 +104,21 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
   const itemUoms = {};
   itemUomRows.forEach(r => { (itemUoms[r.raw_material_id] ||= []).push(r); });
 
+  /* ── 4b. Preferred supplier per material ──
+     MOQ belongs to the vendor, not the item: Jindal's minimum is not
+     Electrosteel's. Where a preferred vendor exists we round the shortfall
+     to THEIR minimum and quote THEIR price and lead time, falling back to
+     the item-level defaults when nothing is linked yet. */
+  const supplierRows = (await db.query(`
+    SELECT DISTINCT ON (vi.raw_material_id)
+           vi.raw_material_id, vi.vendor_id, vi.price, vi.moq, vi.lead_time_days, vi.is_preferred,
+           v.name AS vendor_name
+    FROM vendor_items vi
+    JOIN vendors v ON v.id = vi.vendor_id
+    ORDER BY vi.raw_material_id, vi.is_preferred DESC, vi.price NULLS LAST, vi.lead_time_days NULLS LAST
+  `)).rows;
+  const supplier = new Map(supplierRows.map(r => [r.raw_material_id, r]));
+
   // ── 5. Roll demand up per material, converting into the base unit ──
   const byMaterial = new Map();
   const lines = [];       // per order-line detail, for the readiness view
@@ -171,16 +186,28 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
   const materials = [...byMaterial.values()].map(m => {
     const shortfall = r4(Math.max(0, m.required - m.available));
     const net = r4(m.available + m.on_order - m.required);
-    // MOQ rounding: you need 16 but the vendor's minimum is 20.
-    const suggested = shortfall > 0 && m.moq > 0
-      ? r4(Math.ceil(shortfall / m.moq) * m.moq)
+
+    // The supplier's minimum wins over the item default — that's the number
+    // you can actually place an order against.
+    const sup = supplier.get(m.raw_material_id) || null;
+    const effectiveMoq = sup?.moq != null ? Number(sup.moq) : m.moq;
+    const rate = sup?.price != null ? Number(sup.price) : m.standard_rate;
+
+    const suggested = shortfall > 0 && effectiveMoq > 0
+      ? r4(Math.ceil(shortfall / effectiveMoq) * effectiveMoq)
       : shortfall;
+
     return {
       ...m,
       shortfall,
       net,
+      moq: effectiveMoq,
+      moq_source: sup?.moq != null ? 'vendor' : (m.moq != null ? 'item' : null),
+      lead_time_days: sup?.lead_time_days ?? m.lead_time_days,
       suggested_order_qty: suggested,
-      shortfall_value: m.standard_rate != null ? r4(shortfall * m.standard_rate) : null,
+      // Who to actually buy this from, so a shortfall is one click from a PO.
+      preferred_vendor: sup ? { id: sup.vendor_id, name: sup.vendor_name, price: sup.price != null ? Number(sup.price) : null } : null,
+      shortfall_value: rate != null ? r4(shortfall * rate) : null,
       status: shortfall > 0
         ? (m.on_order >= shortfall ? 'Ordered' : 'Short')
         : (net > 0 ? 'Surplus' : 'Covered'),

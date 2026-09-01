@@ -34,6 +34,7 @@ const Sidebar = () => {
 
     // ── Procurement (flow order: Vendors → Quotations → Vendor PO → GRN → Inventory) ──
     { name: 'Vendors', path: '/vendors', icon: <Users size={18} />, group: 'Procurement' },
+    { name: 'Vendor Supplies', path: '/vendor-supplies', icon: <Link2 size={18} />, group: 'Procurement' },
     { name: 'Quotations', path: '/quotations', icon: <Files size={18} />, group: 'Procurement' },
     { name: 'Purchase Orders', path: '/po', icon: <ShoppingCart size={18} />, group: 'Procurement' },
     { name: 'GRN', path: '/grn', icon: <Truck size={18} />, group: 'Procurement' },
