@@ -10,36 +10,32 @@ Two sections: **functional** (what the product can't do) and **security**
 
 # PART 1 — FUNCTIONAL GAPS
 
-## 1.1 The inventory loop is only half closed 🔴
-
-This is the biggest functional hole, and it matters most for exactly the
-thing you want to test.
+## 1.1 The inventory loop — NOW CLOSED ✅
 
 | Movement | Works? |
 |---|---|
 | Goods received (GRN) → stock **increases** | ✅ |
 | Production consumes raw material → stock **decreases** | ✅ |
-| Production **output** → finished goods enter stock | ❌ **missing** |
-| Dispatch / invoice → finished goods **leave** stock | ❌ **missing** |
+| Production **output** → finished goods enter stock | ✅ **fixed** |
+| Dispatch → finished goods **leave** stock | ✅ **fixed** |
 
-The only code path that inserts into `inventory` is goods receipt
-(`routes/grn.js:135`). Production output is written to `production_output`
-and never reaches stock. Delivery challans and sales invoices touch
-inventory not at all.
+Stock now also has a **ledger** (`stock_movements`): every movement carries
+its cause and its document, so "why is stock 40 when it should be 60" is
+answerable. `/inventory/reconcile` compares the ledger against the stored
+balance, so a drift is visible rather than silent.
 
-**What this means in practice:** you make 200 cross-arms — they exist in
-`production_output` but the system says you have zero. You dispatch them —
-stock still says zero. Raw material is tracked correctly; **finished goods
-are not tracked at all.**
+Stock leaves on **dispatch**, not on invoice — dispatch is the physical
+event, an invoice is a financial one, and a business may raise either
+without the other. Dispatching twice does not deduct twice; reversing a
+dispatch writes a compensating entry rather than deleting history.
 
-For the IKEA-scale test this will look like the deficiency engine
-mis-answering "what can we build" for anything with a sub-assembly, and
-"what finished stock do we have" being permanently empty.
+Verified end to end on live data (`scripts/test-stock-loop.sh`, 10/10):
+make 50 → 50 on hand · dispatch 20 → 30 · dispatch again → still 30 ·
+reverse → 50 · delete the output → 0 · ledger reconciles at every step.
 
-**Also missing:** a stock ledger. `inventory.quantity` is a running number
-with no movement history, so "why is stock 40 when it should be 60" has no
-answer. Every serious inventory system stores movements and derives the
-balance; this stores the balance and derives nothing.
+**Still missing here:** batch/heat-number tracking, multi-level BOM, and
+stock valuation methods (FIFO/weighted average — `unit_cost` is a single
+field, not a costing method).
 
 ## 1.2 Procurement flow has a dead end
 
