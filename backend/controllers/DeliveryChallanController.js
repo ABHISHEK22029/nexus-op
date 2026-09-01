@@ -27,6 +27,14 @@ exports.list = async (req, res) => {
       allowedSort: ["id","challan_number","challan_date","status"],
       defaultSort: 'id', defaultDir: 'DESC',
       where, params,
+      /* `eway_missing` is the one worth surfacing: consignments over the
+         Rule 138 threshold of ₹50,000 that have no e-way bill recorded.
+         Those are the trucks that get stopped. */
+      summary: `COUNT(*)::int AS count,
+                COALESCE(SUM(total_value),0)::numeric AS value,
+                COUNT(*) FILTER (WHERE status = 'Dispatched')::int AS in_transit,
+                COUNT(*) FILTER (WHERE total_value > 50000
+                                   AND (eway_bill_no IS NULL OR eway_bill_no = ''))::int AS eway_missing`,
     });
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }

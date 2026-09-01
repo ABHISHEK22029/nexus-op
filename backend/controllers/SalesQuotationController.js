@@ -66,6 +66,15 @@ exports.list = async (req, res) => {
       allowedSort: ["id","quote_number","quote_date","valid_until","net_amount","status"],
       defaultSort: 'id', defaultDir: 'DESC',
       where, params,
+      /* Aggregated over the filter, not the page — see runList. "Open value"
+         is the number a sales desk actually watches: what is quoted and
+         still winnable, excluding what has already converted or died. */
+      summary: `COUNT(*)::int AS count,
+                COALESCE(SUM(net_amount),0)::numeric AS quoted,
+                COALESCE(SUM(net_amount) FILTER (WHERE status IN ('Draft','Sent')),0)::numeric AS open_value,
+                COUNT(*) FILTER (WHERE status = 'Converted')::int AS won,
+                COUNT(*) FILTER (WHERE valid_until IS NOT NULL AND valid_until < CURRENT_DATE
+                                   AND status NOT IN ('Converted','Rejected'))::int AS expired`,
     });
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }

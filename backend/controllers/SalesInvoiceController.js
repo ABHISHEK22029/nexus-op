@@ -182,6 +182,13 @@ exports.list = async (req, res) => {
       allowedSort: ["id","invoice_number","invoice_date","due_date","net_amount","status"],
       defaultSort: 'id', defaultDir: 'DESC',
       where, params,
+      /* Totals over the whole filtered set, not the page. The page header
+         sums these; summing the returned rows would make "Total Billed"
+         silently mean "billed on page 1" once pagination kicks in. */
+      summary: `COUNT(*)::int AS count,
+                COALESCE(SUM(net_amount),0)::numeric AS billed,
+                COALESCE(SUM(COALESCE(amount_paid,0)),0)::numeric AS received,
+                COALESCE(SUM(GREATEST(net_amount - COALESCE(amount_paid,0), 0)),0)::numeric AS outstanding`,
     });
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }

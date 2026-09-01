@@ -56,6 +56,15 @@ exports.list = async (req, res) => {
       allowedSort: ["id","note_number","note_date","net_amount"],
       defaultSort: 'id', defaultDir: 'DESC',
       where, params,
+      /* Credit and debit are opposite signs and must never be summed
+         together into one "total" — that figure would mean nothing.
+         `unreferenced` counts notes missing the original invoice number or
+         date, which Section 34 requires and which block GSTR-1 reporting. */
+      summary: `COUNT(*)::int AS count,
+                COALESCE(SUM(total) FILTER (WHERE note_type = 'credit'),0)::numeric AS credit_total,
+                COALESCE(SUM(total) FILTER (WHERE note_type = 'debit'),0)::numeric AS debit_total,
+                COUNT(*) FILTER (WHERE ref_number IS NULL OR ref_number = ''
+                                    OR ref_date IS NULL)::int AS unreferenced`,
     });
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -85,6 +85,7 @@ function buildListQuery({
     wantsPage,
     limit,
     offset,
+    whereSql,
     sql: `SELECT ${select} FROM ${table}${whereSql}${orderSql} LIMIT ${limit} OFFSET ${offset}`,
     countSql: `SELECT COUNT(*)::int AS total FROM ${table}${whereSql}`,
     values,
@@ -94,14 +95,44 @@ function buildListQuery({
 /**
  * Run the query and shape the response.
  * Returns a plain array when the caller didn't ask for pagination (so every
- * existing page keeps working), or { items, total, limit, offset } when it did.
+ * existing page keeps working), or { items, total, limit, offset, summary }
+ * when it did.
+ *
+ * `opts.summary` is a SQL aggregate list — e.g.
+ *     "SUM(net_amount) AS billed, SUM(amount_paid) AS received"
+ * evaluated over the WHOLE filtered set rather than the returned page.
+ *
+ * That distinction is the point. Every list page here shows totals above the
+ * table, and each computed them by summing the rows it had. Before
+ * pagination that was every row, so it was right. After pagination it is
+ * one page, so "Total Billed" would quietly mean "total billed on page 1"
+ * — a figure that looks authoritative, changes when you click Next, and is
+ * wrong in the direction that flatters. Cheaper to aggregate in Postgres
+ * than to explain the discrepancy later.
+ *
+ * Callers pass this string themselves; it is never built from user input.
  */
 async function runList(db, opts) {
   const built = buildListQuery(opts);
   const { rows } = await db.query(built.sql, built.values);
   if (!built.wantsPage) return rows;
+
   const { rows: c } = await db.query(built.countSql, built.values);
-  return { items: rows, total: c[0]?.total ?? rows.length, limit: built.limit, offset: built.offset };
+  const out = {
+    items: rows,
+    total: c[0]?.total ?? rows.length,
+    limit: built.limit,
+    offset: built.offset,
+  };
+
+  if (opts.summary) {
+    const { rows: s } = await db.query(
+      `SELECT ${opts.summary} FROM ${opts.table}${built.whereSql}`,
+      built.values
+    );
+    out.summary = s[0] || {};
+  }
+  return out;
 }
 
 module.exports = { buildListQuery, runList, MAX_LIMIT, HARD_CAP };
