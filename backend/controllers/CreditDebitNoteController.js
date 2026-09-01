@@ -5,6 +5,7 @@
    source invoice / bill. Documents (statements/exports net them).
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { runList } = require('../shared/listQuery');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => req.user?.role === 'Admin';
 
@@ -41,15 +42,20 @@ async function deriveInterstate(partyType, partyId) {
 exports.list = async (req, res) => {
   try {
     const admin = isAdmin(req);
-    const { rows } = await db.query(
-      `SELECT n.*,
-              CASE WHEN n.party_type = 'vendor' THEN v.name ELSE c.name END AS party_name
-         FROM credit_debit_notes n
-         LEFT JOIN customers c ON c.id = n.party_id AND n.party_type = 'customer'
-         LEFT JOIN vendors   v ON v.id = n.party_id AND n.party_type = 'vendor'
-        ${admin ? '' : 'WHERE n.owner_id = $1'} ORDER BY n.id DESC`,
-      admin ? [] : [req.user.id]);
-    res.json(rows);
+    const where = [], params = [];
+    if (!admin) { params.push(req.user.id); where.push(`owner_id = ${params.length}`); }
+    // Joined in a subquery so the customer/party name is searchable too —
+    // people look for "Apollo", not for an invoice number they don't have.
+    const result = await runList(db, {
+      table: `(SELECT n.*, CASE WHEN n.party_type = 'vendor' THEN v.name ELSE c.name END AS party_name FROM credit_debit_notes n LEFT JOIN customers c ON c.id = n.party_id AND n.party_type = 'customer' LEFT JOIN vendors v ON v.id = n.party_id AND n.party_type = 'vendor') AS n`,
+      query: req.query,
+      searchColumns: ["note_number","party_name","reason","ref_number"],
+      filterColumns: ["note_type","party_type","status"],
+      allowedSort: ["id","note_number","note_date","net_amount"],
+      defaultSort: 'id', defaultDir: 'DESC',
+      where, params,
+    });
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

@@ -4,6 +4,7 @@
    the goods value for the e-way bill. Owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => req.user?.role === 'Admin';
@@ -12,12 +13,20 @@ const isAdmin = (req) => req.user?.role === 'Admin';
 exports.list = async (req, res) => {
   try {
     const admin = isAdmin(req);
-    const { rows } = await db.query(
-      `SELECT dc.*, c.name AS customer_name FROM delivery_challans dc
-         LEFT JOIN customers c ON c.id = dc.customer_id
-        ${admin ? '' : 'WHERE dc.owner_id = $1'} ORDER BY dc.id DESC`,
-      admin ? [] : [req.user.id]);
-    res.json(rows);
+    const where = [], params = [];
+    if (!admin) { params.push(req.user.id); where.push(`owner_id = ${params.length}`); }
+    // Joined in a subquery so the customer/party name is searchable too —
+    // people look for "Apollo", not for an invoice number they don't have.
+    const result = await runList(db, {
+      table: `(SELECT dc.*, c.name AS customer_name FROM delivery_challans dc LEFT JOIN customers c ON c.id = dc.customer_id) AS dc`,
+      query: req.query,
+      searchColumns: ["challan_number","customer_name","status","vehicle_no","dispatch_through"],
+      filterColumns: ["status","customer_id"],
+      allowedSort: ["id","challan_number","challan_date","status"],
+      defaultSort: 'id', defaultDir: 'DESC',
+      where, params,
+    });
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

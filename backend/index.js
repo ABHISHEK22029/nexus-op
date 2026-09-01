@@ -858,14 +858,22 @@ function registerOwnedCrud(route, table, cols, searchCols) {
       if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
       const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
       const vals = sets.map(c => req.body[c]);
-      const { rowCount } = await db.query(`UPDATE ${table} SET ${clause} WHERE id = $${sets.length + 1}`, [...vals, req.params.id]);
+      // Owner-scoped: editing by id alone let any logged-in user modify
+      // another tenant's customers, SKUs, materials and expenses.
+      const own = ownerClause(req, sets.length + 2);
+      const { rowCount } = await db.query(
+        `UPDATE ${table} SET ${clause} WHERE id = $${sets.length + 1}${own.sql}`,
+        [...vals, req.params.id, ...own.params]);
       if (!rowCount) return res.status(404).json({ error: 'not found' });
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
   app.delete(`/${route}/:id`, async (req, res) => {
     try {
-      const { rowCount } = await db.query(`DELETE FROM ${table} WHERE id = $1`, [req.params.id]);
+      const own = ownerClause(req, 2);
+      const { rowCount } = await db.query(
+        `DELETE FROM ${table} WHERE id = $1${own.sql}`,
+        [req.params.id, ...own.params]);
       if (!rowCount) return res.status(404).json({ error: 'not found' });
       res.json({ success: true });
     } catch (e) {
@@ -982,6 +990,18 @@ app.delete('/bills/:id', async (req, res) => {
 /* ══════════════════════════════════════════════════════════
    GENERIC UPDATE / DELETE  (Phase 3c — completes CRUD)
    ══════════════════════════════════════════════════════════ */
+/* Ownership guard for by-id routes.
+   Every by-id UPDATE/DELETE previously ran `WHERE id = $1` with no ownership
+   check, so any logged-in user could edit or delete another tenant's records
+   by changing a number in the URL. This appends the owner condition to the
+   WHERE clause; admins bypass it.
+   Returns 404 rather than 403 on a mismatch — telling someone a record
+   exists but belongs to somebody else is itself a leak. */
+function ownerClause(req, startIndex) {
+  if (req.user?.role === 'Admin') return { sql: '', params: [] };
+  return { sql: ` AND owner_id = $${startIndex}`, params: [req.user.id] };
+}
+
 function registerCrud(route, table, cols, logType) {
   // UPDATE (partial) — only whitelisted columns
   app.patch(`/${route}/:id`, async (req, res) => {
@@ -992,8 +1012,10 @@ function registerCrud(route, table, cols, logType) {
     }
     if (!sets.length) return res.status(400).json({ error: 'No updatable fields provided' });
     vals.push(req.params.id);
+    const own = ownerClause(req, i + 1);
+    vals.push(...own.params);
     try {
-      const r = await db.query(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`, vals);
+      const r = await db.query(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = $${i}${own.sql} RETURNING *`, vals);
       if (!r.rowCount) return res.status(404).json({ error: 'Record not found' });
       if (logType) await logActivity(r.rows[0].projectId || null, logType, `${route} #${req.params.id} updated`);
       res.json(r.rows[0]);
@@ -1001,8 +1023,11 @@ function registerCrud(route, table, cols, logType) {
   });
   // DELETE
   app.delete(`/${route}/:id`, async (req, res) => {
+    const own = ownerClause(req, 2);
     try {
-      const r = await db.query(`DELETE FROM ${table} WHERE id = $1 RETURNING id, "projectId"`, [req.params.id]);
+      const r = await db.query(
+        `DELETE FROM ${table} WHERE id = $1${own.sql} RETURNING id, "projectId"`,
+        [req.params.id, ...own.params]);
       if (!r.rowCount) return res.status(404).json({ error: 'Record not found' });
       if (logType) await logActivity(r.rows[0].projectId || null, logType, `${route} #${req.params.id} deleted`);
       res.json({ success: true });
