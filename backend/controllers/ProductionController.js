@@ -4,6 +4,7 @@
    Yield, reconciliation and cost/piece are computed here.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const stock = require('../shared/stock');
 const { runList } = require('../shared/listQuery');
 
 const round = (n, d = 2) => (n == null ? null : Math.round(n * 10 ** d) / 10 ** d);
@@ -101,9 +102,13 @@ exports.createOrder = async (req, res) => {
     const c = await db.query(`SELECT COUNT(*) FROM production_orders WHERE "projectId" = $1`, [projectId]);
     const prodNumber = `PROD-${String(parseInt(c.rows[0].count) + 1).padStart(4, '0')}`;
     const { rows } = await db.query(
-      `INSERT INTO production_orders ("projectId", "workOrderId", prod_number, product_name, planned_qty, output_uom, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [projectId, workOrderId || null, prodNumber, productName, plannedQty || null, outputUom || 'nos', notes || null]
+      `INSERT INTO production_orders ("projectId", "workOrderId", prod_number, product_name, planned_qty, output_uom, notes, owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      /* owner_id was never set here. The column existed, nothing populated
+         it, so every production order was unowned — invisible to owner
+         scoping and the reason finished goods landed on a NULL-owner stock
+         row while dispatch used the challan owner. */
+      [projectId, workOrderId || null, prodNumber, productName, plannedQty || null, outputUom || 'nos', notes || null, req.user?.id || null]
     );
     res.json({ id: rows[0].id, prodNumber });
   } catch (err) {
@@ -201,15 +206,63 @@ exports.addOutput = async (req, res) => {
   const { itemName, outputQty, uom, outputWeight } = req.body;
   const orderId = req.params.id;
   if (!itemName) return res.status(400).json({ error: 'itemName is required' });
+  const client = await db.getClient();
   try {
-    const r = await db.query(
-      `INSERT INTO production_output (production_order_id, item_name, output_qty, uom, output_weight)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [orderId, itemName, outputQty || null, uom || 'nos', outputWeight || null]
+    await client.query('BEGIN');
+
+    const order = (await client.query(
+      'SELECT id, owner_id, sku_id, prod_number, "projectId" FROM production_orders WHERE id = $1', [orderId]
+    )).rows[0];
+    if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Production order not found' }); }
+
+    /* Find or create the stock row for this finished item. The first run of
+       a new product has no inventory row yet, and refusing the output
+       because of that would be the same "output goes nowhere" bug wearing a
+       different hat. */
+    const invRow = await stock.resolveInventoryRow(client, {
+      ownerId: order.owner_id || req.user?.id || null,
+      skuId: order.sku_id || null,
+      itemName,
+      uom: uom || 'nos',
+      projectId: order.projectId || null,
+      itemType: 'finished',
+    });
+
+    const r = await client.query(
+      `INSERT INTO production_output (production_order_id, item_name, output_qty, uom, output_weight, inventory_id, stock_applied)
+       VALUES ($1, $2, $3, $4, $5, $6, TRUE) RETURNING id`,
+      [orderId, itemName, outputQty || null, uom || 'nos', outputWeight || null, invRow ? invRow.id : null]
     );
-    res.json({ id: r.rows[0].id, yield: await computeYield(orderId) });
+
+    /* Finished goods ENTER STOCK here. They never did before: output was
+       written to production_output and inventory was left untouched, so you
+       could fabricate 200 cross-arms and the system would still report zero
+       on hand. Raw material was tracked correctly the whole time, which is
+       what made it easy to miss — the half that worked looked like the whole. */
+    if (invRow && Number(outputQty) > 0) {
+      await stock.stockIn(client, {
+        ownerId: order.owner_id || req.user?.id || null,
+        inventoryId: invRow.id,
+        skuId: order.sku_id || null,
+        itemName,
+        quantity: outputQty,
+        uom: uom || 'nos',
+        movementType: 'production_output',
+        refType: 'production_order',
+        refId: Number(orderId),
+        refNumber: order.prod_number || null,
+        note: 'Finished goods from production',
+        userId: req.user?.id,
+      });
+    }
+
+    await client.query('COMMIT');
+    res.json({ id: r.rows[0].id, inventoryId: invRow ? invRow.id : null, yield: await computeYield(orderId) });
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 };
 
@@ -240,9 +293,31 @@ exports.deleteLine = async (req, res) => {
   try {
     await client.query('BEGIN');
     if (kind === 'consumption') {
-      const row = await client.query('SELECT * FROM production_consumption WHERE id = $1', [lineId]);
-      if (row.rows[0]?.inventory_id) {
-        await client.query('UPDATE inventory SET quantity = quantity + $1 WHERE id = $2', [row.rows[0].consumed_qty, row.rows[0].inventory_id]);
+      const row = (await client.query('SELECT * FROM production_consumption WHERE id = $1', [lineId])).rows[0];
+      if (row?.inventory_id) {
+        // Material goes back on the shelf.
+        await stock.stockIn(client, {
+          ownerId: row.owner_id, inventoryId: row.inventory_id, itemName: row.item_name,
+          quantity: row.consumed_qty, uom: row.uom, unitCost: row.unit_cost,
+          movementType: 'adjustment', refType: 'production_consumption', refId: Number(lineId),
+          note: 'Consumption line deleted — material returned to stock', userId: req.user?.id,
+        });
+      }
+    }
+
+    /* Output lines must reverse too. Now that output ADDS to stock, deleting
+       one without taking it back out again would leave goods on hand that
+       were never made — the mirror image of the bug just fixed, and harder
+       to spot because the balance would be too HIGH rather than too low. */
+    if (kind === 'output') {
+      const row = (await client.query('SELECT * FROM production_output WHERE id = $1', [lineId])).rows[0];
+      if (row?.inventory_id && row.stock_applied) {
+        await stock.stockOut(client, {
+          ownerId: row.owner_id, inventoryId: row.inventory_id, itemName: row.item_name,
+          quantity: row.output_qty, uom: row.uom,
+          movementType: 'adjustment', refType: 'production_output', refId: Number(lineId),
+          note: 'Output line deleted — finished goods removed from stock', userId: req.user?.id,
+        });
       }
     }
     const r = await client.query(`DELETE FROM ${table} WHERE id = $1 RETURNING production_order_id`, [lineId]);

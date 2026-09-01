@@ -23,6 +23,7 @@ const materialReqController = require('./controllers/MaterialRequirementsControl
 const vendorItemController = require('./controllers/VendorItemController');
 const customerSummaryController = require('./controllers/CustomerSummaryController');
 const adminController = require('./controllers/AdminController');
+const stockController = require('./controllers/StockController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -752,6 +753,12 @@ app.patch('/vendor-items/:id', vendorItemController.update);
 app.delete('/vendor-items/:id', vendorItemController.remove);
 app.get('/raw-materials/:id/vendors', vendorItemController.vendorsForMaterial);
 app.get('/customer-orders/:id/readiness', materialReqController.orderReadiness);
+
+/* Stock ledger. Literal paths first so '/inventory/movements' is not
+   swallowed by the ':id' pattern below it. */
+app.get('/inventory/movements',     stockController.movements);
+app.get('/inventory/reconcile',     stockController.reconcile);
+app.get('/inventory/:id/movements', stockController.forItem);
 
 app.get('/inventory/unmatched', async (req, res) => {
   try {

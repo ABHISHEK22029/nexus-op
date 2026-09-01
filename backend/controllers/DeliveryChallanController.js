@@ -4,6 +4,7 @@
    the goods value for the e-way bill. Owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const stock = require('../shared/stock');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
@@ -109,17 +110,79 @@ exports.setStatus = async (req, res) => {
   const { status } = req.body;
   const allowed = ['Draft', 'Dispatched', 'Delivered'];
   if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
+  const client = await db.getClient();
   try {
-    const dc = (await db.query('SELECT challan_number, customer_order_id FROM delivery_challans WHERE id = $1', [req.params.id])).rows[0];
-    if (!dc) return res.status(404).json({ error: 'not found' });
-    await db.query('UPDATE delivery_challans SET status = $1 WHERE id = $2', [status, req.params.id]);
-    // When dispatched/delivered, nudge the linked order forward (never backwards).
-    if ((status === 'Dispatched' || status === 'Delivered') && dc.customer_order_id) {
-      await db.query(`UPDATE customer_orders SET status = 'Delivered' WHERE id = $1 AND status NOT IN ('Delivered','Closed')`, [dc.customer_order_id]);
+    await client.query('BEGIN');
+    const s = scopedById(req, req.params.id);
+    const dc = (await client.query(`SELECT * FROM delivery_challans WHERE ${s.where}`, s.params)).rows[0];
+    if (!dc) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'not found' }); }
+
+    await client.query('UPDATE delivery_challans SET status = $1 WHERE id = $2', [status, req.params.id]);
+
+    /* STOCK LEAVES HERE — on dispatch, the physical event, not on the
+       invoice, which is a financial one. A business may raise either
+       without the other, so moving stock on both would double-count every
+       sale; moving it on neither is what was happening before.
+
+       stock_applied makes this idempotent. A double click, a retry, or a
+       status set back to Draft and forward again would otherwise remove the
+       goods twice, and nothing about the resulting balance would look
+       wrong. */
+    const goingOut = status === 'Dispatched' || status === 'Delivered';
+    let moved = 0;
+
+    if (goingOut && !dc.stock_applied) {
+      const items = (await client.query(
+        'SELECT * FROM delivery_challan_items WHERE delivery_challan_id = $1', [req.params.id]
+      )).rows;
+      for (const it of items) {
+        if (!(Number(it.quantity) > 0)) continue;
+        const invRow = await stock.resolveInventoryRow(client, {
+          ownerId: dc.owner_id, itemName: it.description, uom: it.uom, itemType: 'finished',
+        });
+        await stock.stockOut(client, {
+          ownerId: dc.owner_id, inventoryId: invRow.id, itemName: it.description,
+          quantity: it.quantity, uom: it.uom, unitCost: invRow.unit_cost,
+          movementType: 'dispatch', refType: 'delivery_challan',
+          refId: Number(req.params.id), refNumber: dc.challan_number,
+          note: 'Goods dispatched to the customer', userId: req.user?.id,
+        });
+        moved++;
+      }
+      await client.query(
+        'UPDATE delivery_challans SET stock_applied = TRUE, stock_applied_at = NOW() WHERE id = $1',
+        [req.params.id]
+      );
     }
+
+    /* Pulled back to Draft: the goods did not go. Compensating entries
+       rather than deleted rows — a dispatch made in error and reversed is
+       two real events, and a ledger that erases its own history cannot
+       answer the question it exists for. */
+    if (!goingOut && dc.stock_applied) {
+      moved = await stock.reverseFor(client, {
+        refType: 'delivery_challan', refId: Number(req.params.id),
+        movementType: 'dispatch', reversalType: 'dispatch_reversal', userId: req.user?.id,
+      });
+      await client.query(
+        'UPDATE delivery_challans SET stock_applied = FALSE, stock_applied_at = NULL WHERE id = $1',
+        [req.params.id]
+      );
+    }
+
+    // When dispatched/delivered, nudge the linked order forward (never backwards).
+    if (goingOut && dc.customer_order_id) {
+      await client.query(`UPDATE customer_orders SET status = 'Delivered' WHERE id = $1 AND status NOT IN ('Delivered','Closed')`, [dc.customer_order_id]);
+    }
+
+    await client.query('COMMIT');
+
     if (status === 'Dispatched') notify('admins', { type: 'GOODS_DISPATCHED', title: `Dispatched · ${dc.challan_number}`, message: 'Goods dispatched to the customer', entityType: 'delivery_challan', entityId: Number(req.params.id), link: '/delivery-challans' });
-    res.json({ success: true, status });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({ success: true, status, stockLinesMoved: moved });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 };
 
 // DELETE /delivery-challans/:id
