@@ -23,6 +23,7 @@ const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
 const { notify } = require('./notify');
+const { runList } = require('./shared/listQuery');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -201,14 +202,20 @@ app.patch('/milestones/:id', async (req, res) => {
    ══════════════════════════════════════════════════════════ */
 app.get('/vendors', async (req, res) => {
   try {
-    let query = 'SELECT * FROM vendors';
-    let params = [];
-    if (req.query.projectId) {
-      query += ' WHERE "projectId" = $1';
-      params.push(req.query.projectId);
-    }
-    const { rows } = await db.query(query, params);
-    res.json(rows || []);
+    const where = [], params = [];
+    if (req.query.projectId) { params.push(req.query.projectId); where.push(`"projectId" = $${params.length}`); }
+    const result = await runList(db, {
+      table: 'vendors',
+      query: req.query,
+      // "Find the vendor who supplies sheets" searches capability_tags too.
+      searchColumns: ['name', 'display_name', 'vendor_code', 'gstin', 'pan', 'capability_tags', 'contactName', 'contactPhone', 'contactEmail', 'city', 'state'],
+      filterColumns: ['type', 'status', 'city', 'state'],
+      allowedSort: ['id', 'name', 'type', 'city', 'state', 'status'],
+      defaultSort: 'name',
+      defaultDir: 'ASC',
+      where, params,
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -598,26 +605,37 @@ app.put('/indent/:id/status', async (req, res) => {
    shelf", which nothing surfaced before. */
 app.get('/inventory', async (req, res) => {
   try {
-    let query = `
+    /* Wrapped in a subquery so the computed `status` is filterable — you can
+       ask for "?status=Low Stock" and let the database do the work instead of
+       shipping every row to the browser to filter there. */
+    const table = `(
       SELECT *,
-             COALESCE(min_stock_level, 0)                       AS "reorderLevel",
+             COALESCE(min_stock_level, 0)                           AS "reorderLevel",
              ROUND((quantity * COALESCE(unit_cost, 0))::numeric, 2) AS stock_value,
              CASE
-               WHEN quantity <= 0                                        THEN 'Out of Stock'
-               WHEN COALESCE(min_stock_level, 0) <= 0                    THEN 'Healthy'
-               WHEN quantity <= min_stock_level                          THEN 'Low Stock'
-               WHEN quantity <= min_stock_level * 1.2                    THEN 'Near threshold'
+               WHEN quantity <= 0                     THEN 'Out of Stock'
+               WHEN COALESCE(min_stock_level, 0) <= 0 THEN 'Healthy'
+               WHEN quantity <= min_stock_level       THEN 'Low Stock'
+               WHEN quantity <= min_stock_level * 1.2 THEN 'Near threshold'
                ELSE 'Healthy'
              END AS status
-      FROM inventory`;
-    const params = [];
-    if (req.query.projectId) {
-      query += ' WHERE "projectId" = $1';
-      params.push(req.query.projectId);
-    }
-    query += ' ORDER BY "itemName"';
-    const { rows } = await db.query(query, params);
-    res.json(rows || []);
+      FROM inventory
+    ) AS inv`;
+    const where = [], params = [];
+    if (req.query.projectId) { params.push(req.query.projectId); where.push(`"projectId" = $${params.length}`); }
+    // Convenience flag: everything that needs attention, in one filter.
+    if (String(req.query.needsAttention) === 'true') where.push(`status <> 'Healthy'`);
+    const result = await runList(db, {
+      table,
+      query: req.query,
+      searchColumns: ['itemName', 'category', 'location', 'uom'],
+      filterColumns: ['status', 'category', 'location', 'item_type'],
+      allowedSort: ['itemName', 'quantity', 'status', 'category', 'stock_value'],
+      defaultSort: 'itemName',
+      defaultDir: 'ASC',
+      where, params,
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -769,14 +787,25 @@ app.delete('/production/:kind/line/:lineId', productionController.deleteLine);
 /* ══════════════════════════════════════════════════════════
    SALES & PROCUREMENT MASTERS (owner-scoped CRUD)
    ══════════════════════════════════════════════════════════ */
-function registerOwnedCrud(route, table, cols) {
+function registerOwnedCrud(route, table, cols, searchCols) {
   app.get(`/${route}`, async (req, res) => {
     try {
       const isAdmin = req.user?.role === 'Admin';
-      const { rows } = isAdmin
-        ? await db.query(`SELECT * FROM ${table} ORDER BY id DESC`)
-        : await db.query(`SELECT * FROM ${table} WHERE owner_id = $1 ORDER BY id DESC`, [req.user.id]);
-      res.json(rows);
+      // Owner scoping stays a WHERE fragment so search/filter/sort compose on top.
+      const scope = isAdmin ? { where: [], params: [] }
+        : { where: ['owner_id = $1'], params: [req.user.id] };
+      const result = await runList(db, {
+        table,
+        query: req.query,
+        // Text columns worth searching; falls back to name/code style columns.
+        searchColumns: searchCols || cols.filter(c => /name|code|description|email|phone|gstin|tags/i.test(c)),
+        allowedSort: ['id', ...cols],
+        defaultSort: 'id',
+        defaultDir: 'DESC',
+        where: scope.where,
+        params: scope.params,
+      });
+      res.json(result);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
   app.post(`/${route}`, async (req, res) => {

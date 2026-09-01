@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, X, Check, Paperclip } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Check, Paperclip, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Attachments from './Attachments';
 
@@ -15,15 +15,50 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
   const [form, setForm] = useState({});
   const [attachRow, setAttachRow] = useState(null);
 
+  /* Server-side search + pagination. Previously this fetched the entire table
+     every time and filtered nothing — fine at 20 rows, unusable at 20,000. */
+  const PAGE_SIZE = 25;
+  const [search, setSearch] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
   const empty = () => Object.fromEntries(fields.map(f => [f.key, '']));
 
+  // Don't fire a request on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => { setDebounced(search); setPage(0); }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const load = async () => {
+    setLoading(true);
+    setError('');
     try {
-      const r = await fetch(`${API}/${endpoint}`);
-      setRows(r.ok ? await r.json() : []);
-    } catch { setRows([]); }
+      const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) });
+      if (debounced.trim()) qs.set('search', debounced.trim());
+      const r = await fetch(`${API}/${endpoint}?${qs}`);
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Could not load ${title.toLowerCase()}`);
+      const data = await r.json();
+      // Tolerates both shapes: paginated envelope or a plain array.
+      if (Array.isArray(data)) { setRows(data); setTotal(data.length); }
+      else { setRows(data.items || []); setTotal(data.total ?? 0); }
+    } catch (err) {
+      // Previously this swallowed the error and showed an empty list, so a
+      // failure was indistinguishable from "no records".
+      setRows([]);
+      setError(err.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
   };
-  useEffect(() => { load(); }, [endpoint]);
+  useEffect(() => { load(); }, [endpoint, debounced, page]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const showingTo = Math.min(total, (page + 1) * PAGE_SIZE);
 
   const openNew = () => { setEditing(null); setForm(empty()); setShowForm(true); };
   const openEdit = (row) => { setEditing(row.id); setForm({ ...empty(), ...row }); setShowForm(true); };
@@ -65,9 +100,27 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>{subtitle}</p>
         </div>
-        <button onClick={openNew} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Plus size={16} /> Add {title.replace(/s$/, '')}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ position: 'relative' }}>
+            <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={`Search ${title.toLowerCase()}…`}
+              aria-label={`Search ${title}`}
+              style={{ padding: '8px 30px 8px 32px', width: 240, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 8, color: 'var(--text-primary)', fontSize: '0.83rem', outline: 'none' }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} aria-label="Clear search"
+                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0, lineHeight: 0 }}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <button onClick={openNew} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <Plus size={16} /> Add {title.replace(/s$/, '')}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -107,11 +160,28 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
       )}
 
       <div style={{ ...card, overflow: 'hidden' }}>
-        {rows.length === 0 ? (
+        {error ? (
+          <div style={{ padding: 44, textAlign: 'center' }}>
+            <div style={{ fontWeight: 600, color: 'var(--accent-red, #dc2626)' }}>Couldn’t load {title.toLowerCase()}</div>
+            <div style={{ fontSize: '0.85rem', marginTop: 4, color: 'var(--text-muted)' }}>{error}</div>
+            <button onClick={load} className="btn-secondary" style={{ marginTop: 12 }}>Try again</button>
+          </div>
+        ) : loading ? (
+          <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
+        ) : rows.length === 0 ? (
           <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>
             {Icon && <Icon size={38} style={{ opacity: 0.35, marginBottom: 10 }} />}
-            <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No {title.toLowerCase()} yet</div>
-            <div style={{ fontSize: '0.85rem', marginTop: 4 }}>Click “Add {title.replace(/s$/, '')}” to create one.</div>
+            {debounced.trim() ? (
+              <>
+                <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No {title.toLowerCase()} match “{debounced}”</div>
+                <div style={{ fontSize: '0.85rem', marginTop: 4 }}>Try a different search, or clear it to see all.</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No {title.toLowerCase()} yet</div>
+                <div style={{ fontSize: '0.85rem', marginTop: 4 }}>Click “Add {title.replace(/s$/, '')}” to create one.</div>
+              </>
+            )}
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -139,6 +209,26 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
               ))}
             </tbody>
           </table>
+        )}
+
+        {/* Pagination — only shown when there's more than one page. */}
+        {!loading && !error && total > PAGE_SIZE && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 14px', borderTop: '1px solid var(--border-subtle)', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Showing {showingFrom}–{showingTo} of {total}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} aria-label="Previous page"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: '0.78rem', cursor: page === 0 ? 'not-allowed' : 'pointer', opacity: page === 0 ? 0.45 : 1 }}>
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', minWidth: 70, textAlign: 'center' }}>Page {page + 1} of {totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} aria-label="Next page"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: '0.78rem', cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', opacity: page >= totalPages - 1 ? 0.45 : 1 }}>
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
