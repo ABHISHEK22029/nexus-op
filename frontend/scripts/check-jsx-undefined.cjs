@@ -95,21 +95,59 @@ function scan(file) {
 
   for (const [name, line] of used) {
     if (!defined.has(name)) {
-      findings.push({ file: path.relative(path.join(SRC, '..'), file), line, name });
+      findings.push({ file: path.relative(path.join(SRC, '..'), file), line, name, kind: 'component' });
     }
   }
+
+  /* Hooks fail identically and are just as invisible to the build. Added
+     after calling usePermissions() in App.jsx without importing it — a
+     codemod whose "already imported?" guard checked for the substring
+     `usePermissions`, which the call it had just inserted satisfied. Narrow
+     to the use* convention deliberately: it is unambiguous enough to carry
+     no false positives, which is what makes a checker worth keeping.
+
+     The DEFINES patterns above only capture Capitalised names, because they
+     were written for components. Hook names are lowercase, so a file that
+     DECLARES its own hook — `export function useToast()` — looked like a
+     file calling an undefined one. Seven of those on the first run; a
+     checker with seven false alarms is a checker that gets ignored. */
+  for (const re of [
+    /(?:export\s+)?(?:async\s+)?function\s+(use[A-Z][A-Za-z0-9_]*)/g,
+    /(?:export\s+)?(?:const|let|var)\s+(use[A-Z][A-Za-z0-9_]*)\s*=/g,
+  ]) {
+    for (const m of src.matchAll(re)) defined.add(m[1]);
+  }
+
+  lines.forEach((line, i) => {
+    if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+    for (const m of line.matchAll(/\b(use[A-Z][A-Za-z0-9_]*)\s*\(/g)) {
+      const name = m[1];
+      if (defined.has(name) || REACT_BUILTIN_HOOKS.has(name)) continue;
+      if (/React\.\s*$/.test(line.slice(0, m.index))) continue;   // React.useState
+      if (!findings.some(f => f.file.endsWith(path.basename(file)) && f.name === name)) {
+        findings.push({ file: path.relative(path.join(SRC, '..'), file), line: i + 1, name, kind: 'hook' });
+      }
+    }
+  });
 }
+
+const REACT_BUILTIN_HOOKS = new Set([
+  'useState', 'useEffect', 'useContext', 'useReducer', 'useCallback', 'useMemo',
+  'useRef', 'useImperativeHandle', 'useLayoutEffect', 'useDebugValue', 'useId',
+  'useDeferredValue', 'useTransition', 'useSyncExternalStore', 'useInsertionEffect',
+]);
 
 walk(SRC);
 
 if (findings.length) {
-  console.error(`\n❌ ${findings.length} JSX component(s) used but never defined:\n`);
+  console.error(`\n❌ ${findings.length} identifier(s) used but never defined:\n`);
   for (const f of findings) {
-    console.error(`   ${f.file}:${f.line}  <${f.name} />`);
+    const what = f.kind === 'hook' ? `${f.name}()  (hook)` : `<${f.name} />`;
+    console.error(`   ${f.file}:${f.line}  ${what}`);
   }
   console.error('\n   These compile fine and throw ReferenceError at render time.');
   console.error('   Add the missing import.\n');
   process.exit(1);
 }
 
-console.log('✅ JSX components: every capitalised tag resolves to something in scope');
+console.log('✅ JSX components and hooks: every identifier resolves to something in scope');

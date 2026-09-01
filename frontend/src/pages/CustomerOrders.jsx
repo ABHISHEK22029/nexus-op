@@ -1,18 +1,29 @@
+/* ══════════════════════════════════════════════════════════
+   Customer Orders — searchable, filterable, paginated.
+
+   The tiles read `q.summary`, aggregated server-side over the whole
+   filtered set. `empty_orders` earns its own tile: an order taken with no
+   lines on it cannot be quoted, made or invoiced, and nothing else on this
+   screen would ever tell you it exists.
+   ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files, Factory } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useProject } from '../context/ProjectContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import OrderReadiness from '../components/OrderReadiness';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Open', 'In Procurement', 'Delivered', 'Closed'];
+const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function CustomerOrders() {
   const toast = useToast();
   const navigate = useNavigate();
   const { activeProject } = useProject();
-  const [orders, setOrders] = useState([]);
+  const { can } = usePermissions();
   const [making, setMaking] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [skus, setSkus] = useState([]);
@@ -22,15 +33,22 @@ export default function CustomerOrders() {
   const [head, setHead] = useState({ customerId: '', customerPoRef: '', orderDate: '' });
   const [lines, setLines] = useState([{ skuId: '', description: '', quantity: '', unit: 'nos', targetPrice: '' }]);
 
-  const load = async () => {
-    const [o, c, s] = await Promise.all([
-      fetch(`${API}/customer-orders`).then(r => r.ok ? r.json() : []),
+  // The orders list is the hook's job now — searched and paged server-side.
+  const q = useListQuery('customer-orders', { pageSize: 25 });
+  const orders = q.rows;
+
+  /* Only the form's pick-lists load whole here; they are pickers, not lists,
+     and a form control that paginates is a form control nobody can use. */
+  const loadPickLists = async () => {
+    const [c, s] = await Promise.all([
       fetch(`${API}/customers`).then(r => r.ok ? r.json() : []),
       fetch(`${API}/skus`).then(r => r.ok ? r.json() : []),
     ]);
-    setOrders(Array.isArray(o) ? o : []); setCustomers(c); setSkus(s);
+    setCustomers(Array.isArray(c) ? c : (c.items || []));
+    setSkus(Array.isArray(s) ? s : (s.items || []));
   };
-  useEffect(() => { load(); }, []);
+  const load = () => { loadPickLists(); q.reload(); };
+  useEffect(() => { loadPickLists(); }, []);
 
   const setLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
   const pickSku = (i, skuId) => {
@@ -107,6 +125,9 @@ export default function CustomerOrders() {
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
   const input = { width: '100%', padding: '9px 11px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 8, color: 'var(--text-primary)', fontSize: '0.83rem', outline: 'none' };
   const lbl = { display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 };
+  const s = q.summary || {};
+  const canWrite = can('customer-orders', 'write');
+  const canDelete = can('customer-orders', 'delete');
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -118,6 +139,17 @@ export default function CustomerOrders() {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>Log the PO your customer places with you, and drive procurement from it.</p>
         </div>
         <button onClick={() => setShowForm(!showForm)} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Plus size={16} /> New Order</button>
+      </div>
+
+      {/* All five figures come from the server's aggregate over the whole
+          filtered set — summing q.rows would only ever total page 1. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 14, marginBottom: 18 }}>
+        <Kpi card={card} label={q.isFiltered ? 'Orders (filtered)' : 'Orders'} value={s.count ?? q.total} />
+        <Kpi card={card} label="Order value" value={rupee(s.value)} />
+        <Kpi card={card} label="Open" value={s.open ?? 0} tone="#2563eb" />
+        <Kpi card={card} label="In procurement" value={s.in_procurement ?? 0} tone="var(--brand-amber)" />
+        {/* No lines on it — it cannot be quoted, made or invoiced. */}
+        <Kpi card={card} label="No line items" value={s.empty_orders ?? 0} tone={Number(s.empty_orders) > 0 ? '#ef4444' : 'var(--text-muted)'} />
       </div>
 
       {showForm && (
@@ -140,7 +172,7 @@ export default function CustomerOrders() {
               <div style={{ flex: 1.2 }}><label style={lbl}>SKU (optional)</label>
                 <select style={input} value={l.skuId} onChange={e => pickSku(i, e.target.value)}>
                   <option value="">— free text —</option>
-                  {skus.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {skus.map(sk => <option key={sk.id} value={sk.id}>{sk.name}</option>)}
                 </select>
               </div>
               <div style={{ flex: 2 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} placeholder="Part / product" /></div>
@@ -159,12 +191,23 @@ export default function CustomerOrders() {
         </form>
       )}
 
+      <ListToolbar
+        q={q}
+        placeholder="Search order no., customer, PO ref…"
+        filters={[{
+          key: 'status',
+          label: 'Status',
+          options: STATUSES.map(st => ({ value: st, label: st })),
+        }]}
+      />
+
       <div style={{ ...card, overflow: 'hidden' }}>
         {orders.length === 0 ? (
-          <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>
-            <ShoppingBag size={38} style={{ opacity: 0.35, marginBottom: 10 }} />
-            <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No customer orders yet</div>
-          </div>
+          /* "None yet" and "none matched" are different situations — showing
+             the first when the second is true is how people conclude their
+             records have vanished. */
+          <EmptyState q={q} icon={ShoppingBag} noun="customer orders"
+            hint="Log the PO your customer placed with you, then drive procurement from it." />
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -182,12 +225,22 @@ export default function CustomerOrders() {
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{o.customer_po_ref || '—'}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)' }}>{o.item_count}</td>
                     <td style={{ padding: '11px 14px' }} onClick={e => e.stopPropagation()}>
-                      <select value={o.status} onChange={e => setStatus(o.id, e.target.value)} style={{ ...input, width: 'auto', padding: '5px 8px', fontSize: '0.76rem', fontWeight: 700 }}>
-                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                      {/* Editable only where the API would accept the change;
+                          read-only otherwise rather than hidden, because the
+                          status is information as well as a control. */}
+                      {canWrite ? (
+                        <select value={o.status} onChange={e => setStatus(o.id, e.target.value)} style={{ ...input, width: 'auto', padding: '5px 8px', fontSize: '0.76rem', fontWeight: 700 }}>
+                          {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                        </select>
+                      ) : (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>{o.status}</span>
+                      )}
                     </td>
                     <td style={{ padding: '11px 14px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                      <button onClick={() => del(o.id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Trash2 size={15} /></button>
+                      {/* Hidden when the API would refuse it anyway. */}
+                      {canDelete && (
+                        <button onClick={() => del(o.id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Trash2 size={15} /></button>
+                      )}
                     </td>
                   </tr>
                   {expanded === o.id && detail[o.id] && (
@@ -232,6 +285,15 @@ export default function CustomerOrders() {
           </table>
         )}
       </div>
+
+      <Pagination q={q} />
     </div>
   );
 }
+
+const Kpi = ({ card, label, value, tone }) => (
+  <div style={{ ...card, padding: 18 }}>
+    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+  </div>
+);

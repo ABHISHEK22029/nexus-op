@@ -58,7 +58,7 @@ import POInvoice from './pages/POInvoice';
 import RABillInvoice from './pages/RABillInvoice';
 import BetaWelcome from './pages/BetaWelcome';
 import BetaOnboarding from './pages/BetaOnboarding';
-import { PermissionProvider } from './context/PermissionContext';
+import { PermissionProvider, usePermissions } from './context/PermissionContext';
 import { ProjectProvider, useProject } from './context/ProjectContext';
 import { useTheme } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -78,6 +78,8 @@ const TopHeader = () => {
   const { projects, activeProject, setActiveProject } = useProject();
   const { isDark, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
+  // Resolved server-side, so legacy role values display correctly.
+  const { roleLabel: effectiveRole } = usePermissions();
 
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
   const [activeModal, setActiveModal] = React.useState(null);
@@ -303,14 +305,19 @@ const TopHeader = () => {
           color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
         }}>
-          {(user?.role === 'Admin' ? 'A' : (user?.name || user?.email || 'U')).charAt(0)}
+          {/* Name first, role second. This branched on the literal string
+              'Admin', so an account stored as 'Administrator' — the value the
+              Configurator now assigns — fell to the else branch and showed an
+              email address where a role belongs. The effective role comes
+              from /auth/me, which has already resolved legacy values. */}
+          {(user?.name || user?.email || 'U').charAt(0)}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15, marginRight: 2 }}>
           <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {user?.role === 'Admin' ? 'Admin' : (user?.name || user?.email || 'User')}
+            {user?.name || user?.email || 'User'}
           </span>
           <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--brand-amber)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-            {user?.role === 'Admin' ? 'Full Access' : (user?.role || 'Member')}
+            {effectiveRole || 'Member'}
           </span>
         </div>
         <button

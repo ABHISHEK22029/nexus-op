@@ -1,15 +1,28 @@
+/* ══════════════════════════════════════════════════════════
+   RA Bills — searchable, filterable, paginated.
+
+   The header figures read `q.summary`, which the API aggregates over the
+   whole filtered set. They used to be reduced out of the rows on screen,
+   which was right only while every row was on screen; with pagination
+   "Cumulative Gross Billed" would quietly have meant "gross on page 1".
+   ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Receipt, Plus, ChevronDown, ChevronUp, CheckCircle, Clock, Banknote, Shield, FileText, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
+
+// The state machine the server actually enforces (BILL_TRANSITIONS in index.js).
+const BILL_STATUSES = ['Draft', 'Under Review', 'Approved', 'Paid', 'Rejected'];
 
 const Bills = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { can } = usePermissions();
   const { activeProject, workOrders } = useProject();
-  const [bills, setBills] = useState([]);
   const [newWOId, setNewWOId] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [showOpts, setShowOpts] = useState(false);
@@ -19,17 +32,23 @@ const Bills = () => {
   });
   const setOpt = (k, v) => setOpts(o => ({ ...o, [k]: v }));
 
-  const fetchData = async () => {
-    if (!activeProject) return;
-    try {
-        const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/bills?projectId=${activeProject.id}`);
-        setBills(res.data);
-    } catch(err) {
-        console.error(err);
-    }
-  };
+  /* The list comes through the shared hook — searched, filtered and paged
+     server-side. The active project goes in as a baseline filter rather than
+     a hand-built query string, so it composes with search instead of being
+     overwritten by it, and "Clear filters" cannot widen the page to every
+     project. */
+  const q = useListQuery('bills', {
+    pageSize: 25,
+    initialFilters: activeProject ? { projectId: String(activeProject.id) } : {},
+  });
 
-  useEffect(() => { fetchData() }, [activeProject]);
+  // Keep the project filter in step when the active project changes.
+  useEffect(() => {
+    q.setFilters(activeProject ? { projectId: String(activeProject.id) } : {});
+  }, [activeProject?.id]);
+
+  const bills = q.rows;
+  const fetchData = () => q.reload();
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -77,10 +96,16 @@ const Bills = () => {
       setExpandedId(expandedId === id ? null : id);
   };
 
-  // Cumulative Metrics
-  const totalGross = bills.reduce((sum, b) => sum + (b.grossAmount || 0), 0);
-  const totalPaid = bills.filter(b => b.status === 'Paid').reduce((sum, b) => sum + (b.netAmount || 0), 0);
-  const pendingReview = bills.filter(b => b.status === 'Draft' || b.status === 'Under Review').length;
+  /* Cumulative metrics — from the server's aggregate over the whole filtered
+     set, never from the rows on screen (those are one page).
+     Note the middle card changed meaning honestly: the endpoint aggregates
+     net payable and total deductions, not "net of the paid ones", so the card
+     now says what the number is rather than keeping a label the figure no
+     longer supports. Filter to Paid and it answers the old question exactly. */
+  const s = q.summary || {};
+  const money = (n) => Number(n || 0).toLocaleString();
+  const canWrite = can('bills', 'write');
+  const canDelete = can('bills', 'delete');
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 p-8 space-y-8">
@@ -99,21 +124,26 @@ const Bills = () => {
               <span className="text-sm font-medium text-gray-400 flex items-center gap-2">
                   <Banknote size={16} /> Cumulative Gross Billed
               </span>
-              <span className="text-2xl font-bold text-white">₹{totalGross.toLocaleString()}</span>
+              <span className="text-2xl font-bold text-white">₹{money(s.gross)}</span>
+              <span className="text-xs text-gray-600">
+                  {q.isFiltered ? `${s.count ?? q.total} matching bill(s)` : `${s.count ?? q.total} bill(s)`}
+              </span>
           </div>
           <div className="bg-[#111113] border border-white/5 rounded-xl p-5 flex flex-col gap-2 relative overflow-hidden">
               <div className="absolute -right-4 -top-4 w-24 h-24 bg-green-500/10 rounded-full blur-2xl"></div>
               <span className="text-sm font-medium text-gray-400 flex items-center gap-2">
-                  <CheckCircle size={16} /> Total Net Paid
+                  <CheckCircle size={16} /> Total Net Payable
               </span>
-              <span className="text-2xl font-bold text-white">₹{totalPaid.toLocaleString()}</span>
+              <span className="text-2xl font-bold text-white">₹{money(s.net)}</span>
+              <span className="text-xs text-gray-600">after ₹{money(s.deductions)} deductions</span>
           </div>
           <div className="bg-[#111113] border border-white/5 rounded-xl p-5 flex flex-col gap-2 relative overflow-hidden">
               <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl"></div>
               <span className="text-sm font-medium text-gray-400 flex items-center gap-2">
                   <Clock size={16} /> Pending Actions
               </span>
-              <span className="text-2xl font-bold text-white">{pendingReview} Invoices</span>
+              <span className="text-2xl font-bold text-white">{s.pending_approval ?? 0} Invoices</span>
+              <span className="text-xs text-gray-600">Draft or Under Review</span>
           </div>
       </div>
 
@@ -171,10 +201,24 @@ const Bills = () => {
         )}
       </div>
 
+      <ListToolbar
+        q={q}
+        placeholder="Search bill no., vendor, work order…"
+        filters={[{
+          key: 'status',
+          label: 'Status',
+          options: BILL_STATUSES.map(st => ({ value: st, label: st })),
+        }]}
+      />
+
       <div className="space-y-4">
         {bills.length === 0 ? (
-           <div className="p-8 text-center border border-white/5 bg-[#111113] rounded-xl text-gray-500">
-               No invoices generated yet. Compute your first Draft Bill above.
+           <div className="border border-white/5 bg-[#111113] rounded-xl">
+               {/* "Nothing generated yet" and "nothing matched your search" are
+                   different situations; showing the first when the second is
+                   true is how people conclude their data is gone. */}
+               <EmptyState q={q} icon={Receipt} noun="RA bills"
+                 hint="Compute your first Draft Bill above." />
            </div>
         ) : bills.map((b) => (
           <div key={b.id} className="bg-[#111113] border border-white/5 rounded-xl overflow-hidden transition-all duration-300">
@@ -209,7 +253,8 @@ const Bills = () => {
                           <p className="text-xs text-gray-500 mb-1">Net Payout</p>
                           <p className="font-bold text-red-400">₹{b.netAmount?.toLocaleString()}</p>
                       </div>
-                      {(b.status === 'Draft' || b.status === 'Rejected') && (
+                      {/* Hidden when the API would refuse it anyway. */}
+                      {canDelete && (b.status === 'Draft' || b.status === 'Rejected') && (
                           <button
                               onClick={(e) => { e.stopPropagation(); handleDelete(b.id); }}
                               title="Delete bill"
@@ -265,17 +310,19 @@ const Bills = () => {
                               <FileText size={14} /> View Invoice
                           </button>
                           <span className="text-xs text-gray-500 mr-2">Workflow:</span>
-                          {b.status === 'Draft' && (
+                          {/* Approval steps are hidden without write rights —
+                              the server refuses them anyway. */}
+                          {canWrite && b.status === 'Draft' && (
                               <button onClick={() => handleStatusChange(b.id, 'submit')} className="btn-secondary text-xs px-3 py-1.5">
                                   Submit for Review
                               </button>
                           )}
-                          {b.status === 'Under Review' && (
+                          {canWrite && b.status === 'Under Review' && (
                               <button onClick={() => handleStatusChange(b.id, 'approve')} className="btn-primary text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700">
                                   Approve Invoice
                               </button>
                           )}
-                          {b.status === 'Approved' && (
+                          {canWrite && b.status === 'Approved' && (
                               <button onClick={() => handleStatusChange(b.id, 'pay')} className="btn-primary text-xs px-3 py-1.5 bg-green-600 hover:bg-green-700">
                                   Release Payment
                               </button>
@@ -291,6 +338,8 @@ const Bills = () => {
           </div>
         ))}
       </div>
+
+      <Pagination q={q} />
     </div>
   );
 };

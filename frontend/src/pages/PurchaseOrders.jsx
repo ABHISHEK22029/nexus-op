@@ -5,18 +5,39 @@ import { useNavigate } from 'react-router-dom';
 import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2, ShieldCheck } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import { numberToWords } from '../utils/numberToWords';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const rup = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 const PurchaseOrders = () => {
   const navigate = useNavigate();
   const toast = useToast();
   const { activeProject } = useProject();
-  const [pos, setPos] = useState([]);
+  const { can } = usePermissions();
   const [vendors, setVendors] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [company, setCompany] = useState(null);
+
+  /* The order list comes through the shared list hook — searched, filtered
+     and paginated server-side. Project scoping stays a filter rather than a
+     hand-built query string, so it composes with search instead of being
+     overwritten by it. */
+  const q = useListQuery('po', {
+    pageSize: 25,
+    initialFilters: activeProject ? { projectId: String(activeProject.id) } : {},
+  });
+
+  // Keep the project filter in step when the active project changes.
+  useEffect(() => {
+    q.setFilters(activeProject ? { projectId: String(activeProject.id) } : {});
+  }, [activeProject?.id]);
+
+  // Raising a PO and signing one off are deliberately different permissions.
+  const canWrite = can('po', 'write');
+  const canSignOff = can('po-approval', 'write');
 
   const initialForm = {
     vendorId: '',
@@ -34,14 +55,13 @@ const PurchaseOrders = () => {
   const [items, setItems] = useState([{ sno: 1, description: '', uom: "No's", hsn: '', quantity: 1, unitPrice: 0 }]);
   const [gstType, setGstType] = useState(null);
 
-  const fetchData = () => {
+  /* Vendors and the company profile stay whole loads — they are form
+     controls, not lists, and a dropdown that paginates is a dropdown nobody
+     can use. */
+  const fetchRefs = () => {
     if (!activeProject) return;
-    axios.get(`${API}/po?projectId=${activeProject.id}`)
-      .then(res => setPos(res.data))
-      .catch(err => console.error("Failed to fetch POs", err));
-    
     axios.get(`${API}/vendors?projectId=${activeProject.id}`)
-      .then(res => setVendors(res.data))
+      .then(res => setVendors(Array.isArray(res.data) ? res.data : (res.data?.items || [])))
       .catch(err => console.error("Failed to fetch vendors", err));
 
     axios.get(`${API}/company-profile`)
@@ -49,9 +69,11 @@ const PurchaseOrders = () => {
       .catch(err => console.error("Failed to fetch company profile", err));
   };
 
+  const fetchData = () => { fetchRefs(); q.reload(); };
+
   useEffect(() => {
-    fetchData();
-  }, [activeProject]);
+    fetchRefs();
+  }, [activeProject?.id]);
 
   useEffect(() => {
     // Check GST type when vendor changes
@@ -156,6 +178,8 @@ const PurchaseOrders = () => {
     }
   };
 
+  const s = q.summary || {};
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-6xl mx-auto pb-16">
       <div className="flex justify-between items-center mb-8">
@@ -163,13 +187,27 @@ const PurchaseOrders = () => {
           <h1 className="text-2xl font-semibold text-white/90 tracking-tight">Purchase Orders</h1>
           <p className="text-gray-500 text-sm mt-1">Create orders with detailed line items and GST.</p>
         </div>
-        <button 
-          onClick={() => setShowForm(!showForm)}
-          className="bg-white text-black px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-gray-100 transition-colors"
-        >
-          <FilePlus size={18} />
-          Create PO
-        </button>
+        {/* Hidden when the API would refuse it anyway. */}
+        {canWrite && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-white text-black px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-gray-100 transition-colors"
+          >
+            <FilePlus size={18} />
+            Create PO
+          </button>
+        )}
+      </div>
+
+      {/* Totals come from the server's aggregate over the WHOLE filtered set,
+          not from summing the rows on screen — after pagination those are one
+          page, and "Order Value" would quietly mean "value on page 1". */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <Kpi label={q.isFiltered ? 'Orders (filtered)' : 'Purchase Orders'} value={s.count ?? q.total} />
+        <Kpi label="Order Value" value={rup(s.value)} />
+        <Kpi label="Awaiting sign-off" value={s.awaiting_approval ?? 0}
+             tone={Number(s.awaiting_approval) > 0 ? 'text-amber-400' : 'text-white'} />
+        <Kpi label="Delivered" value={s.delivered ?? 0} tone="text-emerald-400" />
       </div>
 
       {showForm && (
@@ -328,6 +366,33 @@ const PurchaseOrders = () => {
         </form>
       )}
 
+      {/* Status values are the ones the column actually holds — the
+          purchase_orders CHECK constraint, plus the separate approval flag. */}
+      <ListToolbar
+        q={q}
+        placeholder="Search PO no., vendor, item, work order, quote ref…"
+        filters={[
+          {
+            key: 'status',
+            label: 'Status',
+            options: [
+              { value: 'Pending', label: 'Pending' },
+              { value: 'Approved', label: 'Approved' },
+              { value: 'Dispatched', label: 'Dispatched' },
+              { value: 'Delivered', label: 'Delivered' },
+            ],
+          },
+          {
+            key: 'approval_status',
+            label: 'Sign-off',
+            options: [
+              { value: 'Pending Approval', label: 'Needs sign-off' },
+              { value: 'Rejected', label: 'Rejected' },
+            ],
+          },
+        ]}
+      />
+
       <div className="bg-[#111113] border border-white/5 rounded-xl overflow-hidden">
         <table className="w-full text-left">
           <thead>
@@ -340,7 +405,7 @@ const PurchaseOrders = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {pos.length > 0 ? pos.map((po) => (
+            {q.rows.length > 0 ? q.rows.map((po) => (
               <tr key={po.id} className="table-row-animate hover:bg-white/[0.01]">
                 <td className="px-6 py-4 text-sm text-gray-400 font-mono">PO-{po.id.toString().padStart(4, '0')}</td>
                 <td className="px-6 py-4 text-sm font-medium text-white">{po.vendorName}</td>
@@ -352,7 +417,7 @@ const PurchaseOrders = () => {
                   {po.approval_status === 'Pending Approval' && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'hsl(28,100%,54%,0.12)', color: 'hsl(28,92%,45%)' }}><ShieldCheck size={11} /> Needs sign-off</span>}
                 </td>
                 <td className="px-6 py-4 text-right">
-                  {po.status === 'Pending' && po.approval_status === 'Pending Approval' && (
+                  {canSignOff && po.status === 'Pending' && po.approval_status === 'Pending Approval' && (
                     <span style={{ display: 'inline-flex', gap: 6, marginRight: 8 }}>
                       <button onClick={() => signOff(po.id, 'Approved')} title="Sign off (above approval limit)"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: '1px solid hsl(158,64%,45%,0.4)', background: 'hsl(158,64%,45%,0.12)', color: 'hsl(158,64%,38%)' }}>
@@ -367,7 +432,7 @@ const PurchaseOrders = () => {
                   {po.status === 'Pending' && po.approval_status === 'Rejected' && (
                     <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'hsl(0,72%,50%)', marginRight: 8 }}>Rejected in sign-off</span>
                   )}
-                  {po.status === 'Pending' && po.approval_status !== 'Pending Approval' && po.approval_status !== 'Rejected' && (
+                  {canWrite && po.status === 'Pending' && po.approval_status !== 'Pending Approval' && po.approval_status !== 'Rejected' && (
                     <button
                       onClick={() => handleAction(po.id, 'approve')}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: '1px solid hsl(158,64%,45%,0.4)', background: 'hsl(158,64%,45%,0.1)', color: 'hsl(158,64%,38%)', transition: 'all 180ms' }}
@@ -378,7 +443,7 @@ const PurchaseOrders = () => {
                       Approve
                     </button>
                   )}
-                  {po.status === 'Approved' && (
+                  {canWrite && po.status === 'Approved' && (
                     <button
                       onClick={() => handleAction(po.id, 'dispatch')}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: '1px solid hsl(22,92%,50%,0.4)', background: 'hsl(22,92%,50%,0.1)', color: 'hsl(22,92%,45%)', transition: 'all 180ms' }}
@@ -389,7 +454,7 @@ const PurchaseOrders = () => {
                       Dispatch
                     </button>
                   )}
-                  {po.status === 'Dispatched' && (
+                  {canWrite && po.status === 'Dispatched' && (
                     <button
                       onClick={() => { if(window.confirm('Receive goods and update inventory?')) { handleAction(po.id, 'grn', { receivedQuantity: po.quantity }); } }}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: '1px solid hsl(213,80%,55%,0.4)', background: 'hsl(213,80%,55%,0.1)', color: 'hsl(213,80%,45%)', transition: 'all 180ms' }}
@@ -411,14 +476,29 @@ const PurchaseOrders = () => {
               </tr>
             )) : (
               <tr>
-                <td colSpan="5" className="px-6 py-8 text-center text-gray-500">No purchase orders found.</td>
+                <td colSpan="5">
+                  {/* "None yet" and "none matched your search" are different
+                      situations; showing the first when the second is true is
+                      how people conclude their data is gone. */}
+                  <EmptyState q={q} icon={FileText} noun="purchase orders"
+                    hint="Raise one with “Create PO” above." />
+                </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      <Pagination q={q} />
     </div>
   );
 };
+
+const Kpi = ({ label, value, tone }) => (
+  <div className="bg-[#111113] border border-white/5 rounded-xl p-4">
+    <div className="text-[0.68rem] font-bold uppercase tracking-wider text-gray-500">{label}</div>
+    <div className={`text-2xl font-bold mt-1 tabular-nums ${tone || 'text-white'}`}>{value}</div>
+  </div>
+);
 
 export default PurchaseOrders;
