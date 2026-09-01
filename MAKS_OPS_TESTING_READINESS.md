@@ -137,16 +137,16 @@ RBAC_ADMIN_EMAIL=… RBAC_ADMIN_PASSWORD=… RBAC_TEST_PASSWORD=… \
 
 ## Still open
 
-- **Search/filter rollout** — done for the 4 sales lists. Still bespoke and
-  unpaginated: Purchase Orders, GRN, Bills, Payables, Customer Orders,
-  Production, Work Orders, Projects, Quotations, Indent, Users.
-- **`<RoleRoute>` is built but not yet applied to routes.** The nav hides
-  what you can't use and the server refuses it, so direct-URL navigation
-  currently shows an empty page rather than an explanation.
-- **PO picker** still renders the flat vendor list rather than vendors linked
-  to the material.
+- **Password reset / user invite.** Accounts are created via `/auth/register`;
+  there is no admin-driven invite or password reset yet. An admin can assign
+  roles and deactivate, but cannot create an account for someone.
+- **No per-user permission overrides.** Permissions are per role only —
+  "this one person may also approve POs" needs a new role today.
 - **Documents not yet rebuilt:** `POInvoice`, `GrnBillDoc`. (Sales invoice,
-  quotation, challan, credit/debit note and RA bill are done.)
-- **51 knowledge-base articles in the database still say "Nexus-OP".** The
-  rename was cosmetic and did not touch database content.
-- **`nexus-backend/`** — the stale Java folder still tracked, decision pending.
+  quotation, delivery challan, credit/debit note and RA bill are done.)
+- **51 knowledge-base articles still say "Nexus-OP"** — the rename was
+  cosmetic and never touched database content.
+- **`nexus-backend/`** — the stale Java folder is still tracked; decision pending.
+- **PO line items are free text** with no link to a raw material, so the
+  vendor picker's material filter has to be chosen by hand rather than
+  inferred from what is being bought.
