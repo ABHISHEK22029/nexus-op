@@ -51,18 +51,42 @@ router.post('/', async (req, res) => {
     // Step 3: Mark PO as Delivered
     await db.query(`UPDATE purchase_orders SET status = 'Delivered' WHERE id = $1`, [poId]);
 
-    // Step 4: Add to Inventory (Upsert)
-    const invResult = await db.query(
-      `SELECT * FROM inventory WHERE "itemName" = $1 AND "projectId" = $2`,
-      [po.itemName, resolvedProjectId]
-    );
+    /* Step 4: Add to inventory.
+       Match on raw_material_id when we can resolve one — matching on the
+       display name alone meant "MS Sheet" and "MS  Sheet" became two separate
+       stock rows, and with no unique constraint the code picked one at random.
+       Falls back to the name only for stock not yet linked to the master. */
+    const norm = (s) => String(s || '').toLowerCase().replace(/[×xX]/g, 'x').replace(/[^a-z0-9]+/g, ' ').trim();
+
+    const material = (await db.query(
+      `SELECT id FROM raw_materials
+       WHERE btrim(regexp_replace(lower(translate(name, '×X', 'xx')), '[^a-z0-9]+', ' ', 'g')) = $1
+       LIMIT 1`,
+      [norm(po.itemName)]
+    )).rows[0];
+    const materialId = material?.id || null;
+
+    const invResult = materialId
+      ? await db.query(
+        `SELECT * FROM inventory WHERE raw_material_id = $1 AND "projectId" = $2`,
+        [materialId, resolvedProjectId])
+      : await db.query(
+        `SELECT * FROM inventory WHERE "itemName" = $1 AND "projectId" = $2 AND raw_material_id IS NULL`,
+        [po.itemName, resolvedProjectId]);
 
     if (invResult.rows.length > 0) {
-      await db.query(`UPDATE inventory SET quantity = quantity + $1 WHERE id = $2`, [receivedQuantity, invResult.rows[0].id]);
+      // Backfill the link opportunistically if this row predates the master.
+      await db.query(
+        `UPDATE inventory
+         SET quantity = quantity + $1,
+             raw_material_id = COALESCE(raw_material_id, $3)
+         WHERE id = $2`,
+        [receivedQuantity, invResult.rows[0].id, materialId]
+      );
     } else {
       await db.query(
-        `INSERT INTO inventory ("projectId", "itemName", quantity) VALUES ($1, $2, $3)`,
-        [resolvedProjectId, po.itemName, receivedQuantity]
+        `INSERT INTO inventory ("projectId", "itemName", quantity, raw_material_id) VALUES ($1, $2, $3, $4)`,
+        [resolvedProjectId, po.itemName, receivedQuantity, materialId]
       );
     }
 

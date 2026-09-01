@@ -641,11 +641,30 @@ app.get('/inventory', async (req, res) => {
   }
 });
 
-/* Set a reorder level / category on a stock item. There was previously NO
-   write endpoint for inventory at all, which is why unit_cost was never
-   populated and every material cost computed to zero. */
+/* Stock rows not yet linked to the item master.
+   Until a stock row carries a raw_material_id it cannot take part in the
+   deficiency calculation — the BOM says "we need material #7" and there is
+   nothing to join that to. This is the worklist for clearing that backlog. */
+app.get('/inventory/unmatched', async (req, res) => {
+  try {
+    const where = ['raw_material_id IS NULL', 'sku_id IS NULL'];
+    const params = [];
+    if (req.query.projectId) { params.push(req.query.projectId); where.push(`"projectId" = $${params.length}`); }
+    const { rows } = await db.query(
+      `SELECT id, "projectId", "itemName", quantity, uom
+       FROM inventory WHERE ${where.join(' AND ')} ORDER BY "itemName"`, params);
+    // Offer likely candidates so linking is a click, not a search.
+    const { rows: materials } = await db.query('SELECT id, name, material_code, unit FROM raw_materials ORDER BY name');
+    res.json({ items: rows, total: rows.length, candidates: materials });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* Set a reorder level / category on a stock item, or link it to the item
+   master. There was previously NO write endpoint for inventory at all, which
+   is why unit_cost was never populated and every material cost computed to
+   zero. */
 app.patch('/inventory/:id', async (req, res) => {
-  const allowed = ['min_stock_level', 'category', 'location', 'unit_cost', 'uom'];
+  const allowed = ['min_stock_level', 'category', 'location', 'unit_cost', 'uom', 'raw_material_id', 'sku_id'];
   const sets = allowed.filter(c => c in req.body);
   if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
   try {
