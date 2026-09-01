@@ -1,10 +1,18 @@
 import React from 'react';
-import { Contact } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Contact, TrendingUp } from 'lucide-react';
 import MasterList from '../components/MasterList';
 
 export default function Customers() {
+  const navigate = useNavigate();
   return (
     <MasterList
+      rowAction={{
+        label: 'Insights',
+        title: 'What they buy, what they owe, whether they pay on time',
+        icon: <TrendingUp size={13} />,
+        onClick: (row) => navigate(`/customers/${row.id}`),
+      }}
       title="Customers"
       subtitle="The companies you sell to — a customer order starts here."
       endpoint="customers"

@@ -21,6 +21,7 @@ const deliveryChallanController = require('./controllers/DeliveryChallanControll
 const creditDebitNoteController = require('./controllers/CreditDebitNoteController');
 const materialReqController = require('./controllers/MaterialRequirementsController');
 const vendorItemController = require('./controllers/VendorItemController');
+const customerSummaryController = require('./controllers/CustomerSummaryController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -651,6 +652,7 @@ app.get('/inventory', async (req, res) => {
 app.get('/material-requirements', materialReqController.list);
 
 /* ── Vendor <-> material: who supplies what ── */
+app.get('/customers/:id/summary', customerSummaryController.summary);
 app.get('/vendor-items', vendorItemController.list);
 app.post('/vendor-items', vendorItemController.create);
 app.patch('/vendor-items/:id', vendorItemController.update);
