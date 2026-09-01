@@ -19,6 +19,7 @@ const aiController = require('./controllers/AiController');
 const salesQuotationController = require('./controllers/SalesQuotationController');
 const deliveryChallanController = require('./controllers/DeliveryChallanController');
 const creditDebitNoteController = require('./controllers/CreditDebitNoteController');
+const materialReqController = require('./controllers/MaterialRequirementsController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -645,6 +646,10 @@ app.get('/inventory', async (req, res) => {
    Until a stock row carries a raw_material_id it cannot take part in the
    deficiency calculation — the BOM says "we need material #7" and there is
    nothing to join that to. This is the worklist for clearing that backlog. */
+/* ── Material requirements (the deficiency engine) ── */
+app.get('/material-requirements', materialReqController.list);
+app.get('/customer-orders/:id/readiness', materialReqController.orderReadiness);
+
 app.get('/inventory/unmatched', async (req, res) => {
   try {
     const where = ['raw_material_id IS NULL', 'sku_id IS NULL'];

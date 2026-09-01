@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { convert, loadUoms } = require('../shared/uom');
 const { notify } = require('../notify');
 
 // List GRN records filtered by projectId
@@ -22,7 +23,9 @@ router.get('/', async (req, res) => {
 
 // Create GRN: Record inward material, mark PO delivered, update inventory
 router.post('/', async (req, res) => {
-  const { projectId, workOrderId, poId, vehicleNumber, batchNumber, chainage, receivedQuantity } = req.body;
+  // receivedUomCode: the unit the goods actually arrived in (e.g. 'mt').
+  // Defaults to the PO line's unit, then the material's purchase unit.
+  const { projectId, workOrderId, poId, vehicleNumber, batchNumber, chainage, receivedQuantity, receivedUomCode } = req.body;
 
   if (!poId || receivedQuantity === undefined) {
     return res.status(400).json({ error: 'poId and receivedQuantity are required' });
@@ -59,12 +62,44 @@ router.post('/', async (req, res) => {
     const norm = (s) => String(s || '').toLowerCase().replace(/[×xX]/g, 'x').replace(/[^a-z0-9]+/g, ' ').trim();
 
     const material = (await db.query(
-      `SELECT id FROM raw_materials
+      `SELECT * FROM raw_materials
        WHERE btrim(regexp_replace(lower(translate(name, '×X', 'xx')), '[^a-z0-9]+', ' ', 'g')) = $1
        LIMIT 1`,
       [norm(po.itemName)]
     )).rows[0];
     const materialId = material?.id || null;
+
+    /* Convert the received quantity into the unit stock is actually held in.
+       A vendor invoices 5 MT; the warehouse counts 168 sheets. Adding 5 to a
+       pieces column would be silently, badly wrong. */
+    let stockQty = Number(receivedQuantity);
+    let uomNote = null;
+    if (material) {
+      const poLine = (await db.query(
+        `SELECT uom, uom_code FROM po_line_items WHERE "poId" = $1 ORDER BY sno LIMIT 1`, [poId]
+      )).rows[0];
+      const receivedUom = String(
+        receivedUomCode || poLine?.uom_code || poLine?.uom || material.purchase_uom || material.base_uom || ''
+      ).toLowerCase();
+      const baseUom = String(material.base_uom || material.unit || '').toLowerCase();
+
+      if (receivedUom && baseUom && receivedUom !== baseUom) {
+        const uoms = await loadUoms(db);
+        const itemUoms = (await db.query(
+          'SELECT uom_code, qty_in_base FROM item_uom WHERE raw_material_id = $1', [materialId]
+        )).rows;
+        const conv = convert(receivedQuantity, receivedUom, baseUom, { uoms, item: material, itemUoms });
+        if (conv.ok) {
+          stockQty = conv.qty;
+          uomNote = `${receivedQuantity} ${receivedUom} = ${conv.qty} ${baseUom}`;
+        } else {
+          // Refuse rather than silently add the wrong number.
+          return res.status(400).json({
+            error: `Cannot convert ${receivedQuantity} ${receivedUom} into ${baseUom} for "${material.name}". ${conv.reason}`,
+          });
+        }
+      }
+    }
 
     const invResult = materialId
       ? await db.query(
@@ -81,12 +116,12 @@ router.post('/', async (req, res) => {
          SET quantity = quantity + $1,
              raw_material_id = COALESCE(raw_material_id, $3)
          WHERE id = $2`,
-        [receivedQuantity, invResult.rows[0].id, materialId]
+        [stockQty, invResult.rows[0].id, materialId]
       );
     } else {
       await db.query(
         `INSERT INTO inventory ("projectId", "itemName", quantity, raw_material_id) VALUES ($1, $2, $3, $4)`,
-        [resolvedProjectId, po.itemName, receivedQuantity, materialId]
+        [resolvedProjectId, po.itemName, stockQty, materialId]
       );
     }
 
@@ -97,7 +132,7 @@ router.post('/', async (req, res) => {
     );
 
     notify('admins', { type: 'GRN_RECEIVED', title: `Goods received · GRN-${String(grnId).padStart(5, '0')}`, message: `${receivedQuantity} of ${po.itemName} received against PO-${poId}`, entityType: 'grn', entityId: grnId, link: `/grn/${grnId}/bill` });
-    res.json({ message: 'GRN completed successfully', grnId, poId });
+    res.json({ message: 'GRN completed successfully', grnId, poId, stockQty, uomNote });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
