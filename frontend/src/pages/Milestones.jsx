@@ -1,29 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { Flag, Activity, CheckCircle2 } from 'lucide-react';
+/* ══════════════════════════════════════════════════════════
+   Execution Milestones.
+
+   This fetched EVERY milestone and filtered to the active project in the
+   browser — which worked only because the server was returning every
+   tenant's milestones too. Both halves are fixed: the endpoint is now scoped
+   through the work order's owner, and the project filter is applied
+   server-side so the browser is never sent rows it is going to discard.
+   ══════════════════════════════════════════════════════════ */
+import React, { useEffect } from 'react';
+import { Flag, Activity, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
-import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
 const Milestones = () => {
-  const toast = useToast();
   const { activeProject, workOrders } = useProject();
-  const [milestones, setMilestones] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { can } = usePermissions();
+
+  const q = useListQuery('milestones', {
+    pageSize: 50,
+    initialFilters: activeProject ? { project_id: String(activeProject.id) } : {},
+  });
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/milestones`)
-      .then(res => res.json())
-      .then(data => setMilestones(data))
-      .catch(err => {
-        console.error(err);
-        toast.error(err.message || 'Something went wrong');
-      })
-      .finally(() => setLoading(false));
-  }, []);
+    q.setFilters(activeProject ? { project_id: String(activeProject.id) } : {});
+  }, [activeProject?.id]);
 
-  // Map milestones to active project's work orders
-  const activeWorkOrderIds = workOrders.map(w => w.id);
-  const activeMilestones = milestones.filter(m => activeWorkOrderIds.includes(m.workOrderId));
+  const activeMilestones = q.rows;
+  const s = q.summary || {};
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 p-8 space-y-8">
@@ -35,14 +39,39 @@ const Milestones = () => {
         <p className="text-gray-500 mt-1">Track granular planned vs actual progress against operational Work Orders.</p>
       </div>
 
+      {/* Planned and actual side by side rather than one "variance" figure —
+          a single number hides whether four milestones are slightly late or
+          one is badly late. behind_plan is the count that needs someone. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Kpi label={q.isFiltered ? 'Milestones (filtered)' : 'Milestones'} value={s.count ?? q.total} />
+        <Kpi label="Completed" value={s.completed ?? 0} tone="text-emerald-400" />
+        <Kpi label="Behind plan" value={s.behind_plan ?? 0}
+          tone={Number(s.behind_plan) > 0 ? 'text-red-400' : 'text-gray-400'}
+          icon={Number(s.behind_plan) > 0 ? AlertTriangle : null} />
+        <Kpi label="Planned vs actual"
+          value={`${Number(s.avg_planned_pct || 0).toFixed(0)}% / ${Number(s.avg_actual_pct || 0).toFixed(0)}%`} />
+      </div>
+
+      <ListToolbar
+        q={q}
+        placeholder="Search milestone, work order or project…"
+        filters={[{
+          key: 'status',
+          label: 'Status',
+          options: [
+            { value: 'Pending', label: 'Pending' },
+            { value: 'In Progress', label: 'In progress' },
+            { value: 'Delayed', label: 'Delayed' },
+            { value: 'Completed', label: 'Completed' },
+          ],
+        }]}
+      />
+
       <div className="grid gap-6">
-        {loading ? (
-          <div className="p-8 text-center border border-white/5 bg-[#111113] rounded-xl text-gray-500">
-            Loading…
-          </div>
-        ) : activeMilestones.length === 0 ? (
-          <div className="p-8 text-center border border-white/5 bg-[#111113] rounded-xl text-gray-500">
-            No milestones yet.
+        {activeMilestones.length === 0 ? (
+          <div className="border border-white/5 bg-[#111113] rounded-xl">
+            <EmptyState q={q} icon={Flag} noun="milestones"
+              hint="Milestones appear here once they are added to a work order." />
           </div>
         ) : workOrders.map(wo => {
            const woMilestones = activeMilestones.filter(m => m.workOrderId === wo.id);
@@ -81,8 +110,19 @@ const Milestones = () => {
            )
         })}
       </div>
+
+      <Pagination q={q} />
     </div>
   );
 };
+
+const Kpi = ({ label, value, tone = 'text-white', icon: Icon }) => (
+  <div className="bg-[#111113] border border-white/5 rounded-xl p-4">
+    <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+      {Icon && <Icon size={12} />} {label}
+    </div>
+    <div className={`text-2xl font-bold mt-1 tabular-nums ${tone}`}>{value}</div>
+  </div>
+);
 
 export default Milestones;

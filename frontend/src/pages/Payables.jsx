@@ -1,27 +1,58 @@
-import React, { useState, useEffect } from 'react';
-import { Wallet, X, IndianRupee, Building2, AlertTriangle } from 'lucide-react';
+/* ══════════════════════════════════════════════════════════
+   Payables — a DASHBOARD, not a list, and treated as one.
+
+   The ageing buckets and the total owed are only correct when computed over
+   every unpaid bill, so this page deliberately does not use useListQuery:
+   paginating the underlying query would make "₹18 lakh outstanding" mean
+   "outstanding on page one".
+
+   What it did do was send every unpaid bill to the browser. So the server
+   now keeps the aggregate whole and pages only the TABLE — the headline
+   figures keep counting everything while the rows below them can be
+   searched. A search shows its own subtotal separately, so looking for one
+   vendor never appears to change what the company owes.
+   ══════════════════════════════════════════════════════════ */
+import React, { useState, useEffect, useCallback } from 'react';
+import { Wallet, X, IndianRupee, Building2, AlertTriangle, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import { getToken } from '../lib/apiAuth';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const AGE = [['0-30', '#10b981'], ['31-60', '#f59e0b'], ['61-90', '#f97316'], ['90+', '#ef4444']];
 const PSTATUS_COLOR = { Unpaid: '#ef4444', 'Partially Paid': '#f59e0b', Paid: '#10b981' };
+const PAGE = 25;
 
 export default function Payables() {
   const toast = useToast();
+  const { can } = usePermissions();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [payBill, setPayBill] = useState(null);
   const [form, setForm] = useState({ amount: '', mode: 'Bank', reference: '', paidDate: '' });
+  const [search, setSearch] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [offset, setOffset] = useState(0);
 
-  const load = async () => {
+  useEffect(() => {
+    const t = setTimeout(() => { setDebounced(search); setOffset(0); }, 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await fetch(`${API}/payables`).then(r => r.ok ? r.json() : null);
+      const qs = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
+      if (debounced.trim()) qs.set('search', debounced.trim());
+      const token = getToken();
+      const d = await fetch(`${API}/payables?${qs}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }).then(r => r.ok ? r.json() : null);
       setData(d);
     } catch { setData(null); } finally { setLoading(false); }
-  };
-  useEffect(() => { load(); }, []);
+  }, [debounced, offset]);
+  useEffect(() => { load(); }, [load]);
 
   const openPay = (b) => { setPayBill(b); setForm({ amount: String(b.outstanding), mode: 'Bank', reference: '', paidDate: '' }); };
   const submitPay = async () => {
@@ -90,13 +121,50 @@ export default function Payables() {
             </div>
           )}
 
+          {/* Search over the bills table only. The ageing panels above keep
+              counting every unpaid bill, so filtering here never makes the
+              company look less indebted than it is. */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 200 }}>
+              <Search size={15} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search bill no., vendor or payment status…"
+                aria-label="Search outstanding bills"
+                style={{ width: '100%', padding: '9px 32px 9px 34px', fontSize: '0.86rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', borderRadius: 9, outline: 'none' }}
+              />
+              {search && (
+                <button onClick={() => setSearch('')} aria-label="Clear search"
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 2 }}>
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+              {loading ? 'Loading…'
+                : data.isFiltered
+                  ? `${data.billsTotal} of ${data.billCount} bills · ${rupee(data.filteredOutstanding)} of ${rupee(data.totalOutstanding)}`
+                  : `${data.billCount} outstanding`}
+            </span>
+          </div>
+
           {/* outstanding bills */}
           <div style={{ ...card, overflow: 'hidden' }}>
             {data.bills.length === 0 ? (
               <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>
                 <Wallet size={38} style={{ opacity: 0.35, marginBottom: 10 }} />
-                <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Nothing outstanding 🎉</div>
-                <div style={{ fontSize: '0.85rem', marginTop: 4 }}>Vendor bills appear here after you generate a GRN bill (Procurement → GRN).</div>
+                {data.isFiltered ? (
+                  <>
+                    <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No bills match “{search}”</div>
+                    <button onClick={() => setSearch('')} className="btn-secondary" style={{ marginTop: 10 }}>Clear search</button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Nothing outstanding 🎉</div>
+                    <div style={{ fontSize: '0.85rem', marginTop: 4 }}>Vendor bills appear here after you generate a GRN bill (Procurement → GRN).</div>
+                  </>
+                )}
               </div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -121,7 +189,11 @@ export default function Payables() {
                         <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--text-primary)' }}>{rupee(b.outstanding)}</td>
                         <td style={{ padding: '11px 14px' }}><span style={{ fontSize: '0.72rem', fontWeight: 700, color: PSTATUS_COLOR[b.payment_status], background: (PSTATUS_COLOR[b.payment_status] || '#888') + '1f', padding: '3px 9px', borderRadius: 999 }}>{b.payment_status}</span></td>
                         <td style={{ padding: '11px 14px', textAlign: 'right' }}>
-                          <button onClick={() => openPay(b)} className="btn-primary btn-sm" style={{ padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }}><IndianRupee size={13} /> Pay</button>
+                          {/* Recording a payment is a finance action; hidden
+                              when the API would refuse it anyway. */}
+                          {can('payables', 'write') && (
+                            <button onClick={() => openPay(b)} className="btn-primary btn-sm" style={{ padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }}><IndianRupee size={13} /> Pay</button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -130,6 +202,25 @@ export default function Payables() {
               </table>
             )}
           </div>
+
+          {/* Paging over the table only; the totals above are unaffected. */}
+          {data.billsTotal > PAGE && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 2px 0' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                {offset + 1}–{Math.min(offset + PAGE, data.billsTotal)} of {data.billsTotal}
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}
+                  className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, opacity: offset === 0 ? 0.5 : 1 }}>
+                  <ChevronLeft size={14} /> Previous
+                </button>
+                <button disabled={offset + PAGE >= data.billsTotal} onClick={() => setOffset(offset + PAGE)}
+                  className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, opacity: offset + PAGE >= data.billsTotal ? 0.5 : 1 }}>
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 

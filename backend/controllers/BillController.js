@@ -213,7 +213,15 @@ exports.getBills = async (req, res) => {
                 COALESCE(SUM(COALESCE(tds,0) + COALESCE(gst_tds,0) + COALESCE(labour_cess,0)
                            + COALESCE(retention,0) + COALESCE(advance_recovery,0)
                            + COALESCE(other_deductions,0)),0)::numeric AS deductions,
-                COUNT(*) FILTER (WHERE COALESCE(status,'Draft') IN ('Draft','Under Review'))::int AS pending_approval`,
+                COUNT(*) FILTER (WHERE COALESCE(status,'Draft') IN ('Draft','Under Review'))::int AS pending_approval,
+                /* Net actually PAID, and what is still owed. Without these the
+                   page had to relabel its "Total Net Paid" card to "Total Net
+                   Payable" — a different question — because the figure behind
+                   it no longer existed. Supplying the number is better than
+                   quietly changing what the card means. */
+                COALESCE(SUM("netAmount") FILTER (WHERE status = 'Paid'),0)::numeric AS paid,
+                COALESCE(SUM("netAmount") FILTER (WHERE COALESCE(status,'Draft') <> 'Paid'),0)::numeric AS unpaid,
+                COUNT(*) FILTER (WHERE status = 'Paid')::int AS paid_count`,
     });
     res.json(result);
   } catch (err) {

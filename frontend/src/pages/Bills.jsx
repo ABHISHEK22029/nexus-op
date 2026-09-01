@@ -131,11 +131,16 @@ const Bills = () => {
           </div>
           <div className="bg-[#111113] border border-white/5 rounded-xl p-5 flex flex-col gap-2 relative overflow-hidden">
               <div className="absolute -right-4 -top-4 w-24 h-24 bg-green-500/10 rounded-full blur-2xl"></div>
+              {/* Paid and still-owed as two figures rather than one "net".
+                  A single net number cannot answer either question a finance
+                  person is actually asking. */}
               <span className="text-sm font-medium text-gray-400 flex items-center gap-2">
-                  <CheckCircle size={16} /> Total Net Payable
+                  <CheckCircle size={16} /> Net Paid
               </span>
-              <span className="text-2xl font-bold text-white">₹{money(s.net)}</span>
-              <span className="text-xs text-gray-600">after ₹{money(s.deductions)} deductions</span>
+              <span className="text-2xl font-bold text-white">₹{money(s.paid)}</span>
+              <span className="text-xs text-gray-600">
+                  ₹{money(s.unpaid)} still owed · after ₹{money(s.deductions)} deductions
+              </span>
           </div>
           <div className="bg-[#111113] border border-white/5 rounded-xl p-5 flex flex-col gap-2 relative overflow-hidden">
               <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl"></div>

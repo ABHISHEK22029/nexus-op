@@ -219,6 +219,45 @@ exports.payments = async (req, res) => {
 };
 
 // GET /payables — AP dashboard: outstanding bills + per-vendor summary + ageing
+/* Payables is a DASHBOARD, not a list, so it deliberately does not go
+   through runList: the ageing buckets and the total owed are only correct
+   when computed over every unpaid bill, and paginating the query would make
+   "₹18 lakh outstanding" mean "outstanding on page one".
+
+   But it was also shipping every unpaid bill to the browser, which is fine
+   at eleven rows and not at four thousand. So the aggregate stays whole and
+   only the TABLE is filtered and paged — the totals above it keep counting
+   everything, which is the honest way round. `filteredOutstanding` is
+   returned separately so a search can show its own subtotal without the
+   headline figure moving. */
+function paginateBills(rows, query = {}) {
+  const term = String(query.search ?? '').trim().toLowerCase();
+  let bills = rows;
+  if (term) {
+    bills = rows.filter(r =>
+      [r.bill_number, r.vendor_name, r.payment_status]
+        .some(v => String(v ?? '').toLowerCase().includes(term)));
+  }
+  const filteredOutstanding = bills.reduce((s, r) => s + (Number(r.outstanding) || 0), 0);
+
+  const limit = Math.min(Math.max(parseInt(query.limit, 10) || 50, 1), 200);
+  const offset = Math.max(parseInt(query.offset, 10) || 0, 0);
+  const page = bills.slice(offset, offset + limit);
+
+  return {
+    bills: page.map(r => ({
+      ...r,
+      outstanding: r2(Number(r.outstanding)),
+      amount_paid: r2(Number(r.amount_paid)),
+    })),
+    billsTotal: bills.length,          // rows matching the filter
+    billsLimit: limit,
+    billsOffset: offset,
+    filteredOutstanding: r2(filteredOutstanding),
+    isFiltered: Boolean(term),
+  };
+}
+
 exports.payables = async (req, res) => {
   try {
     const s = projScope(req);
@@ -249,7 +288,7 @@ exports.payables = async (req, res) => {
       billCount: rows.length,
       ageing,
       vendors: [...vendors.values()].map(v => ({ ...v, outstanding: r2(v.outstanding) })).sort((a, b) => b.outstanding - a.outstanding),
-      bills: rows.map(r => ({ ...r, outstanding: r2(Number(r.outstanding)), amount_paid: r2(Number(r.amount_paid)) })),
+      ...paginateBills(rows, req.query),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

@@ -9,6 +9,7 @@
    or pick a vendor and see everything they supply.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useMemo } from 'react';
+import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import { Link2, Plus, Trash2, Star, Search, Package, Info } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
@@ -147,11 +148,12 @@ export default function VendorSupplies() {
         {/* Links */}
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, overflow: 'hidden' }}>
           {!selected ? (
-            <div style={{ padding: 46, textAlign: 'center', color: 'var(--text-muted)' }}>
-              <Package size={34} style={{ opacity: 0.35, marginBottom: 8 }} />
-              <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Pick a {mode} on the left</div>
-              <div style={{ fontSize: '0.84rem', marginTop: 4 }}>Then link {mode === 'material' ? 'the vendors who supply it' : 'the materials they supply'}.</div>
-            </div>
+            /* Browse everything when nothing is picked. Previously this was a
+               dead end — "pick a material on the left" and nothing else —
+               which is unusable for the questions you actually arrive with:
+               "which links have no agreed price?", "who supplies anything at
+               all?". Server-side, so it holds up with a real catalogue. */
+            <AllLinks />
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -247,4 +249,85 @@ const Field = ({ label, children }) => (
     <span style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>{label}</span>
     {children}
   </label>
+);
+
+/* ══════════════════════════════════════════════════════════
+   Every vendor↔material link, searchable — the view you need before you
+   know which material you're asking about.
+
+   `missing_price` is the number worth surfacing: a link with no agreed
+   price still shows up in the PO picker, but tells the buyer nothing, so
+   it is a link that hasn't finished being created.
+   ══════════════════════════════════════════════════════════ */
+function AllLinks() {
+  const q = useListQuery('vendor-items', { pageSize: 25 });
+  const s = q.summary || {};
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 10, padding: 14, borderBottom: '1px solid var(--border-subtle)' }}>
+        <Stat label={q.isFiltered ? 'Links (filtered)' : 'Links'} value={s.count ?? q.total} />
+        <Stat label="Vendors" value={s.vendors ?? '—'} />
+        <Stat label="Materials" value={s.materials ?? '—'} />
+        <Stat label="Preferred" value={s.preferred ?? 0} tone="#b45309" />
+        <Stat label="No agreed price" value={s.missing_price ?? 0}
+          tone={Number(s.missing_price) > 0 ? '#dc2626' : undefined} />
+      </div>
+
+      <div style={{ padding: 14 }}>
+        <ListToolbar
+          q={q}
+          placeholder="Search vendor, material, category or their item code…"
+          filters={[{
+            key: 'is_preferred',
+            label: 'Preferred',
+            options: [{ value: 'true', label: 'Preferred only' }],
+          }]}
+        />
+      </div>
+
+      {q.rows.length === 0 ? (
+        <EmptyState q={q} icon={Package} noun="supply links"
+          hint="Pick a material or vendor on the left to create the first one." />
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
+              {['Vendor', 'Material', 'Price', 'MOQ', 'Lead time', ''].map(h => (
+                <th key={h} style={{ padding: '10px 14px', fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {q.rows.map(r => (
+                <tr key={r.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                  <td style={{ padding: '10px 14px', fontWeight: 600 }}>
+                    {r.is_preferred && <span title="Preferred vendor" style={{ color: '#b45309' }}>★ </span>}
+                    {r.vendor_name || '—'}
+                  </td>
+                  <td style={{ padding: '10px 14px' }}>{r.material_name || '—'}</td>
+                  <td style={{ padding: '10px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
+                    {r.price != null
+                      ? `₹${Number(r.price).toLocaleString('en-IN')}${r.price_uom ? '/' + r.price_uom : ''}`
+                      : <em style={{ color: '#dc2626', fontFamily: 'inherit', fontSize: '0.78rem' }}>not agreed</em>}
+                  </td>
+                  <td style={{ padding: '10px 14px', fontVariantNumeric: 'tabular-nums' }}>{r.moq ?? '—'}</td>
+                  <td style={{ padding: '10px 14px' }}>{r.lead_time_days != null ? `${r.lead_time_days} days` : '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>{r.vendor_item_code || ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={{ padding: '0 14px 14px' }}><Pagination q={q} /></div>
+    </div>
+  );
+}
+
+const Stat = ({ label, value, tone }) => (
+  <div>
+    <div style={{ fontSize: '0.66rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)' }}>{label}</div>
+    <div style={{ fontSize: '1.15rem', fontWeight: 800, color: tone || 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+  </div>
 );

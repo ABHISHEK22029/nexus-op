@@ -59,15 +59,32 @@ export default function MaterialRequirements() {
   }, [data, search]);
 
   /* Pareto: rank shortfall by value and mark where 80% of the exposure sits.
-     Those get a negotiated RFQ; the tail can be auto-ordered. */
-  const withPareto = useMemo(() => {
-    const total = rows.reduce((s, m) => s + (m.shortfall_value || 0), 0);
+     Those get a negotiated RFQ; the tail can be auto-ordered.
+
+     Computed over EVERY requirement, then looked up for whatever is on
+     screen — not over the filtered rows. The cumulative share only means
+     anything against the whole spend: computing it over a search result
+     made any filtered set total 100%, so searching three cheap materials
+     showed all three "above the 80% line" and marked them for negotiated
+     RFQ. The 80/20 split is a property of the procurement book, not of the
+     current search box. */
+  const paretoByMaterial = useMemo(() => {
+    const all = [...(data?.items || [])]
+      .sort((a, b) => (b.shortfall_value || 0) - (a.shortfall_value || 0));
+    const total = all.reduce((s, m) => s + (m.shortfall_value || 0), 0);
+    const map = new Map();
     let cum = 0;
-    return rows.map(m => {
+    for (const m of all) {
       cum += m.shortfall_value || 0;
-      return { ...m, cumulativePct: total > 0 ? (cum / total) * 100 : 0 };
-    });
-  }, [rows]);
+      map.set(m.material, total > 0 ? (cum / total) * 100 : 0);
+    }
+    return map;
+  }, [data]);
+
+  const withPareto = useMemo(
+    () => rows.map(m => ({ ...m, cumulativePct: paretoByMaterial.get(m.material) ?? 0 })),
+    [rows, paretoByMaterial]
+  );
 
   const categories = useMemo(
     () => [...new Set((data?.items || []).map(m => m.category).filter(Boolean))].sort(), [data]);
