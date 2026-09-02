@@ -9,6 +9,7 @@ const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
+const { syncOrderDelivery } = require('../shared/orderProgress');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
@@ -88,7 +89,10 @@ exports.create = async (req, res) => {
     const { rows } = await client.query(
       `INSERT INTO delivery_challans (owner_id, customer_id, customer_order_id, challan_number, challan_date,
          dispatch_through, vehicle_no, lr_no, place_of_supply, total_value, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+       VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7,$8,$9,$10,$11) RETURNING id`,
+      /* Rule 55 requires the date on a delivery challan — it is the document
+         that travels with the goods. Same empty-date-field cause as the
+         quotation and the invoice. */
       [req.user?.id || null, customerId, customerOrderId || null, num, challanDate || null,
        dispatchThrough || null, vehicleNo || null, lrNo || null, placeOfSupply || null, totalValue, notes || null]);
     const dcId = rows[0].id;
@@ -182,31 +186,11 @@ exports.setStatus = async (req, res) => {
        Everything already dispatched is summed, not just this challan: two
        part-shipments that together complete the order should close it, and
        looking only at the current one would leave it open forever. */
+    /* Moved into shared/orderProgress so the invoice path uses the same
+       comparison. It used to live only here, and SalesInvoiceController set
+       'Delivered' unconditionally — running after this one and undoing it. */
     if (goingOut && dc.customer_order_id) {
-      const totals = (await client.query(
-        `SELECT
-           (SELECT COALESCE(SUM(quantity),0) FROM customer_order_items
-             WHERE customer_order_id = $1) AS ordered,
-           (SELECT COALESCE(SUM(dci.quantity),0)
-              FROM delivery_challan_items dci
-              JOIN delivery_challans d ON d.id = dci.delivery_challan_id
-             WHERE d.customer_order_id = $1
-               AND d.status IN ('Dispatched','Delivered')) AS dispatched`,
-        [dc.customer_order_id]
-      )).rows[0];
-
-      const ordered = Number(totals.ordered) || 0;
-      const dispatched = Number(totals.dispatched) || 0;
-      // A small tolerance: quantities are `real`, and 1199.9999 is delivered.
-      const complete = ordered > 0 && dispatched >= ordered - 0.001;
-      const next = complete ? 'Delivered' : 'Partially Delivered';
-
-      await client.query(
-        `UPDATE customer_orders SET status = $1
-         WHERE id = $2 AND status NOT IN ('Delivered','Closed')`,
-        [next, dc.customer_order_id]
-      );
-      orderProgress = { ordered, dispatched, status: next, complete };
+      orderProgress = await syncOrderDelivery(client, dc.customer_order_id);
     }
 
     await client.query('COMMIT');

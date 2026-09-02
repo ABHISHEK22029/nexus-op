@@ -375,10 +375,18 @@ exports.createFromOrderItem = async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Order line not found' });
     const c = await db.query('SELECT COUNT(*) FROM production_orders WHERE "projectId" = $1', [projectId]);
     const prodNumber = `PROD-${String(parseInt(c.rows[0].count) + 1).padStart(4, '0')}`;
+    /* owner_id is set here for the same reason createOrder sets it: an
+       unowned production order is invisible to owner scoping, and its
+       finished goods land on a NULL-owner stock row while dispatch looks up
+       the challan's owner — one item, two rows, and a ledger that balances
+       against the wrong one. createOrder was fixed for this; this path was
+       not, so every production order started from the "Make" button on an
+       order line — the normal way to start one — was still unowned. */
     const po = await db.query(
-      `INSERT INTO production_orders ("projectId", prod_number, product_name, planned_qty, output_uom, customer_order_id, sku_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [projectId, prodNumber, item.description, item.quantity || null, item.unit || 'nos', item.customer_order_id, item.sku_id]
+      `INSERT INTO production_orders ("projectId", prod_number, product_name, planned_qty, output_uom, customer_order_id, sku_id, owner_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [projectId, prodNumber, item.description, item.quantity || null, item.unit || 'nos',
+       item.customer_order_id, item.sku_id, req.user?.id || null]
     );
     const prodId = po.rows[0].id;
     let bomLines = 0;

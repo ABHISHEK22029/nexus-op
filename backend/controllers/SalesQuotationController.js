@@ -109,7 +109,13 @@ exports.create = async (req, res) => {
     const { rows } = await client.query(
       `INSERT INTO sales_quotations (owner_id, customer_id, quote_number, quote_date, valid_until,
          sub_total, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes, terms)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
+       VALUES ($1,$2,$3,COALESCE($4::date, CURRENT_DATE),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
+      /* The date input on the form starts empty and nothing fills it, so
+         every quotation raised through the UI was stored undated — 4 of 4
+         on this database. A dated document is not a nicety: the quotation's
+         date is what "valid until" is read against, and the same omission
+         on an invoice breaks Rule 46(b). Defaulted in SQL rather than in the
+         handler so it holds for any caller, not just this form. */
       [req.user?.id || null, customerId, qnum, quoteDate || null, validUntil || null,
        t.subTotal, discount || 0, gstRate ?? 18, interstate, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null, terms || null]);
     const qid = rows[0].id;
@@ -152,10 +158,48 @@ exports.convertToOrder = async (req, res) => {
 
     const cnt = await client.query('SELECT COUNT(*) FROM customer_orders');
     const onum = `CO-${String(parseInt(cnt.rows[0].count) + 1).padStart(4, '0')}`;
+
+    /* Carry the money across, not just the lines.
+
+       This used to insert the header identity only — customer, number, date,
+       status, notes — and nothing else. The line items came over with their
+       rates, but every commercial column on the order stayed at its default:
+       sub_total 0, discount 0, gst_total 0, total 0, amount_in_words null,
+       and interstate FALSE regardless of what the quotation had decided.
+
+       So converting a won ₹94,400 quotation produced an order that read ₹0
+       in the list, dropped the negotiated discount, and silently switched an
+       inter-state supply to intra-state — which is the difference between
+       IGST and CGST+SGST on the invoice that follows.
+
+       Recomputed from the lines with the same compute() the quotation
+       itself used, rather than copied field-for-field. Copying would make
+       the order agree with the quotation; recomputing makes it agree with
+       the rows actually inserted, which is the stronger property — and it
+       cannot drift from the quotation's arithmetic because it IS the
+       quotation's arithmetic. The discount and tax treatment are the
+       quotation's decisions and pass through unchanged. */
+    const t = compute(items, {
+      discount: Number(q.discount) || 0,
+      gstRate: Number(q.gst_rate) || 0,
+      interstate: !!q.interstate,
+      roundOff: Number(q.round_off) || 0,
+    });
+
     const co = await client.query(
-      `INSERT INTO customer_orders (owner_id, customer_id, order_number, customer_po_ref, order_date, status, notes)
-       VALUES ($1,$2,$3,$4,CURRENT_DATE,'Open',$5) RETURNING id`,
-      [q.owner_id, q.customer_id, onum, q.quote_number, `Converted from quotation ${q.quote_number}`]);
+      `INSERT INTO customer_orders (
+         owner_id, customer_id, order_number, customer_po_ref, order_date, status, notes,
+         sub_total, discount, discount_type, gst_rate, interstate,
+         cgst, sgst, igst, gst_total, round_off, total, amount_in_words,
+         terms, payment_terms_days)
+       VALUES ($1,$2,$3,$4,CURRENT_DATE,'Open',$5,
+               $6,$7,'flat',$8,$9,
+               $10,$11,$12,$13,$14,$15,$16,
+               $17,$18) RETURNING id`,
+      [q.owner_id, q.customer_id, onum, q.quote_number, `Converted from quotation ${q.quote_number}`,
+       t.subTotal, Number(q.discount) || 0, Number(q.gst_rate) || 0, !!q.interstate,
+       t.cgst, t.sgst, t.igst, t.gstTotal, Number(q.round_off) || 0, t.net, amountInWords(t.net),
+       q.terms || null, q.payment_terms_days || null]);
     const orderId = co.rows[0].id;
     for (const it of items) {
       await client.query(

@@ -18,6 +18,7 @@ import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
 import { getToken } from '../lib/apiAuth';
+import { today, daysFromToday } from '../lib/dates';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Draft', 'Sent', 'Accepted', 'Rejected', 'Converted'];
 const STATUS_COLOR = { Draft: '#64748b', Sent: '#2563eb', Accepted: '#10b981', Rejected: '#ef4444', Converted: '#8b5cf6' };
@@ -31,7 +32,7 @@ export default function SalesQuotations() {
   const [customers, setCustomers] = useState([]);
   const [skus, setSkus] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [head, setHead] = useState({ customerId: '', quoteDate: '', validUntil: '', gstRate: '18', discount: '', terms: '' });
+  const [head, setHead] = useState({ customerId: '', quoteDate: today(), validUntil: daysFromToday(15), gstRate: '18', discount: '', terms: '' });
   const [lines, setLines] = useState([{ skuId: '', description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
 
   // Only the pick-lists for the form load here; the list itself is q's job.
@@ -71,7 +72,7 @@ export default function SalesQuotations() {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.detail || d.error || 'Could not create the quotation');
     toast.success(`Quotation ${d.quoteNumber} created`);
-    setShowForm(false); setHead({ customerId: '', quoteDate: '', validUntil: '', gstRate: '18', discount: '', terms: '' });
+    setShowForm(false); setHead({ customerId: '', quoteDate: today(), validUntil: daysFromToday(15), gstRate: '18', discount: '', terms: '' });
     setLines([{ skuId: '', description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
     q.reload();
   };

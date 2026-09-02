@@ -18,6 +18,7 @@ import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
 import { getToken } from '../lib/apiAuth';
+import { today } from '../lib/dates';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Draft', 'Dispatched', 'Delivered'];
 const STATUS_COLOR = { Draft: '#64748b', Dispatched: '#2563eb', Delivered: '#10b981' };
@@ -31,7 +32,7 @@ export default function DeliveryChallans() {
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [head, setHead] = useState({ customerId: '', customerOrderId: '', challanDate: '', dispatchThrough: '', vehicleNo: '', lrNo: '', placeOfSupply: '' });
+  const [head, setHead] = useState({ customerId: '', customerOrderId: '', challanDate: today(), dispatchThrough: '', vehicleNo: '', lrNo: '', placeOfSupply: '' });
   const [lines, setLines] = useState([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
 
   // Only the pick-lists for the form load here; the list itself is q's job.
@@ -71,7 +72,7 @@ export default function DeliveryChallans() {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.detail || d.error || 'Could not create the challan');
     toast.success(`Challan ${d.challanNumber} created`);
-    setShowForm(false); setHead({ customerId: '', customerOrderId: '', challanDate: '', dispatchThrough: '', vehicleNo: '', lrNo: '', placeOfSupply: '' });
+    setShowForm(false); setHead({ customerId: '', customerOrderId: '', challanDate: today(), dispatchThrough: '', vehicleNo: '', lrNo: '', placeOfSupply: '' });
     setLines([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
     q.reload();
   };

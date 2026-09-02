@@ -9,6 +9,7 @@ const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const { toStateCode, toStateName, isInterstate } = require('../shared/gstStates');
+const { syncOrderDelivery } = require('../shared/orderProgress');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
@@ -144,8 +145,12 @@ exports.create = async (req, res) => {
          place_of_supply, place_of_supply_code, reverse_charge, due_date, terms, eway_bill_no,
          bill_to_name, bill_to_address, bill_to_gstin, bill_to_state,
          ship_to_name, ship_to_address, ship_to_gstin, ship_to_state)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+       VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
                $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31) RETURNING id`,
+      /* Rule 46(b) makes the date a mandatory particular of a tax invoice.
+         The builder's date field starts empty, so 3 of 4 invoices on this
+         database had none — a document that is not a valid tax invoice and
+         that nothing in the product would have told anyone about. */
       [req.user?.id || null, customerId, customerOrderId || null, invNumber, invoiceDate || null,
        t.subTotal, discount || 0, gstRate ?? 18, isInter, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null,
        tax.placeOfSupply || null, tax.placeOfSupplyCode || null, !!reverseCharge, dueDate || null, terms || null, ewayBillNo || null,
@@ -163,7 +168,16 @@ exports.create = async (req, res) => {
       );
     }
     // Move the customer order forward if this closes it.
-    if (customerOrderId) await client.query(`UPDATE customer_orders SET status = 'Delivered' WHERE id = $1 AND status <> 'Closed'`, [customerOrderId]);
+    /* Raising an invoice used to set the order to 'Delivered' outright.
+       Invoicing is a billing event, not a delivery event — and because it
+       normally happens after dispatch, this ran second and overwrote the
+       challan handler's careful quantity comparison. Ship 40 of 100, raise
+       the invoice, and the order read Delivered with 60 units never made.
+
+       Now both paths ask the same function, which only looks at what has
+       actually been dispatched, and leaves the status alone when nothing
+       has. */
+    if (customerOrderId) await syncOrderDelivery(client, customerOrderId);
     await client.query('COMMIT');
     res.json({ id: invId, invoiceNumber: invNumber, net: t.net });
   } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }

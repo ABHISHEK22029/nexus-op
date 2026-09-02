@@ -82,22 +82,15 @@ ADMIN=$(tok "$RBAC_ADMIN_EMAIL" "$RBAC_ADMIN_PASSWORD")
 [ -z "$ADMIN" ] && { echo "❌ no admin token — aborting, every result would be meaningless"; exit 1; }
 echo "  admin  : $(curl -s -m 25 "$B/auth/me" -H "Authorization: Bearer $ADMIN" | node -pe "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); d.email+' -> '+d.role+' ('+Object.keys(d.permissions||{}).length+' resources)'")"
 
+# Upsert rather than register-then-update. POST /auth/register works exactly
+# once: on the next run the email is taken, register refuses, and the
+# password stays whatever it was — so this suite could not sign in and
+# aborted with "no token for VIEWER". Deactivating these accounts after the
+# committed-credential incident made that permanent.
 for spec in "rbac-viewer@test.local:Viewer" "rbac-sales@test.local:Sales" "rbac-proc@test.local:Procurement"; do
   email="${spec%%:*}"; role="${spec##*:}"
-  curl -s -m 25 -X POST "$B/auth/register" -H 'Content-Type: application/json' \
-    -d "{\"name\":\"$role Test\",\"email\":\"$email\",\"password\":\"$RBAC_TEST_PASSWORD\"}" -o /dev/null
-  # Run from the backend root, not scripts/ — an earlier version used
-  # require('../db') while cwd was already backend/, so every UPDATE failed
-  # silently and all three users kept the default role. The test then
-  # "compared" three identical Owners and looked like it was testing roles.
-  ( cd "$(dirname "$0")/.." && node -e "
-      const db=require('./db');
-      (async()=>{
-        const r = await db.query('UPDATE users SET role=\$1 WHERE email=\$2', ['$role','$email']);
-        if (!r.rowCount) { console.error('no user updated for $email'); process.exit(1); }
-        process.exit(0);
-      })().catch(e=>{console.error(e.message);process.exit(1)});
-    " ) || { echo "❌ could not set role $role for $email — aborting"; exit 1; }
+  node "$(dirname "$0")/ensure-test-user.js" "$email" "$role" \
+    || { echo "❌ could not prepare $email as $role — aborting"; exit 1; }
 done
 
 VIEWER=$(tok "rbac-viewer@test.local" "$RBAC_TEST_PASSWORD")

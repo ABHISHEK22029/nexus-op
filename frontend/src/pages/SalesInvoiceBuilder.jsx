@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ReceiptIndianRupee } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { today } from '../lib/dates';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
@@ -13,7 +14,7 @@ export default function SalesInvoiceBuilder() {
   const toast = useToast();
   const [ctx, setCtx] = useState(null);
   const [items, setItems] = useState([]);
-  const [f, setF] = useState({ invoiceDate: '', discount: '', gstRate: 18, interstate: false, roundOff: '', notes: '' });
+  const [f, setF] = useState({ invoiceDate: today(), discount: '', gstRate: 18, interstate: false, roundOff: '', notes: '' });
 
   useEffect(() => {
     fetch(`${API}/sales-invoices/prefill/${coId}`).then(r => r.ok ? r.json() : null).then(d => {

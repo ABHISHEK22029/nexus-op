@@ -52,14 +52,11 @@ ADMIN=$(tok "$RBAC_ADMIN_EMAIL" "$RBAC_ADMIN_PASSWORD")
 ADMIN_ID=$(curl -s -m 25 "$B/auth/me" -H "Authorization: Bearer $ADMIN" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
 echo "admin id=$ADMIN_ID"
 
-# A non-admin to prove the Configurator is closed to them.
-curl -s -m 25 -X POST "$B/auth/register" -H 'Content-Type: application/json' \
-  -d "{\"name\":\"Cfg Sales\",\"email\":\"cfg-sales@test.local\",\"password\":\"$RBAC_TEST_PASSWORD\"}" -o /dev/null
-( cd "$(dirname "$0")/.." && node -e "
-    const db=require('./db');
-    (async()=>{ const r=await db.query('UPDATE users SET role=\$1, is_active=TRUE WHERE email=\$2',['Sales','cfg-sales@test.local']);
-      if(!r.rowCount){console.error('no user');process.exit(1);} process.exit(0);})()
-      .catch(e=>{console.error(e.message);process.exit(1)});" ) || exit 1
+# A non-admin to prove the Configurator is closed to them. Upserted, because
+# register-then-update only works on a database where this account does not
+# already exist — see ensure-test-user.js.
+node "$(dirname "$0")/ensure-test-user.js" "cfg-sales@test.local" "Sales" \
+  || { echo "❌ could not prepare cfg-sales@test.local"; exit 1; }
 SALES=$(tok "cfg-sales@test.local" "$RBAC_TEST_PASSWORD")
 [ -z "$SALES" ] && { echo "❌ no sales token"; exit 1; }
 SALES_ID=$(curl -s -m 25 "$B/auth/me" -H "Authorization: Bearer $SALES" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")

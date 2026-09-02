@@ -14,6 +14,7 @@ import { useProject } from '../context/ProjectContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import OrderReadiness from '../components/OrderReadiness';
+import { today } from '../lib/dates';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 /* 'Partially Delivered' is set automatically by a dispatch that ships some
@@ -33,7 +34,7 @@ export default function CustomerOrders() {
   const [showForm, setShowForm] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [detail, setDetail] = useState({});
-  const [head, setHead] = useState({ customerId: '', customerPoRef: '', orderDate: '' });
+  const [head, setHead] = useState({ customerId: '', customerPoRef: '', orderDate: today() });
   const [lines, setLines] = useState([{ skuId: '', description: '', quantity: '', unit: 'nos', targetPrice: '' }]);
 
   // The orders list is the hook's job now — searched and paged server-side.
@@ -69,7 +70,7 @@ export default function CustomerOrders() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed');
       toast.success(`Customer order ${d.orderNumber} created`);
-      setShowForm(false); setHead({ customerId: '', customerPoRef: '', orderDate: '' });
+      setShowForm(false); setHead({ customerId: '', customerPoRef: '', orderDate: today() });
       setLines([{ skuId: '', description: '', quantity: '', unit: 'nos', targetPrice: '' }]);
       load();
     } catch (err) { toast.error(err.message); }
