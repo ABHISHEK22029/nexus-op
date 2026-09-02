@@ -4,6 +4,7 @@
    frontend fetches with its token and turns the response into a blob.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { assertOwned } = require('../shared/ownerScope');
 
 // POST /attachments  (multipart: file + entityType + entityId)
 exports.create = async (req, res) => {
@@ -50,6 +51,8 @@ exports.download = async (req, res) => {
 // DELETE /attachments/:id
 exports.remove = async (req, res) => {
   try {
+    // attachments carries owner_id, so this is a direct check.
+    if (!await assertOwned(db, req, res, 'attachments', req.params.id, { columns: 'id' })) return;
     const r = await db.query('DELETE FROM attachments WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });

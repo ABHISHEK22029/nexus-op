@@ -6,7 +6,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { isCrossTenant } = require('../shared/roles');
-const { scopedById } = require('../shared/ownerScope');
+const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -132,6 +132,7 @@ exports.setStatus = async (req, res) => {
   const allowed = ['Draft', 'Sent', 'Accepted', 'Rejected', 'Converted'];
   if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
   try {
+    if (!await assertOwned(db, req, res, 'sales_quotations', req.params.id, { columns: 'id' })) return;
     const r = await db.query('UPDATE sales_quotations SET status = $1 WHERE id = $2 RETURNING quote_number', [status, req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true, status });
@@ -173,6 +174,7 @@ exports.convertToOrder = async (req, res) => {
 // DELETE /sales-quotations/:id
 exports.remove = async (req, res) => {
   try {
+    if (!await assertOwned(db, req, res, 'sales_quotations', req.params.id, { columns: 'id' })) return;
     const r = await db.query('DELETE FROM sales_quotations WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true });

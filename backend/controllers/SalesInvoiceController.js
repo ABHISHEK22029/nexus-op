@@ -5,7 +5,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { isCrossTenant } = require('../shared/roles');
-const { scopedById } = require('../shared/ownerScope');
+const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const { toStateCode, toStateName, isInterstate } = require('../shared/gstStates');
@@ -217,6 +217,10 @@ exports.getById = async (req, res) => {
 exports.addPayment = async (req, res) => {
   const { amount, mode, reference, paidDate } = req.body;
   if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'Enter a payment amount' });
+  /* Checked BEFORE the transaction opens. Recording a payment against
+     someone else's invoice corrupts their receivables rather than merely
+     reading them, which is why this one mattered most of the 27. */
+  if (!await assertOwned(db, req, res, 'sales_invoices', req.params.id, { columns: 'id' })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -241,6 +245,7 @@ exports.setStatus = async (req, res) => {
   const allowed = ['Draft', 'Sent', 'Partially Paid', 'Paid'];
   if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
   try {
+    if (!await assertOwned(db, req, res, 'sales_invoices', req.params.id, { columns: 'id' })) return;
     const r = await db.query('UPDATE sales_invoices SET status = $1 WHERE id = $2', [status, req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true, status });
@@ -249,6 +254,7 @@ exports.setStatus = async (req, res) => {
 
 exports.remove = async (req, res) => {
   try {
+    if (!await assertOwned(db, req, res, 'sales_invoices', req.params.id, { columns: 'id' })) return;
     const r = await db.query('DELETE FROM sales_invoices WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true });

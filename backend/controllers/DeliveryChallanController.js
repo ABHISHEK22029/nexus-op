@@ -6,7 +6,7 @@
 const db = require('../db');
 const stock = require('../shared/stock');
 const { isCrossTenant } = require('../shared/roles');
-const { scopedById } = require('../shared/ownerScope');
+const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -222,6 +222,7 @@ exports.setStatus = async (req, res) => {
 // DELETE /delivery-challans/:id
 exports.remove = async (req, res) => {
   try {
+    if (!await assertOwned(db, req, res, 'delivery_challans', req.params.id, { columns: 'id' })) return;
     const r = await db.query('DELETE FROM delivery_challans WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true });

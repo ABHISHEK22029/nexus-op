@@ -4,6 +4,8 @@
    Yield, reconciliation and cost/piece are computed here.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { isCrossTenant } = require('../shared/roles');
+const { assertOwned } = require('../shared/ownerScope');
 const stock = require('../shared/stock');
 const { runList } = require('../shared/listQuery');
 
@@ -152,6 +154,7 @@ exports.updateStatus = async (req, res) => {
   const allowed = ['Planned', 'In Progress', 'Completed'];
   if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
   try {
+    if (!await assertOwned(db, req, res, 'production_orders', req.params.id, { columns: 'id' })) return;
     const r = await db.query(`UPDATE production_orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id`, [status, req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true, status });
@@ -162,6 +165,7 @@ exports.updateStatus = async (req, res) => {
 
 exports.deleteOrder = async (req, res) => {
   try {
+    if (!await assertOwned(db, req, res, 'production_orders', req.params.id, { columns: 'id' })) return;
     const r = await db.query('DELETE FROM production_orders WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
@@ -175,6 +179,9 @@ exports.addConsumption = async (req, res) => {
   const { inventoryId, itemName, consumedQty, uom, unitCost } = req.body;
   const orderId = req.params.id;
   if (!itemName || consumedQty == null) return res.status(400).json({ error: 'itemName and consumedQty are required' });
+  /* Issuing material against another tenant's production order would draw
+     down their stock. Checked before the transaction opens. */
+  if (!await assertOwned(db, req, res, 'production_orders', orderId, { columns: 'id' })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -355,7 +362,16 @@ exports.createFromOrderItem = async (req, res) => {
   const { projectId } = req.body;
   if (!projectId) return res.status(400).json({ error: 'Select an active project (top bar) to make against' });
   try {
-    const item = (await db.query('SELECT * FROM customer_order_items WHERE id = $1', [req.params.itemId])).rows[0];
+    /* An order LINE carries no owner; it inherits from its order. Scoping on
+       the line's own id is impossible, so the check joins up to the order —
+       otherwise anyone could start production against a competitor's line
+       and read the product and quantity back out of the result. */
+    const item = (await db.query(
+      `SELECT coi.* FROM customer_order_items coi
+       JOIN customer_orders co ON co.id = coi.customer_order_id
+       WHERE coi.id = $1${isCrossTenant(req.user?.role) ? '' : ' AND co.owner_id = $2'}`,
+      isCrossTenant(req.user?.role) ? [req.params.itemId] : [req.params.itemId, req.user?.id]
+    )).rows[0];
     if (!item) return res.status(404).json({ error: 'Order line not found' });
     const c = await db.query('SELECT COUNT(*) FROM production_orders WHERE "projectId" = $1', [projectId]);
     const prodNumber = `PROD-${String(parseInt(c.rows[0].count) + 1).padStart(4, '0')}`;

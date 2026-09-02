@@ -8,7 +8,7 @@ const db = require('../db');
 const { computeOrder } = require('../shared/orderTotals');
 const { isInterstate } = require('../shared/gstStates');
 const { amountInWords } = require('../shared/amountInWords');
-const { scopedById } = require('../shared/ownerScope');
+const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { runList } = require('../shared/listQuery');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
@@ -146,6 +146,7 @@ exports.updateOrderStatus = async (req, res) => {
   const allowed = ['Open', 'In Procurement', 'Partially Delivered', 'Delivered', 'Closed'];
   if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
   try {
+    if (!await assertOwned(db, req, res, 'customer_orders', req.params.id, { columns: 'id' })) return;
     const r = await db.query('UPDATE customer_orders SET status = $1 WHERE id = $2', [status, req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true, status });
@@ -154,6 +155,7 @@ exports.updateOrderStatus = async (req, res) => {
 
 exports.deleteOrder = async (req, res) => {
   try {
+    if (!await assertOwned(db, req, res, 'customer_orders', req.params.id, { columns: 'id' })) return;
     const r = await db.query('DELETE FROM customer_orders WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true });
@@ -241,13 +243,27 @@ exports.addQuoteLine = async (req, res) => {
 };
 
 exports.deleteQuoteLine = async (req, res) => {
-  try { await db.query('DELETE FROM quote_lines WHERE id = $1', [req.params.lineId]); res.json({ success: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    /* A quote line has no owner of its own — it inherits from the quotation
+       it hangs off. So ownership is checked one level up, through the join,
+       rather than on the row being deleted. Without this, any tenant could
+       delete a competitor's vendor quote by guessing a line id. */
+    const s = scopedById(req, req.params.id);
+    const parent = await db.query(`SELECT id FROM quotations WHERE ${s.where}`, s.params);
+    if (!parent.rows[0]) return res.status(404).json({ error: 'Quotation not found' });
+
+    const r = await db.query(
+      'DELETE FROM quote_lines WHERE id = $1 AND quotation_id = $2',
+      [req.params.lineId, parent.rows[0].id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'Quote line not found on this quotation' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
 exports.selectQuote = async (req, res) => {
   const { quoteLineId } = req.body;
   try {
+    if (!await assertOwned(db, req, res, 'quotations', req.params.id, { columns: 'id' })) return;
     await db.query('UPDATE quotations SET selected_quote_id = $1, status = $2 WHERE id = $3', [quoteLineId, 'Selected', req.params.id]);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -255,6 +271,7 @@ exports.selectQuote = async (req, res) => {
 
 exports.deleteQuotation = async (req, res) => {
   try {
+    if (!await assertOwned(db, req, res, 'quotations', req.params.id, { columns: 'id' })) return;
     const r = await db.query('DELETE FROM quotations WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true });
@@ -265,7 +282,10 @@ exports.deleteQuotation = async (req, res) => {
 exports.generatePO = async (req, res) => {
   const { projectId } = req.body;
   try {
-    const quote = (await db.query('SELECT * FROM quotations WHERE id = $1', [req.params.id])).rows[0];
+    // Owner-scoped: raising a PO off someone else's quotation would commit
+    // real money against a vendor they chose.
+    const s = scopedById(req, req.params.id);
+    const quote = (await db.query(`SELECT * FROM quotations WHERE ${s.where}`, s.params)).rows[0];
     if (!quote) return res.status(404).json({ error: 'quotation not found' });
     if (!quote.selected_quote_id) return res.status(400).json({ error: 'Select a winning vendor quote first' });
     const line = (await db.query('SELECT * FROM quote_lines WHERE id = $1', [quote.selected_quote_id])).rows[0];

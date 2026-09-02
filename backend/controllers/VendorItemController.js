@@ -9,6 +9,7 @@
    end they happen to be looking at.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { runList } = require('../shared/listQuery');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
@@ -111,6 +112,7 @@ exports.update = async (req, res) => {
   const sets = COLS.filter(c => c in req.body);
   if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
   try {
+    if (!await assertOwned(db, req, res, 'vendor_items', req.params.id, { columns: 'id' })) return;
     if (req.body.is_preferred) {
       const cur = (await db.query('SELECT raw_material_id FROM vendor_items WHERE id = $1', [req.params.id])).rows[0];
       if (cur) await db.query('UPDATE vendor_items SET is_preferred = FALSE WHERE raw_material_id = $1 AND id <> $2', [cur.raw_material_id, req.params.id]);
@@ -127,6 +129,7 @@ exports.update = async (req, res) => {
 /* DELETE /vendor-items/:id */
 exports.remove = async (req, res) => {
   try {
+    if (!await assertOwned(db, req, res, 'vendor_items', req.params.id, { columns: 'id' })) return;
     const { rowCount } = await db.query('DELETE FROM vendor_items WHERE id = $1', [req.params.id]);
     if (!rowCount) return res.status(404).json({ error: 'Link not found' });
     res.json({ success: true });

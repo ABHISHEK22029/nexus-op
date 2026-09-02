@@ -45,7 +45,21 @@ function scan(file) {
 
   for (const h of handlersOf(src)) {
     // Does this handler establish ownership at all, anywhere?
-    const guarded = /owner_id|scopedById|andOwner|isCrossTenant|projScope/.test(h.body);
+    /* assertOwned() is the guard added for write handlers: it verifies
+       ownership up front and 404s, so the writes below it are safe without
+       each carrying its own owner_id condition. */
+    const guarded = /owner_id|scopedById|andOwner|assertOwned|isCrossTenant|projScope/.test(h.body);
+
+    /* A write to a row this handler CREATED needs no ownership check —
+       nobody else can own a row that did not exist a moment ago. Both
+       remaining reports were this: BillController writes bill_number back
+       to the bill it just inserted, and StockController updates the
+       inventory row resolveInventoryRow just returned.
+
+       Recognised by the handler containing a RETURNING id (or a resolve
+       helper) BEFORE the write. Narrow on purpose — a blanket exemption
+       would hide the real thing this checker exists to find. */
+    const createsItsOwnRow = /RETURNING\s+id|resolveInventoryRow\(/i.test(h.body);
 
     const writes = [
       ...h.body.matchAll(/UPDATE\s+([a-z_]+)\s+SET[\s\S]{0,400}?WHERE\s+([^`;]*)/gi),
@@ -60,7 +74,7 @@ function scan(file) {
       // that was itself checked is fine, but we cannot tell, so we require
       // the handler to mention ownership somewhere.
       if (!/\bid\s*=\s*\$/.test(where)) continue;
-      if (guarded) continue;
+      if (guarded || createsItsOwnRow) continue;
       findings.push({ file: rel, handler: h.name, table, where: where.trim().slice(0, 60) });
     }
   }

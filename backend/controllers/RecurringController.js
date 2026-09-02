@@ -9,6 +9,7 @@
    what the user entered on the profile.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { notify } = require('../notify');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -83,6 +84,7 @@ exports.update = async (req, res) => {
     }
   }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
+    if (!await assertOwned(db, req, res, 'recurring_profiles', req.params.id, { columns: 'id' })) return;
   vals.push(req.params.id);
   try {
     const r = await db.query(`UPDATE recurring_profiles SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
@@ -93,6 +95,7 @@ exports.update = async (req, res) => {
 
 exports.remove = async (req, res) => {
   try {
+    if (!await assertOwned(db, req, res, 'recurring_profiles', req.params.id, { columns: 'id' })) return;
     const r = await db.query('DELETE FROM recurring_profiles WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });

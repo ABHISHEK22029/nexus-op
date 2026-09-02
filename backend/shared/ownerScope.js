@@ -26,4 +26,37 @@ function andOwner(req, params) {
   return ` AND owner_id = $${params.length}`;
 }
 
-module.exports = { scopedById, andOwner };
+/**
+ * Confirm the caller owns this row before a write touches it.
+ *
+ * The read path was fixed by threading owner_id into each SELECT. Writes
+ * needed something else: a DELETE or an UPDATE keyed on an id has nowhere
+ * natural to put the check, so 27 of them simply didn't have one — and a
+ * second tenant could close another company's order, or record a payment
+ * against their invoice.
+ *
+ * Deliberately a separate up-front query rather than an extra WHERE clause
+ * on each statement. Handlers here do several writes in one transaction
+ * (add a payment, recompute the total, set the status), and adding the
+ * condition to every one of them means every one is a chance to miss it.
+ * One guard at the top either passes or the handler never runs.
+ *
+ * Returns the row when allowed, or null after sending 404. Callers do:
+ *
+ *     const inv = await assertOwned(db, req, res, 'sales_invoices', id);
+ *     if (!inv) return;
+ *
+ * 404 rather than 403, for the same reason as the read path: with
+ * sequential ids, "forbidden" still confirms the record exists.
+ */
+async function assertOwned(db, req, res, table, id, { columns = '*' } = {}) {
+  const s = scopedById(req, id);
+  const { rows } = await db.query(`SELECT ${columns} FROM ${table} WHERE ${s.where}`, s.params);
+  if (!rows[0]) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  return rows[0];
+}
+
+module.exports = { scopedById, andOwner, assertOwned };
