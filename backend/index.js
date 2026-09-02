@@ -24,6 +24,7 @@ const vendorItemController = require('./controllers/VendorItemController');
 const customerSummaryController = require('./controllers/CustomerSummaryController');
 const adminController = require('./controllers/AdminController');
 const stockController = require('./controllers/StockController');
+const shortfallController = require('./controllers/ShortfallToPoController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
 const { authenticate, requireRole } = require('./middleware/auth');
@@ -726,6 +727,11 @@ app.get('/inventory', async (req, res) => {
    deficiency calculation — the BOM says "we need material #7" and there is
    nothing to join that to. This is the worklist for clearing that backlog. */
 /* ── Material requirements (the deficiency engine) ── */
+
+/* Shortfall -> purchase order. The deficiency engine already computes the
+   quantity, the vendor and the MOQ; this is the click that was missing. */
+app.get('/material-requirements/purchase-plan', shortfallController.plan);
+app.post('/material-requirements/to-po',        shortfallController.create);
 app.get('/material-requirements', materialReqController.list);
 
 /* ── Vendor <-> material: who supplies what ── */

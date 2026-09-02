@@ -1,0 +1,18 @@
+-- ══════════════════════════════════════════════════════════════
+-- 036 — a purchase order need not belong to a project
+--
+-- purchase_orders."projectId" was NOT NULL, which made the new
+-- shortfall → PO path fail outright:
+--     null value in column "projectId" of relation "purchase_orders"
+--
+-- The constraint encodes an assumption that every purchase is project work.
+-- It isn't: buying plate because stock fell below the reorder level is a
+-- purchase for the COMPANY, and the shortfall that triggered it may span
+-- three projects or none. Forcing a project would mean picking one
+-- arbitrarily and mis-costing the other two.
+--
+-- Same shape as the fix inventory needed in 034. Worth noting the pattern:
+-- these NOT NULLs were written when every flow started from a project, and
+-- each one surfaces the first time something legitimately doesn't.
+-- ══════════════════════════════════════════════════════════════
+ALTER TABLE purchase_orders ALTER COLUMN "projectId" DROP NOT NULL;

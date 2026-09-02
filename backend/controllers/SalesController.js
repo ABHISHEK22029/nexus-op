@@ -5,6 +5,9 @@
    All owner-scoped: admin sees all, a user sees only their own.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { computeOrder } = require('../shared/orderTotals');
+const { isInterstate } = require('../shared/gstStates');
+const { amountInWords } = require('../shared/amountInWords');
 const { scopedById } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { runList } = require('../shared/listQuery');
@@ -47,29 +50,72 @@ exports.getOrders = async (req, res) => {
 };
 
 exports.createOrder = async (req, res) => {
-  const { customerId, customerPoRef, orderDate, notes, items } = req.body;
+  const {
+    customerId, customerPoRef, orderDate, notes, items,
+    expectedShipmentDate, paymentTerms, paymentTermsDays, deliveryMethod, salesperson,
+    discount, discountType, gstRate, taxDeductionType, taxDeductionRate,
+    adjustment, adjustmentLabel, roundOff, terms, status,
+  } = req.body;
   if (!customerId) return res.status(400).json({ error: 'Pick a customer' });
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+
+    /* Place of supply decides CGST+SGST vs IGST, and it follows where the
+       goods GO — the shipping state — not where the customer is registered.
+       Same rule the invoice uses; deriving it here means the order and the
+       invoice it becomes cannot disagree about the tax. */
+    const cust = (await client.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
+    let company = null;
+    try { company = (await client.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+    const supplyState = cust?.shipping_state || cust?.state || null;
+    const inter = isInterstate(company?.stateCode || company?.gstin, supplyState);
+
+    const t = computeOrder(items, {
+      discount, discountType, gstRate: gstRate ?? 18, interstate: inter === true,
+      taxDeductionType, taxDeductionRate, adjustment, roundOff,
+    });
+
     const c = await client.query('SELECT COUNT(*) FROM customer_orders WHERE owner_id = $1', [req.user?.id || null]);
     const orderNumber = `CO-${String(parseInt(c.rows[0].count) + 1).padStart(4, '0')}`;
+
     const { rows } = await client.query(
-      `INSERT INTO customer_orders (owner_id, customer_id, order_number, customer_po_ref, order_date, notes)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [req.user?.id || null, customerId, orderNumber, customerPoRef || null, orderDate || null, notes || null]
+      `INSERT INTO customer_orders
+         (owner_id, customer_id, order_number, customer_po_ref, order_date, notes, status,
+          expected_shipment_date, payment_terms, payment_terms_days, delivery_method, salesperson,
+          sub_total, discount, discount_type, gst_rate, interstate, cgst, sgst, igst, gst_total,
+          tax_deduction_type, tax_deduction_rate, tax_deduction_amount,
+          adjustment_label, adjustment, round_off, total, amount_in_words, terms)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+       RETURNING id`,
+      [req.user?.id || null, customerId, orderNumber, customerPoRef || null, orderDate || null,
+       notes || null, status || 'Open',
+       expectedShipmentDate || null, paymentTerms || null,
+       paymentTermsDays ?? cust?.payment_terms_days ?? null, deliveryMethod || null, salesperson || null,
+       t.subTotal, discount || 0, discountType || 'percent', gstRate ?? 18, inter === true,
+       t.cgst, t.sgst, t.igst, t.gstTotal,
+       taxDeductionType || null, taxDeductionRate || null, t.taxDeductionAmount,
+       adjustmentLabel || 'Adjustment', t.adjustment, t.roundOff, t.total,
+       amountInWords(t.total), terms || company?.invoice_terms || null]
     );
     const orderId = rows[0].id;
-    for (const it of (items || [])) {
-      if (!it.description) continue;
+
+    let sort = 0;
+    for (const l of t.lines) {
+      if (!l.description) continue;
       await client.query(
-        `INSERT INTO customer_order_items (customer_order_id, sku_id, description, quantity, unit, target_price)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [orderId, it.skuId || null, it.description, it.quantity || null, it.unit || 'nos', it.targetPrice || null]
+        `INSERT INTO customer_order_items
+           (customer_order_id, sku_id, description, hsn, quantity, unit, rate, target_price,
+            discount, discount_type, tax_rate, amount, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [orderId, l.skuId || null, l.description, l.hsn || null, l.quantity || null,
+         l.unit || l.uom || 'nos', l.rate ?? l.targetPrice ?? null, l.targetPrice ?? l.rate ?? null,
+         l.discount || 0, l.discountType || 'percent', l.taxRate ?? null, l.amount, sort++]
       );
     }
+
     await client.query('COMMIT');
-    res.json({ id: orderId, orderNumber });
+    res.json({ id: orderId, orderNumber, total: t.total, interstateKnown: inter !== null });
   } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
   finally { client.release(); }
 };
