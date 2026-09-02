@@ -169,11 +169,24 @@ export default function MaterialRequirements() {
         ) : loading ? (
           <Empty title="Calculating…" body="Exploding bills of materials against stock on hand." />
         ) : withPareto.length === 0 ? (
-          <Empty
-            title={shortOnly ? 'Nothing is short' : 'No material requirements'}
-            body={shortOnly
-              ? 'Every material for the open orders is covered by stock or already on order.'
-              : 'Requirements appear once an order has products with a bill of materials.'} />
+          /* Three different empty states, because they mean three different
+             things. This used to key off the shortOnly checkbox alone, so a
+             workspace with no open orders was told "every material is
+             covered by stock" — reassurance, when the engine had had
+             nothing to work from. materials_total is the unfiltered count. */
+          data?.summary?.materials_total === 0 ? (
+            <Empty
+              title="Nothing to calculate yet"
+              body="Requirements appear once an open order contains a product with a bill of materials. Nothing here means no such order exists — not that everything is covered." />
+          ) : shortOnly ? (
+            <Empty
+              title="Nothing is short"
+              body={`All ${data.summary.materials_total} material(s) for the open orders are covered by stock or already on order.`} />
+          ) : (
+            <Empty
+              title="No materials match this filter"
+              body="Clear the status, category or search filter to see the full requirement." />
+          )
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>

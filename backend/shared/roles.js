@@ -52,6 +52,13 @@ const RESOURCES = {
   indent: 'Indents',
   quotations: 'Vendor quotations',
   'raw-materials': 'Raw materials',
+  /* `grn` and `expenses` were routed and served but never catalogued here,
+     and permissionsFor() builds its map from this object. The result was a
+     screen no role could open — including Administrator, who was told the
+     Administrator role "doesn't cover viewing grn" while the API returned
+     the rows quite happily. Server-side can() was right all along; the map
+     the UI gates on simply had no entry to consult. */
+  grn: 'Goods receipt',
   // Inventory
   inventory: 'Inventory',
   skus: 'SKUs',
@@ -69,6 +76,7 @@ const RESOURCES = {
   payables: 'Accounts payable',
   'credit-debit-notes': 'Credit / debit notes',
   recurring: 'Recurring billing',
+  expenses: 'Expenses',
   // Administration
   users: 'Users',
   'company-profile': 'Company profile',
@@ -87,10 +95,10 @@ const COMMON_READ = ['dashboard', 'activities', 'notifications', 'attachments', 
 const g = (resources, actions) => Object.fromEntries(resources.map(r => [r, actions]));
 
 const SALES = ['customers', 'customer-orders', 'sales-quotations', 'sales-invoices', 'delivery-challans'];
-const PROCUREMENT = ['vendors', 'vendor-items', 'po', 'indent', 'quotations', 'raw-materials'];
+const PROCUREMENT = ['vendors', 'vendor-items', 'po', 'indent', 'quotations', 'raw-materials', 'grn'];
 const INVENTORY = ['inventory', 'skus', 'material-requirements'];
 const PRODUCTION = ['production', 'work-orders', 'projects', 'milestones', 'boq', 'mb'];
-const FINANCE = ['bills', 'grn-bills', 'payables', 'credit-debit-notes', 'recurring'];
+const FINANCE = ['bills', 'grn-bills', 'payables', 'credit-debit-notes', 'recurring', 'expenses'];
 const ADMIN = ['users', 'company-profile', 'automation-settings'];
 
 /* Two orthogonal things were tangled together under the name "Admin":

@@ -331,6 +331,12 @@ const Dashboard = () => {
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', animation: 'fade-in 0.4s ease' }}>
 
+      {/* The banner used to live only in the !activeProject branch above, so
+          it showed on the "select a project" screen and nowhere else — i.e.
+          never, for anyone who had picked a project. It belongs here, on the
+          screen people actually open. */}
+      <SetupReadiness />
+
       {/* ══ PROJECT HEADER ══════════════════════════════════ */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',

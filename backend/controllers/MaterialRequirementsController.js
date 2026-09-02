@@ -239,6 +239,14 @@ exports.list = async (req, res) => {
       items: rows,
       total: rows.length,
       summary: {
+        /* The UNFILTERED count, so the screen can tell "we computed the
+           requirements and none are short" apart from "there was nothing to
+           compute". Without it the page keyed its empty state off the
+           shortOnly checkbox and told anyone with no open orders that
+           "every material for the open orders is covered by stock" — which
+           reads as reassurance when the truth is that the engine had no
+           input at all. */
+        materials_total: materials.length,
         materials_short: materials.filter(m => m.status === 'Short').length,
         materials_ordered: materials.filter(m => m.status === 'Ordered').length,
         total_shortfall_value: r4(materials.reduce((s, m) => s + (m.shortfall_value || 0), 0)),

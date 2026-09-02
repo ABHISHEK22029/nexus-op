@@ -71,6 +71,13 @@ for (const dir of ['controllers', 'routes']) {
   }
 }
 
+/* index.js was outside the sweep, which left the largest hand-written
+   surface in the codebase unchecked — the CRUD factories, the middleware
+   chain and the dashboard aggregate all live there. Adding andOwner() to
+   the dashboard query nearly shipped without its import for exactly the
+   reason this file exists. */
+scan(path.join(ROOT, 'index.js'), 'index.js');
+
 if (findings.length) {
   console.error(`\n❌ ${findings.length} helper(s) called but never imported:\n`);
   for (const f of findings) {

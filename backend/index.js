@@ -37,6 +37,7 @@ const { can, isCrossTenant, READ, WRITE, DELETE } = require('./shared/roles');
 const { ACTION_FOR_METHOD, allow } = require('./middleware/permissions');
 const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
+const { andOwner } = require('./shared/ownerScope');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -1219,12 +1220,22 @@ app.get('/dashboard', async (req, res) => {
   const pid = req.query.projectId;
   if (!pid) return res.status(400).json({ error: 'projectId required' });
 
+  /* Vendors and stock are company-level master data, not project records.
+     Counting them by "projectId" made the dashboard report 0 vendors and 0
+     SKUs while the Vendors page listed 22 and the stock ledger held rows —
+     the vendors simply sat on other projects, and migration 034 made
+     inventory."projectId" nullable precisely because stock stopped being a
+     per-project thing. Scope those two by owner, like the pages that list
+     them. Everything below genuinely does belong to one project. */
+  const ownerParams = [];
+  const ownerOnly = andOwner(req, ownerParams) || 'AND TRUE';
+
   try {
     const [vendors, pos, delivered, inv, billed, paid, indents, poQty, dist, activities, milestones, boq] = await Promise.all([
-      db.query(`SELECT COUNT(*) as c FROM vendors WHERE "projectId" = $1`, [pid]),
+      db.query(`SELECT COUNT(*) as c FROM vendors WHERE TRUE ${ownerOnly}`, ownerParams),
       db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE "projectId" = $1`, [pid]),
       db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE "projectId" = $1 AND status = 'Delivered'`, [pid]),
-      db.query(`SELECT COUNT(*) as c FROM inventory WHERE "projectId" = $1`, [pid]),
+      db.query(`SELECT COUNT(*) as c FROM inventory WHERE TRUE ${ownerOnly}`, ownerParams),
       db.query(`SELECT COALESCE(SUM("grossAmount"), 0) as total FROM bills WHERE "projectId" = $1`, [pid]),
       db.query(`SELECT COALESCE(SUM("netAmount"), 0) as total FROM bills WHERE "projectId" = $1 AND status = 'Paid'`, [pid]),
       db.query(`SELECT COUNT(*) as c FROM indents WHERE "projectId" = $1 AND status = 'Pending'`, [pid]),
