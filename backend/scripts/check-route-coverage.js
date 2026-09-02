@@ -21,6 +21,8 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
 const UNGATED = new Set([
   'auth', 'health', 'public', 'dashboard', 'activities', 'notifications',
   'attachments', 'kb', 'ai', 'uploads', 'metal-prices',
+  // Setup readiness: every role benefits from knowing why a screen is empty.
+  'setup',
 ]);
 
 /* Deliberately absent from RESOURCES, which makes them Administrator-only

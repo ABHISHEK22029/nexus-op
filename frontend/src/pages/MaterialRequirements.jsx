@@ -9,6 +9,7 @@
    to "what do I order, and how urgent is it".
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useMemo } from 'react';
+import SetupReadiness from '../components/SetupReadiness';
 import { useSearchParams } from 'react-router-dom';
 import { Layers, AlertTriangle, Search, RefreshCw, Info, TrendingDown, PackageCheck } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -91,6 +92,12 @@ export default function MaterialRequirements() {
 
   return (
     <div style={{ maxWidth: 1200 }}>
+      {/* This is the screen where an empty data spine is most misleading —
+          the table is legitimately empty and looks like a broken feature.
+          The banner says which input is missing and what it costs. It hides
+          itself once everything is in place. */}
+      <SetupReadiness compact />
+
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>

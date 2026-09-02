@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import SetupReadiness from '../components/SetupReadiness';
 import axios from 'axios';
 import {
   Users, ShoppingCart, CheckCircle, Package, TrendingUp, Receipt,
@@ -313,6 +314,10 @@ const Dashboard = () => {
   if (!activeProject) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: '16px' }}>
+      {/* First thing on the first screen: if the engine cannot work yet,
+          say so here rather than letting every other page look broken. */}
+      <SetupReadiness />
+
         <div style={{ fontSize: '4rem' }}>🏗️</div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Select a project from the top bar to view your dashboard</p>
       </div>

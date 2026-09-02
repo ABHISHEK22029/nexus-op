@@ -24,6 +24,7 @@ const vendorItemController = require('./controllers/VendorItemController');
 const customerSummaryController = require('./controllers/CustomerSummaryController');
 const adminController = require('./controllers/AdminController');
 const stockController = require('./controllers/StockController');
+const setupController = require('./controllers/SetupController');
 const shortfallController = require('./controllers/ShortfallToPoController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
@@ -116,7 +117,7 @@ app.use(scopeProjectAccess);
    business authority; gating them only makes the product hostile. */
 const UNGATED = new Set([
   'auth', 'health', 'public', 'dashboard', 'activities', 'notifications',
-  'attachments', 'kb', 'ai', 'uploads', 'metal-prices',
+  'attachments', 'kb', 'ai', 'uploads', 'metal-prices', 'setup',
 ]);
 
 app.use((req, res, next) => {
@@ -767,6 +768,12 @@ app.get('/customer-orders/:id/readiness', materialReqController.orderReadiness);
 app.get('/inventory/movements',     stockController.movements);
 app.get('/inventory/reconcile',     stockController.reconcile);
 app.get('/inventory/:id/movements', stockController.forItem);
+app.post('/inventory',              stockController.create);
+app.post('/inventory/:id/adjust',   stockController.adjust);
+
+/* Is the data spine populated enough for the engine to work? Ungated —
+   every role benefits from knowing why a screen is empty. */
+app.get('/setup/readiness',         setupController.readiness);
 
 app.get('/inventory/unmatched', async (req, res) => {
   try {
