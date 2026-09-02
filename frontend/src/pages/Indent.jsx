@@ -44,6 +44,7 @@ const Indent = () => {
 
   // Only the BOQ pick-list loads here; the list itself is q's job.
   useEffect(() => {
+    // BOQs are a construction concept; with no project there simply are none.
     if (!activeProject) { setBoqs([]); return; }
     fetch(`${API}/boq?projectId=${activeProject.id}`)
       .then(res => res.json())

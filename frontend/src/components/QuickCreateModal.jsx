@@ -48,7 +48,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
 
     if (activeProject) {
       // Fetch vendors
-      fetch(`${API}/vendors?projectId=${activeProject.id}`)
+      fetch(`${API}/vendors`)
         .then(res => res.json())
         .then(data => {
           setVendors(data);
@@ -56,7 +56,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
         });
 
       // Fetch work orders
-      fetch(`${API}/work-orders?projectId=${activeProject.id}`)
+      fetch(`${API}/work-orders${projectQuery()}`)
         .then(res => res.json())
         .then(data => {
           setWorkOrders(data);
@@ -67,7 +67,7 @@ const QuickCreateModal = ({ type, isOpen, onClose, onSuccess }) => {
         });
 
       // Fetch BOQ items
-      fetch(`${API}/boq?projectId=${activeProject.id}`)
+      fetch(`${API}/boq${projectQuery()}`)
         .then(res => res.json())
         .then(data => {
           setBoqItems(data);

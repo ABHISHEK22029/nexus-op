@@ -211,6 +211,67 @@ const IGNORABLE = (t) =>
     if (!after.groups.length) finding('MED', '/vendors', 'panel groups did not render', 'expected Source / Buy & receive / Pay');
   } else finding('HIGH', '/dashboard', 'could not click the Purchases module', 'rail button not found');
 
+  /* ── the top bar, and the scope lens ── */
+  console.log('\n━━ top bar ━━\n');
+  await page.goto(`${UI}/dashboard`, { waitUntil: 'networkidle2' });
+  await new Promise(r => setTimeout(r, 900));
+
+  const bar = await page.evaluate(() => {
+    const el = document.querySelector('.app-main > div');
+    const t = el ? el.innerText.replace(/\s+/g, ' ').trim() : '';
+    return { text: t, scope: !!document.querySelector('.topbar-scope') };
+  });
+  console.log(`  reads: ${bar.text.slice(0, 90)}`);
+
+  /* The organisation's name belongs on screen. Nothing said which business
+     you were signed into before — you could not tell a real tenant from a
+     demo without opening Settings. */
+  const named = await page.evaluate(() => !/Your organisation/.test(document.body.innerText));
+  console.log(`  names the organisation : ${named ? '✅' : '❌ still says "Your organisation"'}`);
+  if (!named) finding('MED', '/dashboard', 'top bar does not show the organisation name', 'company-profile fetch failed or returned no name');
+
+  console.log(`  scope selector shown   : ${bar.scope ? 'yes (this business has projects)' : 'no (hidden — no projects)'}`);
+
+  if (bar.scope) {
+    const dash = () => page.evaluate(() => {
+      const m = document.body.innerText.match(/PURCHASE ORDERS\s*\n?\s*(\d[\d,]*)/i);
+      return m ? m[1] : null;
+    });
+    const allWork = await dash();
+
+    const switched = await page.evaluate(() => {
+      document.querySelector('.topbar-scope')?.click();
+      return true;
+    });
+    await new Promise(r => setTimeout(r, 500));
+    const picked = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('button')];
+      const i = btns.findIndex(b => /^All work$/.test(b.innerText.trim()));
+      const target = btns.slice(i + 1).find(b => b.innerText.trim() && !/^All work$/.test(b.innerText.trim()));
+      if (!target) return null;
+      const label = target.innerText.trim();
+      target.click();
+      return label;
+    });
+    await new Promise(r => setTimeout(r, 2200));
+    const scoped = await dash();
+    console.log(`  All work POs=${allWork} → "${picked}" POs=${scoped}`);
+    if (!picked) finding('MED', '/dashboard', 'scope menu listed no projects', 'the dropdown opened but had nothing to pick');
+    else if (allWork === scoped && allWork !== null) {
+      finding('MED', '/dashboard', 'switching scope changed nothing', `both showed ${allWork} purchase orders — the selection may not be reaching the query`);
+    }
+
+    // Put it back, so the later checks and the next run start from All work.
+    await page.evaluate(() => {
+      document.querySelector('.topbar-scope')?.click();
+    });
+    await new Promise(r => setTimeout(r, 400));
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')].find(b => /^All work$/.test(b.innerText.trim()))?.click();
+    });
+    await new Promise(r => setTimeout(r, 800));
+  }
+
   /* ── does search actually filter? ── */
   console.log('\n━━ search on a list page ━━\n');
   await page.goto(`${UI}/vendors`, { waitUntil: 'networkidle2' });

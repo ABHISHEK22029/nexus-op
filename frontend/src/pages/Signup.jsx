@@ -24,7 +24,7 @@ export default function Signup() {
       // (Welcome → Get Started → set up first project → tour), not the cold dashboard.
       localStorage.setItem('nexus_tour_pending', '1');
       await register(name, email, password);
-      window.location.assign('/beta-welcome');
+      window.location.assign('/welcome');
     } catch (err) {
       localStorage.removeItem('nexus_tour_pending');
       setLocalErr(err.message || 'Sign up failed');
@@ -44,7 +44,7 @@ export default function Signup() {
 
   // Already signed in → skip the form. A brand-new signup goes to the friendly
   // onboarding (flag set above); a returning user goes straight to the dashboard.
-  if (token) return <Navigate to={localStorage.getItem('nexus_tour_pending') === '1' ? '/beta-welcome' : '/dashboard'} replace />;
+  if (token) return <Navigate to={localStorage.getItem('nexus_tour_pending') === '1' ? '/welcome' : '/dashboard'} replace />;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', padding: 24 }}>

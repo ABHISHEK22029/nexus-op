@@ -65,8 +65,8 @@ export default function Quotations() {
   const del = async (qid) => { if (!window.confirm('Delete this quotation?')) return; await fetch(`${API}/quotations/${qid}`, { method: 'DELETE' }); load(); };
 
   const genPO = async (qid) => {
-    if (!activeProject) { toast.error('Select an active project (top bar) to raise the PO against'); return; }
-    const res = await fetch(`${API}/quotations/${qid}/generate-po`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: activeProject.id }) });
+
+    const res = await fetch(`${API}/quotations/${qid}/generate-po`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: activeProject?.id ?? null }) });
     const d = await res.json();
     if (!res.ok) { toast.error(d.error || 'Failed'); return; }
     toast.success(`Vendor PO ${d.poNumber} raised`);

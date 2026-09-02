@@ -291,7 +291,7 @@ exports.generatePO = async (req, res) => {
     const line = (await db.query('SELECT * FROM quote_lines WHERE id = $1', [quote.selected_quote_id])).rows[0];
     if (!line) return res.status(400).json({ error: 'selected quote missing' });
     if (!line.vendor_id) return res.status(400).json({ error: 'The selected quote has no linked vendor — pick a vendor from your Vendors list on that quote' });
-    if (!projectId) return res.status(400).json({ error: 'Select an active project (top bar) to raise the PO against' });
+    /* No project needed: the PO's context is the vendor quote it came from. */
 
     // Trace back to the customer order (quotation → order item → order).
     let customerOrderId = null;

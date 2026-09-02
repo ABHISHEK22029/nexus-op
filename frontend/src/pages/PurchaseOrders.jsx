@@ -59,8 +59,11 @@ const PurchaseOrders = () => {
      controls, not lists, and a dropdown that paginates is a dropdown nobody
      can use. */
   const fetchRefs = () => {
-    if (!activeProject) return;
-    axios.get(`${API}/vendors?projectId=${activeProject.id}`)
+    /* Vendors are company-level master data, so this no longer waits for a
+       project — and no longer filters by one. Scoping the vendor dropdown to
+       a project meant a workshop whose vendors sat on other projects saw an
+       empty list and could not raise a PO at all. */
+    axios.get(`${API}/vendors`)
       .then(res => setVendors(Array.isArray(res.data) ? res.data : (res.data?.items || [])))
       .catch(err => console.error("Failed to fetch vendors", err));
 
@@ -131,7 +134,7 @@ const PurchaseOrders = () => {
       // Create PO
       const poRes = await axios.post(`${API}/po`, {
         ...formData,
-        projectId: activeProject.id,
+        projectId: activeProject?.id ?? null,
         itemName: formData.itemName || items[0].description, // fallback to first item
         quantity: totalQty,
         amountInWords

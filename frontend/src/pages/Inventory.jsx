@@ -6,22 +6,22 @@ import { useToast } from '../context/ToastContext';
 
 const Inventory = () => {
   const toast = useToast();
-  const { activeProject } = useProject();
+  const { activeProject, projectQuery, ready } = useProject();
   const [inventory, setInventory] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!activeProject) return;
+    if (!ready) return;   // wait for the remembered scope, then load either way
     setLoading(true);
-    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/inventory?projectId=${activeProject.id}`)
+    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/inventory${projectQuery()}`)
       .then(res => setInventory(res.data))
       .catch(err => {
         console.error("Failed to fetch inventory", err);
         toast.error(err.response?.data?.error || err.message || 'Something went wrong');
       })
       .finally(() => setLoading(false));
-  }, [activeProject]);
+  }, [activeProject, ready]);
 
   const filteredInventory = inventory.filter(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -39,7 +39,7 @@ const Inventory = () => {
       const res = await axios.patch(`${API_BASE}/inventory/${item.id}`, { min_stock_level: value });
       setInventory(list => list.map(i => (i.id === item.id ? { ...i, ...res.data, reorderLevel: value } : i)));
       // Re-fetch so the recomputed status badge reflects the new threshold.
-      const fresh = await axios.get(`${API_BASE}/inventory?projectId=${activeProject.id}`);
+      const fresh = await axios.get(`${API_BASE}/inventory${projectQuery()}`);
       setInventory(fresh.data);
       toast.success(`Reorder level set for ${item.itemName}`);
     } catch (err) {

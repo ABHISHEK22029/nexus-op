@@ -24,7 +24,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const yieldColor = (p) => (p == null ? 'var(--text-muted)' : p >= 85 ? '#10b981' : p >= 70 ? '#f59e0b' : '#ef4444');
 
 export default function Production() {
-  const { activeProject } = useProject();
+  const { activeProject, projectQuery } = useProject();
   const toast = useToast();
   const navigate = useNavigate();
   const { can } = usePermissions();
@@ -48,10 +48,10 @@ export default function Production() {
 
   // Weighted yield / scrap for the project — deliberately not a page sum.
   const loadProjectSummary = async () => {
-    if (!activeProject) { setProjSummary(null); return; }
+    // No project means "all my production", not "no production".
     try {
       const token = getToken();
-      const res = await fetch(`${API}/production/summary?projectId=${activeProject.id}`, {
+      const res = await fetch(`${API}/production/summary${projectQuery()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       setProjSummary(res.ok ? await res.json() : null);
@@ -61,12 +61,12 @@ export default function Production() {
 
   const create = async (e) => {
     e.preventDefault();
-    if (!activeProject) { toast.error('Select a project first'); return; }
+
     if (!form.productName.trim()) { toast.error('Enter what you are producing'); return; }
     try {
       const res = await fetch(`${API}/production`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: activeProject.id, ...form, plannedQty: form.plannedQty || null }),
+        body: JSON.stringify({ projectId: activeProject?.id ?? null, ...form, plannedQty: form.plannedQty || null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');

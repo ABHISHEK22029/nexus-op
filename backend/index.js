@@ -453,11 +453,19 @@ app.post('/po/:id/items', async (req, res) => {
 app.get('/company-profile', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM company_profile LIMIT 1');
-    if (rows.length === 0) {
-      // Auto-insert default if missing
-      const def = await db.query(`INSERT INTO company_profile (name) VALUES ('Kirashi Business Synergies Private Limited') RETURNING *`);
-      return res.json(def.rows[0]);
-    }
+    /* No row means nobody has set this business up yet — say so, rather than
+       inventing one.
+
+       This used to INSERT a profile named "Kirashi Business Synergies
+       Private Limited" on the first GET. Every fresh deployment therefore
+       became Kirashi: their name in the top bar, on their quotations, and on
+       every tax invoice they issued. It also defeated the first-run screen,
+       because a profile with a name looks like a business that has already
+       been set up.
+
+       PUT creates the row on first save, so returning nothing here costs
+       nothing. */
+    if (rows.length === 0) return res.json({});
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -473,6 +481,11 @@ const COMPANY_PROFILE_COLUMNS = [
   'bank_name', 'bank_account_name', 'bank_account_no', 'bank_ifsc', 'bank_branch', 'upi_id',
   'udyam_msme_no', 'cin', 'trade_license_no', 'logo_url', 'website',
   'default_payment_terms_days', 'invoice_terms', 'invoice_footer_note',
+  /* Asked on first run (migration 040). employee_count is a band rather than
+     a number — nobody knows their exact headcount and an ERP has no business
+     insisting. setup_completed_at is what stops the first-run screen showing
+     twice; it is a timestamp the client sets once it has answered. */
+  'employee_count', 'setup_completed_at',
 ];
 app.put('/company-profile', allow('company-profile', 'write'), async (req, res) => {
   const sets = COMPANY_PROFILE_COLUMNS.filter(c => c in req.body);
@@ -1218,39 +1231,63 @@ app.get('/activities', async (req, res) => {
    ══════════════════════════════════════════════════════════ */
 app.get('/dashboard', async (req, res) => {
   const pid = req.query.projectId;
-  if (!pid) return res.status(400).json({ error: 'projectId required' });
+
+  /* A project is now optional. This used to refuse outright without one —
+     which was the single biggest reason the product felt broken: a business
+     that does not run projects (a fabricator selling to a customer has an
+     order, not a project) had no way to see a dashboard at all, and picking
+     the wrong project from a list emptied every figure on the screen.
+
+     With no projectId the answer is "all your work", scoped by owner.
+     With one, it is that project. Both are legitimate questions. */
+  const scopeParams = [];
+  let scope;
+  if (pid) {
+    scopeParams.push(pid);
+    scope = `"projectId" = $1`;
+  } else {
+    const s = andOwner(req, scopeParams);       // ' AND owner_id = $n', or '' for admin
+    scope = s ? s.replace(/^\s*AND\s+/i, '') : 'TRUE';
+  }
 
   /* Vendors and stock are company-level master data, not project records.
      Counting them by "projectId" made the dashboard report 0 vendors and 0
      SKUs while the Vendors page listed 22 and the stock ledger held rows —
      the vendors simply sat on other projects, and migration 034 made
      inventory."projectId" nullable precisely because stock stopped being a
-     per-project thing. Scope those two by owner, like the pages that list
-     them. Everything below genuinely does belong to one project. */
+     per-project thing. Scope those two by owner however the page is framed. */
   const ownerParams = [];
   const ownerOnly = andOwner(req, ownerParams) || 'AND TRUE';
 
   try {
     const [vendors, pos, delivered, inv, billed, paid, indents, poQty, dist, activities, milestones, boq] = await Promise.all([
       db.query(`SELECT COUNT(*) as c FROM vendors WHERE TRUE ${ownerOnly}`, ownerParams),
-      db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE "projectId" = $1`, [pid]),
-      db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE "projectId" = $1 AND status = 'Delivered'`, [pid]),
+      db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE ${scope}`, scopeParams),
+      db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE ${scope} AND status = 'Delivered'`, scopeParams),
       db.query(`SELECT COUNT(*) as c FROM inventory WHERE TRUE ${ownerOnly}`, ownerParams),
-      db.query(`SELECT COALESCE(SUM("grossAmount"), 0) as total FROM bills WHERE "projectId" = $1`, [pid]),
-      db.query(`SELECT COALESCE(SUM("netAmount"), 0) as total FROM bills WHERE "projectId" = $1 AND status = 'Paid'`, [pid]),
-      db.query(`SELECT COUNT(*) as c FROM indents WHERE "projectId" = $1 AND status = 'Pending'`, [pid]),
-      db.query(`SELECT COALESCE(SUM(quantity), 0) as total FROM purchase_orders WHERE "projectId" = $1`, [pid]),
-      db.query(`SELECT status, COUNT(*) as count FROM purchase_orders WHERE "projectId" = $1 GROUP BY status`, [pid]),
-      db.query(`SELECT * FROM activities WHERE "projectId" = $1 ORDER BY timestamp DESC LIMIT 5`, [pid]),
+      db.query(`SELECT COALESCE(SUM("grossAmount"), 0) as total FROM bills WHERE ${scope}`, scopeParams),
+      db.query(`SELECT COALESCE(SUM("netAmount"), 0) as total FROM bills WHERE ${scope} AND status = 'Paid'`, scopeParams),
+      db.query(`SELECT COUNT(*) as c FROM indents WHERE ${scope} AND status = 'Pending'`, scopeParams),
+      db.query(`SELECT COALESCE(SUM(quantity), 0) as total FROM purchase_orders WHERE ${scope}`, scopeParams),
+      db.query(`SELECT status, COUNT(*) as count FROM purchase_orders WHERE ${scope} GROUP BY status`, scopeParams),
+      db.query(`SELECT * FROM activities WHERE ${scope} ORDER BY timestamp DESC LIMIT 5`, scopeParams),
+      /* milestones is the one table with neither owner_id nor projectId, so
+         it is reached through its work order either way. */
       db.query(`SELECT m.*, wo.name as "workOrderName" FROM milestones m
          JOIN work_orders wo ON m."workOrderId" = wo.id
-         WHERE wo."projectId" = $1 ORDER BY m.id ASC`, [pid]),
-      db.query(`SELECT bi."itemCode", bi.description, bi."estimatedQuantity", bi.rate,
+         WHERE ${scope.replace(/"projectId"|owner_id/g, m => `wo.${m}`)} ORDER BY m.id ASC`, scopeParams),
+      /* bi.id is selected, not just grouped by. The dashboard keys its BOQ
+         rows on item.id, and without the column every key was undefined —
+         React then warns and, more to the point, reuses DOM nodes across
+         rows on re-render. Invisible until this panel actually rendered,
+         which it only started doing once the dashboard stopped requiring a
+         project. */
+      db.query(`SELECT bi.id, bi."itemCode", bi.description, bi."estimatedQuantity", bi.rate,
          COALESCE(SUM(mb."measuredQuantity"), 0) as "executedQuantity"
          FROM boq_items bi
          LEFT JOIN measurement_book mb ON mb."boqId" = bi.id
-         WHERE bi."projectId" = $1
-         GROUP BY bi.id, bi."itemCode", bi.description, bi."estimatedQuantity", bi.rate`, [pid]),
+         WHERE ${scope.replace(/"projectId"|owner_id/g, m => `bi.${m}`)}
+         GROUP BY bi.id, bi."itemCode", bi.description, bi."estimatedQuantity", bi.rate`, scopeParams),
     ]);
 
     res.json({

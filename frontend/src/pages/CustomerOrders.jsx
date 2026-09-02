@@ -109,12 +109,12 @@ export default function CustomerOrders() {
   // One click: fabricate this line in-house — spins up a production order and
   // pre-fills what to consume from the SKU's recipe (BOM) × ordered qty.
   const makeProduction = async (item) => {
-    if (!activeProject) { toast.error('Pick an active project in the top bar to make against'); return; }
+
     setMaking(item.id);
     try {
       const res = await fetch(`${API}/production/from-order-item/${item.id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: activeProject.id }),
+        body: JSON.stringify({ projectId: activeProject?.id ?? null }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed');

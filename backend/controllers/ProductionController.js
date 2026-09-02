@@ -50,16 +50,48 @@ async function computeYield(orderId) {
   };
 }
 
+/* Next PROD- number.
+
+   This counted rows WHERE "projectId" = $1. With projects now optional that
+   would count zero every time for an order with no project, and hand out
+   PROD-0001 forever. Numbering falls back to the owner's own series, which
+   is what a business without projects would expect anyway.
+
+   Still a COUNT, so still racy under concurrent creates — two jobs started
+   in the same second can collide. That is a pre-existing issue across every
+   document series here and wants a sequence per series; noted, not fixed
+   in this change. */
+async function nextProdNumber(projectId, ownerId) {
+  const { rows } = projectId
+    ? await db.query('SELECT COUNT(*) c FROM production_orders WHERE "projectId" = $1', [projectId])
+    : await db.query('SELECT COUNT(*) c FROM production_orders WHERE owner_id = $1 AND "projectId" IS NULL', [ownerId ?? -1]);
+  return `PROD-${String(parseInt(rows[0].c) + 1).padStart(4, '0')}`;
+}
+
 /* ── Orders ─────────────────────────────────────────────── */
 exports.getOrders = async (req, res) => {
   const { projectId } = req.query;
-  if (!projectId) return res.status(400).json({ error: 'projectId required' });
+  /* A project is optional now. Without one this lists every production order
+     the caller owns rather than refusing — a fabricator running no projects
+     could otherwise never open this screen. */
   try {
-    /* Project scoping is unchanged: still a hard WHERE on ?projectId, which
-       scopeProjectAccess has already checked the caller owns.
+    /* With a projectId this is scoped to that project, which
+       scopeProjectAccess has already checked the caller owns. Without one it
+       falls back to owner scoping — "all my production" — rather than
+       filtering on a NULL projectId, which would match nothing and render an
+       empty screen that looks broken.
+
        The work order and (where the job came from a sale) the customer are
        joined in so the shop floor can search by "who is this for". */
-    const params = [projectId];
+    const params = [];
+    const where = [];
+    if (projectId) {
+      params.push(projectId);
+      where.push(`"projectId" = $${params.length}`);
+    } else if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.id ?? -1);
+      where.push(`owner_id = $${params.length}`);
+    }
     const result = await runList(db, {
       table: `(SELECT po.*, wo.name AS work_order_name,
                       co.order_number AS customer_order_number, c.name AS customer_name
@@ -72,7 +104,7 @@ exports.getOrders = async (req, res) => {
       filterColumns: ["status", "workOrderId", "customer_order_id", "sku_id"],
       allowedSort: ["id", "prod_number", "product_name", "planned_qty", "status", "created_at", "updated_at"],
       defaultSort: 'id', defaultDir: 'DESC',
-      where: [`"projectId" = $${params.length}`], params,
+      where, params,
       /* `no_output` is the needs-attention count: an order that is not
          Completed and has nothing booked against it yet — material may be
          issued with nothing to show for it. Yield percentages are
@@ -99,10 +131,11 @@ exports.getOrders = async (req, res) => {
 
 exports.createOrder = async (req, res) => {
   const { projectId, workOrderId, productName, plannedQty, outputUom, notes } = req.body;
-  if (!projectId || !productName) return res.status(400).json({ error: 'projectId and productName are required' });
+  /* productName is the only genuine requirement. A production order does not
+     need a project: "make 200 brackets for Apollo" is a complete instruction. */
+  if (!productName) return res.status(400).json({ error: 'productName is required' });
   try {
-    const c = await db.query(`SELECT COUNT(*) FROM production_orders WHERE "projectId" = $1`, [projectId]);
-    const prodNumber = `PROD-${String(parseInt(c.rows[0].count) + 1).padStart(4, '0')}`;
+    const prodNumber = await nextProdNumber(projectId, req.user?.id);
     const { rows } = await db.query(
       `INSERT INTO production_orders ("projectId", "workOrderId", prod_number, product_name, planned_qty, output_uom, notes, owner_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
@@ -110,7 +143,7 @@ exports.createOrder = async (req, res) => {
          it, so every production order was unowned — invisible to owner
          scoping and the reason finished goods landed on a NULL-owner stock
          row while dispatch used the challan owner. */
-      [projectId, workOrderId || null, prodNumber, productName, plannedQty || null, outputUom || 'nos', notes || null, req.user?.id || null]
+      [projectId || null, workOrderId || null, prodNumber, productName, plannedQty || null, outputUom || 'nos', notes || null, req.user?.id || null]
     );
     res.json({ id: rows[0].id, prodNumber });
   } catch (err) {
@@ -341,10 +374,15 @@ exports.deleteLine = async (req, res) => {
 
 // Project-level rollup for dashboard tiles.
 exports.getSummary = async (req, res) => {
-  const { projectId } = req.query;
-  if (!projectId) return res.status(400).json({ error: 'projectId required' });
+  const { projectId } = req.query;   // optional — see getOrders
   try {
-    const { rows } = await db.query('SELECT id FROM production_orders WHERE "projectId" = $1', [projectId]);
+    /* Same fallback as getOrders: with no project, summarise everything the
+       caller owns rather than everything with a NULL projectId. */
+    const { rows } = projectId
+      ? await db.query('SELECT id FROM production_orders WHERE "projectId" = $1', [projectId])
+      : isCrossTenant(req.user?.role)
+        ? await db.query('SELECT id FROM production_orders')
+        : await db.query('SELECT id FROM production_orders WHERE owner_id = $1', [req.user?.id ?? -1]);
     const ys = await Promise.all(rows.map(o => computeYield(o.id)));
     const withInput = ys.filter(y => y.inputWeight > 0);
     const avgYield = withInput.length ? round(withInput.reduce((s, y) => s + (y.yieldPct || 0), 0) / withInput.length) : null;
@@ -359,8 +397,7 @@ exports.getSummary = async (req, res) => {
 // POST /production/from-order-item/:itemId — fabricate a customer-order line,
 // pre-filling raw-material consumption from the SKU's Bill of Materials.
 exports.createFromOrderItem = async (req, res) => {
-  const { projectId } = req.body;
-  if (!projectId) return res.status(400).json({ error: 'Select an active project (top bar) to make against' });
+  const { projectId } = req.body;   // optional — the order line is the context
   try {
     /* An order LINE carries no owner; it inherits from its order. Scoping on
        the line's own id is impossible, so the check joins up to the order —
@@ -373,8 +410,7 @@ exports.createFromOrderItem = async (req, res) => {
       isCrossTenant(req.user?.role) ? [req.params.itemId] : [req.params.itemId, req.user?.id]
     )).rows[0];
     if (!item) return res.status(404).json({ error: 'Order line not found' });
-    const c = await db.query('SELECT COUNT(*) FROM production_orders WHERE "projectId" = $1', [projectId]);
-    const prodNumber = `PROD-${String(parseInt(c.rows[0].count) + 1).padStart(4, '0')}`;
+    const prodNumber = await nextProdNumber(projectId, req.user?.id);
     /* owner_id is set here for the same reason createOrder sets it: an
        unowned production order is invisible to owner scoping, and its
        finished goods land on a NULL-owner stock row while dispatch looks up
@@ -385,7 +421,7 @@ exports.createFromOrderItem = async (req, res) => {
     const po = await db.query(
       `INSERT INTO production_orders ("projectId", prod_number, product_name, planned_qty, output_uom, customer_order_id, sku_id, owner_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [projectId, prodNumber, item.description, item.quantity || null, item.unit || 'nos',
+      [projectId || null, prodNumber, item.description, item.quantity || null, item.unit || 'nos',
        item.customer_order_id, item.sku_id, req.user?.id || null]
     );
     const prodId = po.rows[0].id;

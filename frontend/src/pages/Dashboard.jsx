@@ -254,17 +254,21 @@ const CustomTooltip = ({ active, payload, label }) => {
    DASHBOARD
    ══════════════════════════════════════════════════════════ */
 const Dashboard = () => {
-  const { activeProject } = useProject();
+  const { activeProject, projectQuery, ready } = useProject();
   const { isDark } = useTheme();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   const fetchStats = useCallback(async () => {
-    if (!activeProject) return;
+    if (!ready) return;   // wait for the remembered scope before the first fetch
     try {
       setLoading(true);
-      const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/dashboard?projectId=${activeProject.id}`);
+      /* No projectId means "all my work". The endpoint used to refuse
+         without one, which is why this bailed out here and left the first
+         screen after sign-in permanently empty for anyone not running
+         projects. */
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/dashboard${projectQuery()}`);
       setStats(res.data);
       setLastRefresh(new Date());
     } catch (err) {
@@ -311,18 +315,10 @@ const Dashboard = () => {
     ? Math.round((stats.deliveredPOs / stats.totalPOs) * 100)
     : 0;
 
-  if (!activeProject) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: '16px' }}>
-      {/* First thing on the first screen: if the engine cannot work yet,
-          say so here rather than letting every other page look broken. */}
-      <SetupReadiness />
-
-        <div style={{ fontSize: '4rem' }}>🏗️</div>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Select a project from the top bar to view your dashboard</p>
-      </div>
-    );
-  }
+  /* The "Select a project from the top bar" wall used to live here. It was
+     the first thing a new user saw and there was nothing they could do about
+     it — a fabricator has no projects to select. The dashboard now answers
+     for whatever scope is chosen, project or not. */
 
   /* Chart colours that work in both themes */
   const gridStroke = isDark ? 'rgba(255,255,255,0.05)' : 'hsl(32,20%,88%)';
@@ -375,15 +371,24 @@ const Dashboard = () => {
               Executive Dashboard
             </div>
             <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.025em', margin: '0 0 4px' }}>
-              {activeProject.name}
+              {activeProject ? activeProject.name : 'Everything at a glance'}
             </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Client: <strong style={{ color: 'var(--text-secondary)' }}>{activeProject.clientName}</strong>
-              </span>
+              {/* The whole client / type / status strip describes a project.
+                  With none selected there is nothing true to put here, so it
+                  is replaced rather than filled with blanks. */}
+              {!activeProject && (
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Every order, purchase and job across the business
+                </span>
+              )}
+              {activeProject && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Client: <strong style={{ color: 'var(--text-secondary)' }}>{activeProject?.clientName}</strong>
+              </span>}
+              {activeProject && <>
               <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'var(--border-emphasis)', flexShrink: 0 }} />
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
-                {activeProject.type}
+                {activeProject?.type}
               </span>
               <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'var(--border-emphasis)', flexShrink: 0 }} />
               <span style={{
@@ -391,8 +396,8 @@ const Dashboard = () => {
                 background: 'hsl(158,64%,52%,0.12)', color: 'var(--accent-emerald)',
                 border: '1px solid hsl(158,64%,52%,0.3)',
               }}>
-                {activeProject.status}
-              </span>
+                {activeProject?.status}
+              </span></>}
             </div>
           </div>
         </div>

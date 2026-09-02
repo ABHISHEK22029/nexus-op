@@ -58,299 +58,27 @@ import GetStarted from './pages/GetStarted';
 import POInvoice from './pages/POInvoice';
 import RABillInvoice from './pages/RABillInvoice';
 import BetaWelcome from './pages/BetaWelcome';
+import FirstRun from './pages/FirstRun';
 import BetaOnboarding from './pages/BetaOnboarding';
 import { PermissionProvider, usePermissions } from './context/PermissionContext';
 import { ProjectProvider, useProject } from './context/ProjectContext';
-import { useTheme } from './context/ThemeContext';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import { UiConfigProvider } from './context/UiConfigContext';
 import { ToastProvider } from './context/ToastContext';
-import { UserCircle, Settings, Sun, Moon, Plus, LogOut } from 'lucide-react';
-import QuickCreateModal from './components/QuickCreateModal';
 import ProtectedRoute from './components/ProtectedRoute';
-import RoleBadge from './components/RoleBadge';
 import RoleRoute from './components/RoleRoute';
 import ProductTour from './components/ProductTour';
 import AskAi from './components/AskAi';
-import NotificationBell from './components/NotificationBell';
+import TopBar from './components/TopBar';
 
 /* ─── Top Header (App Layer only) ──────────────────────── */
-const TopHeader = () => {
-  const { projects, activeProject, setActiveProject } = useProject();
-  const { isDark, toggleTheme } = useTheme();
-  const { user, logout } = useAuth();
-  // Resolved server-side, so legacy role values display correctly.
-  const { roleLabel: effectiveRole } = usePermissions();
+/* The top bar moved into components/TopBar.jsx.
 
-  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
-  const [activeModal, setActiveModal] = React.useState(null);
-
-  // Close dropdown on click outside
-  React.useEffect(() => {
-    const handleOutsideClick = () => setIsDropdownOpen(false);
-    window.addEventListener('click', handleOutsideClick);
-    return () => window.removeEventListener('click', handleOutsideClick);
-  }, []);
-
-  return (
-    <div
-      style={{
-        position: 'sticky',
-        top: 0,
-        minHeight: '60px',
-        boxSizing: 'border-box',
-        padding: '12px 28px',
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: '10px',
-        background: 'var(--bg-surface)',
-        borderBottom: '1px solid var(--border-subtle)',
-        boxShadow: 'var(--shadow-sm)',
-      }}
-    >
-      {/* Quick Create Dropdown Menu */}
-      <div 
-        style={{ position: 'relative' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '8px',
-            padding: '6px 14px',
-            fontSize: '0.8rem',
-            fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.25)',
-            transition: 'all 150ms ease'
-          }}
-          onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.05)'}
-          onMouseLeave={e => e.currentTarget.style.filter = 'brightness(1)'}
-        >
-          <Plus size={14} strokeWidth={3} />
-          <span>Quick Create</span>
-        </button>
-
-        {isDropdownOpen && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 'calc(100% + 8px)',
-              right: 0,
-              width: '200px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '8px',
-              boxShadow: 'var(--shadow-md)',
-              padding: '6px',
-              zIndex: 100,
-              animation: 'dropdownFade 150ms ease-out'
-            }}
-          >
-            {[
-              { label: 'New Project', value: 'project', info: 'Create active workspace' },
-              { label: 'Onboard Vendor', value: 'vendor', info: 'Add partner details' },
-              { label: 'Raise Indent', value: 'indent', info: 'Site material request' },
-              { label: 'Raise PO', value: 'po', info: 'Issue supplier order' }
-            ].map((item) => (
-              <button
-                key={item.value}
-                onClick={() => {
-                  setActiveModal(item.value);
-                  setIsDropdownOpen(false);
-                }}
-                style={{
-                  width: '100%',
-                  textAlign: 'left',
-                  background: 'transparent',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
-                  transition: 'background 150ms'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {item.label}
-                </span>
-                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                  {item.info}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Project context selector */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-default)',
-          borderRadius: '8px', padding: '6px 14px',
-        }}
-      >
-        <Settings size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-        <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Context:</span>
-        <select
-          value={activeProject ? activeProject.id : ''}
-          onChange={(e) => setActiveProject(projects.find((p) => p.id === parseInt(e.target.value)))}
-          style={{
-            background: 'transparent', border: 'none',
-            fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)',
-            outline: 'none', cursor: 'pointer', maxWidth: '200px', padding: 0,
-          }}
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* The signed-in user's actual role — not a picker.
-
-          What stood here was a dropdown offering "Admin 👑 / Engineer /
-          Finance / Vendor". It set a local variable and never touched the
-          token, so choosing a role changed precisely nothing a server would
-          ever see. Worse than useless: it implied access control existed,
-          and the four names it offered matched neither the roles the backend
-          checked nor the ones the database stored.
-
-          Your role now comes from /auth/me and is a fact, not a preference.
-          Switching roles means signing in as someone who has that role. */}
-      <RoleBadge />
-
-      {/* ── Notifications ── */}
-      <NotificationBell />
-
-      {/* ── Theme Toggle ── */}
-      <button
-        onClick={toggleTheme}
-        title={isDark ? 'Switch to Light (Warm) Mode' : 'Switch to Dark Mode'}
-        style={{
-          width: '62px', height: '32px',
-          borderRadius: '99px',
-          border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'hsl(30,18%,78%)'}`,
-          background: isDark ? 'hsl(222, 38%, 14%)' : 'hsl(36, 60%, 91%)',
-          cursor: 'pointer',
-          position: 'relative',
-          flexShrink: 0,
-          transition: 'all 300ms ease',
-          display: 'flex',
-          alignItems: 'center',
-          padding: '4px',
-        }}
-      >
-        {/* Labels */}
-        <span style={{
-          position: 'absolute',
-          fontSize: '0.55rem',
-          fontWeight: 800,
-          letterSpacing: '0.04em',
-          color: isDark ? 'rgba(255,255,255,0.35)' : 'hsl(22,92%,50%)',
-          left: isDark ? 'auto' : '6px',
-          right: isDark ? '6px' : 'auto',
-          userSelect: 'none',
-          zIndex: 0,
-          textTransform: 'uppercase',
-        }}>
-          {isDark ? 'DARK' : 'LIGHT'}
-        </span>
-        {/* Knob */}
-        <div style={{
-          position: 'absolute',
-          width: '24px', height: '24px',
-          borderRadius: '50%',
-          background: isDark
-            ? 'linear-gradient(135deg, #3B4A6B, #4B5A80)'
-            : 'linear-gradient(135deg, hsl(22,92%,52%), hsl(38,95%,58%))',
-          left: isDark ? '4px' : 'calc(100% - 28px)',
-          transition: 'all 320ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.35)' : '0 2px 8px hsl(22,92%,50%,0.45)',
-          zIndex: 1,
-        }}>
-          {isDark
-            ? <Moon size={12} color="rgba(180,200,255,0.9)" />
-            : <Sun size={12} color="#fff" />}
-        </div>
-      </button>
-
-      {/* ── User + Logout ── */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-default)',
-          borderRadius: '8px', padding: '4px 6px 4px 6px',
-        }}
-      >
-        {/* Avatar (initial) */}
-        <div style={{
-          width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-          background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))',
-          color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
-        }}>
-          {/* Name first, role second. This branched on the literal string
-              'Admin', so an account stored as 'Administrator' — the value the
-              Configurator now assigns — fell to the else branch and showed an
-              email address where a role belongs. The effective role comes
-              from /auth/me, which has already resolved legacy values. */}
-          {(user?.name || user?.email || 'U').charAt(0)}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15, marginRight: 2 }}>
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {user?.name || user?.email || 'User'}
-          </span>
-          <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--brand-amber)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-            {effectiveRole || 'Member'}
-          </span>
-        </div>
-        <button
-          onClick={() => { logout(); window.location.assign('/login'); }}
-          title="Sign out"
-          style={{
-            display: 'flex', alignItems: 'center', gap: '5px',
-            background: 'transparent', border: '1px solid var(--border-default)',
-            borderRadius: '6px', padding: '5px 10px', cursor: 'pointer',
-            fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)',
-            transition: 'all 150ms ease',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent-red, #ef4444)'; e.currentTarget.style.borderColor = 'var(--accent-red, #ef4444)'; }}
-          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-default)'; }}
-        >
-          <LogOut size={12} strokeWidth={2.5} /> Sign out
-        </button>
-      </div>
-
-      {/* Render Quick Create Modal Overlay */}
-      <QuickCreateModal
-        type={activeModal} 
-        isOpen={activeModal !== null} 
-        onClose={() => setActiveModal(null)} 
-        onSuccess={() => {
-          // Refresh window to show newly created item on the page
-          window.location.reload();
-        }}
-      />
-    </div>
-  );
-};
+   It had grown to ~275 lines inline here: six separate control clusters
+   strung along the right edge with four different border treatments, two
+   gradients and no hierarchy — and nowhere on screen saying which business
+   you were signed into. TopBar groups it into where-am-I, what-can-I-do
+   and who-am-I. */
 
 /* ─── App Layout (with sidebar) — auth-gated AND role-gated ─────────
    RoleRoute sits here rather than on each of the 60 routes below. It works
@@ -366,19 +94,49 @@ const TopHeader = () => {
    Still only a courtesy — the server refuses regardless. The point is that
    someone who cannot use a screen gets a sentence explaining why instead of
    an empty table and a console full of 403s. */
+/* Send a genuinely new install to the first-run screen once.
+
+   "New" means the company profile has never been answered — not that the
+   user is new, because everyone here shares one organisation. The check is
+   deliberately fail-open: if /company-profile cannot be reached, the app
+   loads normally rather than trapping a working user behind a setup form
+   because the network blinked. */
+const NeedsSetup = ({ children }) => {
+  const [state, setState] = React.useState('checking');
+  const location = useLocation();
+
+  React.useEffect(() => {
+    const token = localStorage.getItem('nexus_token');
+    if (!token) { setState('ok'); return; }
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/company-profile`,
+      { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(p => setState(p && !p.setup_completed_at && !p.name ? 'setup' : 'ok'))
+      .catch(() => setState('ok'));
+  }, []);
+
+  if (state === 'checking') return null;
+  if (state === 'setup' && location.pathname !== '/welcome') {
+    return <Navigate to="/welcome" replace />;
+  }
+  return children;
+};
+
 const AppLayout = ({ children }) => (
   <ProtectedRoute>
-    <div className="app-layout">
-      <AppNav />
-      <main className="app-main" style={{ position: 'relative' }}>
-        <TopHeader />
-        <div className="app-page">
-          <RoleRoute>{children}</RoleRoute>
-        </div>
-      </main>
-      <ProductTour />
-      <AskAi />
-    </div>
+    <NeedsSetup>
+      <div className="app-layout">
+        <AppNav />
+        <main className="app-main" style={{ position: 'relative' }}>
+          <TopBar />
+          <div className="app-page">
+            <RoleRoute>{children}</RoleRoute>
+          </div>
+        </main>
+        <ProductTour />
+        <AskAi />
+      </div>
+    </NeedsSetup>
   </ProtectedRoute>
 );
 
@@ -396,6 +154,11 @@ const AppRoutes = () => {
       {/* ── Auth ── */}
       <Route path="/login"       element={<Login />} />
       <Route path="/signup"      element={<Signup />} />
+      {/* First run: two questions, no sidebar, no wall. The older
+          /onboarding and /beta-onboarding flows are still routed for anyone
+          who wants the full company-details form, but nothing sends a new
+          user into them any more. */}
+      <Route path="/welcome"     element={<ProtectedRoute><FirstRun /></ProtectedRoute>} />
       <Route path="/onboarding"  element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
       <Route path="/beta-welcome"  element={<ProtectedRoute><BetaWelcome /></ProtectedRoute>} />
       <Route path="/beta-onboarding"  element={<ProtectedRoute><BetaOnboarding /></ProtectedRoute>} />

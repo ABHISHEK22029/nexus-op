@@ -17,7 +17,7 @@ import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const GRN = () => {
-  const { activeProject } = useProject();
+  const { activeProject, projectQuery } = useProject();
   const toast = useToast();
   const navigate = useNavigate();
   const { can } = usePermissions();
@@ -39,8 +39,8 @@ const GRN = () => {
 
   // Only the PO pick-list loads here; the list itself is q's job.
   useEffect(() => {
-    if (!activeProject) { setPos([]); return; }
-    fetch(`${API}/po?projectId=${activeProject.id}`)
+    // No project means every dispatched PO is fair game, not none.
+    fetch(`${API}/po${projectQuery()}`)
       .then(res => res.json())
       .then(d => {
         const rows = Array.isArray(d) ? d : (d.items || []);
