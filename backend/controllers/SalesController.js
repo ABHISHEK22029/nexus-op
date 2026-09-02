@@ -138,7 +138,12 @@ exports.getOrderById = async (req, res) => {
 
 exports.updateOrderStatus = async (req, res) => {
   const { status } = req.body;
-  const allowed = ['Open', 'In Procurement', 'Delivered', 'Closed'];
+  /* 'Partially Delivered' is a real state, not a cosmetic one: some of the
+     order has physically shipped and the rest has not. Without it a
+     part-shipped order had to be either Open (understating progress) or
+     Delivered (telling the floor a job with units outstanding is finished).
+     The challan sets it automatically by comparing quantities. */
+  const allowed = ['Open', 'In Procurement', 'Partially Delivered', 'Delivered', 'Closed'];
   if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
   try {
     const r = await db.query('UPDATE customer_orders SET status = $1 WHERE id = $2', [status, req.params.id]);

@@ -280,6 +280,74 @@ exports.listUsers = async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
+/* POST /admin/users — an administrator creates an account.
+
+   Required, not optional: self-registration is now closed, so without this
+   there is no way to add a colleague at all. Closing one door and not
+   opening the other would have been worse than leaving it open.
+
+   The administrator sets the first password and hands it over. A proper
+   invite-by-email flow needs mail delivery this deployment does not have
+   yet, and a temporary password given in person is how most SMEs of this
+   size onboard anyway. `must_change_password` records that it is temporary
+   so the flow can be tightened later without re-identifying which accounts
+   were created this way. */
+exports.createUser = async (req, res) => {
+  const { name, email, password, role, department } = req.body || {};
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, email and password are required' });
+  }
+  if (String(password).length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+  try {
+    const exists = await db.query('SELECT 1 FROM users WHERE LOWER(email) = LOWER($1)', [email]);
+    if (exists.rowCount) return res.status(409).json({ error: 'An account with this email already exists' });
+
+    const chosen = role || 'Viewer';
+    const known = await db.query('SELECT 1 FROM role_definitions WHERE role = $1', [chosen]);
+    if (!known.rowCount) return res.status(400).json({ error: `Unknown role: ${chosen}` });
+
+    const bcrypt = require('bcryptjs');
+    const hash = await bcrypt.hash(password, 10);
+    const { rows } = await db.query(
+      `INSERT INTO users (email, password_hash, name, role, department, is_active)
+       VALUES (LOWER($1), $2, $3, $4, $5, TRUE)
+       RETURNING id, email, name, role, department, is_active`,
+      [email, hash, name, chosen, department || null]
+    );
+    await log(req, chosen, 'assigned', { userId: rows[0].id, email: rows[0].email, created: true });
+    res.status(201).json({ user: rows[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* POST /admin/users/:id/reset-password — set a new password for someone.
+
+   Not a self-service reset (that needs email); this is the administrator
+   doing it, which is the realistic path when someone is locked out on a
+   Monday morning. Deliberately cannot target yourself: an admin who has
+   forgotten their own password cannot be signed in to use this. */
+exports.resetPassword = async (req, res) => {
+  const id = Number(req.params.id);
+  const { password } = req.body || {};
+  if (!password || String(password).length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+  try {
+    const user = (await db.query('SELECT id, email FROM users WHERE id = $1', [id])).rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const bcrypt = require('bcryptjs');
+    const hash = await bcrypt.hash(password, 10);
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, id]);
+    await log(req, null, 'password_reset', { userId: id, email: user.email });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
 exports.setUserRole = async (req, res) => {
   const id = Number(req.params.id);
   const { role } = req.body || {};

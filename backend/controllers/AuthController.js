@@ -41,8 +41,44 @@ async function login(req, res) {
 // POST /auth/register  { name, email, password } -> { token, user }
 // Open self-service signup. New accounts get the 'User' role (their own
 // empty workspace); the admin role is never self-assignable here.
+/* ══════════════════════════════════════════════════════════
+   Self-registration is CLOSED by default.
+
+   This endpoint was public. Anyone who found the URL created an account,
+   and that account resolved to Owner — full access to its own workspace.
+   Combined with the unscoped write endpoints, an anonymous person could
+   register and then modify another company's orders.
+
+   Two ways in now, both deliberate:
+     · ALLOW_SELF_REGISTRATION=true   — for a demo or a trial deployment
+     · SIGNUP_TOKEN=<secret>          — shared with people you actually want,
+                                        passed as `signupToken` in the body
+
+   Neither set means no self-registration, and an administrator creates
+   accounts instead. That is the right default for an ERP holding one
+   company's order book and pricing.
+   ══════════════════════════════════════════════════════════ */
+function registrationMode() {
+  if (String(process.env.ALLOW_SELF_REGISTRATION).toLowerCase() === 'true') return 'open';
+  if (process.env.SIGNUP_TOKEN) return 'token';
+  return 'closed';
+}
+
 async function register(req, res) {
-  const { name, email, password } = req.body || {};
+  const { name, email, password, signupToken } = req.body || {};
+
+  const mode = registrationMode();
+  if (mode === 'closed') {
+    return res.status(403).json({
+      error: 'Self-registration is disabled',
+      detail: 'Ask an administrator to create your account (Configurator → People).',
+    });
+  }
+  if (mode === 'token' && signupToken !== process.env.SIGNUP_TOKEN) {
+    // Same shape as a wrong password: never reveal whether the token exists.
+    return res.status(403).json({ error: 'Invalid or missing signup token' });
+  }
+
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Name, email and password are required' });
   }

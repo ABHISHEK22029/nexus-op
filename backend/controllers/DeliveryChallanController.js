@@ -130,6 +130,7 @@ exports.setStatus = async (req, res) => {
        wrong. */
     const goingOut = status === 'Dispatched' || status === 'Delivered';
     let moved = 0;
+    let orderProgress = null;
 
     if (goingOut && !dc.stock_applied) {
       const items = (await client.query(
@@ -170,15 +171,48 @@ exports.setStatus = async (req, res) => {
       );
     }
 
-    // When dispatched/delivered, nudge the linked order forward (never backwards).
+    /* Advance the linked order by COMPARING QUANTITIES, not by assuming a
+       dispatch completes it.
+
+       This previously set the order to 'Delivered' on any dispatch of any
+       size. Ship 200 of 1,200 and the order read as finished — which is
+       worse than leaving it Open, because it actively tells the shop floor
+       that a job with 1,000 units outstanding is done.
+
+       Everything already dispatched is summed, not just this challan: two
+       part-shipments that together complete the order should close it, and
+       looking only at the current one would leave it open forever. */
     if (goingOut && dc.customer_order_id) {
-      await client.query(`UPDATE customer_orders SET status = 'Delivered' WHERE id = $1 AND status NOT IN ('Delivered','Closed')`, [dc.customer_order_id]);
+      const totals = (await client.query(
+        `SELECT
+           (SELECT COALESCE(SUM(quantity),0) FROM customer_order_items
+             WHERE customer_order_id = $1) AS ordered,
+           (SELECT COALESCE(SUM(dci.quantity),0)
+              FROM delivery_challan_items dci
+              JOIN delivery_challans d ON d.id = dci.delivery_challan_id
+             WHERE d.customer_order_id = $1
+               AND d.status IN ('Dispatched','Delivered')) AS dispatched`,
+        [dc.customer_order_id]
+      )).rows[0];
+
+      const ordered = Number(totals.ordered) || 0;
+      const dispatched = Number(totals.dispatched) || 0;
+      // A small tolerance: quantities are `real`, and 1199.9999 is delivered.
+      const complete = ordered > 0 && dispatched >= ordered - 0.001;
+      const next = complete ? 'Delivered' : 'Partially Delivered';
+
+      await client.query(
+        `UPDATE customer_orders SET status = $1
+         WHERE id = $2 AND status NOT IN ('Delivered','Closed')`,
+        [next, dc.customer_order_id]
+      );
+      orderProgress = { ordered, dispatched, status: next, complete };
     }
 
     await client.query('COMMIT');
 
     if (status === 'Dispatched') notify('admins', { type: 'GOODS_DISPATCHED', title: `Dispatched · ${dc.challan_number}`, message: 'Goods dispatched to the customer', entityType: 'delivery_challan', entityId: Number(req.params.id), link: '/delivery-challans' });
-    res.json({ success: true, status, stockLinesMoved: moved });
+    res.json({ success: true, status, stockLinesMoved: moved, orderProgress });
   } catch (e) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: e.message });

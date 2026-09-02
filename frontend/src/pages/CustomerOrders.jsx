@@ -16,7 +16,10 @@ import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components
 import OrderReadiness from '../components/OrderReadiness';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const STATUSES = ['Open', 'In Procurement', 'Delivered', 'Closed'];
+/* 'Partially Delivered' is set automatically by a dispatch that ships some
+   of the order, so it must be a value this dropdown can display — otherwise
+   the select falls back to blank and looks like the status was lost. */
+const STATUSES = ['Open', 'In Procurement', 'Partially Delivered', 'Delivered', 'Closed'];
 const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function CustomerOrders() {

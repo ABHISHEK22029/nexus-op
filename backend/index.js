@@ -751,6 +751,8 @@ app.post('/admin/roles',           adminController.createRole);
 app.patch('/admin/roles/:role',    adminController.updateRole);
 app.delete('/admin/roles/:role',   adminController.deleteRole);
 app.get('/admin/users',            adminController.listUsers);
+app.post('/admin/users',           adminController.createUser);
+app.post('/admin/users/:id/reset-password', adminController.resetPassword);
 app.patch('/admin/users/:id/role', adminController.setUserRole);
 app.patch('/admin/users/:id/active', adminController.setUserActive);
 app.get('/vendor-items', vendorItemController.list);

@@ -32,7 +32,11 @@ const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 /* Order states that still represent real demand. Delivered/Closed/Cancelled
    orders have already consumed (or released) their material. */
-const OPEN_ORDER_STATES = ['Open', 'In Procurement', 'In Production', 'Ready'];
+/* A part-delivered order still has units outstanding, so its remaining
+   demand must keep reaching the engine. Omitting it would make the
+   material for the unshipped balance vanish from requirements the moment
+   the first truck left. */
+const OPEN_ORDER_STATES = ['Open', 'In Procurement', 'In Production', 'Ready', 'Partially Delivered'];
 
 /**
  * Gather demand, supply and stock, and reduce it all to one row per material.
