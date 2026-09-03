@@ -8,13 +8,15 @@
     "migrate": "node migrate.js",
     "seed": "node seed_demo.cjs",
     "test:e2e": "node e2e_test.cjs",
-
-    "check": "npm run check:placeholders && npm run check:routes && npm run check:mutations && npm run check:guards && npm run check:catalogue",
+    "check": "npm run check:placeholders && npm run check:routes && npm run check:mutations && npm run check:guards && npm run check:catalogue && npm run check:org",
     "check:placeholders": "node scripts/check-placeholders.js",
     "check:routes": "node scripts/check-route-coverage.js",
     "check:mutations": "node scripts/check-unscoped-mutations.js",
     "check:guards": "node scripts/check-guard-imports.js",
-    "check:catalogue": "node scripts/check-resource-catalogue.js"
+    "check:catalogue": "node scripts/check-resource-catalogue.js",
+    "check:org": "node scripts/check-org-agnostic.js",
+    "seed:org": "node scripts/seed-org.js",
+    "perf": "node scripts/perf-endpoints.js"
   },
   "keywords": [],
   "author": "",

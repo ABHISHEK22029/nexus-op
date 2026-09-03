@@ -8,14 +8,20 @@ import {
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 
-/* ── Sample data that gets loaded in "Explore" mode ── */
+/* ── Sample data that gets loaded in "Explore" mode ──
+
+   Deliberately an obvious placeholder, not a real business. This used to be
+   a real customer's name, trade name and state, which meant "Explore" wrote
+   another company's identity into whoever was evaluating the product — and
+   the GSTIN sat one field away from appearing on their invoices. A sample
+   organisation should be unmistakably a sample. */
 const SAMPLE_ORG = {
-  name: 'Kirashi Business Synergies Pvt. Ltd.',
-  tradeName: 'Kirashi',
-  gstin: '36ABCDE1234F1Z5',
-  pan: 'ABCDE1234F',
-  state: 'Telangana',
-  industry: 'Construction / EPC',
+  name: 'Demo Fabrication Works Pvt. Ltd.',
+  tradeName: 'Demo Works',
+  gstin: '29AAAAA0000A1Z5',
+  pan: 'AAAAA0000A',
+  state: 'Karnataka',
+  industry: 'Fabrication / Manufacturing',
 };
 
 const SAMPLE_PROJECTS = [
@@ -400,7 +406,7 @@ const GetStarted = () => {
                 Explore with Sample Data
               </h3>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: '20px' }}>
-                Jump right in with pre-loaded Kirashi demo data — projects, vendors, POs, and bills.
+                Jump right in with pre-loaded sample data — projects, vendors, POs, and bills.
               </p>
 
               {/* What's included */}

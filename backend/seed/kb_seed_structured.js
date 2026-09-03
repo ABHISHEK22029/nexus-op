@@ -1,4 +1,4 @@
-/* Rich, STRUCTURED KB content — adoption knowledge (grounded in the Hi-MAK
+/* Rich, STRUCTURED KB content — adoption knowledge (grounded in a real
    case study) + key procedures rewritten as steps. The article page renders
    structured.steps as a numbered stepper; body (auto-derived here) mirrors it
    as prose so Ask AI + full-text search stay grounded.
@@ -20,7 +20,7 @@ function buildBody(s) {
 }
 
 const A = [
-  // ═══════════ ORIENTATION / MINDSET (Hi-MAK: fragmented tools → one system) ═══════════
+  // ═══════════ ORIENTATION / MINDSET (observed: fragmented tools → one system) ═══════════
   {
     slug: 'why-nexus-op', title: 'Why Maks Ops: from scattered tools to one connected flow', category: 'Overview', article_type: 'Guide',
     summary: 'The real problem for a growing SME isn\'t missing software — it\'s that Excel, Tally and per-department logs don\'t talk to each other.',
@@ -64,19 +64,19 @@ const A = [
     keywords: 'pitfalls, mistakes, best practices, adoption, tips, clean data',
     tags: ['overview', 'adoption'],
     structured: {
-      overview: 'The Hi-MAK case is clear: the software rarely fails — adoption does. These are the traps to avoid.',
+      overview: 'The pattern across rollouts is clear: the software rarely fails — adoption does. These are the traps to avoid.',
       keyPoints: [
         'Keeping a "shadow" Excel on the side — pick Maks Ops as the source of truth or the silos come straight back.',
         'Skipping master setup — thin customer/vendor/SKU data makes every later screen painful. Set masters up first.',
         'Not entering GSTIN/state — GST (CGST/SGST vs IGST) depends on it; fill it in once and billing is automatic.',
-        'One person doing all data entry — let each role own their step, like Hi-MAK\'s department involvement.',
-        'No training — schedule short, role-based sessions; ~90% of Hi-MAK\'s staff adapted because of this.',
+        'One person doing all data entry — let each role own their step, like one manufacturer\'s department involvement.',
+        'No training — schedule short, role-based sessions; ~90% of one manufacturer\'s staff adapted because of this.',
       ],
       tips: ['Stuck on any screen? The Ask AI button (bottom-right) answers from your own data and these guides.'],
     },
   },
 
-  // ═══════════ ONBOARDING (Hi-MAK: manual entry, NO import; requirement gathering) ═══════════
+  // ═══════════ ONBOARDING (observed: manual entry, NO import; requirement gathering) ═══════════
   {
     slug: 'first-week-setup', title: 'Your first week: a setup checklist', category: 'Overview', article_type: 'How-to',
     summary: 'A short, ordered path to a working system — masters first, then your first live order.',
@@ -102,7 +102,7 @@ const A = [
     keywords: 'import, migrate, excel, tally, csv, bulk, upload, data transfer, onboarding',
     tags: ['system', 'onboarding', 'data'],
     structured: {
-      overview: 'Hi-MAK\'s biggest day-to-day pain was manual data entry with no import facility. Maks Ops fixes that: bring your existing lists in from CSV instead of typing them again.',
+      overview: 'one manufacturer\'s biggest day-to-day pain was manual data entry with no import facility. Maks Ops fixes that: bring your existing lists in from CSV instead of typing them again.',
       whatYouNeed: ['Your existing data exported to CSV (from Excel or Tally)', 'A column for each field you want to load (e.g. name, GSTIN, state)'],
       steps: [
         { title: 'Export from your current tool', detail: 'From Excel/Tally, save the list (customers, vendors, items) as a .csv file.' },
@@ -117,7 +117,7 @@ const A = [
   },
   {
     slug: 'role-playbooks', title: 'Who does what — a day in the life per role', category: 'Setup', article_type: 'Guide',
-    summary: 'Each department owns its step, like Hi-MAK\'s cross-department involvement — here\'s what each role does daily.',
+    summary: 'Each department owns its step, like one manufacturer\'s cross-department involvement — here\'s what each role does daily.',
     keywords: 'roles, playbook, department, day in the life, responsibilities, workflow, team',
     tags: ['setup', 'adoption', 'roles'],
     structured: {
@@ -134,18 +134,18 @@ const A = [
   },
   {
     slug: 'rollout-change-management', title: 'Rolling Maks Ops out to your team', category: 'Setup', article_type: 'How-to',
-    summary: 'A short change-management playbook — the part that decided Hi-MAK\'s ~90% adoption.',
+    summary: 'A short change-management playbook — the part that decided one manufacturer\'s ~90% adoption.',
     keywords: 'rollout, change management, training, adoption, go live, resistance, team',
     tags: ['setup', 'adoption'],
     structured: {
-      overview: 'The Hi-MAK case is blunt: the software was fine; adoption was the challenge. A little change management is what gets your team actually using it.',
+      overview: 'The pattern across rollouts is blunt: the software was fine; adoption was the challenge. A little change management is what gets your team actually using it.',
       steps: [
-        { title: 'Name an owner', detail: 'Pick one person (or a small team, like Hi-MAK\'s ERP team) to champion the rollout and answer questions.' },
+        { title: 'Name an owner', detail: 'Pick one person (or a small team, like one manufacturer\'s ERP team) to champion the rollout and answer questions.' },
         { title: 'Involve each department early', detail: 'Ask each team what they do today; map it to a Maks Ops screen so they see themselves in it.' },
         { title: 'Set masters and import data first', detail: 'Go live on a system that already has your customers, vendors and items — not an empty one.' },
         { title: 'Run short, role-based training', detail: 'Keep sessions to each role\'s daily flow. Point everyone at Smart Knowledge + Ask AI for self-serve help.' },
         { title: 'Start with one flow, then expand', detail: 'Prove it on orders → invoices, celebrate the win, then add procurement and production.' },
-        { title: 'Support the first weeks', detail: 'Expect some resistance; keep answering questions. Continuous support is what turned Hi-MAK\'s doubters around.' },
+        { title: 'Support the first weeks', detail: 'Expect some resistance; keep answering questions. Continuous support is what turned one manufacturer\'s doubters around.' },
       ],
       keyPoints: ['ERP is a business change, not just a tool.', 'User adoption — not features — decides success.'],
     },

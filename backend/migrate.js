@@ -31,7 +31,7 @@ async function run() {
       ADD COLUMN IF NOT EXISTS "paymentTerms" TEXT, 
       ADD COLUMN IF NOT EXISTS "priceBasis" TEXT DEFAULT 'Ex Works', 
       ADD COLUMN IF NOT EXISTS "pnfInsurance" TEXT DEFAULT 'Vendor Scope', 
-      ADD COLUMN IF NOT EXISTS "loadingScope" TEXT DEFAULT 'Kirashi Scope', 
+      ADD COLUMN IF NOT EXISTS "loadingScope" TEXT DEFAULT 'Buyer Scope', 
       ADD COLUMN IF NOT EXISTS "warranty" TEXT DEFAULT '12 months', 
       ADD COLUMN IF NOT EXISTS "amountInWords" TEXT, 
       ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMPTZ DEFAULT NOW()`);

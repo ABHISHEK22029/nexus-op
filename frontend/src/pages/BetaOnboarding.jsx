@@ -116,11 +116,11 @@ export default function BetaOnboarding() {
               <div className="form-grid">
                 <div className="field">
                   <label className="field-label">Organization Name <span className="req">*</span></label>
-                  <input className="field-input" type="text" placeholder="Kirashi Business Synergies Pvt. Ltd." value={org.name} onChange={e => setOrg({...org, name: e.target.value})} />
+                  <input className="field-input" type="text" placeholder="Your company's registered name" value={org.name} onChange={e => setOrg({...org, name: e.target.value})} />
                 </div>
                 <div className="field">
                   <label className="field-label">Display / Trade Name</label>
-                  <input className="field-input" type="text" placeholder="Kirashi (shown on documents)" value={org.tradeName} onChange={e => setOrg({...org, tradeName: e.target.value})} />
+                  <input className="field-input" type="text" placeholder="Short name shown on documents" value={org.tradeName} onChange={e => setOrg({...org, tradeName: e.target.value})} />
                   <span className="field-hint">Short name used on PO headers and bills</span>
                 </div>
                 <div className="field">

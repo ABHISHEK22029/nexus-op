@@ -47,7 +47,7 @@ const PurchaseOrders = () => {
     paymentTerms: '50% Advance, 50% before Delivery',
     priceBasis: 'Ex Works',
     pnfInsurance: 'Vendor Scope',
-    loadingScope: 'Kirashi Scope',
+    loadingScope: 'Buyer Scope',
     warranty: '12 months from date of Installation'
   };
   const [formData, setFormData] = useState(initialForm);
@@ -353,7 +353,7 @@ const PurchaseOrders = () => {
             <div>
               <label className="block text-xs text-gray-400 mb-1">P&F / Loading</label>
               <select value={formData.loadingScope} onChange={e => setFormData({...formData, loadingScope: e.target.value})} className="w-full bg-[#111113] border border-white/10 rounded px-3 py-1.5 text-sm text-white outline-none">
-                <option>Kirashi Scope</option><option>Vendor Scope</option>
+                <option>Buyer Scope</option><option>Vendor Scope</option>
               </select>
             </div>
             <div>

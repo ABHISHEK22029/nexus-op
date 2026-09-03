@@ -38,6 +38,7 @@ const { ACTION_FOR_METHOD, allow } = require('./middleware/permissions');
 const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
 const { andOwner } = require('./shared/ownerScope');
+const { docNumber, loadProfile } = require('./shared/docNumber');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -379,10 +380,13 @@ app.post('/po', async (req, res) => {
     return res.status(400).json({ error: 'projectId, vendorId, itemName, quantity required' });
   
   try {
-    // Generate PO Number
+    /* The series belongs to whoever is running this, not to us. This read
+       `Kirashi/FY2026-27/007` from a string literal, so every organisation
+       issued purchase orders carrying another company's name — to their own
+       vendors — under a financial year that would never roll over. */
     const countRes = await db.query('SELECT COUNT(*) FROM purchase_orders WHERE "projectId" = $1', [projectId]);
     const nextSeq = parseInt(countRes.rows[0].count) + 1;
-    const poNumber = `Kirashi/FY2026-27/${String(nextSeq).padStart(3, '0')}`;
+    const poNumber = docNumber({ profile: await loadProfile(db), seq: nextSeq });
 
     const { rows } = await db.query(
       `INSERT INTO purchase_orders (
@@ -394,7 +398,7 @@ app.post('/po', async (req, res) => {
       [
         projectId, vendorId, workOrderId || null, itemName, quantity, unitPrice || null,
         poNumber, quoteRef || null, paymentTerms || null, priceBasis || 'Ex Works',
-        pnfInsurance || 'Vendor Scope', loadingScope || 'Kirashi Scope', warranty || '12 months',
+        pnfInsurance || 'Vendor Scope', loadingScope || 'Buyer Scope', warranty || '12 months',
         amountInWords || null, indentId || null, (gstRate === undefined || gstRate === '' ? 18 : Number(gstRate))
       ]
     );
@@ -486,6 +490,13 @@ const COMPANY_PROFILE_COLUMNS = [
      insisting. setup_completed_at is what stops the first-run screen showing
      twice; it is a timestamp the client sets once it has answered. */
   'employee_count', 'setup_completed_at',
+  /* doc_prefix was added by migration 042 and used by shared/docNumber, but
+     left out of this list — so the PUT silently dropped it and no business
+     could actually set the prefix that goes on its own purchase orders. The
+     column, the migration and the formatter all existed; the one path a user
+     had to reach it did not. Caught by the first-run test's restore step
+     noticing a field that went in and did not come back. */
+  'doc_prefix',
 ];
 app.put('/company-profile', allow('company-profile', 'write'), async (req, res) => {
   const sets = COMPANY_PROFILE_COLUMNS.filter(c => c in req.body);
@@ -1259,21 +1270,52 @@ app.get('/dashboard', async (req, res) => {
   const ownerParams = [];
   const ownerOnly = andOwner(req, ownerParams) || 'AND TRUE';
 
+  /* Everything below runs on ONE pooled connection, in sequence.
+
+     Promise.all here meant one dashboard load needed as many connections as
+     it had queries. Supabase's pooler is in session mode with 15 clients for
+     the whole project, so the home screen was the first endpoint to fail
+     under connection pressure — returning a 500 while every ordinary list
+     page kept working, because those need one connection each.
+
+     Concurrency bought nothing anyway: on a warm pool these queries are
+     50-100ms, and running five in sequence on one connection is faster than
+     opening four more (~3.5s each) to run them side by side. */
+  const client = await db.getClient();
+  const run = (sql, params) => client.query(sql, params);
+
   try {
-    const [vendors, pos, delivered, inv, billed, paid, indents, poQty, dist, activities, milestones, boq] = await Promise.all([
-      db.query(`SELECT COUNT(*) as c FROM vendors WHERE TRUE ${ownerOnly}`, ownerParams),
-      db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE ${scope}`, scopeParams),
-      db.query(`SELECT COUNT(*) as c FROM purchase_orders WHERE ${scope} AND status = 'Delivered'`, scopeParams),
-      db.query(`SELECT COUNT(*) as c FROM inventory WHERE TRUE ${ownerOnly}`, ownerParams),
-      db.query(`SELECT COALESCE(SUM("grossAmount"), 0) as total FROM bills WHERE ${scope}`, scopeParams),
-      db.query(`SELECT COALESCE(SUM("netAmount"), 0) as total FROM bills WHERE ${scope} AND status = 'Paid'`, scopeParams),
-      db.query(`SELECT COUNT(*) as c FROM indents WHERE ${scope} AND status = 'Pending'`, scopeParams),
-      db.query(`SELECT COALESCE(SUM(quantity), 0) as total FROM purchase_orders WHERE ${scope}`, scopeParams),
-      db.query(`SELECT status, COUNT(*) as count FROM purchase_orders WHERE ${scope} GROUP BY status`, scopeParams),
-      db.query(`SELECT * FROM activities WHERE ${scope} ORDER BY timestamp DESC LIMIT 5`, scopeParams),
+    /* The eight scalar figures are ONE query, not eight.
+
+       This fanned twelve queries out with Promise.all, each taking its own
+       pooled connection. Against Supabase's session-mode pooler — capped at
+       15 clients for the whole project — a single dashboard load could
+       exhaust the connection budget for the entire application, and the
+       endpoint returned
+       "(EMAXCONNSESSION) max clients reached in session mode" as a 500.
+
+       They are all scalars over three tables with the same scope, so they
+       belong in one statement. Twelve concurrent connections become four,
+       and the eight counts cost one round trip instead of eight. The row
+       returning queries stay separate because they return rows, not
+       numbers. */
+    const [totals, dist, activities, milestones, boq] = [
+      await run(`
+        SELECT
+          (SELECT COUNT(*)                          FROM vendors         WHERE TRUE ${ownerOnly.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + scopeParams.length}`)}) AS vendors,
+          (SELECT COUNT(*)                          FROM purchase_orders WHERE ${scope}) AS pos,
+          (SELECT COUNT(*)                          FROM purchase_orders WHERE ${scope} AND status = 'Delivered') AS delivered,
+          (SELECT COUNT(*)                          FROM inventory       WHERE TRUE ${ownerOnly.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + scopeParams.length}`)}) AS inv,
+          (SELECT COALESCE(SUM("grossAmount"), 0)   FROM bills           WHERE ${scope}) AS billed,
+          (SELECT COALESCE(SUM("netAmount"), 0)     FROM bills           WHERE ${scope} AND status = 'Paid') AS paid,
+          (SELECT COUNT(*)                          FROM indents         WHERE ${scope} AND status = 'Pending') AS indents,
+          (SELECT COALESCE(SUM(quantity), 0)        FROM purchase_orders WHERE ${scope}) AS po_qty
+      `, [...scopeParams, ...ownerParams]),
+      await run(`SELECT status, COUNT(*) as count FROM purchase_orders WHERE ${scope} GROUP BY status`, scopeParams),
+      await run(`SELECT * FROM activities WHERE ${scope} ORDER BY timestamp DESC LIMIT 5`, scopeParams),
       /* milestones is the one table with neither owner_id nor projectId, so
          it is reached through its work order either way. */
-      db.query(`SELECT m.*, wo.name as "workOrderName" FROM milestones m
+      await run(`SELECT m.*, wo.name as "workOrderName" FROM milestones m
          JOIN work_orders wo ON m."workOrderId" = wo.id
          WHERE ${scope.replace(/"projectId"|owner_id/g, m => `wo.${m}`)} ORDER BY m.id ASC`, scopeParams),
       /* bi.id is selected, not just grouped by. The dashboard keys its BOQ
@@ -1282,23 +1324,24 @@ app.get('/dashboard', async (req, res) => {
          rows on re-render. Invisible until this panel actually rendered,
          which it only started doing once the dashboard stopped requiring a
          project. */
-      db.query(`SELECT bi.id, bi."itemCode", bi.description, bi."estimatedQuantity", bi.rate,
+      await run(`SELECT bi.id, bi."itemCode", bi.description, bi."estimatedQuantity", bi.rate,
          COALESCE(SUM(mb."measuredQuantity"), 0) as "executedQuantity"
          FROM boq_items bi
          LEFT JOIN measurement_book mb ON mb."boqId" = bi.id
          WHERE ${scope.replace(/"projectId"|owner_id/g, m => `bi.${m}`)}
          GROUP BY bi.id, bi."itemCode", bi.description, bi."estimatedQuantity", bi.rate`, scopeParams),
-    ]);
+    ];
 
+    const t = totals.rows[0];
     res.json({
-      totalVendors:    parseInt(vendors.rows[0].c),
-      totalPOs:        parseInt(pos.rows[0].c),
-      deliveredPOs:    parseInt(delivered.rows[0].c),
-      inventoryCount:  parseInt(inv.rows[0].c),
-      totalBilled:     parseFloat(billed.rows[0].total),
-      netPaid:         parseFloat(paid.rows[0].total),
-      openIndents:     parseInt(indents.rows[0].c),
-      totalPOQty:      parseInt(poQty.rows[0].total),
+      totalVendors:    parseInt(t.vendors),
+      totalPOs:        parseInt(t.pos),
+      deliveredPOs:    parseInt(t.delivered),
+      inventoryCount:  parseInt(t.inv),
+      totalBilled:     parseFloat(t.billed),
+      netPaid:         parseFloat(t.paid),
+      openIndents:     parseInt(t.indents),
+      totalPOQty:      parseInt(t.po_qty),
       distribution:    dist.rows,
       recentActivities: activities.rows,
       milestones:      milestones.rows,
@@ -1307,6 +1350,12 @@ app.get('/dashboard', async (req, res) => {
   } catch (err) {
     console.error('Dashboard error:', err.message);
     res.status(500).json({ error: err.message });
+  } finally {
+    /* Always. A checked-out client that is never returned is a leaked
+       connection, and with 15 in the whole project it takes very few
+       dashboard loads to starve everything else — a worse failure than the
+       one this endpoint was changed to avoid. */
+    client.release();
   }
 });
 

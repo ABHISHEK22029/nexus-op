@@ -18,7 +18,6 @@
 const db = require('../db');
 const { isCrossTenant } = require('../shared/roles');
 
-const n = (r) => Number(r.rows[0].n) || 0;
 
 exports.readiness = async (req, res) => {
   try {
@@ -26,33 +25,46 @@ exports.readiness = async (req, res) => {
     const owner = req.user?.id;
     // Owner-scoped unless the platform admin is looking.
     const scope = (col = 'owner_id') => (admin ? '' : ` AND ${col} = ${Number(owner) || -1}`);
-    const q = (sql) => db.query(sql).then(n);
+    /* Twelve scalar counts in ONE statement, not twelve concurrent queries.
 
-    const [
-      materials, materialsWithVendor,
-      products, productsWithBom,
-      orders, openOrders,
-      stockRows, stockLinked,
-      customers, vendors,
-      companyBank, companyGstin,
-    ] = await Promise.all([
-      q(`SELECT COUNT(*) n FROM raw_materials WHERE TRUE${scope()}`),
-      q(`SELECT COUNT(DISTINCT vi.raw_material_id) n FROM vendor_items vi
-         JOIN raw_materials m ON m.id = vi.raw_material_id WHERE TRUE${scope('m.owner_id')}`),
-      q(`SELECT COUNT(*) n FROM skus WHERE TRUE${scope()}`),
-      q(`SELECT COUNT(DISTINCT b.sku_id) n FROM sku_bom b
-         JOIN skus s ON s.id = b.sku_id WHERE TRUE${scope('s.owner_id')}`),
-      q(`SELECT COUNT(*) n FROM customer_orders WHERE TRUE${scope()}`),
-      q(`SELECT COUNT(*) n FROM customer_orders
-         WHERE status = ANY(ARRAY['Open','In Procurement','In Production','Ready','Partially Delivered'])${scope()}`),
-      q(`SELECT COUNT(*) n FROM inventory WHERE TRUE${scope()}`),
-      q(`SELECT COUNT(*) n FROM inventory WHERE (raw_material_id IS NOT NULL OR sku_id IS NOT NULL)${scope()}`),
-      q(`SELECT COUNT(*) n FROM customers WHERE TRUE${scope()}`),
-      q(`SELECT COUNT(*) n FROM vendors WHERE TRUE${scope()}`),
-      q(`SELECT COUNT(*) n FROM company_profile
-         WHERE bank_name IS NOT NULL AND bank_account_no IS NOT NULL AND bank_ifsc IS NOT NULL`),
-      q(`SELECT COUNT(*) n FROM company_profile WHERE gstin IS NOT NULL AND gstin <> ''`),
-    ]);
+       Each of these took its own pooled connection. Against Supabase's
+       session-mode pooler — 15 clients for the entire project — the two
+       endpoints that fanned out like this (/dashboard and this one) were the
+       only two that failed under connection pressure, returning
+       "(EMAXCONNSESSION) max clients reached in session mode" as a 500 while
+       every ordinary list endpoint carried on working. The home screen was
+       the first thing to break, which is the worst possible order.
+
+       They are all scalars with the same scoping, so one round trip does
+       what twelve did. */
+    const { rows } = await db.query(`
+      SELECT
+        (SELECT COUNT(*) FROM raw_materials WHERE TRUE${scope()})                       AS materials,
+        (SELECT COUNT(DISTINCT vi.raw_material_id) FROM vendor_items vi
+           JOIN raw_materials m ON m.id = vi.raw_material_id WHERE TRUE${scope('m.owner_id')}) AS materials_with_vendor,
+        (SELECT COUNT(*) FROM skus WHERE TRUE${scope()})                                AS products,
+        (SELECT COUNT(DISTINCT b.sku_id) FROM sku_bom b
+           JOIN skus s ON s.id = b.sku_id WHERE TRUE${scope('s.owner_id')})             AS products_with_bom,
+        (SELECT COUNT(*) FROM customer_orders WHERE TRUE${scope()})                     AS orders,
+        (SELECT COUNT(*) FROM customer_orders
+          WHERE status = ANY(ARRAY['Open','In Procurement','In Production','Ready','Partially Delivered'])${scope()}) AS open_orders,
+        (SELECT COUNT(*) FROM inventory WHERE TRUE${scope()})                           AS stock_rows,
+        (SELECT COUNT(*) FROM inventory
+          WHERE (raw_material_id IS NOT NULL OR sku_id IS NOT NULL)${scope()})          AS stock_linked,
+        (SELECT COUNT(*) FROM customers WHERE TRUE${scope()})                           AS customers,
+        (SELECT COUNT(*) FROM vendors WHERE TRUE${scope()})                             AS vendors,
+        (SELECT COUNT(*) FROM company_profile
+          WHERE bank_name IS NOT NULL AND bank_account_no IS NOT NULL AND bank_ifsc IS NOT NULL) AS company_bank,
+        (SELECT COUNT(*) FROM company_profile WHERE gstin IS NOT NULL AND gstin <> '') AS company_gstin
+    `);
+    const c = rows[0];
+    const num = (v) => Number(v) || 0;
+    const materials = num(c.materials), materialsWithVendor = num(c.materials_with_vendor);
+    const products = num(c.products), productsWithBom = num(c.products_with_bom);
+    const orders = num(c.orders), openOrders = num(c.open_orders);
+    const stockRows = num(c.stock_rows), stockLinked = num(c.stock_linked);
+    const customers = num(c.customers), vendors = num(c.vendors);
+    const companyBank = num(c.company_bank), companyGstin = num(c.company_gstin);
 
     /* Ordered by what unblocks the most. Each says what it COSTS, because
        "add BOMs" is a chore and "without this the system cannot tell you

@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   "paymentTerms" TEXT,
   "priceBasis" TEXT DEFAULT 'Ex Works',
   "pnfInsurance" TEXT DEFAULT 'Vendor Scope',
-  "loadingScope" TEXT DEFAULT 'Kirashi Scope',
+  "loadingScope" TEXT DEFAULT 'Buyer Scope',
   "warranty" TEXT DEFAULT '12 months',
   "amountInWords" TEXT,
   "indentId" INTEGER,
@@ -99,17 +99,32 @@ CREATE TABLE IF NOT EXISTS po_line_items (
 );
 
 -- 6c. Company Profile
+-- Identity belongs to whoever installs this, and is asked for on first run.
+--
+-- Every column here once defaulted to one specific customer's real details —
+-- name, address, phone, email, GSTIN and PAN. A fresh install inherited all
+-- of it, so a different business issued tax invoices under someone else's
+-- GST number from its very first invoice. Migration 041 removed those
+-- defaults from the live database; leaving them here would have recreated
+-- the whole problem on the next deployment built from this file.
+--
+-- fyStart stays: the Indian financial year starts in April for everyone.
 CREATE TABLE IF NOT EXISTS company_profile (
   id SERIAL PRIMARY KEY,
-  name TEXT NOT NULL DEFAULT 'Kirashi Business Synergies Private Limited',
-  "tradeName" TEXT DEFAULT 'Kirashi',
-  address TEXT DEFAULT '6-148/1, Bowrampet, Gandimaisamma Dundigal, Medchal-Malkajgiri, Telangana 500043',
-  phone TEXT DEFAULT '+91 9030498359',
-  email TEXT DEFAULT 'info@kirashi.in',
-  gstin TEXT DEFAULT '36AAMCK2569F1Z9',
-  pan TEXT DEFAULT 'AAMCK2569F',
-  "stateCode" TEXT DEFAULT '36',
-  "fyStart" TEXT DEFAULT 'April'
+  name TEXT,
+  "tradeName" TEXT,
+  address TEXT,
+  phone TEXT,
+  email TEXT,
+  gstin TEXT,
+  pan TEXT,
+  "stateCode" TEXT,
+  "fyStart" TEXT DEFAULT 'April',
+  -- Prefix for document numbers (PO/INV/DC). Blank derives it from the
+  -- trade name — see shared/docNumber.js.
+  doc_prefix TEXT,
+  employee_count TEXT,
+  setup_completed_at TIMESTAMPTZ
 );
 
 -- 7. Activities
@@ -185,54 +200,15 @@ CREATE TABLE IF NOT EXISTS bills (
   date TIMESTAMPTZ DEFAULT NOW()
 );
 
-
 -- ═══════════════════════════════════════════════════════════
--- SEED DATA
+-- No seed data here on purpose.
+--
+-- This file used to end by inserting a specific construction project
+-- ("ORR Package 1 (SW)" for HMDA), six named civil contractors and their
+-- work orders — so every fresh install of this product came up as somebody
+-- else's business, in an industry it might have nothing to do with.
+--
+-- Structure is not sample data. If you want something to look at, run
+-- seed_sample.sql, or load a realistic dataset with
+-- scripts/seed-org.js --org=<name>.
 -- ═══════════════════════════════════════════════════════════
-
--- Projects
-INSERT INTO projects (name, "clientName", type, "startDate", "endDate", status) VALUES
-  ('ORR Package 1 (SW)', 'HMDA', 'construction', '2025-01-01', '2026-12-31', 'Active'),
-  ('Generic Procurement IT', 'Internal', 'generic', '2025-03-01', '2025-09-01', 'Active');
-
--- Vendors
-INSERT INTO vendors ("projectId", name, type, pan, gstin, class, capability_tags, rating, status) VALUES
-  (1, 'Larsen & Toubro', 'Civil', 'ABCDE0000F', '36ABCDE0000F1Z5', 'Special', 'Structures, Earthworks', 95, 'Active'),
-  (1, 'NCC Limited', 'Civil', 'ABCDE0001F', '36ABCDE0001F1Z5', 'Special', 'Structures, Earthworks', 95, 'Active'),
-  (1, 'Megha Engg', 'Civil', 'ABCDE0002F', '36ABCDE0002F1Z5', 'Special', 'Structures, Earthworks', 95, 'Active'),
-  (1, 'Dilip Buildcon', 'Civil', 'ABCDE0003F', '36ABCDE0003F1Z5', 'Special', 'Structures, Earthworks', 95, 'Active'),
-  (1, 'Afcons', 'Civil', 'ABCDE0004F', '36ABCDE0004F1Z5', 'Special', 'Structures, Earthworks', 95, 'Active'),
-  (1, 'Navayuga', 'Civil', 'ABCDE0005F', '36ABCDE0005F1Z5', 'Special', 'Structures, Earthworks', 95, 'Active'),
-  (2, 'Dell EMC', 'IT Hardware', 'XYZ1234', 'GST1234', 'A', 'Servers', 99, 'Active');
-
--- Work Orders
-INSERT INTO work_orders ("projectId", "vendorId", name, "boqId", "startDate", "endDate", "contractValue", status) VALUES
-  (1, 1, 'WO-001: Earthworks and Embankment SW', 1, '2025-02-01', '2025-10-01', 50000000, 'In Progress'),
-  (1, 2, 'WO-002: Bituminous Paving & DBM', 2, '2025-05-01', '2026-05-01', 120000000, 'In Progress'),
-  (2, 7, 'WO-003: Core Server Replacement', NULL, '2025-03-15', '2025-04-15', 5000000, 'Pending');
-
--- Milestones
-INSERT INTO milestones ("workOrderId", name, "plannedPercent", "actualPercent", status) VALUES
-  (1, 'Site Clearance', 100, 100, 'Completed'),
-  (1, 'Sub-grade Compaction', 80, 60, 'Delayed'),
-  (2, 'DBM Layer 1', 50, 45, 'On Track');
-
--- BOQ Items
-INSERT INTO boq_items ("projectId", "itemCode", description, unit, "estimatedQuantity", rate) VALUES
-  (1, 'EW-01', 'Earthwork in excavation for roadway', 'Cum', 150000, 85),
-  (1, 'BT-03', 'Dense Bituminous Macadam (DBM) 50mm thick', 'Cum', 22500, 8500);
-
--- Purchase Orders
-INSERT INTO purchase_orders ("projectId", "workOrderId", "vendorId", "itemName", quantity, status) VALUES
-  (1, 1, 1, 'Earthwork Material', 50000, 'Delivered'),
-  (1, 2, 2, 'Bitumen VG-30', 2000, 'Dispatched'),
-  (2, 3, 7, 'Dell PowerEdge R740', 10, 'Approved');
-
--- Measurement Book
-INSERT INTO measurement_book ("projectId", "workOrderId", "boqId", chainage, length, width, depth, "measuredQuantity") VALUES
-  (1, 1, 1, 'CH 10+500', 100, 15, 2, 3000),
-  (1, 1, 1, 'CH 10+600', 150, 15, 2, 4500);
-
--- Bills
-INSERT INTO bills ("projectId", "workOrderId", "grossAmount", tds, retention, "netAmount", "billedQuantity", status) VALUES
-  (1, 1, 255000, 5100, 12750, 237150, 3000, 'Paid');

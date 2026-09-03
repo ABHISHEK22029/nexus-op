@@ -6,6 +6,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { computeOrder } = require('../shared/orderTotals');
+const { docNumber, loadProfile } = require('../shared/docNumber');
 const { isInterstate } = require('../shared/gstStates');
 const { amountInWords } = require('../shared/amountInWords');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
@@ -300,7 +301,10 @@ exports.generatePO = async (req, res) => {
       customerOrderId = oi.rows[0]?.customer_order_id || null;
     }
     const c = await db.query('SELECT COUNT(*) FROM purchase_orders');
-    const poNumber = `Kirashi/FY2026-27/${String(parseInt(c.rows[0].count) + 1).padStart(3, '0')}`;
+    /* Same series as POST /po. Hardcoding one company's name into a document
+       number happened in two separate files, which is exactly why the format
+       now lives in one — shared/docNumber. */
+    const poNumber = docNumber({ profile: await loadProfile(db), seq: parseInt(c.rows[0].count) + 1 });
     const { rows } = await db.query(
       `INSERT INTO purchase_orders ("projectId","vendorId","itemName",quantity,"unitPrice","poNumber",customer_order_id,quotation_id,status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending') RETURNING id`,

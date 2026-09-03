@@ -48,7 +48,7 @@ export default function GrnBillDoc() {
       <div ref={ref} className="invoice-mock">
         <div className="inv-header">
           <div>
-            <div className="inv-company-name">{co.name || 'Kirashi Business Synergies'}</div>
+            <div className="inv-company-name">{co.name || co.tradeName || "Your organisation"}</div>
             <div className="inv-company-detail">
               {co.address || '202, Plot No 130, Kavuri Hills, Jubilee Hills, Hyderabad 500033'}<br />
               {co.gstin && <>GSTIN: <strong>{co.gstin}</strong><br /></>}
@@ -123,7 +123,7 @@ export default function GrnBillDoc() {
           <div>
             <div className="inv-sig-line"></div>
             <div className="inv-sig-label">Authorized Signatory</div>
-            <div className="inv-sig-company mt-2">{co.name || 'Kirashi Business Synergies'}</div>
+            <div className="inv-sig-company mt-2">{co.name || co.tradeName || "Your organisation"}</div>
           </div>
         </div>
         <div className="inv-footer">
