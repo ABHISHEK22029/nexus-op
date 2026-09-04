@@ -33,11 +33,12 @@ const MeasurementBook = () => {
   // The BOQ dropdown still loads whole — it is a picker, not a list, and
   // a form control that paginates is a form control nobody can use.
   const fetchBoqs = async () => {
-    if (!activeProject) return;
+    /* Not gated on a project any more: with "All work" selected this left
+       the picker empty, so no measurement could be recorded. */
     try {
       const token = getToken();
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/boq?projectId=${activeProject.id}`,
+        `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/boq${activeProject ? `?projectId=${activeProject.id}` : ''}`,
         { headers: token ? { Authorization: `Bearer ${token}` } : {} }
       );
       const d = await res.json();
@@ -58,7 +59,11 @@ const MeasurementBook = () => {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!activeProject) return;
+    /* Was a silent return — the Add button did nothing. */
+    if (!activeProject) {
+      toast.error('Choose a project first — a measurement is booked against one.');
+      return;
+    }
 
     // Work Order is OPTIONAL — SMEs may record measurements without one
     if (!newItem.boqId || !newItem.chainage || !newItem.length || !newItem.width || !newItem.depth) {

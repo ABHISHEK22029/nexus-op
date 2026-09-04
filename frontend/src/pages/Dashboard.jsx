@@ -3,7 +3,7 @@ import SetupReadiness from '../components/SetupReadiness';
 import axios from 'axios';
 import {
   Users, ShoppingCart, CheckCircle, Package, TrendingUp, Receipt,
-  AlertTriangle, Map as MapIcon, Activity, ArrowUpRight, ArrowDownRight,
+  AlertTriangle, Activity, ArrowUpRight, ArrowDownRight,
   BarChart3, Layers, ChevronRight, RefreshCw, Clock, Zap, IndianRupee
 } from 'lucide-react';
 import {
@@ -12,19 +12,29 @@ import {
   PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
 import { Link } from 'react-router-dom';
-import GoogleORRMap from '../components/GoogleORRMap';
 import { useProject } from '../context/ProjectContext';
 import { useTheme } from '../context/ThemeContext';
 
 /* ── Smart number formatters ── */
+/* `n == null` means the request has not answered yet, and that is not the
+   same statement as zero. Both of these used to coerce undefined to 0, so
+   for the eight seconds this page takes to load it told you that you had
+   no vendors, no purchase orders and no stock — with the numbers styled
+   exactly like real ones. An em-dash says "not known yet"; 0 is a claim. */
 const fmtCrore = (n) => {
-  const num = Number(n || 0);
+  if (n == null) return '—';
+  const num = Number(n);
+  if (!Number.isFinite(num)) return '—';
   if (num >= 1e7) return `₹${(num / 1e7).toFixed(2)} Cr`;
   if (num >= 1e5) return `₹${(num / 1e5).toFixed(1)} L`;
   if (num === 0) return '₹0';
   return `₹${num.toLocaleString('en-IN')}`;
 };
-const fmtNum = (n) => Number(n || 0).toLocaleString('en-IN');
+const fmtNum = (n) => {
+  if (n == null) return '—';
+  const num = Number(n);
+  return Number.isFinite(num) ? num.toLocaleString('en-IN') : '—';
+};
 
 /* ── Status colours ── */
 const STATUS_COLORS = {
@@ -425,8 +435,13 @@ const Dashboard = () => {
 
       {/* ══ 4 PRIMARY KPI CARDS (row 1) ═══════════════════ */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px', marginBottom: '18px' }}>
-        <KpiCard key="vendors" title="Active Vendors" value={fmtNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" trend={12} />
-        <KpiCard key="pos" title="Purchase Orders" value={fmtNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po" trend={5} />
+        {/* The +12% and +5% that used to sit on these two cards were
+            literals in the source. Nothing measured them, nothing compared
+            two periods — they were decoration drawn with an up-arrow and a
+            green pill, which is the visual language of a real figure. A
+            made-up number on a dashboard is worse than no number. */}
+        <KpiCard key="vendors" title="Active Vendors" value={fmtNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" />
+        <KpiCard key="pos" title="Purchase Orders" value={fmtNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po" />
         <KpiCard key="delivered" title="POs Delivered" value={fmtNum(stats?.deliveredPOs)} icon={CheckCircle} accent="#10B981" link="/po" sub={`${deliveryRate}% delivery rate`} />
         <KpiCard key="inv" title="Inventory SKUs" value={fmtNum(stats?.inventoryCount)} icon={Package} accent="#F59E0B" link="/inventory" />
       </div>
@@ -434,41 +449,29 @@ const Dashboard = () => {
       {/* ══ 4 FINANCIAL KPI CARDS (row 2) ═══════════════ */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px', marginBottom: '28px' }}>
         <KpiCard key="billed" title="Total Billed" value={fmtCrore(stats?.totalBilled)} icon={Receipt} accent="#EF4444" link="/bills" isCurrency sub="Gross amount raised" />
-        <KpiCard key="paid" title="Net Released" value={fmtCrore(stats?.netPaid)} icon={TrendingUp} accent="#22C55E" link="/bills" isCurrency trend={8} sub={`${utilizationPct}% utilization`} />
+        <KpiCard key="paid" title="Net Released" value={fmtCrore(stats?.netPaid)} icon={TrendingUp} accent="#22C55E" link="/bills" isCurrency sub={`${utilizationPct}% utilization`} />
         <KpiCard key="indents" title="Open Indents" value={fmtNum(stats?.openIndents)} icon={AlertTriangle} accent="#F97316" link="/indent" />
-        <KpiCard key="modules" title="Platform Modules" value="15" icon={Layers} accent="#06B6D4" sub="All modules active" />
+        {/* "Platform Modules 15 — All modules active" was a fact about the
+            software, on a board about the business. Quantity ordered is
+            already computed and was going unused. */}
+        <KpiCard key="qty" title="Units Ordered" value={fmtNum(stats?.totalPOQty)} icon={Layers} accent="#06B6D4" link="/po" sub="Across all purchase orders" />
       </div>
 
-      {/* ══ MAP + S-CURVE (2 col) ══════════════════════════ */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '20px', marginBottom: '20px' }}>
+      {/* ══ S-CURVE ════════════════════════════════════════
 
-        {/* ORR Deployment Map */}
-        <div style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: '20px', padding: '22px',
-          height: '460px', display: 'flex', flexDirection: 'column',
-          boxShadow: 'var(--shadow-sm)',
-        }}>
-          <SectionHeader
-            icon={MapIcon} iconColor="#10B981"
-            title="ORR Live Deployment Map"
-            action={
-              <span style={{
-                fontSize: '0.65rem', fontWeight: 700, color: '#10B981',
-                background: '#10B98115', border: '1px solid #10B98130',
-                padding: '4px 10px', borderRadius: '99px',
-                display: 'flex', alignItems: 'center', gap: '5px',
-              }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', animation: 'pulse-amber 2s infinite' }} />
-                LIVE · ESRI Satellite
-              </span>
-            }
-          />
-          <div style={{ flex: 1, position: 'relative', minHeight: 0, borderRadius: '12px', overflow: 'hidden' }}>
-            <GoogleORRMap />
-          </div>
-        </div>
+         The "ORR Live Deployment Map" that used to sit beside this is gone.
+         It drew Hyderabad's Outer Ring Road from coordinates hardcoded in
+         the component, with four invented work packages (SW/SE/NE/NW) and
+         three invented depots — Narsingi, Adibatla, Kompally. Not one value
+         came from the database, and it carried a pulsing "LIVE · ESRI
+         Satellite" badge, which is the strongest claim to real-time truth
+         this interface can make.
+
+         It was also the single most org-specific thing in the product: a
+         road contractor's map on the home screen of a business that makes
+         furniture. Half the dashboard's width for a picture that could
+         never say anything about the company reading it. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px', marginBottom: '20px' }}>
 
         {/* S-Curve */}
         <div style={{

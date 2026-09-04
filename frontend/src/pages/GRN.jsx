@@ -68,7 +68,11 @@ const GRN = () => {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!activeProject) return;
+    /* Was a silent return — the Generate GRN button did nothing. */
+    if (!activeProject) {
+      toast.error('Choose a project first — a goods receipt is recorded against one.');
+      return;
+    }
 
     if (!newItem.poId || newItem.receivedQuantity === '') {
       toast.error('Please select a PO and enter the received quantity');

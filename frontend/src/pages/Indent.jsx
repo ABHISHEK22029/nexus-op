@@ -44,9 +44,10 @@ const Indent = () => {
 
   // Only the BOQ pick-list loads here; the list itself is q's job.
   useEffect(() => {
-    // BOQs are a construction concept; with no project there simply are none.
-    if (!activeProject) { setBoqs([]); return; }
-    fetch(`${API}/boq?projectId=${activeProject.id}`)
+    /* Emptying the picker when the scope is "All work" made the Add form
+       unusable — no BOQ to choose, so nothing could be raised, on a screen
+       that gave no hint why. /boq answers unscoped with 8 rows. */
+    fetch(`${API}/boq${activeProject ? `?projectId=${activeProject.id}` : ''}`)
       .then(res => res.json())
       .then(d => setBoqs(Array.isArray(d) ? d : (d.items || [])))
       .catch(err => console.error(err));
@@ -70,7 +71,12 @@ const Indent = () => {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!activeProject) return;
+    /* Silently returning here is why this screen read as broken: the Add
+       button did nothing at all and said nothing about why. */
+    if (!activeProject) {
+      toast.error('Choose a project first — an indent is raised against one.');
+      return;
+    }
 
     // Validation — Work Order is OPTIONAL (SMEs may not use work orders)
     if (!newItem.boqId || newItem.requestedQuantity === '' || !newItem.requiredDate) {

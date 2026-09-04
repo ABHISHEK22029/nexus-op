@@ -153,6 +153,16 @@ exports.convertToOrder = async (req, res) => {
     const q = (await client.query('SELECT * FROM sales_quotations WHERE id = $1', [req.params.id])).rows[0];
     if (!q) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Quotation not found' }); }
     if (q.converted_order_id) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This quotation was already converted to an order' }); }
+    /* Status was never consulted here — only converted_order_id. So a
+       quotation the customer had REJECTED converted into a live customer
+       order, with the stock commitment, production demand and revenue
+       forecast that follow from one. The rejection is the one state that
+       must block it: a Draft or Sent quote being converted is a shortcut
+       somebody may legitimately want, a rejected one is an error. */
+    if (q.status === 'Rejected') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This quotation was rejected — reopen it before converting to an order' });
+    }
     const items = (await client.query('SELECT * FROM sales_quotation_items WHERE sales_quotation_id = $1 ORDER BY sort_order', [q.id])).rows;
     if (!items.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Quotation has no line items' }); }
 

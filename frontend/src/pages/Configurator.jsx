@@ -21,12 +21,13 @@ import {
   Settings, Users as UsersIcon, ShieldCheck, History, AlertTriangle,
   Check, X, Plus, Trash2, Save, Info, RotateCcw,
   Tags, Hash, GitBranch, ChevronLeft, ChevronRight, Search, Pencil,
-  BadgeCheck, Lock,
+  BadgeCheck, Lock, UserPlus,
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
 import TileHome from '../components/ConfiguratorTiles';
 import PeopleDirectory from '../components/PeopleDirectory';
+import AddPersonModal from '../components/AddPersonModal';
 import PersonEditor from '../components/PersonEditor';
 import CategoryAdmin from '../components/CategoryAdmin';
 import { usePermissions } from '../context/PermissionContext';
@@ -245,6 +246,7 @@ function People() {
      spelling and granting write access to every invoice in the business
      are not the same kind of change. */
   const [editing, setEditing] = useState(null);
+  const [adding, setAdding] = useState(false);
 
   const savePerson = async (form) => {
     try {
@@ -268,6 +270,15 @@ function People() {
 
   return (
     <>
+      {/* POST /admin/users was routed and working; nothing called it, so
+          there was no way to give anybody else a login. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button onClick={() => setAdding(true)} className="btn-primary btn-sm"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <UserPlus size={14} /> Add person
+        </button>
+      </div>
+
       <PeopleDirectory
         users={users}
         roles={roles}
@@ -279,6 +290,9 @@ function People() {
       />
       {editing && (
         <PersonEditor person={editing} people={users} onCancel={() => setEditing(null)} onSave={savePerson} />
+      )}
+      {adding && (
+        <AddPersonModal roles={roles} onClose={() => setAdding(false)} onSaved={load} />
       )}
     </>
   );

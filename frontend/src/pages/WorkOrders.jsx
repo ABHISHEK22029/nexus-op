@@ -45,15 +45,25 @@ const WorkOrders = () => {
     q.setFilters(f => ({ ...f, projectId: scope }));
   }, [scope]);
 
+  /* These are pickers, and both endpoints answer perfectly well with no
+     project — /vendors returns 61, /boq returns 8. Bailing out when the
+     scope is "All work" left the dropdowns empty on a screen that was
+     otherwise ready to use. */
   useEffect(() => {
-    if (!activeProject) return;
-    axios.get(`${API}/vendors?projectId=${activeProject.id}`).then(res => setVendors(Array.isArray(res.data) ? res.data : (res.data?.items || [])));
-    axios.get(`${API}/boq?projectId=${activeProject.id}`).then(res => setBoqs(Array.isArray(res.data) ? res.data : (res.data?.items || [])));
+    const scoped = activeProject ? `?projectId=${activeProject.id}` : '';
+    axios.get(`${API}/vendors${scoped}`).then(res => setVendors(Array.isArray(res.data) ? res.data : (res.data?.items || [])));
+    axios.get(`${API}/boq${scoped}`).then(res => setBoqs(Array.isArray(res.data) ? res.data : (res.data?.items || [])));
   }, [activeProject]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!activeProject) return;
+    /* A work order belongs to a project, so one has to be chosen — but say
+       so. This used to `return` in silence, so the button did nothing and
+       gave no reason. */
+    if (!activeProject) {
+      toast.error('Choose a project first — a work order is raised against one.');
+      return;
+    }
     if (!formData.name.trim() || !formData.vendorId) {
       toast.error('Directive Name and an Authorized Subcontractor are required.');
       return;
@@ -80,7 +90,11 @@ const WorkOrders = () => {
     }
   };
 
-  if(!activeProject) return <div className="p-8 text-white">Loading context...</div>;
+  /* This used to return "Loading context..." whenever no project was
+     selected. Since a project became optional, "All work" is the default
+     scope — so the whole screen sat on that message forever, and nothing
+     was in fact loading. The list works unscoped (12 work orders), so it
+     is shown; only raising a new one needs a project chosen. */
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 p-8 space-y-8">
@@ -90,7 +104,11 @@ const WorkOrders = () => {
             <Briefcase className="text-amber-400" />
             Execution Work Orders
           </h1>
-          <p className="text-gray-500 mt-1">Bind Vendors and BOQ allocations strictly under <strong className="text-gray-300">{activeProject.name}</strong>.</p>
+          <p className="text-gray-500 mt-1">
+            {activeProject
+              ? <>Vendors and BOQ allocations under <strong className="text-gray-300">{activeProject.name}</strong>.</>
+              : <>Work orders across every project. Pick a project above to raise a new one.</>}
+          </p>
         </div>
         {canWrite && (
           <button

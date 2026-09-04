@@ -64,7 +64,11 @@ const BOQ = () => {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!activeProject) return;
+    /* Was a silent return — the Add button did nothing and said nothing. */
+    if (!activeProject) {
+      toast.error('Choose a project first — a bill of quantities belongs to one.');
+      return;
+    }
 
     // Validation
     if (!newItem.itemCode || !newItem.description || !newItem.unit ||
