@@ -25,8 +25,10 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Database, Package, Search, X, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Database, Package, Search, X, AlertTriangle, CheckCircle2, Plus, Scale } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import { AddStockModal, ItemStockPanel } from '../components/StockActions';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -47,6 +49,12 @@ export default function Inventory() {
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState('');
+  /* Adding opening stock and correcting a count were only ever possible
+     through the API. See components/StockActions.jsx. */
+  const [adding, setAdding] = useState(false);
+  const [counting, setCounting] = useState(null);
+  const { can } = usePermissions();
+  const canWrite = can('inventory', 'write');
 
   /* No project filter. Stock is a company-level balance — see the note at
      the top of this file. */
@@ -108,6 +116,7 @@ export default function Inventory() {
           </p>
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ position: 'relative', minWidth: 240 }}>
           <Search size={15} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input
@@ -130,6 +139,14 @@ export default function Inventory() {
               <X size={14} />
             </button>
           )}
+        </div>
+
+        {canWrite && (
+          <button onClick={() => setAdding(true)} className="btn-primary btn-sm"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <Plus size={14} /> Add stock
+          </button>
+        )}
         </div>
       </div>
 
@@ -199,7 +216,10 @@ export default function Inventory() {
                   </span>
                 </div>
 
-                <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border-subtle)' }}>
+                <div style={{
+                  marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border-subtle)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                }}>
                   {isEditing ? (
                     <input
                       autoFocus type="number" min="0" value={draft}
@@ -225,6 +245,25 @@ export default function Inventory() {
                       Reorder at {Number(item.reorderLevel) > 0 ? Number(item.reorderLevel).toLocaleString('en-IN') : 'not set'}
                     </button>
                   )}
+
+                  {/* The quantity itself. Opens a stock take rather than an
+                      editable number: you enter what you counted and the
+                      difference is written to the ledger with a reason. */}
+                  {canWrite && !isEditing && (
+                    <button
+                      onClick={() => setCounting(item)}
+                      title="Record a physical count, or write off damage"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        background: 'none', border: '1px solid var(--border-default)',
+                        borderRadius: 7, padding: '4px 9px', cursor: 'pointer',
+                        fontSize: '0.73rem', fontWeight: 600, color: 'var(--text-secondary)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <Scale size={12} /> Count
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -237,6 +276,9 @@ export default function Inventory() {
           )}
         </div>
       )}
+
+      {adding && <AddStockModal onClose={() => setAdding(false)} onSaved={load} />}
+      {counting && <ItemStockPanel item={counting} onClose={() => setCounting(null)} onSaved={load} />}
     </div>
   );
 }
