@@ -15,9 +15,10 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import ScopeBar from './ScopeBar';
 import {
   LayoutDashboard, ShoppingBag, ShoppingCart, Package, Factory, Wallet,
-  Settings, Zap, ChevronLeft, ChevronRight, Sun, Moon, Home,
+  Settings, SlidersHorizontal, Zap, ChevronLeft, ChevronRight, Sun, Moon, Home,
 } from 'lucide-react';
 import { usePermissions } from '../context/PermissionContext';
 import { useTheme } from '../context/ThemeContext';
@@ -26,7 +27,7 @@ import {
   MODULES, moduleForPath, visibleItems, visibleLinks, visibleModules, badgeEndpoints,
 } from '../lib/navigation';
 
-const ICONS = { LayoutDashboard, ShoppingBag, ShoppingCart, Package, Factory, Wallet, Settings };
+const ICONS = { LayoutDashboard, ShoppingBag, ShoppingCart, Package, Factory, Wallet, Settings, SlidersHorizontal };
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const PANEL_KEY = 'maks_nav_panel_open';
@@ -157,6 +158,10 @@ export default function AppNav() {
 
       {panelOpen && items.some(i => i.path) && (
         <aside className="nav-panel" aria-label={`${current?.label} screens`}>
+          {/* The organisation and the scope being viewed. Moved out of the
+              top bar: they answer "where am I", which is what the navigation
+              beside them is for. */}
+          <ScopeBar />
           <div className="nav-panel-head">
             <span>{current?.label}</span>
             <button onClick={() => setPanelOpen(false)} title="Collapse menu" aria-label="Collapse menu">

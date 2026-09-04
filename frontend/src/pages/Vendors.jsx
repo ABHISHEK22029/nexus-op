@@ -62,6 +62,16 @@ function Directory() {
   const toast = useToast();
   const { can } = usePermissions();
   const [bulkLoading, setBulkLoading] = useState(false);
+  /* The org's own supply categories, for the filter above. */
+  const [categories, setCategories] = React.useState([]);
+  React.useEffect(() => {
+    const t = getToken();
+    fetch(`${API}/supply-categories?kind=vendor`, { headers: t ? { Authorization: `Bearer ${t}` } : {} })
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => setCategories(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, []);
+
   const q = useListQuery('vendors', { pageSize: 25 });
 
   const del = async (e, vendor) => {
@@ -123,15 +133,15 @@ function Directory() {
       <ListToolbar
         q={q}
         placeholder="Search vendor, type, city, GSTIN or contact…"
+        /* The options here were hardcoded to Material Supply / Logistics /
+           Construction / Maintenance — none of which is a value any vendor
+           on this database actually has, so every one of them filtered to
+           nothing. They now come from the organisation's own category list,
+           which is the same list the vendor form writes to. */
         filters={[{
-          key: 'type',
-          label: 'Type',
-          options: [
-            { value: 'Material Supply', label: 'Material' },
-            { value: 'Logistics', label: 'Logistics' },
-            { value: 'Construction', label: 'Construction' },
-            { value: 'Maintenance', label: 'Maintenance' },
-          ],
+          key: 'supply_category',
+          label: 'Supplies',
+          options: categories.map(c => ({ value: c.name, label: c.name })),
         }]}
         right={canWrite && (
           <div style={{ display: 'flex', gap: 8 }}>
@@ -176,8 +186,23 @@ function Directory() {
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     {canDelete && <SelectCell q={q} id={v.id} />}
+                    {/* A vendor with no name rendered as an empty row — which
+                        reads as a broken list rather than as missing data.
+                        One such vendor on this database has two purchase
+                        orders against it, so it cannot simply be deleted;
+                        what it needs is a name. Say so, and make the row
+                        take you somewhere you can fix it. */}
                     <td style={td}>
-                      <div style={{ fontWeight: 600 }}>{v.name}</div>
+                      {String(v.name || '').trim() ? (
+                        <div style={{ fontWeight: 600 }}>{v.name}</div>
+                      ) : (
+                        <div style={{ fontWeight: 600, color: 'var(--brand-amber)' }}>
+                          Unnamed vendor
+                          <span style={{ display: 'block', fontSize: '0.74rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+                            #{v.id} — click to give it a name
+                          </span>
+                        </div>
+                      )}
                       {(v.city || v.state) && (
                         <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
                           {[v.city, v.state].filter(Boolean).join(', ')}
@@ -186,17 +211,33 @@ function Directory() {
                     </td>
                     <td style={td}>
                       <span style={{ fontSize: '0.74rem', fontWeight: 600, padding: '3px 9px', borderRadius: 99, background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-                        {v.type || '—'}
+                        {v.supply_category || v.type || '—'}
                       </span>
                     </td>
+                    {/* What this vendor actually sells you, in your own words.
+
+                        This used to fall back to `capability_tags`, the old
+                        field, which still holds road-contractor demo text —
+                        so a furniture manufacturer's vendor list read
+                        "Structures, Earthworks". Wrong text in the column
+                        that answers "what does this vendor supply us" is
+                        worse than an honest blank, so there is no fallback
+                        and no chopping on commas: it is a sentence somebody
+                        typed, shown as they typed it. */}
                     <td style={td}>
-                      {v.capability_tags ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                          {String(v.capability_tags).split(',').map(t => t.trim()).filter(Boolean).slice(0, 3).map(tag => (
-                            <span key={tag} style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 7px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#b45309' }}>{tag}</span>
-                          ))}
-                        </div>
-                      ) : <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>—</span>}
+                      {v.supplies
+                        ? <span style={{ fontSize: '0.82rem', color: 'var(--text-primary)' }}>{v.supplies}</span>
+                        : (
+                          <button
+                            onClick={() => navigate(`/vendors/${v.id}/edit`)}
+                            title="Record what this vendor supplies"
+                            style={{
+                              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                              fontSize: '0.78rem', color: 'var(--text-muted)',
+                              textDecoration: 'underline dotted', textUnderlineOffset: 3,
+                            }}
+                          >not recorded</button>
+                        )}
                     </td>
                     <td style={{ ...td, fontSize: '0.82rem' }}>
                       {v.contactName || v.contactPhone ? (

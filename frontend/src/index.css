@@ -880,3 +880,109 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 .nav-badge-info   { background: rgba(59,130,246,0.15);  color: #3b82f6; }
 .nav-badge-warn   { background: rgba(245,158,11,0.18);  color: #b45309; }
 .nav-badge-danger { background: rgba(220,38,38,0.15);   color: #dc2626; }
+
+/* ═══════════════════════════════════════════════════════════
+   Scope bar — organisation + what you are looking at.
+
+   These two lived in a full-width strip above every page. They now sit at
+   the top of the navigation panel, where "where am I" is already answered,
+   and every page got that strip's height back.
+   ═══════════════════════════════════════════════════════════ */
+.nav-scope {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 14px 12px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.nav-scope-org {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 0.86rem; font-weight: 800; color: var(--text-primary);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+}
+.nav-scope-org span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nav-scope-org svg { color: var(--brand-amber); flex-shrink: 0; }
+
+.nav-scope-picker {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 5px 9px; border-radius: 7px; cursor: pointer;
+  background: var(--bg-elevated); border: 1px solid var(--border-default);
+  color: var(--text-secondary); font-size: 0.76rem; font-weight: 600;
+}
+.nav-scope-picker span {
+  flex: 1; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nav-scope-picker:hover { border-color: var(--brand-amber); color: var(--brand-amber); }
+
+.nav-scope-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 200;
+  min-width: 220px;
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: 11px; box-shadow: var(--shadow-md); padding: 5px;
+}
+.nav-scope-menu-head {
+  padding: 7px 9px 4px;
+  font-size: 0.64rem; font-weight: 800; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.nav-scope-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: none; border-radius: 7px; padding: 7px 9px;
+  cursor: pointer; text-align: left;
+  color: var(--text-primary); font-size: 0.8rem; font-weight: 500;
+}
+.nav-scope-menu button span {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nav-scope-menu button svg { color: var(--brand-amber); flex-shrink: 0; }
+.nav-scope-menu button:hover { background: var(--bg-elevated); }
+
+/* The account avatar floats over the page, so the first heading needs room
+   not to sit under it. */
+.app-page { padding-top: 22px; }
+.app-page > *:first-child { padding-right: 56px; }
+
+/* ═══════════════════════════════════════════════════════════
+   Status pills — readable in BOTH themes.
+
+   Status badges were written with Tailwind's -400 shades on a 10% tint:
+   `text-amber-400 bg-amber-500/10`. On the charcoal theme that is correct.
+   On the warm off-white theme it is #fbbf24 on a barely-tinted cream —
+   measured at 1.4:1, which nobody can read. "Dispatched", "Active" and
+   "Under Review" were all effectively invisible in light mode.
+
+   Stated once here so the next status badge inherits it instead of picking
+   a Tailwind shade that happens to suit whichever theme its author had open.
+   Default is the dark theme, matching this file's convention; light is the
+   override.
+   ═══════════════════════════════════════════════════════════ */
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 700; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.pill-neutral { color: #94a3b8; background: rgba(148,163,184,0.14); border-color: rgba(148,163,184,0.24); }
+.pill-info    { color: #60a5fa; background: rgba(96,165,250,0.14);  border-color: rgba(96,165,250,0.26); }
+.pill-warn    { color: #fbbf24; background: rgba(251,191,36,0.14);  border-color: rgba(251,191,36,0.28); }
+.pill-good    { color: #34d399; background: rgba(52,211,153,0.14);  border-color: rgba(52,211,153,0.26); }
+.pill-bad     { color: #f87171; background: rgba(248,113,113,0.14); border-color: rgba(248,113,113,0.28); }
+
+/* Light: darker text so it reads on cream, same tint family so the meaning
+   carries across. */
+[data-theme="light"] .pill-neutral { color: #475569; background: rgba(100,116,139,0.13); border-color: rgba(100,116,139,0.24); }
+[data-theme="light"] .pill-info    { color: #2563eb; background: rgba(37,99,235,0.11);   border-color: rgba(37,99,235,0.24); }
+[data-theme="light"] .pill-warn    { color: #b45309; background: rgba(245,158,11,0.15);  border-color: rgba(245,158,11,0.32); }
+[data-theme="light"] .pill-good    { color: #047857; background: rgba(16,185,129,0.12);  border-color: rgba(16,185,129,0.28); }
+[data-theme="light"] .pill-bad     { color: #b91c1c; background: rgba(220,38,38,0.11);   border-color: rgba(220,38,38,0.26); }
+
+/* Muted text tied to the theme, not to a fixed Tailwind grey.
+
+   `text-gray-500` and `text-gray-600` are the same two colours in both
+   themes. On the charcoal theme they read; on the warm off-white one they
+   measure 2.8:1, which is below the floor for anything a person has to read.
+   These follow the token, so a caption stays a caption in either theme. */
+.txt-muted     { color: var(--text-muted); }
+.txt-secondary { color: var(--text-secondary); }

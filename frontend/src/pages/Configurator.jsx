@@ -20,8 +20,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Settings, Users as UsersIcon, ShieldCheck, History, AlertTriangle,
   Check, X, Plus, Trash2, Save, Info, RotateCcw,
+  Tags, Hash, GitBranch, ChevronLeft, ChevronRight, Search, Pencil,
+  BadgeCheck, Lock,
 } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
+import TileHome from '../components/ConfiguratorTiles';
+import PeopleDirectory from '../components/PeopleDirectory';
+import PersonEditor from '../components/PersonEditor';
+import CategoryAdmin from '../components/CategoryAdmin';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
 
@@ -42,15 +49,74 @@ const api = async (path, opts = {}) => {
   return body;
 };
 
-const TABS = [
-  { key: 'people', label: 'People', icon: UsersIcon },
-  { key: 'roles', label: 'Roles & permissions', icon: ShieldCheck },
-  { key: 'history', label: 'Change history', icon: History },
+/* Each tile is one thing an administrator configures. A tab strip works for
+   three; this list is going to grow, and a tile can say what it is FOR —
+   which a tab label cannot. `ready: false` tiles are shown deliberately
+   rather than hidden, so the shape of what is coming is visible instead of
+   being a surprise. */
+const TILES = [
+  {
+    key: 'people', label: 'Users & roles', icon: UsersIcon, ready: true,
+    blurb: 'Everyone with a login — who they are, what they do, and how much of the platform they can reach.',
+    stat: (d) => `${d.userCount ?? '—'} people`,
+  },
+  {
+    key: 'roles', label: 'Roles & permissions', icon: ShieldCheck, ready: true,
+    blurb: 'What each role is allowed to open, change and delete. Deny by default.',
+    stat: (d) => `${d.roleCount ?? '—'} roles`,
+  },
+  {
+    key: 'categories', label: 'Categories', icon: Tags, ready: true,
+    blurb: 'Your own words for what you buy and what you sell — used on vendors and customers.',
+    stat: (d) => `${d.categoryCount ?? '—'} defined`,
+  },
+  {
+    key: 'history', label: 'Change history', icon: History, ready: true,
+    blurb: 'Who widened access, and when. The first question asked after something is seen that should not have been.',
+    stat: () => 'audit trail',
+  },
+  {
+    key: 'numbering', label: 'Document numbering', icon: Hash, ready: false,
+    blurb: 'The prefix and series on your purchase orders, invoices and challans.',
+  },
+  {
+    key: 'workflow', label: 'Approvals', icon: GitBranch, ready: false,
+    blurb: 'Who signs off a purchase order, and above what value.',
+  },
 ];
 
+const SECTIONS = ['people', 'roles', 'categories', 'history'];
+
 export default function Configurator() {
-  const [tab, setTab] = useState('people');
+  /* The section comes from the URL, so the rail can link straight to one and
+     a refresh keeps your place. It used to live in component state, which
+     meant every reload dropped you back to the tile home and the nav had
+     nothing to link to. No section = the tile home. */
+  const { section } = useParams();
+  const navigate = useNavigate();
+  const tab = SECTIONS.includes(section) ? section : null;
+  const setTab = (key) => navigate(key ? `/configurator/${key}` : '/configurator');
+
+  const [counts, setCounts] = useState({});
+  const toast = useToast();
   const { role } = usePermissions();
+
+  /* One call per tile stat. Failures are swallowed on purpose: a tile that
+     cannot show a count is still a tile you can open, and a broken number
+     must not stop the page rendering. */
+  const loadCounts = useCallback(async () => {
+    const [u, r, cv, cc] = await Promise.all([
+      api('/admin/users').catch(() => null),
+      api('/admin/roles').catch(() => null),
+      api('/supply-categories?kind=vendor').catch(() => []),
+      api('/supply-categories?kind=customer').catch(() => []),
+    ]);
+    return {
+      userCount: u?.users?.length,
+      roleCount: r?.roles?.length,
+      categoryCount: (cv?.length || 0) + (cc?.length || 0),
+    };
+  }, []);
 
   if (role && role !== 'Administrator') {
     return (
@@ -80,26 +146,22 @@ export default function Configurator() {
 
       <HealthBanner />
 
-      <nav style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border-subtle)', marginBottom: 18 }}>
-        {TABS.map(t => {
-          const active = tab === t.key;
-          return (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 7,
-                padding: '9px 15px', fontSize: '0.86rem', fontWeight: 600, cursor: 'pointer',
-                background: 'none', border: 'none',
-                borderBottom: `2px solid ${active ? 'var(--brand-amber)' : 'transparent'}`,
-                color: active ? 'var(--text-primary)' : 'var(--text-muted)',
-              }}>
-              <t.icon size={15} /> {t.label}
-            </button>
-          );
-        })}
-      </nav>
+      {!tab && <TileHome tiles={TILES} counts={counts} setCounts={setCounts} onOpen={setTab} load={loadCounts} />}
+
+      {tab && (
+        <button onClick={() => setTab(null)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 16,
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600, padding: 0,
+          }}>
+          <ChevronLeft size={15} /> All settings
+        </button>
+      )}
 
       {tab === 'people' && <People />}
       {tab === 'roles' && <Roles />}
+      {tab === 'categories' && <CategoryAdmin api={api} toast={toast} />}
       {tab === 'history' && <ChangeHistory />}
     </Wrap>
   );
@@ -179,67 +241,46 @@ function People() {
     finally { setBusy(null); }
   };
 
+  /* Editing the person is separate from changing their role: correcting a
+     spelling and granting write access to every invoice in the business
+     are not the same kind of change. */
+  const [editing, setEditing] = useState(null);
+
+  const savePerson = async (form) => {
+    try {
+      await api(`/admin/users/${form.id}`, { method: 'PATCH', body: JSON.stringify(form) });
+      toast.success('Details saved');
+      setEditing(null);
+      load();
+    } catch (e) { toast.error(e.message); }
+  };
+
+  const resetPassword = async (u) => {
+    const pw = window.prompt(`New password for ${u.name || u.email}? They should change it after signing in.`);
+    if (!pw) return;
+    try {
+      await api(`/admin/users/${u.id}/reset-password`, { method: 'POST', body: JSON.stringify({ password: pw }) });
+      toast.success('Password reset');
+    } catch (e) { toast.error(e.message); }
+  };
+
   if (err) return <Err msg={err} onRetry={load} />;
 
   return (
-    <Card>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-          {['Person', 'Role', 'Status', ''].map(h =>
-            <th key={h} style={th}>{h}</th>)}
-        </tr></thead>
-        <tbody>
-          {users.map(u => (
-            <tr key={u.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-              <td style={td}>
-                <div style={{ fontWeight: 600 }}>{u.name || '—'} {u.isSelf && <Tag>you</Tag>}</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{u.email}</div>
-              </td>
-              <td style={td}>
-                <select
-                  value={roles.some(r => r.role === u.role) ? u.role : ''}
-                  disabled={u.isSelf || busy === u.id}
-                  onChange={e => changeRole(u, e.target.value)}
-                  title={u.isSelf ? 'You cannot change your own role — ask another administrator' : undefined}
-                  style={{
-                    padding: '5px 9px', fontSize: '0.83rem', borderRadius: 7,
-                    border: '1px solid var(--border-default)', background: 'var(--bg-surface)',
-                    color: 'var(--text-primary)', cursor: u.isSelf ? 'not-allowed' : 'pointer',
-                    opacity: u.isSelf ? 0.6 : 1,
-                  }}>
-                  {!roles.some(r => r.role === u.role) && (
-                    <option value="">{u.role || 'none'} (legacy)</option>
-                  )}
-                  {roles.map(r => <option key={r.role} value={r.role}>{r.label}</option>)}
-                </select>
-                {/* A legacy role isn't a role anyone chose — it's a string
-                    being mapped at request time. Worth showing what it
-                    actually resolves to. */}
-                {u.role_is_legacy && (
-                  <div style={{ fontSize: '0.72rem', color: '#b45309', marginTop: 3 }}>
-                    legacy “{u.role}” → treated as {u.effectiveRole}
-                  </div>
-                )}
-              </td>
-              <td style={td}>
-                <span style={{
-                  fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 99,
-                  background: 'var(--bg-elevated)', color: u.is_active ? '#10b981' : 'var(--text-muted)',
-                }}>{u.is_active ? 'Active' : 'Inactive'}</span>
-              </td>
-              <td style={{ ...td, textAlign: 'right' }}>
-                <button onClick={() => toggleActive(u)} disabled={u.isSelf || busy === u.id}
-                  className="btn-secondary"
-                  title={u.isSelf ? 'You cannot deactivate your own account' : undefined}
-                  style={{ fontSize: '0.76rem', padding: '4px 10px', opacity: u.isSelf ? 0.5 : 1, cursor: u.isSelf ? 'not-allowed' : 'pointer' }}>
-                  {u.is_active ? 'Deactivate' : 'Activate'}
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
+    <>
+      <PeopleDirectory
+        users={users}
+        roles={roles}
+        busy={busy}
+        onChangeRole={changeRole}
+        onToggleActive={toggleActive}
+        onEditPerson={setEditing}
+        onResetPassword={resetPassword}
+      />
+      {editing && (
+        <PersonEditor person={editing} people={users} onCancel={() => setEditing(null)} onSave={savePerson} />
+      )}
+    </>
   );
 }
 

@@ -145,6 +145,8 @@ async function clean(ownerId) {
     ['customer_order_items',  `DELETE FROM customer_order_items WHERE customer_order_id IN (SELECT id FROM customer_orders WHERE notes LIKE $1)`],
     ['customer_orders',       `DELETE FROM customer_orders WHERE notes LIKE $1`],
     ['sku_bom',               `DELETE FROM sku_bom WHERE sku_id IN (SELECT id FROM skus WHERE description LIKE $1)`],
+    ['quote_lines',           `DELETE FROM quote_lines WHERE quotation_id IN (SELECT id FROM quotations WHERE part_description LIKE $1)`],
+    ['quotations',            `DELETE FROM quotations WHERE part_description LIKE $1`],
     ['vendor_items',          `DELETE FROM vendor_items WHERE notes LIKE $1`],
     ['stock_movements',       `DELETE FROM stock_movements WHERE item_name LIKE $1`],
     ['inventory',             `DELETE FROM inventory WHERE "itemName" LIKE $1`],
@@ -480,6 +482,49 @@ async function clean(ownerId) {
     await insertMany('production_output',
       ['production_order_id', 'item_name', 'output_qty', 'uom'], outRows);
     log(`production orders: ${prods.length}  ·  with output booked: ${outputCount}`);
+
+    /* ── 8.5 RFQs to vendors ────────────────────────────────────────
+       The vendor-quotations screen had exactly ONE row on a database with
+       145 customer orders, which reads as a broken feature rather than an
+       unused one. Nothing was wrong with it: the seeder simply never raised
+       any, so there was nothing to see.
+
+       An RFQ is raised against a customer order LINE — "we have sold this,
+       who can supply it" — and each one collects quotes from two or three
+       vendors, one of which is usually chosen. Buy-out lines, not everything:
+       a workshop makes most of what it sells and buys in the rest. */
+    const rfqRows = [], rfqLines = [];
+    for (const o of orders) {
+      for (const l of o.lines) {
+        if (rnd() > 0.28) continue;               // roughly a quarter are bought out
+        rfqRows.push([ownerId, null, `${l.prod.name} — ${MARK}`, l.qty, 'nos',
+          pick(['Open', 'Open', 'Quoted', 'Closed'])]);
+      }
+    }
+    const rfqs = await insertMany('quotations',
+      ['owner_id', 'customer_order_item_id', 'part_description', 'quantity', 'unit', 'status'],
+      rfqRows, { returning: 'id, part_description' });
+
+    /* Two or three vendors quote each one, at spread prices — a single quote
+       is not a comparison, and comparison is the whole point of the screen. */
+    const vendorNames = new Map();
+    for (const v of (await client.query('SELECT id, name FROM vendors WHERE owner_id = $1', [ownerId])).rows) {
+      vendorNames.set(v.id, v.name);
+    }
+    rfqs.forEach((r, i) => {
+      const n = between(2, 3);
+      const base = 400 + between(0, 1800);
+      for (let s = 0; s < n; s++) {
+        const vId = vendorIds[(i * 3 + s) % vendorIds.length];
+        rfqLines.push([r.id, s + 1, vId, vendorNames.get(vId) || null,
+          r2(base * (0.88 + rnd() * 0.3)), between(4, 21),
+          pick(['30 days credit', 'Advance 50%', 'Against delivery', 'Net 45'])]);
+      }
+    });
+    await insertMany('quote_lines',
+      ['quotation_id', 'slot', 'vendor_id', 'vendor_name', 'unit_price', 'lead_time_days', 'terms'],
+      rfqLines);
+    log(`vendor RFQs: ${rfqs.length}  ·  quotes received: ${rfqLines.length}`);
 
     /* ── 9. dispatch and invoices ── */
     const shipped = orders.filter(o => /Delivered/.test(o.status));

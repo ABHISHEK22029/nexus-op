@@ -6,6 +6,7 @@ import {
   Building2, Phone, Mail, Globe, AlertCircle, Loader2
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import CategoryPicker from '../components/CategoryPicker';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -38,6 +39,7 @@ const TABS = [
 
 const INITIAL = {
   name: '', displayName: '', vendorCode: '', type: '',
+  supplyCategory: '', supplies: '',
   contactPerson: '', email: '', mobile: '', whatsapp: '', website: '',
   contractorClass: '', capabilityScope: '', safetyRating: '',
   gstin: '', pan: '', gstTreatment: '', tdsSection: '',
@@ -222,7 +224,9 @@ export default function VendorForm() {
         gstin: form.gstin || null,
         class: form.contractorClass || null,
         // What they actually supply — the answer to "who sells us steel?"
-        capability_tags: form.capabilityScope || null,
+        capability_tags: form.supplies || form.capabilityScope || null,
+        supply_category: form.supplyCategory || null,
+        supplies: form.supplies || null,
         // Contact
         contactName: form.contactPerson || null,
         contactPhone: form.mobile || null,
@@ -406,6 +410,22 @@ export default function VendorForm() {
                     {VENDOR_TYPES.map(t => <option key={t}>{t}</option>)}
                   </ThemeSelect>
                 </Field>
+                {/* What they supply, in this organisation's own words.
+
+                    "Vendor Type" above offers Civil Contractor, Bituminous,
+                    IT Hardware — a road contractor's list, handed to every
+                    business. A furniture maker buys Board and Laminate; a
+                    fabricator buys Plate and Section. When nothing fits,
+                    people pick the least wrong option, and the vendor list
+                    stops being filterable by what vendors actually sell. */}
+                <Field label="What They Supply" hint="Your own category — type a new one to add it">
+                  <CategoryPicker
+                    kind="vendor"
+                    value={form.supplyCategory}
+                    onChange={(v) => set('supplyCategory', v)}
+                    placeholder="e.g. Board, Hardware, Laminate"
+                  />
+                </Field>
                 <Field label="Vendor Code" hint="Auto-generated if left blank">
                   <ThemeInput value={form.vendorCode} onChange={e => set('vendorCode', e.target.value)} placeholder="VND-0042"/>
                 </Field>
@@ -444,8 +464,12 @@ export default function VendorForm() {
                     {['A','B','C','D'].map(r => <option key={r}>Rating {r}</option>)}
                   </ThemeSelect>
                 </Field>
-                <Field label="Capability Scope" hint="e.g. Earthworks, Piling">
-                  <ThemeInput value={form.capabilityScope} onChange={e => set('capabilityScope', e.target.value)} placeholder="Structures, Earthworks"/>
+                {/* Renamed from "Capability Scope", which said nothing about
+                    what it was for. The item-level truth lives in
+                    vendor_items (material + price + MOQ); this is the
+                    sentence a buyer reads when choosing who to ask. */}
+                <Field label="What exactly do they supply?" hint="The detail behind the category">
+                  <ThemeInput value={form.supplies} onChange={e => set('supplies', e.target.value)} placeholder="18mm particle board, MDF, edge banding — cut to size"/>
                 </Field>
               </div>
             </div>

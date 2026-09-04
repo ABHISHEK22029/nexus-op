@@ -261,23 +261,104 @@ exports.deleteRole = async (req, res) => {
 };
 
 /* ── Users ───────────────────────────────────────────────── */
+/* How much of the product a role actually opens up.
+
+   "Which role are they on" is not the question an administrator is really
+   asking — they want to know how much this person can reach. Counting the
+   resources the role can read, change and delete turns a role name into a
+   number that can be compared and sorted, and makes an over-privileged
+   account visible at a glance rather than by opening it. */
+function accessSummary(role) {
+  /* permissionsFor returns { role, label, permissions } — the map is one
+     level down. Treating the envelope as the map made every value a string
+     and blew up on .includes(). */
+  const perms = (R.permissionsFor(role) || {}).permissions || {};
+  /* The universe is the catalogue PLUS the common-read resources, because
+     the permission map covers both. Counting against RESOURCES alone made
+     Administrator "38 of 32 writable" — a ratio greater than one, which
+     tells the reader the number is wrong before it tells them anything
+     about the user. */
+  const total = new Set([...Object.keys(R.RESOURCES), ...(R.COMMON_READ || [])]).size;
+  const resources = Object.keys(perms);
+  const write = resources.filter(k => (perms[k] || []).includes('write')).length;
+  const del = resources.filter(k => (perms[k] || []).includes('delete')).length;
+  return {
+    readable: resources.length,
+    writable: write,
+    deletable: del,
+    totalResources: total,
+    /* A blunt band, deliberately. A percentage of a resource count is not a
+       meaningful measure of risk, but "can they change most things" is a
+       question with a useful answer. */
+    level: write === 0 ? 'read only'
+      : write >= total * 0.75 ? 'full'
+      : write >= total * 0.3 ? 'broad'
+      : 'limited',
+  };
+}
+
 exports.listUsers = async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT u.id, u.name, u.email, u.role, u.is_active, u.created_at, u.last_login,
+              u.employee_code, u.job_title, u.department, u.phone, u.reports_to, u.notes,
+              m.name AS reports_to_name,
               rd.label AS role_label, rd.role IS NULL AS role_is_legacy
-       FROM users u LEFT JOIN role_definitions rd ON rd.role = u.role
+       FROM users u
+       LEFT JOIN role_definitions rd ON rd.role = u.role
+       LEFT JOIN users m ON m.id = u.reports_to
        ORDER BY u.id`
     );
     res.json({
-      users: rows.map(u => ({
-        ...u,
-        // What their stored role actually resolves to at request time.
-        effectiveRole: R.normaliseRole(u.role),
-        isSelf: u.id === req.user?.id,
-      })),
+      users: rows.map(u => {
+        const effectiveRole = R.normaliseRole(u.role);
+        return {
+          ...u,
+          // What their stored role actually resolves to at request time.
+          effectiveRole,
+          access: accessSummary(effectiveRole),
+          isSelf: u.id === req.user?.id,
+        };
+      }),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* PATCH /admin/users/:id — the person, not their permissions.
+
+   Deliberately separate from setUserRole. Correcting a spelling and granting
+   somebody write access to every invoice in the business are not the same
+   kind of change and should not travel through the same endpoint: the role
+   change is audited and guarded, this one is ordinary editing. */
+const PERSON_COLUMNS = ['name', 'employee_code', 'job_title', 'department', 'phone', 'reports_to', 'notes'];
+
+exports.updateUser = async (req, res) => {
+  const id = Number(req.params.id);
+  const cols = PERSON_COLUMNS.filter(c => c in (req.body || {}));
+  if (!cols.length) return res.status(400).json({ error: 'Nothing to update' });
+  try {
+    const { rows: exists } = await db.query('SELECT id FROM users WHERE id = $1', [id]);
+    if (!exists[0]) return res.status(404).json({ error: 'No such user' });
+
+    // Nobody reports to themselves, and a blank code is NULL not ''.
+    const values = cols.map(c => {
+      const v = req.body[c];
+      if (c === 'reports_to') return (Number(v) === id || !v) ? null : Number(v);
+      return v === '' ? null : v;
+    });
+
+    const { rows } = await db.query(
+      `UPDATE users SET ${cols.map((c, i) => `${c} = $${i + 1}`).join(', ')}
+        WHERE id = $${cols.length + 1}
+        RETURNING id, name, employee_code, job_title, department, phone, reports_to, notes`,
+      [...values, id]);
+    res.json(rows[0]);
+  } catch (e) {
+    if (/idx_users_employee_code/.test(e.message)) {
+      return res.status(409).json({ error: 'That employee code is already used by someone else' });
+    }
+    res.status(500).json({ error: e.message });
+  }
 };
 
 /* POST /admin/users — an administrator creates an account.

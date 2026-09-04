@@ -155,11 +155,38 @@ export const MODULES = [
       { label: 'Automation', path: '/automation', resource: 'automation-settings' },
       { group: 'People' },
       { label: 'Team', path: '/users', resource: 'users' },
-      { label: 'Configurator', path: '/configurator', adminOnly: true,
-        hint: 'Roles and permissions' },
       { group: 'Data' },
       { label: 'Import data', path: '/import' },
       { label: 'Process flow', path: '/flow' },
+    ],
+  },
+  /* The Configurator is its own rail entry, not a line inside Settings.
+
+     It was one link among ten under a gear icon, which put "change what every
+     role in the business is allowed to do" at the same weight as "import a
+     CSV". It is the administrator's control panel and it earns its own icon.
+
+     Every item is adminOnly, and visibleModules() drops a module with no
+     reachable links — so this whole entry is simply absent for anyone who is
+     not an Administrator, rather than showing an icon that refuses them. */
+  {
+    key: 'configurator',
+    label: 'Configure',
+    icon: 'SlidersHorizontal',
+    landing: '/configurator',
+    items: [
+      { label: 'All settings', path: '/configurator', adminOnly: true,
+        hint: 'Everything you can configure' },
+      { group: 'Access' },
+      { label: 'Users & roles', path: '/configurator/people', adminOnly: true,
+        hint: 'Who has a login, and how much they can reach' },
+      { label: 'Roles & permissions', path: '/configurator/roles', adminOnly: true,
+        hint: 'What each role may open and change' },
+      { group: 'Business' },
+      { label: 'Categories', path: '/configurator/categories', adminOnly: true,
+        hint: 'Your words for what you buy and sell' },
+      { label: 'Change history', path: '/configurator/history', adminOnly: true,
+        hint: 'Who widened access, and when' },
     ],
   },
 ];

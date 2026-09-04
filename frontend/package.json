@@ -8,14 +8,13 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-
     "check": "node scripts/check-jsx-undefined.cjs && node scripts/check-hook-order.cjs",
-
     "//test:ui": "Needs the backend and vite running. UI_EMAIL/UI_PASSWORD from the environment — never committed. test:ui:chain writes real records; clean up with backend/scripts/clean-chain.js.",
-    "test:ui": "node scripts/smoke-ui.cjs && node scripts/audit-ui-data.cjs && node scripts/chain-ui.cjs",
+    "test:ui": "node scripts/smoke-ui.cjs && node scripts/audit-ui-data.cjs && node scripts/chain-ui.cjs && node scripts/test-firstrun.cjs && node scripts/test-configurator-ui.cjs",
     "test:ui:smoke": "node scripts/smoke-ui.cjs",
     "test:ui:data": "node scripts/audit-ui-data.cjs",
-    "test:ui:chain": "node scripts/chain-ui.cjs"
+    "test:ui:chain": "node scripts/chain-ui.cjs",
+    "test:ui:configurator": "node scripts/test-configurator-ui.cjs"
   },
   "dependencies": {
     "axios": "^1.14.0",

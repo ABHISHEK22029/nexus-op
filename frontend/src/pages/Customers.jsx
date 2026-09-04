@@ -20,6 +20,15 @@ export default function Customers() {
       icon={Contact}
       fields={[
         { key: 'name', label: 'Customer Name', required: true, placeholder: 'e.g. TSTRANSCO' },
+        /* What they actually buy. A customer list of name, GSTIN and state
+           says nothing about which of them wants fire-rated doors and which
+           wants handrails — the one thing that tells the rows apart for the
+           person reading them. The category is the organisation's own
+           vocabulary; the sentence is the detail behind it. */
+        { key: 'requirement_category', label: 'Requirement', type: 'category', categoryKind: 'customer',
+          placeholder: 'e.g. Fire doors, Handrails, Cladding' },
+        { key: 'requirement', label: 'Requirement Detail', wide: true,
+          placeholder: 'e.g. 90-minute fire-rated doors for hospital projects, powder-coated, site-measured' },
         { key: 'gstin', label: 'GSTIN', placeholder: '36AAACT1234C1Z9' },
         { key: 'pan', label: 'PAN', placeholder: 'AAACT1234C' },
         { key: 'contact_name', label: 'Contact Person', placeholder: 'GM Projects' },
@@ -36,13 +45,36 @@ export default function Customers() {
         { key: 'credit_limit', label: 'Credit Limit', type: 'number', placeholder: 'Optional' },
         { key: 'tags', label: 'Tags', placeholder: 'e.g. hospital projects, government tenders' },
       ]}
+      /* "What they buy" sits second, right after the name: it is the column
+         a person scans this list for. GSTIN and phone are lookups you go
+         to a row for, not what you read across. */
       columns={[
         { key: 'name', label: 'Customer' },
+        {
+          key: 'requirement_category', label: 'Requirement',
+          render: r => (r.requirement_category || r.requirement)
+            ? (
+              <span title={r.requirement || ''}>
+                {r.requirement_category
+                  ? <span style={{
+                      display: 'inline-block', fontSize: '0.72rem', fontWeight: 700,
+                      padding: '2px 9px', borderRadius: 999,
+                      background: 'hsl(28,100%,54%,0.12)', color: 'var(--brand-amber)',
+                    }}>{r.requirement_category}</span>
+                  : null}
+                {r.requirement && (
+                  <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 3, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {r.requirement}
+                  </span>
+                )}
+              </span>
+            )
+            : <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>not recorded</span>,
+        },
         { key: 'gstin', label: 'GSTIN' },
         { key: 'state', label: 'Billing State' },
         { key: 'shipping_state', label: 'Ships To' },
         { key: 'contact_name', label: 'Contact' },
-        { key: 'phone', label: 'Phone' },
       ]}
     />
   );

@@ -25,6 +25,7 @@ const customerSummaryController = require('./controllers/CustomerSummaryControll
 const adminController = require('./controllers/AdminController');
 const stockController = require('./controllers/StockController');
 const setupController = require('./controllers/SetupController');
+const supplyCategoryController = require('./controllers/SupplyCategoryController');
 const shortfallController = require('./controllers/ShortfallToPoController');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
@@ -266,9 +267,9 @@ app.get('/vendors', async (req, res) => {
       table: 'vendors',
       query: req.query,
       // "Find the vendor who supplies sheets" searches capability_tags too.
-      searchColumns: ['name', 'display_name', 'vendor_code', 'gstin', 'pan', 'capability_tags', 'contactName', 'contactPhone', 'contactEmail', 'city', 'state'],
-      filterColumns: ['type', 'status', 'city', 'state'],
-      allowedSort: ['id', 'name', 'type', 'city', 'state', 'status'],
+      searchColumns: ['name', 'display_name', 'vendor_code', 'gstin', 'pan', 'capability_tags', 'supplies', 'supply_category', 'contactName', 'contactPhone', 'contactEmail', 'city', 'state'],
+      filterColumns: ['type', 'supply_category', 'status', 'city', 'state'],
+      allowedSort: ['id', 'name', 'type', 'supply_category', 'city', 'state', 'status'],
       defaultSort: 'name',
       defaultDir: 'ASC',
       where, params,
@@ -290,6 +291,13 @@ const VENDOR_COLUMNS = [
   'payment_terms', 'credit_limit', 'currency', 'lead_time_days',
   'bank_name', 'account_holder', 'account_number', 'ifsc_code', 'branch_name',
   'is_msme', 'msme_number', 'labour_license', 'iso_cert', 'notes',
+  /* What they supply, in the buying organisation's own words.
+     'type' was a single word from a list built for a road contractor —
+     Civil, Bituminous, IT Hardware — which classifies nothing for a
+     furniture maker or a fabricator. supply_category points at the org's
+     own vocabulary (supply_categories) and 'supplies' is the detail that
+     capability_tags was carrying without a clear name. */
+  'supply_category', 'supplies',
 ];
 
 app.post('/vendors', async (req, res) => {
@@ -779,6 +787,7 @@ app.delete('/admin/roles/:role',   adminController.deleteRole);
 app.get('/admin/users',            adminController.listUsers);
 app.post('/admin/users',           adminController.createUser);
 app.post('/admin/users/:id/reset-password', adminController.resetPassword);
+app.patch('/admin/users/:id',      adminController.updateUser);
 app.patch('/admin/users/:id/role', adminController.setUserRole);
 app.patch('/admin/users/:id/active', adminController.setUserActive);
 app.get('/vendor-items', vendorItemController.list);
@@ -799,6 +808,14 @@ app.post('/inventory/:id/adjust',   stockController.adjust);
 /* Is the data spine populated enough for the engine to work? Ungated —
    every role benefits from knowing why a screen is empty. */
 app.get('/setup/readiness',         setupController.readiness);
+
+/* The organisation's own vocabulary for what it buys and sells. Read by
+   anyone who can see a vendor or a customer; changed by whoever can change
+   them, because a category is created in the act of classifying. */
+app.get('/supply-categories',        supplyCategoryController.list);
+app.post('/supply-categories',       allow('vendors', 'write'), supplyCategoryController.create);
+app.patch('/supply-categories/:id',  allow('vendors', 'write'), supplyCategoryController.update);
+app.delete('/supply-categories/:id', allow('vendors', 'delete'), supplyCategoryController.remove);
 
 app.get('/inventory/unmatched', async (req, res) => {
   try {
@@ -1001,8 +1018,12 @@ function registerOwnedCrud(route, table, cols, searchCols) {
       const result = await runList(db, {
         table,
         query: req.query,
-        // Text columns worth searching; falls back to name/code style columns.
-        searchColumns: searchCols || cols.filter(c => /name|code|description|email|phone|gstin|tags/i.test(c)),
+        /* Text columns worth searching; falls back to name/code style
+           columns. `requirement` and `supplies` are in here because "who
+           buys fire doors" and "who supplies laminate" are the questions
+           those fields exist to answer — a field you cannot search by is
+           barely recorded. */
+        searchColumns: searchCols || cols.filter(c => /name|code|description|email|phone|gstin|tags|requirement|supplies|category/i.test(c)),
         allowedSort: ['id', ...cols],
         defaultSort: 'id',
         defaultDir: 'DESC',
@@ -1057,7 +1078,14 @@ function registerOwnedCrud(route, table, cols, searchCols) {
 registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'pan', 'contact_name', 'phone', 'email', 'billing_address', 'state', 'opening_balance',
   // Ship-to is separate from bill-to: goods go there, and the GST place of
   // supply (CGST+SGST vs IGST) follows it rather than the billing address.
-  'shipping_address', 'shipping_state', 'payment_terms_days', 'credit_limit', 'tags']);
+  'shipping_address', 'shipping_state', 'payment_terms_days', 'credit_limit', 'tags',
+  /* What this customer actually buys. A customer list with name, GSTIN and
+     state tells you nothing about which of them wants fire-rated doors and
+     which wants handrails — the one thing that distinguishes the rows for
+     the person reading them. Category for filtering, free text for the
+     detail; both optional, because a customer added in a hurry should not
+     be blocked on knowing. */
+  'requirement_category', 'requirement']);
 registerOwnedCrud('skus',         'skus',          ['sku_code', 'name', 'description', 'unit', 'price', 'hsn']);
 registerOwnedCrud('raw-materials','raw_materials', ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn']);
 registerOwnedCrud('expenses',     'expenses',      ['project_id', 'category', 'description', 'amount', 'expense_date', 'paid_to', 'payment_mode', 'reference', 'notes']);

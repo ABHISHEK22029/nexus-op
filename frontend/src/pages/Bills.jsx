@@ -114,7 +114,7 @@ const Bills = () => {
           <Receipt className="text-red-400" />
           RA Bills Engine
         </h1>
-        <p className="text-gray-500 mt-1">Generate deterministic RA Bills driven by certified cumulative MB quantities.</p>
+        <p className="txt-muted mt-1">Generate deterministic RA Bills driven by certified cumulative MB quantities.</p>
       </div>
 
       {/* Financial Headers */}
@@ -125,7 +125,7 @@ const Bills = () => {
                   <Banknote size={16} /> Cumulative Gross Billed
               </span>
               <span className="text-2xl font-bold text-white">₹{money(s.gross)}</span>
-              <span className="text-xs text-gray-600">
+              <span className="text-xs txt-muted">
                   {q.isFiltered ? `${s.count ?? q.total} matching bill(s)` : `${s.count ?? q.total} bill(s)`}
               </span>
           </div>
@@ -138,7 +138,7 @@ const Bills = () => {
                   <CheckCircle size={16} /> Net Paid
               </span>
               <span className="text-2xl font-bold text-white">₹{money(s.paid)}</span>
-              <span className="text-xs text-gray-600">
+              <span className="text-xs txt-muted">
                   ₹{money(s.unpaid)} still owed · after ₹{money(s.deductions)} deductions
               </span>
           </div>
@@ -148,7 +148,7 @@ const Bills = () => {
                   <Clock size={16} /> Pending Actions
               </span>
               <span className="text-2xl font-bold text-white">{s.pending_approval ?? 0} Invoices</span>
-              <span className="text-xs text-gray-600">Draft or Under Review</span>
+              <span className="text-xs txt-muted">Draft or Under Review</span>
           </div>
       </div>
 
@@ -156,13 +156,13 @@ const Bills = () => {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white">Execute Invoice Run</h2>
           <button type="button" onClick={() => setShowOpts(s => !s)}
-            className="text-xs text-amber-400 hover:text-amber-300 font-medium">
+            className="text-xs font-medium" style={{ color: 'var(--brand-amber)' }}>
             {showOpts ? 'Hide billing options ▲' : 'Billing options (GST / TDS / deductions) ▼'}
           </button>
         </div>
         <form onSubmit={handleGenerate} className="flex gap-4 items-end flex-wrap">
           <div className="flex-[2] min-w-[250px]">
-             <label className="block text-xs font-medium text-gray-500 mb-1">Target Work Order</label>
+             <label className="block text-xs font-medium txt-muted mb-1">Target Work Order</label>
              <select required className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newWOId} onChange={e => setNewWOId(e.target.value)}>
                 <option value="">-- Select Executing Work Order --</option>
                 {workOrders.map(wo => <option key={wo.id} value={wo.id}>WO-{wo.id}: {wo.name}</option>)}
@@ -175,7 +175,7 @@ const Bills = () => {
 
         {showOpts && (
           <div className="mt-5 pt-5 border-t border-white/5">
-            <p className="text-xs text-gray-500 mb-3">All values are editable — leave a rate at 0 to skip that head. Optional heads (GST-TDS, Labour Cess) are off (0) by default.</p>
+            <p className="text-xs txt-muted mb-3">All values are editable — leave a rate at 0 to skip that head. Optional heads (GST-TDS, Labour Cess) are off (0) by default.</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { k: 'gstRate', label: 'GST Rate %', step: '0.01' },
@@ -188,7 +188,7 @@ const Bills = () => {
                 { k: 'otherDeductions', label: 'Other Deductions ₹', step: '1' },
               ].map(f => (
                 <div key={f.k}>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">{f.label}</label>
+                  <label className="block text-xs font-medium txt-muted mb-1">{f.label}</label>
                   <input
                     type={f.text ? 'text' : 'number'} step={f.step}
                     className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
@@ -196,7 +196,7 @@ const Bills = () => {
                 </div>
               ))}
               <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-gray-500 mb-1">Other Deduction Reason</label>
+                <label className="block text-xs font-medium txt-muted mb-1">Other Deduction Reason</label>
                 <input type="text" placeholder="e.g. quality penalty, debit note…"
                   className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
                   value={opts.deductionReason} onChange={e => setOpt('deductionReason', e.target.value)} />
@@ -233,20 +233,23 @@ const Bills = () => {
               >
                   <div className="flex items-center gap-6">
                       <div>
-                          <p className="text-xs text-gray-500 mb-1">Invoice No.</p>
+                          <p className="text-xs txt-muted mb-1">Invoice No.</p>
                           <p className="font-medium text-white">INV-{b.id.toString().padStart(5, '0')}</p>
                       </div>
                       <div>
-                          <p className="text-xs text-gray-500 mb-1">Work Order</p>
+                          <p className="text-xs txt-muted mb-1">Work Order</p>
                           <p className="font-medium text-gray-300">WO-{b.workOrderId}</p>
                       </div>
                       <div>
-                          <p className="text-xs text-gray-500 mb-1">Status</p>
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                b.status === 'Paid' ? 'bg-green-500/20 text-green-400' : 
-                                b.status === 'Approved' ? 'bg-blue-500/20 text-blue-400' :
-                                b.status === 'Under Review' ? 'bg-amber-500/20 text-amber-400' :
-                                'bg-gray-500/20 text-gray-400'
+                          <p className="text-xs txt-muted mb-1">Status</p>
+                          {/* .pill reads in both themes. The Tailwind -400
+                              shades this replaced were 1.4:1 on the light
+                              theme — "Under Review" was invisible. */}
+                          <span className={`pill ${
+                                b.status === 'Paid' ? 'pill-good' :
+                                b.status === 'Approved' ? 'pill-info' :
+                                b.status === 'Under Review' ? 'pill-warn' :
+                                'pill-neutral'
                             }`}>
                               {b.status}
                           </span>
@@ -255,7 +258,7 @@ const Bills = () => {
                   
                   <div className="flex items-center gap-6">
                       <div className="text-right">
-                          <p className="text-xs text-gray-500 mb-1">Net Payout</p>
+                          <p className="text-xs txt-muted mb-1">Net Payout</p>
                           <p className="font-bold text-red-400">₹{b.netAmount?.toLocaleString()}</p>
                       </div>
                       {/* Hidden when the API would refuse it anyway. */}
@@ -263,12 +266,12 @@ const Bills = () => {
                           <button
                               onClick={(e) => { e.stopPropagation(); handleDelete(b.id); }}
                               title="Delete bill"
-                              className="text-gray-500 hover:text-red-400 transition-colors"
+                              className="txt-muted hover:text-red-400 transition-colors"
                           >
                               <Trash2 size={18} />
                           </button>
                       )}
-                      <div className="text-gray-500">
+                      <div className="txt-muted">
                           {expandedId === b.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                       </div>
                   </div>
@@ -282,27 +285,27 @@ const Bills = () => {
                       </h3>
                       <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6">
                           <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
-                              <p className="text-xs text-gray-500 mb-1">Taxable Value</p>
+                              <p className="text-xs txt-muted mb-1">Taxable Value</p>
                               <p className="font-semibold text-gray-200">₹{(b.sub_total ?? b.grossAmount)?.toLocaleString()}</p>
-                              <p className="text-xs text-gray-600 mt-1">({b.billedQuantity} qty)</p>
+                              <p className="text-xs txt-muted mt-1">({b.billedQuantity} qty)</p>
                           </div>
                           <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
-                              <p className="text-xs text-gray-500 mb-1">GST ({b.gst_rate ?? 18}%)</p>
+                              <p className="text-xs txt-muted mb-1">GST ({b.gst_rate ?? 18}%)</p>
                               <p className="font-semibold text-gray-300">+ ₹{(b.gst_total ?? 0)?.toLocaleString()}</p>
-                              <p className="text-xs text-gray-600 mt-1">{(b.cgst > 0) ? 'CGST+SGST' : 'IGST'}</p>
+                              <p className="text-xs txt-muted mt-1">{(b.cgst > 0) ? 'CGST+SGST' : 'IGST'}</p>
                           </div>
                           <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
-                              <p className="text-xs text-gray-500 mb-1">TDS ({b.tds_rate ?? 2}%)</p>
+                              <p className="text-xs txt-muted mb-1">TDS ({b.tds_rate ?? 2}%)</p>
                               <p className="font-semibold text-red-400">- ₹{b.tds?.toLocaleString()}</p>
                           </div>
                           <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
-                              <p className="text-xs text-gray-500 mb-1">Retention ({b.retention_pct ?? 5}%)</p>
+                              <p className="text-xs txt-muted mb-1">Retention ({b.retention_pct ?? 5}%)</p>
                               <p className="font-semibold text-red-400">- ₹{b.retention?.toLocaleString()}</p>
                           </div>
                           <div className="p-3 rounded-lg bg-[#111113] border border-white/5">
-                              <p className="text-xs text-gray-500 mb-1">Other Deductions</p>
+                              <p className="text-xs txt-muted mb-1">Other Deductions</p>
                               <p className="font-semibold text-red-400">- ₹{((b.gst_tds ?? 0) + (b.labour_cess ?? 0) + (b.advance_recovery ?? 0) + (b.other_deductions ?? 0)).toLocaleString()}</p>
-                              <p className="text-xs text-gray-600 mt-1">GST-TDS · cess · adv · other</p>
+                              <p className="text-xs txt-muted mt-1">GST-TDS · cess · adv · other</p>
                           </div>
                           <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
                               <p className="text-xs text-indigo-300 mb-1">Net Payable</p>
@@ -314,7 +317,7 @@ const Bills = () => {
                           <button onClick={() => navigate(`/bills/${b.id}`)} className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5">
                               <FileText size={14} /> View Invoice
                           </button>
-                          <span className="text-xs text-gray-500 mr-2">Workflow:</span>
+                          <span className="text-xs txt-muted mr-2">Workflow:</span>
                           {/* Approval steps are hidden without write rights —
                               the server refuses them anyway. */}
                           {canWrite && b.status === 'Draft' && (

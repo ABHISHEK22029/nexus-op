@@ -6,6 +6,10 @@ import Projects from './pages/Projects';
 import WorkOrders from './pages/WorkOrders';
 import Vendors from './pages/Vendors';
 import VendorForm from './pages/VendorForm';
+/* The 47-field, 5-tab vendor form is kept for editing an existing vendor,
+   where the extra fields are occasionally wanted. Creating one now uses the
+   short form — 22 of 36 columns had never been filled once on real data. */
+import VendorFormMinimal from './pages/VendorFormMinimal';
 import PurchaseOrders from './pages/PurchaseOrders';
 import Inventory from './pages/Inventory';
 import ActivityLog from './pages/ActivityLog';
@@ -69,16 +73,21 @@ import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
 import ProductTour from './components/ProductTour';
 import AskAi from './components/AskAi';
-import TopBar from './components/TopBar';
+import AccountButton from './components/AccountButton';
 
-/* ─── Top Header (App Layer only) ──────────────────────── */
-/* The top bar moved into components/TopBar.jsx.
+/* ─── There is no top bar any more ─────────────────────────
+   It was ~275 lines inline here, then a tidier TopBar component, and now
+   nothing: a full-width strip above every page carrying six controls, only
+   one of which was worth permanent space.
 
-   It had grown to ~275 lines inline here: six separate control clusters
-   strung along the right edge with four different border treatments, two
-   gradients and no hierarchy — and nowhere on screen saying which business
-   you were signed into. TopBar groups it into where-am-I, what-can-I-do
-   and who-am-I. */
+   Quick Create duplicated the "+ Add …" button every list page already has,
+   in the place you are already looking. "Context:" is a project selector for
+   a business that may run no projects — it moved into the left rail with the
+   rest of the navigation. The theme switch is set once. Sign out is a
+   once-a-day action that was as loud as the primary one.
+
+   What is left is components/AccountButton — one round avatar, top right,
+   opening the account card. Pages get the whole width and the full height. */
 
 /* ─── App Layout (with sidebar) — auth-gated AND role-gated ─────────
    RoleRoute sits here rather than on each of the 60 routes below. It works
@@ -128,7 +137,7 @@ const AppLayout = ({ children }) => (
       <div className="app-layout">
         <AppNav />
         <main className="app-main" style={{ position: 'relative' }}>
-          <TopBar />
+          <AccountButton />
           <div className="app-page">
             <RoleRoute>{children}</RoleRoute>
           </div>
@@ -175,7 +184,7 @@ const AppRoutes = () => {
       <Route path="/projects"          element={<AppLayout><Projects /></AppLayout>} />
       <Route path="/workorders"        element={<AppLayout><WorkOrders /></AppLayout>} />
       <Route path="/vendors"           element={<AppLayout><Vendors /></AppLayout>} />
-      <Route path="/vendors/new"       element={<AppLayout><VendorForm /></AppLayout>} />
+      <Route path="/vendors/new"       element={<AppLayout><VendorFormMinimal /></AppLayout>} />
       <Route path="/vendors/:id/edit"  element={<AppLayout><VendorForm /></AppLayout>} />
       <Route path="/purchase-orders"   element={<AppLayout><PurchaseOrders /></AppLayout>} />
       <Route path="/po"                element={<Navigate to="/purchase-orders" replace />} />
@@ -208,7 +217,12 @@ const AppRoutes = () => {
       <Route path="/delivery-challans/:id" element={<AppLayout><DeliveryChallanDoc /></AppLayout>} />
       <Route path="/credit-debit-notes"     element={<AppLayout><CreditDebitNotes /></AppLayout>} />
       <Route path="/credit-debit-notes/:id" element={<AppLayout><CreditDebitNoteDoc /></AppLayout>} />
-      <Route path="/configurator"     element={<AppLayout><Configurator /></AppLayout>} />
+      {/* The Configurator sections are routable, so the rail panel can link
+          straight to one and a refresh keeps your place. Without this the
+          section lived in component state and reloading dropped you back to
+          the tile home. */}
+      <Route path="/configurator"           element={<AppLayout><Configurator /></AppLayout>} />
+      <Route path="/configurator/:section"  element={<AppLayout><Configurator /></AppLayout>} />
       <Route path="/users"             element={<AppLayout><Users /></AppLayout>} />
       <Route path="/import"            element={<AppLayout><ImportData /></AppLayout>} />
       <Route path="/automation"        element={<AppLayout><Automation /></AppLayout>} />

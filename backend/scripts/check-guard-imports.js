@@ -55,8 +55,20 @@ function scan(file, rel) {
     // Imported from the right module?
     const importRe = new RegExp(
       `require\\(['"][^'"]*${mod.replace('/', '\\/')}['"]\\)`);
-    const importLines = src.split('\n').filter(l => importRe.test(l)).join('\n');
-    if (importLines.includes(helper)) continue;
+    const importLines = src.split('\n').filter(l => importRe.test(l));
+    if (importLines.join('\n').includes(helper)) continue;
+
+    /* A namespace import counts too:
+           const R = require('../shared/roles');
+           ... R.permissionsFor(role)
+       Only destructured imports were recognised, so calling a helper through
+       its module object was reported as "called but never imported" — code
+       that works perfectly. A checker that flags correct code is one people
+       switch off, which costs more than the bug it was written for. */
+    const ns = importLines
+      .map(l => (l.match(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/) || [])[1])
+      .filter(Boolean);
+    if (ns.some(n => new RegExp(`\\b${n}\\.${helper}\\s*\\(`).test(src))) continue;
 
     const line = src.split('\n').findIndex(l => new RegExp(`\\b${helper}\\s*\\(`).test(l)) + 1;
     findings.push({ file: rel, line, helper, mod });

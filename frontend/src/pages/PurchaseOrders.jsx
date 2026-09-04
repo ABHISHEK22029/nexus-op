@@ -173,10 +173,10 @@ const PurchaseOrders = () => {
 
   const StatusBadge = ({ status }) => {
     switch(status) {
-      case 'Pending': return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20">Pending</span>;
-      case 'Approved': return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">Approved</span>;
-      case 'Dispatched': return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">Dispatched</span>;
-      case 'Delivered': return <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Delivered</span>;
+      case 'Pending': return <span className="pill pill-neutral">Pending</span>;
+      case 'Approved': return <span className="pill pill-info">Approved</span>;
+      case 'Dispatched': return <span className="pill pill-warn">Dispatched</span>;
+      case 'Delivered': return <span className="pill pill-good">Delivered</span>;
       default: return null;
     }
   };

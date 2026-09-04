@@ -146,11 +146,16 @@ async function deleteProfileRow() {
       console.log(`       [debug] rows in table: ${runSql('SELECT 1 FROM company_profile').trim()}`);
     }
     const barText = await page.evaluate(() => {
-      const el = document.querySelector('.app-main > div');
-      return el ? el.innerText.replace(/\s+/g, ' ').trim() : '(no top bar)';
+      /* The organisation's name moved out of the top bar (which no longer
+         exists) into the scope bar at the top of the navigation panel.
+         Reading .app-main's first child kept "passing" by picking up the
+         account avatar instead — a check that survives the thing it checks
+         being deleted is not checking anything. */
+      const el = document.querySelector('.nav-scope');
+      return el ? el.innerText.replace(/\s+/g, ' ').trim() : '(no scope bar)';
     });
-    step('the name appears in the top bar', barText.includes(TEST_NAME),
-      `bar reads: "${barText.slice(0, 80)}"`);
+    step('the name appears in the scope bar', barText.includes(TEST_NAME),
+      `scope bar reads: "${barText.slice(0, 80)}"`);
 
     step('no JavaScript errors', errors.length === 0, errors[0] || '');
   } finally {

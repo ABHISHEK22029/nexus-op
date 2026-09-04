@@ -172,11 +172,11 @@ const Projects = () => {
                   <td className="px-6 py-4">{p.clientName}</td>
                   <td className="px-6 py-4 text-gray-500">{p.startDate} to {p.endDate}</td>
                   <td className="px-6 py-4">
-                    <span className="px-2 py-1 rounded text-xs bg-emerald-500/20 text-emerald-400">{p.status}</span>
+                    <span className="pill pill-good">{p.status}</span>
                   </td>
                   <td className="px-6 py-4">
                      <div className="flex items-center gap-3">
-                       <button onClick={() => jumpToProject(p)} className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Jump &rarr;</button>
+                       <button onClick={() => jumpToProject(p)} className="text-xs font-medium" style={{ color: 'var(--brand-amber)' }}>Jump &rarr;</button>
                        {/* Hidden when the API would refuse it anyway. */}
                        {canDelete && (
                          <button onClick={() => handleDelete(p)} title="Delete project" className="text-gray-500 hover:text-red-400 transition-colors">

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import CategoryPicker from './CategoryPicker';
 import { Plus, Pencil, Trash2, X, Check, Paperclip, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Attachments from './Attachments';
@@ -133,7 +134,17 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
             {fields.map(f => (
               <div key={f.key} style={{ gridColumn: f.wide ? '1 / -1' : 'auto' }}>
                 <label style={lbl}>{f.label}{f.required && <span style={{ color: 'var(--accent-red)' }}> *</span>}</label>
-                {f.type === 'select' ? (
+                {/* A category the organisation defines for itself, rather
+                    than a fixed list chosen for somebody else's industry.
+                    See components/CategoryPicker. */}
+                {f.type === 'category' ? (
+                  <CategoryPicker
+                    kind={f.categoryKind || 'customer'}
+                    value={form[f.key] ?? ''}
+                    onChange={(v) => setForm({ ...form, [f.key]: v })}
+                    placeholder={f.placeholder}
+                  />
+                ) : f.type === 'select' ? (
                   <select style={input} value={form[f.key] ?? ''} onChange={e => setForm({ ...form, [f.key]: e.target.value })}>
                     {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
                   </select>

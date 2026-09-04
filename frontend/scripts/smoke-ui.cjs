@@ -211,24 +211,30 @@ const IGNORABLE = (t) =>
     if (!after.groups.length) finding('MED', '/vendors', 'panel groups did not render', 'expected Source / Buy & receive / Pay');
   } else finding('HIGH', '/dashboard', 'could not click the Purchases module', 'rail button not found');
 
-  /* ── the top bar, and the scope lens ── */
-  console.log('\n━━ top bar ━━\n');
+  /* ── identity: the scope bar and the account avatar ──
+     There is no top bar any more. The organisation and the scope moved into
+     the nav panel; the account is a floating avatar. Reading .app-main's
+     first child still "passed" after that change, because it was reading the
+     page content instead — a check that survives the thing it checks being
+     deleted is not checking anything. */
+  console.log('\n━━ identity: scope bar + account ━━\n');
   await page.goto(`${UI}/dashboard`, { waitUntil: 'networkidle2' });
   await new Promise(r => setTimeout(r, 900));
 
   const bar = await page.evaluate(() => {
-    const el = document.querySelector('.app-main > div');
+    const el = document.querySelector('.nav-scope');
     const t = el ? el.innerText.replace(/\s+/g, ' ').trim() : '';
-    return { text: t, scope: !!document.querySelector('.topbar-scope') };
+    return { text: t, scope: !!document.querySelector('.topbar-scope'), avatar: !!document.querySelector('[aria-label^="Account"]') };
   });
-  console.log(`  reads: ${bar.text.slice(0, 90)}`);
+  console.log(`  scope bar reads: ${bar.text || '(empty)'}`);
+  console.log(`  account avatar : ${bar.avatar ? 'present' : '❌ missing'}`);
 
   /* The organisation's name belongs on screen. Nothing said which business
      you were signed into before — you could not tell a real tenant from a
      demo without opening Settings. */
   const named = await page.evaluate(() => !/Your organisation/.test(document.body.innerText));
   console.log(`  names the organisation : ${named ? '✅' : '❌ still says "Your organisation"'}`);
-  if (!named) finding('MED', '/dashboard', 'top bar does not show the organisation name', 'company-profile fetch failed or returned no name');
+  if (!named) finding('MED', '/dashboard', 'the scope bar does not show the organisation name', 'company-profile fetch failed or returned no name');
 
   console.log(`  scope selector shown   : ${bar.scope ? 'yes (this business has projects)' : 'no (hidden — no projects)'}`);
 
@@ -244,17 +250,30 @@ const IGNORABLE = (t) =>
       return true;
     });
     await new Promise(r => setTimeout(r, 500));
+    /* Scoped to the scope menu itself. This used to scan EVERY button on the
+       page for "All work" and click whatever came next — which worked while
+       the picker was the only thing in a top bar, and stopped meaning
+       anything once it moved into the nav panel surrounded by other buttons.
+       It then reported "switching scope changed nothing" about a picker that
+       works perfectly. */
     const picked = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('button')];
-      const i = btns.findIndex(b => /^All work$/.test(b.innerText.trim()));
-      const target = btns.slice(i + 1).find(b => b.innerText.trim() && !/^All work$/.test(b.innerText.trim()));
+      const items = [...document.querySelectorAll('.nav-scope-menu button')];
+      const target = items.find(b => !/^All work$/.test(b.innerText.trim()) && b.innerText.trim());
       if (!target) return null;
       const label = target.innerText.trim();
       target.click();
       return label;
     });
-    await new Promise(r => setTimeout(r, 2200));
-    const scoped = await dash();
+    /* Poll for the figure to change rather than sleeping a fixed 2.2s and
+       hoping. The dashboard refetches on the scope change; how long that
+       takes depends on the machine and the network, and a fixed wait that is
+       just barely long enough reports a working picker as broken on a slow
+       run. Give it up to 8s and stop the moment it moves. */
+    let scoped = allWork;
+    for (let i = 0; i < 40 && scoped === allWork; i++) {
+      await new Promise(r => setTimeout(r, 200));
+      scoped = await dash();
+    }
     console.log(`  All work POs=${allWork} → "${picked}" POs=${scoped}`);
     if (!picked) finding('MED', '/dashboard', 'scope menu listed no projects', 'the dropdown opened but had nothing to pick');
     else if (allWork === scoped && allWork !== null) {
@@ -267,7 +286,7 @@ const IGNORABLE = (t) =>
     });
     await new Promise(r => setTimeout(r, 400));
     await page.evaluate(() => {
-      [...document.querySelectorAll('button')].find(b => /^All work$/.test(b.innerText.trim()))?.click();
+      [...document.querySelectorAll('.nav-scope-menu button')].find(b => /^All work$/.test(b.innerText.trim()))?.click();
     });
     await new Promise(r => setTimeout(r, 800));
   }

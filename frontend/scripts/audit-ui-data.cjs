@@ -136,9 +136,15 @@ const findings = [];
         emptyState: new RegExp(SRC, 'i').test(text),
         denied: /Not part of your role/i.test(text),
         spinning: /^\s*(loading|checking access)/im.test(text),
-        /* "4 total", "1 Distinct Items", "28 total events" — the page's own
-           count of what it is displaying. */
-        stated: (text.match(/(\d[\d,]*)\s+(?:total|distinct items|records?|events?)/i) || [])[1] || null,
+        /* "4 total", "28 total events", "ITEMS HELD 102" — the page's own
+           count of what it is displaying. Card layouts state it as a KPI
+           above the grid rather than as "N total", and Stock on hand was
+           reported as empty while showing 102 items because only the
+           "N total" shape was recognised. Whichever group matches wins. */
+        stated: (() => {
+          const m = text.match(/(\d[\d,]*)\s+(?:total|distinct items|records?|events?)|ITEMS HELD\s*\n?\s*(\d[\d,]*)/i);
+          return m ? (m[1] || m[2] || null) : null;
+        })(),
       };
     }, EMPTY_WORDS.source);
 

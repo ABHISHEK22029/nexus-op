@@ -77,6 +77,10 @@ const RESOURCES = {
   'credit-debit-notes': 'Credit / debit notes',
   recurring: 'Recurring billing',
   expenses: 'Expenses',
+  /* The organisation's own vocabulary for what it buys and sells. Sits
+     with both parties because a category is created in the act of
+     classifying a vendor or a customer, not in a settings screen. */
+  'supply-categories': 'Supply and requirement categories',
   // Administration
   users: 'Users',
   'company-profile': 'Company profile',
@@ -96,6 +100,17 @@ const g = (resources, actions) => Object.fromEntries(resources.map(r => [r, acti
 
 const SALES = ['customers', 'customer-orders', 'sales-quotations', 'sales-invoices', 'delivery-challans'];
 const PROCUREMENT = ['vendors', 'vendor-items', 'po', 'indent', 'quotations', 'raw-materials', 'grn'];
+
+/* Granted explicitly per role rather than folded into SALES or PROCUREMENT.
+
+   It belongs to both — Sales classifies what a customer wants, Procurement
+   classifies what a vendor supplies — and a resource in both arrays gets
+   whatever the LAST spread says. Procurement spreads `g(PROCUREMENT, ALL)`
+   and then `g([...SALES, ...PRODUCTION], [READ])`, so being in SALES too
+   silently downgraded Procurement to read-only on its own vocabulary.
+   Spread order deciding a permission is exactly the kind of thing nobody
+   notices, so this one is stated outright at each call site. */
+const CATEGORIES = ['supply-categories'];
 const INVENTORY = ['inventory', 'skus', 'material-requirements'];
 const PRODUCTION = ['production', 'work-orders', 'projects', 'milestones', 'boq', 'mb'];
 const FINANCE = ['bills', 'grn-bills', 'payables', 'credit-debit-notes', 'recurring', 'expenses'];
@@ -129,6 +144,7 @@ const ROLES = {
       ...g([...SALES, ...PROCUREMENT, ...INVENTORY, ...PRODUCTION, ...FINANCE], ALL),
       ...g(['po-approval'], [WRITE]),
       ...g(['company-profile', 'automation-settings'], [READ, WRITE]),
+      ...g(CATEGORIES, ALL),
       // Not `users`: adding people to the platform stays with Administrator.
     },
   },
@@ -140,6 +156,7 @@ const ROLES = {
       ...g(SALES, ALL),
       ...g([...INVENTORY, ...PRODUCTION], [READ]),
       ...g(['vendors'], [READ]),
+      ...g(CATEGORIES, ALL),
     },
   },
 
@@ -151,6 +168,7 @@ const ROLES = {
       ...g(INVENTORY, ALL),
       ...g(['grn-bills'], [READ, WRITE]),
       ...g([...SALES, ...PRODUCTION], [READ]),
+      ...g(CATEGORIES, ALL),
       // Deliberately NOT po-approval: raising a PO and approving it must be
       // two different people, or the control is not a control.
     },
@@ -162,7 +180,7 @@ const ROLES = {
     grants: {
       ...g(PRODUCTION, ALL),
       ...g(INVENTORY, [READ, WRITE]),   // may consume/issue stock
-      ...g([...SALES, ...PROCUREMENT], [READ]),
+      ...g([...SALES, ...PROCUREMENT, ...CATEGORIES], [READ]),
     },
   },
 
@@ -174,7 +192,7 @@ const ROLES = {
       ...g(['sales-invoices', 'credit-debit-notes'], ALL),
       ...g(['po-approval'], [WRITE]),
       ...g([...SALES, ...PROCUREMENT, ...INVENTORY, ...PRODUCTION], [READ]),
-      ...g(['company-profile'], [READ]),
+      ...g(['company-profile', ...CATEGORIES], [READ]),
     },
   },
 
