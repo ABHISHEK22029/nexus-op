@@ -5,7 +5,8 @@ import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import WorkOrders from './pages/WorkOrders';
 import Vendors from './pages/Vendors';
-import VendorForm from './pages/VendorForm';
+/* The 47-field VendorForm is no longer routed — /vendors/:id/edit uses
+   VendorFormMinimal, so adding and editing a vendor are the same form. */
 /* The 47-field, 5-tab vendor form is kept for editing an existing vendor,
    where the extra fields are occasionally wanted. Creating one now uses the
    short form — 22 of 36 columns had never been filled once on real data. */
@@ -185,7 +186,7 @@ const AppRoutes = () => {
       <Route path="/workorders"        element={<AppLayout><WorkOrders /></AppLayout>} />
       <Route path="/vendors"           element={<AppLayout><Vendors /></AppLayout>} />
       <Route path="/vendors/new"       element={<AppLayout><VendorFormMinimal /></AppLayout>} />
-      <Route path="/vendors/:id/edit"  element={<AppLayout><VendorForm /></AppLayout>} />
+      <Route path="/vendors/:id/edit"  element={<AppLayout><VendorFormMinimal /></AppLayout>} />
       <Route path="/purchase-orders"   element={<AppLayout><PurchaseOrders /></AppLayout>} />
       <Route path="/po"                element={<Navigate to="/purchase-orders" replace />} />
       <Route path="/po/:id"            element={<ProtectedRoute><POInvoice /></ProtectedRoute>} />

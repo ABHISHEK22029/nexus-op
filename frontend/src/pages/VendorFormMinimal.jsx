@@ -30,7 +30,7 @@
    at the moment it matters: bank details when you first pay them, MSME
    number when the 45-day clock matters.
    ══════════════════════════════════════════════════════════ */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Building2, ChevronDown, ChevronRight, Check, X, Phone, Landmark, FileText,
@@ -77,6 +77,55 @@ export default function VendorFormMinimal() {
   const [errors, setErrors] = useState({});
 
   const derivedState = stateFromGstin(f.gstin);
+
+  /* Editing used to open a different, much longer form — 12 fields on its
+     first tab and more behind three others. So "add a vendor" asked for six
+     things and "open that vendor" asked for forty, which reads as two
+     different products. One form for both, and the extra columns stay where
+     they were put: behind More details and Bank details.
+
+     Loading has to fill the same keys the save maps back, or a PATCH would
+     write nulls over columns the person never saw. */
+  const [loading, setLoading] = useState(!!id);
+  useEffect(() => {
+    if (!id) return;
+    const token = getToken();
+    fetch(`${API}/vendors/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => (r.ok ? r.json() : null))
+      .then(v => {
+        if (!v) return;
+        const d = v.vendor || v;
+        setF({
+          name: d.name || '',
+          supplyCategory: d.supply_category || d.type || '',
+          supplies: d.supplies || '',
+          phone: d.contactPhone || d.phone || '',
+          gstin: d.gstin || '',
+          address: d.address || '',
+          pan: d.pan || '',
+          contactName: d.contactName || d.contact_name || '',
+          email: d.contactEmail || d.email || '',
+          city: d.city || '',
+          pincode: d.pincode || '',
+          paymentTerms: d.payment_terms || '',
+          isMsme: !!d.is_msme,
+          msmeNumber: d.msme_number || '',
+          notes: d.notes || '',
+          bankName: d.bank_name || '',
+          accountHolder: d.account_holder || '',
+          accountNumber: d.account_number || '',
+          ifsc: d.ifsc_code || '',
+          branch: d.branch_name || '',
+        });
+        /* Deliberately NOT auto-expanded. Opening every section that holds
+           something put 13 fields back on screen the moment you edited an
+           existing vendor, which is the wall this form exists to remove.
+           The section headings say how much is inside instead, so nothing
+           is hidden by surprise and the default view stays at six. */
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [id]);
 
   const save = async (e) => {
     e.preventDefault();
@@ -128,7 +177,7 @@ export default function VendorFormMinimal() {
         }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not save this vendor');
-      toast.success(`${f.name.trim()} added`);
+      toast.success(`${f.name.trim()} ${id ? 'saved' : 'added'}`);
       navigate('/vendors');
     } catch (err) {
       toast.error(err.message);
@@ -145,7 +194,15 @@ export default function VendorFormMinimal() {
   const hint = { fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 5 };
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
 
-  const Section = ({ open, onToggle, icon: Icon, title, blurb, children }) => (
+  /* How many of a section's fields already hold something. A collapsed
+     heading that says "3 recorded" is the difference between "there is
+     nothing in here" and "there is something in here you cannot see". */
+  const countFilled = (keys) => keys.filter(k => {
+    const v = f[k];
+    return typeof v === 'boolean' ? v : String(v ?? '').trim() !== '';
+  }).length;
+
+  const Section = ({ open, onToggle, icon: Icon, title, blurb, filled = 0, children }) => (
     <div style={{ ...card, marginTop: 12, overflow: 'hidden' }}>
       <button type="button" onClick={onToggle}
         style={{
@@ -156,17 +213,34 @@ export default function VendorFormMinimal() {
         <Icon size={16} style={{ color: 'var(--brand-amber)' }} />
         <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{title}</span>
         <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>{blurb}</span>
+        {filled > 0 && !open && (
+          <span style={{
+            fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+            background: 'hsl(28,100%,54%,0.14)', color: 'var(--brand-amber)', whiteSpace: 'nowrap',
+          }}>{filled} recorded</span>
+        )}
       </button>
       {open && <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>{children}</div>}
     </div>
   );
+
+  /* Without this the edit form paints empty for a moment and then fills in,
+     which reads as "this vendor has no details" — and anyone who started
+     typing in that moment would have had it overwritten by the load. */
+  if (loading) {
+    return (
+      <div style={{ maxWidth: 780, margin: '0 auto', padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+        Loading vendor…
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={save} style={{ maxWidth: 780, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
-            <Building2 size={23} style={{ color: 'var(--brand-amber)' }} /> New vendor
+            <Building2 size={23} style={{ color: 'var(--brand-amber)' }} /> {id ? 'Edit vendor' : 'New vendor'}
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
             Six things get you started. The rest can wait until it matters.
@@ -227,7 +301,8 @@ export default function VendorFormMinimal() {
 
       {/* ── everything else, folded away ── */}
       <Section open={openMore} onToggle={() => setOpenMore(o => !o)} icon={FileText}
-        title="More details" blurb="PAN, contact person, terms, MSME">
+        title="More details" blurb="PAN, contact person, terms, MSME"
+        filled={countFilled(['pan','contactName','email','city','pincode','paymentTerms','isMsme','msmeNumber','notes'])}>
         <div>
           <label style={lbl}>PAN</label>
           <input style={input()} value={f.pan} onChange={e => set('pan', e.target.value.toUpperCase())} placeholder="AABCN1234M" maxLength={10} />
@@ -275,7 +350,8 @@ export default function VendorFormMinimal() {
       </Section>
 
       <Section open={openBank} onToggle={() => setOpenBank(o => !o)} icon={Landmark}
-        title="Bank details" blurb="Needed the first time you pay them">
+        title="Bank details" blurb="Needed the first time you pay them"
+        filled={countFilled(['bankName','accountHolder','accountNumber','ifsc','branch'])}>
         <div>
           <label style={lbl}>Bank name</label>
           <input style={input()} value={f.bankName} onChange={e => set('bankName', e.target.value)} placeholder="HDFC Bank" />

@@ -23,6 +23,7 @@ const materialReqController = require('./controllers/MaterialRequirementsControl
 const vendorItemController = require('./controllers/VendorItemController');
 const customerSummaryController = require('./controllers/CustomerSummaryController');
 const adminController = require('./controllers/AdminController');
+const { profileFor } = require('./shared/companyProfile');
 const stockController = require('./controllers/StockController');
 const setupController = require('./controllers/SetupController');
 const supplyCategoryController = require('./controllers/SupplyCategoryController');
@@ -262,6 +263,16 @@ app.patch('/milestones/:id', async (req, res) => {
 app.get('/vendors', async (req, res) => {
   try {
     const where = [], params = [];
+    /* Owner-scoped. This list had no ownership condition at all, so every
+       logged-in account saw every vendor on the install — a brand new
+       organisation opened the app and found five suppliers it had never
+       heard of. /customers and /sales-quotations were already scoped
+       through registerOwnedCrud; this route and /inventory are hand-written
+       and were missed. Cross-tenant roles (Administrator) still see all. */
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user.id);
+      where.push(`owner_id = $${params.length}`);
+    }
     if (req.query.projectId) { params.push(req.query.projectId); where.push(`"projectId" = $${params.length}`); }
     const result = await runList(db, {
       table: 'vendors',
@@ -464,7 +475,15 @@ app.post('/po/:id/items', async (req, res) => {
 
 app.get('/company-profile', async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT * FROM company_profile LIMIT 1');
+    /* Scoped to this account. As a global `LIMIT 1` it returned the first
+       organisation's row to everybody, which had two consequences: a second
+       business printed the first one's name and GSTIN on its invoices, and
+       it never saw the first-run screen — App.jsx sends you to /welcome only
+       when the profile has no name, and that row already had one. So a new
+       account skipped onboarding and silently adopted someone else's
+       identity. */
+    const row = await profileFor(db, req.user?.id);
+    const rows = row ? [row] : [];
     /* No row means nobody has set this business up yet — say so, rather than
        inventing one.
 
@@ -510,15 +529,25 @@ app.put('/company-profile', allow('company-profile', 'write'), async (req, res) 
   const sets = COMPANY_PROFILE_COLUMNS.filter(c => c in req.body);
   if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
   try {
-    // Singleton row — create it on first save if it doesn't exist yet.
-    const existing = await db.query('SELECT id FROM company_profile ORDER BY id LIMIT 1');
+    /* One row per organisation, created on this account's first save. It
+       used to be a true singleton, so the second business to fill in the
+       first-run screen OVERWROTE the first business's name, GSTIN and bank
+       details rather than creating its own. */
+    const ownerId = req.user?.id ?? null;
+    const existing = await db.query(
+      ownerId != null
+        ? 'SELECT id FROM company_profile WHERE owner_id = $1 LIMIT 1'
+        : 'SELECT id FROM company_profile ORDER BY id LIMIT 1',
+      ownerId != null ? [ownerId] : []);
     const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
     const values = sets.map(c => (req.body[c] === '' ? null : req.body[c]));
     let row;
     if (existing.rows.length === 0) {
-      const cols = sets.map(c => `"${c}"`).join(', ');
-      const ph = sets.map((_, i) => `$${i + 1}`).join(', ');
-      row = (await db.query(`INSERT INTO company_profile (${cols}) VALUES (${ph}) RETURNING *`, values)).rows[0];
+      const cols = [...sets.map(c => `"${c}"`), '"owner_id"'].join(', ');
+      const ph = [...sets.map((_, i) => `$${i + 1}`), `$${sets.length + 1}`].join(', ');
+      row = (await db.query(
+        `INSERT INTO company_profile (${cols}) VALUES (${ph}) RETURNING *`,
+        [...values, ownerId])).rows[0];
     } else {
       row = (await db.query(
         `UPDATE company_profile SET ${clause} WHERE id = $${sets.length + 1} RETURNING *`,
@@ -737,6 +766,14 @@ app.get('/inventory', async (req, res) => {
       FROM inventory
     ) AS inv`;
     const where = [], params = [];
+    /* Owner-scoped — see the note on /vendors. A new organisation was shown
+       stock rows belonging to another business, which is worse than a
+       cosmetic leak: those quantities feed the deficiency engine and the
+       dashboard's stock value. */
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user.id);
+      where.push(`owner_id = $${params.length}`);
+    }
     if (req.query.projectId) { params.push(req.query.projectId); where.push(`"projectId" = $${params.length}`); }
     // Convenience flag: everything that needs attention, in one filter.
     if (String(req.query.needsAttention) === 'true') where.push(`status <> 'Healthy'`);
@@ -1045,6 +1082,20 @@ function registerOwnedCrud(route, table, cols, searchCols) {
       res.json({ id: rows[0].id });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
+  /* Read one — see the note on registerCrud. Same omission here, which is
+     why the customer round-trip test's GET /customers/:id came back as an
+     HTML 404 page and I briefly read a working endpoint as broken. */
+  app.get(`/${route}/:id`, async (req, res) => {
+    try {
+      const own = ownerClause(req, 2);
+      const { rows } = await db.query(
+        `SELECT * FROM ${table} WHERE id = $1${own.sql}`,
+        [req.params.id, ...own.params]);
+      if (!rows.length) return res.status(404).json({ error: 'Not found' });
+      res.json(rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   app.patch(`/${route}/:id`, async (req, res) => {
     try {
       const sets = cols.filter(c => c in req.body);
@@ -1203,6 +1254,28 @@ function ownerClause(req, startIndex) {
 }
 
 function registerCrud(route, table, cols, logType) {
+  /* READ ONE.
+
+     This factory registered list, create, patch and delete but never a
+     single-record GET, so `GET /vendors/42` and `GET /customers/42` both
+     answered with Express's 404 HTML page. Every edit form therefore had to
+     fetch the whole list and find its row in the browser, which works until
+     the list paginates — and then the record simply is not there.
+
+     Owner-scoped like the other by-id routes, and 404 rather than 403 on a
+     mismatch: confirming a record exists but belongs to someone else is
+     itself a leak. */
+  app.get(`/${route}/:id`, async (req, res) => {
+    try {
+      const own = ownerClause(req, 2);
+      const { rows } = await db.query(
+        `SELECT * FROM ${table} WHERE id = $1${own.sql}`,
+        [req.params.id, ...own.params]);
+      if (!rows.length) return res.status(404).json({ error: 'Not found' });
+      res.json(rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // UPDATE (partial) — only whitelisted columns
   app.patch(`/${route}/:id`, async (req, res) => {
     const sets = [], vals = [];
