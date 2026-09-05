@@ -12,3 +12,16 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
+      # Self-registration. Without one of these, POST /auth/register answers
+      # 403 "Self-registration is disabled" and the /signup page cannot work
+      # — which is how it stood until now.
+      #
+      # `true` means anyone who reaches the URL can create an account. Since
+      # every account now gets its own company profile and its own scoped
+      # data, that is a stranger with an empty workspace rather than a
+      # stranger in yours — but it is still an open door on a public URL.
+      #
+      # For invite-only instead: delete this and set SIGNUP_TOKEN to a secret
+      # (sync: false), which new users must present to register.
+      - key: ALLOW_SELF_REGISTRATION
+        value: "true"
