@@ -1,3 +1,18 @@
+# ⚠ THIS FILE DOES NOT CONFIGURE THE LIVE BACKEND.
+#
+# It declares a service called `nexus-op-backend`. Production is
+# `nexus-op-2.onrender.com`, and on Render the subdomain is the service
+# name — so the live service is `nexus-op-2`, created by hand in the
+# dashboard rather than from this blueprint. A blueprint only manages the
+# services it declares, so nothing here is read.
+#
+# Anything added below — including ALLOW_SELF_REGISTRATION — has to be set
+# in the Render dashboard under the service's Environment tab as well, or
+# it never takes effect. Adding it here alone is what left self-registration
+# switched off in production after it had supposedly been enabled.
+#
+# To make this file authoritative, rename the service below to match the
+# live one and adopt it as a Blueprint in Render.
 services:
   - type: web
     name: nexus-op-backend
