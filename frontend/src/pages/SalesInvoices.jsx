@@ -10,10 +10,11 @@
    ══════════════════════════════════════════════════════════ */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ReceiptIndianRupee, Trash2 } from 'lucide-react';
+import { ReceiptIndianRupee, Trash2, Plus } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
+import PickOrderModal from '../components/PickOrderModal';
 
 import { getToken } from '../lib/apiAuth';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -25,6 +26,7 @@ export default function SalesInvoices() {
   const toast = useToast();
   const { can } = usePermissions();
   const q = useListQuery('sales-invoices', { pageSize: 25 });
+  const [picking, setPicking] = React.useState(false);
 
   const del = async (e, id) => {
     e.stopPropagation();
@@ -47,13 +49,25 @@ export default function SalesInvoices() {
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
-          <ReceiptIndianRupee size={24} style={{ color: 'var(--brand-amber)' }} /> Sales Invoices
-        </h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
-          Tax invoices to your customers — raise one from a customer order, then record payments.
-        </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+            <ReceiptIndianRupee size={24} style={{ color: 'var(--brand-amber)' }} /> Sales Invoices
+          </h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
+            Tax invoices to your customers — raise one from a customer order, then record payments.
+          </p>
+        </div>
+        {/* The subtitle has told people to raise one from a customer order
+            since this screen was written, and there was no way to get to a
+            customer order from here. The builder exists at
+            /customer-orders/:id/invoice; this is the door to it. */}
+        {can('sales-invoices', 'write') && (
+          <button onClick={() => setPicking(true)} className="btn-primary btn-sm"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <Plus size={14} /> Raise invoice
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14, marginBottom: 18 }}>
@@ -124,6 +138,13 @@ export default function SalesInvoices() {
       </div>
 
       <Pagination q={q} />
+
+      {picking && (
+        <PickOrderModal
+          onClose={() => setPicking(false)}
+          onPick={(orderId) => navigate(`/customer-orders/${orderId}/invoice`)}
+        />
+      )}
     </div>
   );
 }

@@ -234,6 +234,7 @@ app.post('/work-orders', workOrderController.createWorkOrder);
    MILESTONES
    ══════════════════════════════════════════════════════════ */
 app.get('/milestones', workOrderController.getMilestones);
+app.post('/milestones', allow('milestones', 'write'), workOrderController.createMilestone);
 
 app.patch('/milestones/:id', async (req, res) => {
   const { actualPercent, remarks } = req.body;

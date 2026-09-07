@@ -51,6 +51,50 @@ exports.createWorkOrder = async (req, res) => {
   }
 };
 
+/* POST /milestones — there was no way to create one.
+ *
+ * The table had GET and PATCH and nothing else, so the Milestones screen
+ * could show four status filters over a list that could only ever contain
+ * rows put there by the seeder.
+ *
+ * Ownership is inherited through the work order, exactly as the list does
+ * it: a milestone is not an independent record, and giving the table its
+ * own owner_id would create a second copy of the answer that can disagree
+ * with the work order it hangs off.
+ */
+exports.createMilestone = async (req, res) => {
+  const { workOrderId, name, plannedPercent, actualPercent, remarks, status } = req.body || {};
+  if (!workOrderId) return res.status(400).json({ error: 'Pick the work order this milestone belongs to' });
+  if (!String(name || '').trim()) return res.status(400).json({ error: 'Give the milestone a name' });
+
+  const pct = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
+  for (const [label, v] of [['Planned %', pct(plannedPercent)], ['Actual %', pct(actualPercent)]]) {
+    if (v !== null && (Number.isNaN(v) || v < 0 || v > 100)) {
+      return res.status(400).json({ error: `${label} must be between 0 and 100` });
+    }
+  }
+
+  try {
+    /* The work order must be one the caller can see. Checking it here also
+       covers the foreign key, and returns a sentence rather than a
+       constraint violation. */
+    const own = isCrossTenant(req.user?.role)
+      ? await db.query('SELECT id FROM work_orders WHERE id = $1', [workOrderId])
+      : await db.query('SELECT id FROM work_orders WHERE id = $1 AND owner_id = $2',
+          [workOrderId, req.user.id]);
+    if (!own.rowCount) return res.status(404).json({ error: 'Work order not found' });
+
+    const { rows } = await db.query(
+      `INSERT INTO milestones ("workOrderId", name, "plannedPercent", "actualPercent", remarks, status)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'Pending')) RETURNING *`,
+      [workOrderId, String(name).trim(), pct(plannedPercent), pct(actualPercent),
+       remarks || null, status || null]);
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.getMilestones = async (req, res) => {
   try {
     /* SCOPED THROUGH THE WORK ORDER. The milestones table has no owner_id

@@ -7,15 +7,17 @@
    through the work order's owner, and the project filter is applied
    server-side so the browser is never sent rows it is going to discard.
    ══════════════════════════════════════════════════════════ */
-import React, { useEffect } from 'react';
-import { Flag, Activity, CheckCircle2, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Flag, Activity, CheckCircle2, AlertTriangle, Plus } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
+import AddMilestoneModal from '../components/AddMilestoneModal';
 
 const Milestones = () => {
   const { activeProject, workOrders } = useProject();
   const { can } = usePermissions();
+  const [adding, setAdding] = useState(false);
 
   const q = useListQuery('milestones', {
     pageSize: 50,
@@ -31,12 +33,22 @@ const Milestones = () => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 p-8 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-          <Flag className="text-emerald-400" />
-          Execution Milestones
-        </h1>
-        <p className="text-gray-500 mt-1">Track granular planned vs actual progress against operational Work Orders.</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <Flag className="text-emerald-400" />
+            Execution Milestones
+          </h1>
+          <p className="text-gray-500 mt-1">Track granular planned vs actual progress against operational Work Orders.</p>
+        </div>
+        {/* There was no way to create one: the table had GET and PATCH and
+            no POST, so this screen filtered a list nothing could add to. */}
+        {can('milestones', 'write') && (
+          <button onClick={() => setAdding(true)} className="btn-primary btn-sm"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <Plus size={14} /> New milestone
+          </button>
+        )}
       </div>
 
       {/* Planned and actual side by side rather than one "variance" figure —
@@ -112,6 +124,8 @@ const Milestones = () => {
       </div>
 
       <Pagination q={q} />
+
+      {adding && <AddMilestoneModal onClose={() => setAdding(false)} onSaved={q.reload} />}
     </div>
   );
 };
