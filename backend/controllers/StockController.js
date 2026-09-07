@@ -151,7 +151,12 @@ exports.create = async (req, res) => {
     }
 
     await client.query('COMMIT');
-    const fresh = (await db.query('SELECT * FROM inventory WHERE id = $1', [row.id])).rows[0];
+    /* Still on the client, not the pool. The transaction has committed but
+       release() does not run until the finally block, so reaching for a
+       second connection here competes with the one this request is already
+       holding — the same deadlock as deriveInterstate, with a narrower
+       window. */
+    const fresh = (await client.query('SELECT * FROM inventory WHERE id = $1', [row.id])).rows[0];
     res.status(201).json({ item: fresh });
   } catch (e) {
     await client.query('ROLLBACK');

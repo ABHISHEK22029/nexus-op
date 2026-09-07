@@ -6,7 +6,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { computeOrder } = require('../shared/orderTotals');
-const { docNumber, loadProfile } = require('../shared/docNumber');
+const { docNumber, loadProfile, nextSeq } = require('../shared/docNumber');
 const { isInterstate } = require('../shared/gstStates');
 const { amountInWords } = require('../shared/amountInWords');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
@@ -77,8 +77,12 @@ exports.createOrder = async (req, res) => {
       taxDeductionType, taxDeductionRate, adjustment, roundOff,
     });
 
-    const c = await client.query('SELECT COUNT(*) FROM customer_orders WHERE owner_id = $1', [req.user?.id || null]);
-    const orderNumber = `CO-${String(parseInt(c.rows[0].count) + 1).padStart(4, '0')}`;
+    /* This one was already owner-scoped, which is why it looked safe — but a
+       count still reissues a number after a delete, and two people creating
+       at once both read it before either commits. */
+    const orderNumber = `CO-${String(await nextSeq(client, {
+      ownerId: req.user?.id, docType: 'customer_order',
+    })).padStart(4, '0')}`;
 
     const { rows } = await client.query(
       `INSERT INTO customer_orders
@@ -300,11 +304,21 @@ exports.generatePO = async (req, res) => {
       const oi = await db.query('SELECT customer_order_id FROM customer_order_items WHERE id = $1', [quote.customer_order_item_id]);
       customerOrderId = oi.rows[0]?.customer_order_id || null;
     }
-    const c = await db.query('SELECT COUNT(*) FROM purchase_orders');
     /* Same series as POST /po. Hardcoding one company's name into a document
        number happened in two separate files, which is exactly why the format
-       now lives in one — shared/docNumber. */
-    const poNumber = docNumber({ profile: await loadProfile(db), seq: parseInt(c.rows[0].count) + 1 });
+       now lives in one — shared/docNumber.
+
+       Two things were still wrong here. The count was across EVERY purchase
+       order on the install, so two companies shared a series; and
+       loadProfile(db) took no owner, so it returned the first
+       organisation's profile to everybody — which is how owner 5's purchase
+       orders came to be prefixed "Kirashi". */
+    const ownerId = req.user?.id || null;
+    const profile = await loadProfile(db, ownerId);
+    const poNumber = docNumber({
+      profile,
+      seq: await nextSeq(db, { ownerId, docType: 'purchase_order', fyStart: profile.fyStart }),
+    });
     const { rows } = await db.query(
       `INSERT INTO purchase_orders ("projectId","vendorId","itemName",quantity,"unitPrice","poNumber",customer_order_id,quotation_id,status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending') RETURNING id`,

@@ -78,20 +78,72 @@ function docNumber({ profile = {}, seq, series = null, date = new Date(), pad = 
   return parts.join('/');
 }
 
-/** Read the singleton profile once per call site. Cheap, and always current. */
-async function loadProfile(db) {
-  try {
-    const { rows } = await db.query(
-      'SELECT name, "tradeName", "fyStart", doc_prefix FROM company_profile LIMIT 1');
-    return rows[0] || {};
-  } catch {
-    /* A missing doc_prefix column (migration not yet run) must not stop
-       anyone raising a purchase order. */
-    try {
-      const { rows } = await db.query('SELECT name, "tradeName", "fyStart" FROM company_profile LIMIT 1');
-      return rows[0] || {};
-    } catch { return {}; }
+/**
+ * Read this organisation's profile.
+ *
+ * `LIMIT 1` with no owner returned the FIRST organisation's profile to
+ * everybody, so one company's purchase orders carried another's prefix —
+ * which is how owner 5's POs came to read "Kirashi". An ownerId is
+ * therefore expected; omitting it keeps the old install-wide behaviour for
+ * callers that genuinely have no user in scope, such as the scheduler.
+ */
+async function loadProfile(db, ownerId = null) {
+  const cols = 'name, "tradeName", "fyStart", doc_prefix';
+  const attempt = async (sql, params) => {
+    try { return (await db.query(sql, params)).rows[0] || null; } catch { return null; }
+  };
+  if (ownerId != null) {
+    const own = await attempt(
+      `SELECT ${cols} FROM company_profile WHERE owner_id = $1 LIMIT 1`, [ownerId]);
+    /* No profile of their own yet — a new account before the first-run
+       screen. Returning the install's original row here would stamp
+       somebody else's company on their documents. */
+    if (own) return own;
+    return {};
   }
+  return (await attempt(`SELECT ${cols} FROM company_profile LIMIT 1`, []))
+      || (await attempt('SELECT name, "tradeName", "fyStart" FROM company_profile LIMIT 1', []))
+      || {};
 }
 
-module.exports = { docNumber, financialYear, orgPrefix, loadProfile };
+/* Which series reset each financial year.
+ *
+ * Only the ones whose NUMBER carries the year. A purchase order reads
+ * NFM/FY2026-27/007, so restarting at 1 each April cannot collide. A
+ * customer order reads CO-0001 with no year anywhere — reset that and next
+ * April's first order is CO-0001 again, which is the very fault this is
+ * meant to remove. */
+const FY_SCOPED = new Set(['purchase_order']);
+
+/**
+ * Allocate the next number in a series. Returns an integer.
+ *
+ * Deliberately returns the sequence, not a formatted string: each document
+ * type keeps the format it already has, so nothing that has been issued
+ * changes shape. Only where the number comes from changes.
+ *
+ * `COUNT(*) + 1` failed three ways — reuse after a delete, collision when
+ * two people create at once, and a series shared across organisations. This
+ * is an INSERT … ON CONFLICT DO UPDATE, which takes a row lock, so
+ * concurrent callers queue instead of colliding. It must be called with the
+ * client already inside the caller's transaction, so that a rolled-back
+ * document does not consume a number.
+ *
+ * @param {object} client  an open pg client, inside a transaction
+ * @param {number|null} ownerId
+ * @param {string} docType  'purchase_order' | 'sales_invoice' | …
+ */
+async function nextSeq(client, { ownerId, docType, date = new Date(), fyStart = 'April' }) {
+  if (!docType) throw new Error('nextSeq needs a docType');
+  const fy = FY_SCOPED.has(docType) ? financialYear(date, fyStart) : 'ALL';
+  const { rows } = await client.query(
+    `INSERT INTO document_sequences (owner_id, doc_type, fy, last_seq)
+          VALUES ($1, $2, $3, 1)
+     ON CONFLICT (owner_id, doc_type, fy)
+     DO UPDATE SET last_seq = document_sequences.last_seq + 1
+       RETURNING last_seq`,
+    [ownerId ?? 0, docType, fy]);
+  return rows[0].last_seq;
+}
+
+module.exports = { docNumber, financialYear, orgPrefix, loadProfile, nextSeq, FY_SCOPED };

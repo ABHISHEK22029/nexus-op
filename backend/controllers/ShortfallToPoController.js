@@ -18,6 +18,7 @@
    rejected or silently rounded at the other end.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
 const { computeRequirements } = require('./MaterialRequirementsController');
 
@@ -81,8 +82,14 @@ exports.create = async (req, res) => {
     const created = [];
 
     for (const v of plan.byVendor) {
-      const c = await client.query('SELECT COUNT(*) FROM purchase_orders');
-      const poNumber = `PO-${String(parseInt(c.rows[0].count) + 1 + created.length).padStart(4, '0')}`;
+      /* The `+ created.length` was there because a count does not move until
+         the inserts commit, so raising several POs in one pass would have
+         given them all the same number. A sequence advances on each call,
+         so the offset is no longer needed — and no longer wrong the moment
+         somebody else raises one at the same time. */
+      const poNumber = `PO-${String(await nextSeq(client, {
+        ownerId: req.user?.id, docType: 'purchase_order',
+      })).padStart(4, '0')}`;
 
       /* purchase_orders has no totalValue column — the header value is
          quantity x unitPrice. For a multi-line order the header is a

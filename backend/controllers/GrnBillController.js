@@ -4,6 +4,7 @@
    rates, add freight / other charges / discount, pick GST.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
@@ -80,8 +81,9 @@ exports.create = async (req, res) => {
   try {
     await client.query('BEGIN');
     const t = compute(items, { freight, otherCharges, discount, gstRate, interstate, roundOff });
-    const cnt = await client.query('SELECT COUNT(*) FROM grn_bills');
-    const billNumber = `GB-${String(parseInt(cnt.rows[0].count) + 1).padStart(4, '0')}`;
+    const billNumber = `GB-${String(await nextSeq(client, {
+      ownerId: req.user?.id, docType: 'grn_bill',
+    })).padStart(4, '0')}`;
     const { rows } = await client.query(
       `INSERT INTO grn_bills ("projectId", grn_id, po_id, vendor_id, bill_number, vendor_bill_ref, bill_date,
          sub_total, freight, other_charges, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes)

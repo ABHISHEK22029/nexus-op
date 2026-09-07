@@ -4,6 +4,7 @@
    customer order; editable; records payments; owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
@@ -134,8 +135,13 @@ exports.create = async (req, res) => {
     const tax = await resolveTax(customerId, placeOfSupply);
     const isInter = interstate === undefined || interstate === null ? tax.interstate : !!interstate;
     const t = compute(items, { discount, gstRate, interstate: isInter, roundOff });
-    const cnt = await client.query('SELECT COUNT(*) FROM sales_invoices');
-    const invNumber = `INV-${String(parseInt(cnt.rows[0].count) + 1).padStart(4, '0')}`;
+    /* A tax invoice number must be unique within the financial year — Rule
+       46. A count reissues one after any deletion, and a duplicate invoice
+       number is a GSTR-1 filing error, so this is the call site that
+       mattered most. */
+    const invNumber = `INV-${String(await nextSeq(client, {
+      ownerId: req.user?.id, docType: 'sales_invoice',
+    })).padStart(4, '0')}`;
     const c = tax.customer || {};
     const bt = billTo || {};
     const st = shipTo || {};

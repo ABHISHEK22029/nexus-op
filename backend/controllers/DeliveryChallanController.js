@@ -4,6 +4,7 @@
    the goods value for the e-way bill. Owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { nextSeq } = require('../shared/docNumber');
 const stock = require('../shared/stock');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
@@ -84,8 +85,11 @@ exports.create = async (req, res) => {
     await client.query('BEGIN');
     const lines = items.map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
     const totalValue = r2(lines.reduce((s, l) => s + l.amount, 0));
-    const cnt = await client.query('SELECT COUNT(*) FROM delivery_challans');
-    const num = `DC-${String(parseInt(cnt.rows[0].count) + 1).padStart(4, '0')}`;
+    /* A challan number travels with the goods under Rule 55, so two loads
+       carrying the same one is a real problem at a checkpoint. */
+    const num = `DC-${String(await nextSeq(client, {
+      ownerId: req.user?.id, docType: 'delivery_challan',
+    })).padStart(4, '0')}`;
     const { rows } = await client.query(
       `INSERT INTO delivery_challans (owner_id, customer_id, customer_order_id, challan_number, challan_date,
          dispatch_through, vehicle_no, lr_no, place_of_supply, total_value, notes)

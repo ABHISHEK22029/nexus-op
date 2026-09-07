@@ -5,6 +5,8 @@
    sales-invoice logic; owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { profileFor } = require('../shared/companyProfile');
+const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
@@ -41,10 +43,22 @@ function compute(items, { discount = 0, gstRate = 18, interstate = false, roundO
   return { lines, subTotal, gstTotal, cgst, sgst, igst, net };
 }
 
-async function deriveInterstate(customerId) {
+/* Takes the executor rather than reaching for `db`.
+ *
+ * This was called from inside an open transaction, so the request already
+ * held one client from the pool and then asked the pool for a second. With
+ * PG_POOL_MAX at 4, four concurrent quotations each held one and each
+ * waited for another, and every one of them failed with "timeout exceeded
+ * when trying to connect". Not a capacity limit — a deadlock, and one that
+ * would appear the moment four people used the product at once.
+ *
+ * `exec` is the caller's client when there is a transaction, and the pool
+ * when there is not.
+ */
+async function deriveInterstate(exec, customerId, ownerId = null) {
   let company = null, customer = null;
-  try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
-  if (customerId) customer = (await db.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
+  try { company = await profileFor(exec, ownerId, '*'); } catch { /* optional */ }
+  if (customerId) customer = (await exec.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
   const companyState = String(company?.stateCode || (company?.gstin || '').substring(0, 2) || '');
   const custState = String(customer?.gstin || '').substring(0, 2);
   return !!custState && !!companyState && custState !== companyState;
@@ -102,10 +116,13 @@ exports.create = async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-    const interstate = await deriveInterstate(customerId);
+    const interstate = await deriveInterstate(client, customerId, req.user?.id);
     const t = compute(items, { discount, gstRate, interstate, roundOff });
-    const cnt = await client.query('SELECT COUNT(*) FROM sales_quotations');
-    const qnum = `QT-${String(parseInt(cnt.rows[0].count) + 1).padStart(4, '0')}`;
+    /* From a sequence, not a count. COUNT(*) + 1 reissues a number after a
+       delete and hands the same one to two people creating at once. */
+    const qnum = `QT-${String(await nextSeq(client, {
+      ownerId: req.user?.id, docType: 'quotation',
+    })).padStart(4, '0')}`;
     const { rows } = await client.query(
       `INSERT INTO sales_quotations (owner_id, customer_id, quote_number, quote_date, valid_until,
          sub_total, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes, terms)
@@ -166,8 +183,9 @@ exports.convertToOrder = async (req, res) => {
     const items = (await client.query('SELECT * FROM sales_quotation_items WHERE sales_quotation_id = $1 ORDER BY sort_order', [q.id])).rows;
     if (!items.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Quotation has no line items' }); }
 
-    const cnt = await client.query('SELECT COUNT(*) FROM customer_orders');
-    const onum = `CO-${String(parseInt(cnt.rows[0].count) + 1).padStart(4, '0')}`;
+    const onum = `CO-${String(await nextSeq(client, {
+      ownerId: req.user?.id, docType: 'customer_order',
+    })).padStart(4, '0')}`;
 
     /* Carry the money across, not just the lines.
 

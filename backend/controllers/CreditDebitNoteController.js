@@ -5,6 +5,8 @@
    source invoice / bill. Documents (statements/exports net them).
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { profileFor } = require('../shared/companyProfile');
+const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
@@ -28,12 +30,16 @@ function amountInWords(num) {
   return 'Rupees ' + out.trim().replace(/\s+/g, ' ') + ' Only';
 }
 
-async function deriveInterstate(partyType, partyId) {
+/* Takes the executor — see the note on the same function in
+   SalesQuotationController. Called from inside a transaction, reaching for
+   the pool here means one request needs two clients at once, which
+   deadlocks a pool of four under four concurrent callers. */
+async function deriveInterstate(exec, partyType, partyId, ownerId = null) {
   let company = null, party = null;
-  try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+  try { company = await profileFor(exec, ownerId, '*'); } catch { /* optional */ }
   if (partyId) {
     const tbl = partyType === 'vendor' ? 'vendors' : 'customers';
-    party = (await db.query(`SELECT * FROM ${tbl} WHERE id = $1`, [partyId])).rows[0];
+    party = (await exec.query(`SELECT * FROM ${tbl} WHERE id = $1`, [partyId])).rows[0];
   }
   const companyState = String(company?.stateCode || (company?.gstin || '').substring(0, 2) || '');
   const partyState = String(party?.gstin || '').substring(0, 2);
@@ -98,7 +104,7 @@ exports.create = async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-    const interstate = await deriveInterstate(partyType, partyId);
+    const interstate = await deriveInterstate(client, partyType, partyId, req.user?.id);
     const lines = items.map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
     const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
     const gstTotal = r2(subTotal * (Number(gstRate) || 0) / 100);
@@ -107,8 +113,11 @@ exports.create = async (req, res) => {
     const igst = interstate ? gstTotal : 0;
     const total = r2(subTotal + gstTotal);
     const prefix = noteType === 'credit' ? 'CN' : 'DN';
-    const cnt = await client.query('SELECT COUNT(*) FROM credit_debit_notes WHERE note_type = $1', [noteType]);
-    const num = `${prefix}-${String(parseInt(cnt.rows[0].count) + 1).padStart(4, '0')}`;
+    /* Credit and debit notes run separate series, so the document type
+       carries the note type with it. */
+    const num = `${prefix}-${String(await nextSeq(client, {
+      ownerId: req.user?.id, docType: `note_${noteType}`,
+    })).padStart(4, '0')}`;
     const { rows } = await client.query(
       `INSERT INTO credit_debit_notes (owner_id, note_type, party_type, party_id, ref_type, ref_id, ref_number, note_number, note_date, reason,
          sub_total, gst_rate, interstate, cgst, sgst, igst, gst_total, total, amount_in_words, notes)
