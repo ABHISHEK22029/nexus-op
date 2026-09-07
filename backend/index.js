@@ -1405,7 +1405,13 @@ app.get('/dashboard', async (req, res) => {
         SELECT
           (SELECT COUNT(*)                          FROM vendors         WHERE TRUE ${ownerOnly.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + scopeParams.length}`)}) AS vendors,
           (SELECT COUNT(*)                          FROM purchase_orders WHERE ${scope}) AS pos,
-          (SELECT COUNT(*)                          FROM purchase_orders WHERE ${scope} AND status = 'Delivered') AS delivered,
+          /* Counted from what actually arrived, not from the flag. The flag
+             was set unconditionally on a first part-load and, on PO 4 here,
+             was 'Delivered' against nothing received at all — so this figure
+             was counting orders where no goods had turned up. */
+          (SELECT COUNT(*)                          FROM purchase_orders WHERE ${scope}
+             AND COALESCE(received_quantity, 0) > 0
+             AND COALESCE(received_quantity, 0) >= COALESCE(quantity, 0) - 0.001) AS delivered,
           (SELECT COUNT(*)                          FROM inventory       WHERE TRUE ${ownerOnly.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + scopeParams.length}`)}) AS inv,
           (SELECT COALESCE(SUM("grossAmount"), 0)   FROM bills           WHERE ${scope}) AS billed,
           (SELECT COALESCE(SUM("netAmount"), 0)     FROM bills           WHERE ${scope} AND status = 'Paid') AS paid,

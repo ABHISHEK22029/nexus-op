@@ -120,13 +120,51 @@ const state = async (invId) => {
     const disp = await call(`/po/${poId}/dispatch`, { method: 'PATCH', body: '{}' });
     ok(disp.ok, `purchase order dispatched (${disp.status})`);
 
-    const grn = await call('/grn', {
-      method: 'POST',
-      body: JSON.stringify({ poId, receivedQuantity: 40, batchNumber: TAG }),
+    /* ── the vendor sends it in three loads ──────────────────
+       Before migration 048 this was impossible: the first receipt set the
+       order to Delivered and the guard above refused every one after it, so
+       the outstanding 25 simply disappeared. */
+    const poStatus = async () => (await db.query(
+      'SELECT status, received_quantity FROM purchase_orders WHERE id = $1', [poId])).rows[0];
+
+    const load1 = await call('/grn', {
+      method: 'POST', body: JSON.stringify({ poId, receivedQuantity: 15, batchNumber: `${TAG}-1` }),
     });
-    ok(grn.ok, `goods receipt recorded (${grn.status})` +
-      (grn.ok ? '' : ` — ${grn.body.error || JSON.stringify(grn.body).slice(0, 90)}`));
-    if (grn.body?.id) created.grn.push(grn.body.id);
+    ok(load1.ok, `first part-load of 15 accepted (${load1.status})` +
+      (load1.ok ? '' : ` — ${load1.body.error || ''}`));
+    if (load1.body?.grnId) created.grn.push(load1.body.grnId);
+    let ps = await poStatus();
+    ok(ps.status === 'Partially Received',
+      `the order is Partially Received, not closed → ${ps.status}`);
+    ok(Number(ps.received_quantity) === 15, `15 of 40 recorded → ${ps.received_quantity}`);
+
+    const load2 = await call('/grn', {
+      method: 'POST', body: JSON.stringify({ poId, receivedQuantity: 15, batchNumber: `${TAG}-2` }),
+    });
+    ok(load2.ok, `SECOND part-load accepted — impossible before 048 (${load2.status})` +
+      (load2.ok ? '' : ` — ${load2.body.error || ''}`));
+    if (load2.body?.grnId) created.grn.push(load2.body.grnId);
+    ps = await poStatus();
+    ok(Number(ps.received_quantity) === 30, `30 of 40 now recorded → ${ps.received_quantity}`);
+    ok(ps.status === 'Partially Received', `still Partially Received → ${ps.status}`);
+
+    const load3 = await call('/grn', {
+      method: 'POST', body: JSON.stringify({ poId, receivedQuantity: 10, batchNumber: `${TAG}-3` }),
+    });
+    ok(load3.ok, `final load of 10 accepted (${load3.status})`);
+    if (load3.body?.grnId) created.grn.push(load3.body.grnId);
+    ps = await poStatus();
+    ok(ps.status === 'Delivered', `the order closes only when it is full → ${ps.status}`);
+    ok(load3.body?.outstanding === 0, `the response says nothing is outstanding → ${load3.body?.outstanding}`);
+
+    /* ── and then refuses more ── */
+    const extra = await call('/grn', {
+      method: 'POST', body: JSON.stringify({ poId, receivedQuantity: 5, batchNumber: `${TAG}-x` }),
+    });
+    ok(!extra.ok, `a fourth receipt against a full order is refused (${extra.status})`);
+
+    const grn = load3;   // for the assertions below
+    ok(grn.ok, 'the three loads together completed the order');
 
     /* Did it add to the row we already have, or make a second one? */
     const { rows: sameName } = await db.query(
@@ -147,6 +185,52 @@ const state = async (invId) => {
     s = await state(invId);
     ok(s.ledger === s.balance,
       `the ledger still explains the balance → ledger ${s.ledger} vs balance ${s.balance}`);
+    ok(s.entries === 4, `one ledger entry per movement — opening + three loads → ${s.entries}`);
+  }
+
+  /* ══ 2b. OVER-RECEIPT ══════════════════════════════════════
+     PO 20 on this database holds 1250 against an order for 150 and nothing
+     objected. Checked before anything is written, so a refusal leaves no
+     GRN row, no status change and no stock. */
+  console.log('\n  ── 2b. over-receipt');
+  const po2 = await call('/po', {
+    method: 'POST',
+    body: JSON.stringify({
+      projectId, vendorId, itemName: `${TAG} Angle 50mm`, quantity: 40, unitPrice: 100,
+    }),
+  });
+  const po2Id = po2.body.id ?? po2.body.po?.id;
+  if (po2Id) {
+    created.po.push(po2Id);
+    await call(`/po/${po2Id}/approve`,  { method: 'PATCH', body: '{}' });
+    await call(`/po/${po2Id}/dispatch`, { method: 'PATCH', body: '{}' });
+
+    const before2 = (await db.query(
+      `SELECT COUNT(*) c FROM inventory WHERE "itemName" = $1`, [`${TAG} Angle 50mm`])).rows[0].c;
+
+    const huge = await call('/grn', {
+      method: 'POST', body: JSON.stringify({ poId: po2Id, receivedQuantity: 500 }),
+    });
+    ok(!huge.ok, `500 against an order for 40 is refused (${huge.status})`);
+    ok(/more than the order/i.test(huge.body?.error || ''),
+      `and says why → ${(huge.body?.error || '').slice(0, 76)}…`);
+
+    const after2 = (await db.query(
+      `SELECT COUNT(*) c FROM inventory WHERE "itemName" = $1`, [`${TAG} Angle 50mm`])).rows[0].c;
+    ok(after2 === before2, 'the refusal moved no stock');
+
+    const { rows: [g2] } = await db.query('SELECT COUNT(*) c FROM grn WHERE "poId" = $1', [po2Id]);
+    ok(Number(g2.c) === 0, 'and wrote no receipt record');
+
+    /* 10% is allowed — steel is rolled to a coil, not to an order. */
+    const within = await call('/grn', {
+      method: 'POST', body: JSON.stringify({ poId: po2Id, receivedQuantity: 43 }),
+    });
+    ok(within.ok, `43 against 40 is inside the 10% tolerance and accepted (${within.status})`);
+    if (within.body?.grnId) created.grn.push(within.body.grnId);
+    const { rows: inv2 } = await db.query(
+      `SELECT id FROM inventory WHERE "itemName" = $1`, [`${TAG} Angle 50mm`]);
+    inv2.forEach(r => created.inventory.push(r.id));
   }
 
   /* ══ 3. STOCK TAKE ═════════════════════════════════════════ */

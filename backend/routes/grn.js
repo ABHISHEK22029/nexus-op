@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { convert, loadUoms } = require('../shared/uom');
 const stock = require('../shared/stock');
+const { receiptTotals, syncPoReceipt, overReceiptError } = require('../shared/receiptProgress');
 const { notify } = require('../notify');
 const { runList } = require('../shared/listQuery');
 
@@ -65,8 +66,37 @@ router.post('/', async (req, res) => {
       res.status(code).json({ error });
     };
     if (!po) return await refuse(404, 'PO not found');
-    if (po.status === 'Delivered') return await refuse(400, 'PO is already delivered');
-    if (po.status !== 'Dispatched') return await refuse(400, 'PO must be Dispatched before receiving GRN');
+
+    /* Whether more may be received is a question about quantities, not about
+       a flag. It used to be `status === 'Delivered'` — and since the first
+       receipt set exactly that flag regardless of how much arrived, a
+       part-load closed the order and the balance could never be received.
+
+       'Partially Received' is now a state you can receive against; that is
+       the whole point of it. */
+    if (!['Dispatched', 'Partially Received'].includes(po.status)) {
+      return await refuse(400,
+        po.status === 'Delivered'
+          ? 'This purchase order has been received in full'
+          : 'PO must be Dispatched before goods can be received against it');
+    }
+
+    const totals = await receiptTotals(client, poId);
+    if (totals.complete) {
+      return await refuse(409,
+        `This purchase order is already fully received (${totals.received} of ${totals.ordered}).`);
+    }
+
+    /* Compared in the ORDER's unit, deliberately. `receivedQuantity` is what
+       was entered and what `grn` stores; stockQty below may be a converted
+       figure (5 MT becoming 168 sheets), and comparing that against a
+       quantity ordered in tonnes would refuse every correct receipt.
+
+       Checked before anything is written, so a refusal leaves no GRN row,
+       no status change and no stock. PO 20 on this database holds 1250
+       against an order for 150 — this is the check that was missing. */
+    const over = overReceiptError(totals, Number(receivedQuantity));
+    if (over) return await refuse(409, over);
 
     const resolvedProjectId = projectId || po.projectId;
     // workOrderId is now optional — fall back to the PO's, else null (no WO).
@@ -80,8 +110,10 @@ router.post('/', async (req, res) => {
     );
     const grnId = grnResult.rows[0].id;
 
-    // Step 3: Mark PO as Delivered
-    await client.query(`UPDATE purchase_orders SET status = 'Delivered' WHERE id = $1`, [poId]);
+    /* Step 3: the order's status is derived from its receipts further down,
+       once the quantity has been converted into the stocking unit. Setting
+       'Delivered' here — unconditionally, before knowing how much had
+       arrived — is what closed orders on their first part-load. */
 
     /* Step 4: Add to inventory.
        Match on raw_material_id when we can resolve one — matching on the
@@ -200,6 +232,11 @@ router.post('/', async (req, res) => {
       userId: req.user?.id,
     });
 
+    /* Now the order's status can be derived from what has actually arrived:
+       'Delivered' when the total meets the order, 'Partially Received'
+       otherwise — a state you can receive against again. */
+    const progress = await syncPoReceipt(client, poId);
+
     // Step 5: Log activity
     await client.query(
       `INSERT INTO activities ("projectId", description, type) VALUES ($1, $2, $3)`,
@@ -208,7 +245,16 @@ router.post('/', async (req, res) => {
 
     await client.query('COMMIT');
     notify('admins', { type: 'GRN_RECEIVED', title: `Goods received · GRN-${String(grnId).padStart(5, '0')}`, message: `${receivedQuantity} of ${po.itemName} received against PO-${poId}`, entityType: 'grn', entityId: grnId, link: `/grn/${grnId}/bill` });
-    res.json({ message: 'GRN completed successfully', grnId, poId, stockQty, uomNote });
+    /* The caller needs to know whether the order is finished or still owed
+       something — that is the question a receipt raises. */
+    res.json({
+      message: 'GRN completed successfully',
+      grnId, poId, stockQty, uomNote,
+      ordered: progress?.ordered,
+      received: progress?.received,
+      outstanding: progress?.outstanding,
+      poStatus: progress?.status,
+    });
   } catch (err) {
     /* Everything or nothing — the GRN row, the PO status change and the
        stock movement stand or fall together. */
