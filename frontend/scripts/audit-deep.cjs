@@ -74,7 +74,11 @@ const ROUTES = [
 /* Requests every page makes that are not its own. */
 const CHROME = /\/(auth\/me|notifications|projects|company-profile|setup\/readiness|health|supply-categories)(\?|$)/;
 
-const CREATE_RE = /^(\+\s*)?(new|add|create|record|raise|issue|book|register)\b/i;
+/* The vocabulary matters. "Generate GRN", "Compute Draft Bill" and "Assign
+   Order" are all perfectly good create actions, and a narrower list
+   reported four working screens as having no way to create anything —
+   which is indistinguishable, in a report, from a real gap. */
+const CREATE_RE = /^(\+\s*)?(new|add|create|record|raise|issue|book|register|generate|compute|assign|make|start)\b/i;
 
 const findings = [];
 const add = (label, route, severity, what) => findings.push({ label, route, severity, what });
