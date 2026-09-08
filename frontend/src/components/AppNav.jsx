@@ -90,7 +90,7 @@ function useBadges(moduleKey, items) {
 export default function AppNav() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { can, role, loading } = usePermissions();
+  const { can, role, modules: orgModules, loading } = usePermissions();
   const { isDark, toggleTheme } = useTheme();
 
   /* The module the URL is in, not one the user picked — so a deep link or a
@@ -110,8 +110,8 @@ export default function AppNav() {
      for a few minutes, which is a conditional hook call — React throws
      "rendered more hooks than during the previous render" the moment
      `loading` flips from true to false, i.e. on every first paint. */
-  const modules = visibleModules(can, role);
-  const items = visibleItems(activeModule, can, role);
+  const modules = visibleModules(can, role, orgModules);
+  const items = visibleItems(activeModule, can, role, orgModules);
   const badges = useBadges(activeModule, items);
   const current = MODULES.find(m => m.key === activeModule);
 
@@ -120,7 +120,7 @@ export default function AppNav() {
   /* Clicking a rail module goes to its first screen the user can actually
      open — not a hardcoded landing page they may not have access to. */
   const goToModule = (m) => {
-    const allowed = visibleLinks(m.key, can, role);
+    const allowed = visibleLinks(m.key, can, role, orgModules);
     if (allowed.length) navigate(allowed[0].path);
   };
 

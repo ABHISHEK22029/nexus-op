@@ -18,11 +18,11 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const PermissionContext = createContext(null);
 
 export function PermissionProvider({ children }) {
-  const [state, setState] = useState({ loading: true, user: null, permissions: {}, role: null });
+  const [state, setState] = useState({ loading: true, user: null, permissions: {}, role: null, modules: null });
 
   const load = useCallback(async () => {
     const token = getToken();
-    if (!token) { setState({ loading: false, user: null, permissions: {}, role: null }); return; }
+    if (!token) { setState({ loading: false, user: null, permissions: {}, role: null, modules: null }); return; }
     try {
       const res = await fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error('session');
@@ -33,13 +33,17 @@ export function PermissionProvider({ children }) {
         role: u.role,
         roleLabel: u.roleLabel || u.role,
         permissions: u.permissions || {},
+        /* Which optional feature areas this organisation switched on.
+           null means "not known yet", which the nav reads as everything
+           on — an install predating the switch behaves as it always did. */
+        modules: u.modules || null,
       });
     } catch {
       /* No permissions rather than all permissions. If we can't establish
          what someone may do, the safe reading is "nothing" — the server
          will refuse anyway, and guessing generous here just produces
          buttons that fail. */
-      setState({ loading: false, user: null, permissions: {}, role: null });
+      setState({ loading: false, user: null, permissions: {}, role: null, modules: null });
     }
   }, []);
 
@@ -61,7 +65,7 @@ export function usePermissions() {
   const ctx = useContext(PermissionContext);
   if (!ctx) {
     // Fail closed rather than crashing a page that forgot the provider.
-    return { loading: false, user: null, role: null, permissions: {}, can: () => false, reload: () => {} };
+    return { loading: false, user: null, role: null, permissions: {}, modules: null, can: () => false, reload: () => {} };
   }
   return ctx;
 }

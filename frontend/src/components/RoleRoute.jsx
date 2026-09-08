@@ -11,6 +11,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { usePermissions } from '../context/PermissionContext';
 import { resourceForPath, isAdminOnlyPath } from '../lib/navResources';
+import { optionalModuleForPath } from '../lib/navigation';
 
 /**
  * Guards a page. With no `resource` prop it derives one from the current
@@ -18,11 +19,21 @@ import { resourceForPath, isAdminOnlyPath } from '../lib/navResources';
  * 60 routes by hand guarantees the 61st is forgotten.
  */
 export default function RoleRoute({ resource, action = 'read', children }) {
-  const { can, loading, roleLabel, role } = usePermissions();
+  const { can, loading, roleLabel, role, modules: orgModules } = usePermissions();
   const location = useLocation();
 
   // Don't flash "no access" while we're still asking who this is.
   if (loading) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Checking access…</div>;
+
+  /* A screen belonging to a feature area this organisation has not switched
+     on. Different from a permission, and it says so: nothing is being
+     withheld from this person, the product simply does not include that
+     part here. Someone arriving on an old bookmark deserves that sentence
+     rather than a page of empty tables. */
+  const optional = optionalModuleForPath(location.pathname);
+  if (optional && orgModules && orgModules[optional] === false) {
+    return <ModuleOff module={optional} />;
+  }
 
   if (isAdminOnlyPath(location.pathname)) {
     /* Owner too. This was the THIRD gate on the Configurator — the nav
@@ -42,6 +53,32 @@ export default function RoleRoute({ resource, action = 'read', children }) {
   if (!res) return children;                 // deliberately ungated
   if (can(res, action)) return children;
   return <Denied role={role} roleLabel={roleLabel} what={friendly(res)} action={action === 'read' ? 'view' : 'change'} />;
+}
+
+const MODULE_NAMES = {
+  contracting: 'Contracting — bills of quantities, the measurement book, indents and RA bills',
+};
+
+function ModuleOff({ module }) {
+  return (
+    <div style={{ maxWidth: 470, margin: '48px auto', textAlign: 'center' }}>
+      <div style={{
+        width: 46, height: 46, borderRadius: 12, margin: '0 auto 14px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+      }}>
+        <Lock size={20} style={{ color: 'var(--text-muted)' }} />
+      </div>
+      <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0 0 6px' }}>
+        Not switched on for this business
+      </h2>
+      <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', lineHeight: 1.55, margin: '0 0 16px' }}>
+        {MODULE_NAMES[module] || module} is turned off. Nothing has been deleted — switch it
+        back on in <strong>Configure → Modules</strong> and everything is where you left it.
+      </p>
+      <Link to="/" className="btn-secondary" style={{ textDecoration: 'none' }}>Back to dashboard</Link>
+    </div>
+  );
 }
 
 function Denied({ role, roleLabel, what, action }) {

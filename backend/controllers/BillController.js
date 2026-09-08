@@ -1,6 +1,7 @@
 const db = require('../db');
 const { profileFor } = require('../shared/companyProfile');
 const { runList } = require('../shared/listQuery');
+const { isCrossTenant } = require('../shared/roles');
 
 /* ── Indian amount-in-words ───────────────────────────────── */
 function amountInWords(num) {
@@ -46,9 +47,22 @@ exports.generateRABill = async (req, res) => {
   const client = await db.pool.connect();
   try {
     // Work order + vendor
+    /* Owner-checked. Fetching the work order by id alone meant any signed-in
+       account could post another company's workOrderId here and receive
+       back that company's measured quantities, BOQ rates and subcontractor
+       — and leave a bill behind in their books. The list being scoped was
+       no protection: ids are small integers and guessing one is trivial.
+
+       404 rather than 403, deliberately: "not yours" and "does not exist"
+       should be indistinguishable, or the response confirms which ids are
+       real in someone else's organisation. */
     const woRes = await client.query('SELECT * FROM work_orders WHERE id = $1', [workOrderId]);
     const wo = woRes.rows[0];
     if (!wo) return res.status(404).json({ error: 'Work order not found' });
+    if (!isCrossTenant(req.user?.role)
+        && String(wo.owner_id ?? '') !== String(req.user?.orgId ?? req.user?.id ?? '')) {
+      return res.status(404).json({ error: 'Work order not found' });
+    }
 
     const venRes = await client.query('SELECT * FROM vendors WHERE id = $1', [wo.vendorId]);
     const vendor = venRes.rows[0] || {};
@@ -147,18 +161,19 @@ exports.generateRABill = async (req, res) => {
           "grossAmount", sub_total, cgst, sgst, igst, gst_total, gst_rate,
           tds, tds_section, tds_rate, gst_tds, gst_tds_rate, labour_cess, labour_cess_rate,
           retention, retention_pct, advance_recovery, other_deductions, deduction_reason,
-          "netAmount", "billedQuantity", amount_in_words, status, date)
+          "netAmount", "billedQuantity", amount_in_words, status, date, owner_id)
        VALUES ($1,$2,$3,$4,COALESCE($5, CURRENT_DATE),
                $6,$6,$7,$8,$9,$10,$11,
                $12,$13,$14,$15,$16,$17,$18,
                $19,$20,$21,$22,$23,
-               $24,$25,$26,'Draft',NOW())
+               $24,$25,$26,'Draft',NOW(),$27)
        RETURNING id`,
       [projectId, workOrderId, vendor.id || null, raNumber, billDate,
         subTotal, cgst, sgst, igst, gstTotal, gstRate,
         tds, tdsSection, tdsRate, gstTds, gstTdsRate, labourCess, labourCessRate,
         retention, retentionPct, advance, other, deductionReason,
-        netAmount, totalQty, inWords]
+        netAmount, totalQty, inWords,
+        req.user?.orgId ?? req.user?.id ?? null]
     );
     const billId = ins.rows[0].id;
     const billNumber = `RA-${String(billId).padStart(4, '0')}`;
@@ -172,8 +187,9 @@ exports.generateRABill = async (req, res) => {
       );
     }
     await client.query(
-      `INSERT INTO activities ("projectId", type, description, timestamp) VALUES ($1,$2,$3,NOW())`,
-      [projectId, 'BILL_GENERATED', `${billNumber} (RA ${raNumber}) generated — Net ₹${netAmount.toLocaleString('en-IN')}`]
+      `INSERT INTO activities ("projectId", type, description, timestamp, owner_id) VALUES ($1,$2,$3,NOW(),$4)`,
+      [projectId, 'BILL_GENERATED', `${billNumber} (RA ${raNumber}) generated — Net ₹${netAmount.toLocaleString('en-IN')}`,
+       req.user?.orgId ?? req.user?.id ?? null]
     );
     await client.query('COMMIT');
 
@@ -196,10 +212,20 @@ exports.generateRABill = async (req, res) => {
 /* ── List bills (with vendor + work order) ────────────────── */
 exports.getBills = async (req, res) => {
   try {
+    /* Owner-scoped, like /boq, /mb and /indent — the same omission in the
+       same family of contracting screens. An RA bill carries what a
+       subcontractor is owed and what was deducted from them; another
+       company had no business reading it. */
+    const where = [], params = [];
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.orgId ?? req.user?.id ?? -1);
+      where.push(`owner_id = $${params.length}`);
+    }
     /* Vendor and work-order names live in the subquery so they can be
        searched: an RA bill is looked up by who it is for, not by "RA-0003".
        ?projectId keeps working exactly as before, now as an exact filter. */
     const result = await runList(db, {
+      where, params,
       table: `(SELECT b.*, v.name AS "vendorName", wo.name AS "workOrderName"
                  FROM bills b
                  LEFT JOIN vendors v ON v.id = b.vendor_id

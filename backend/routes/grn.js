@@ -162,10 +162,10 @@ router.post('/', async (req, res) => {
 
     // Step 2: Insert GRN record
     const grnResult = await client.query(
-      `INSERT INTO grn ("projectId", "workOrderId", "poId", "vehicleNumber", "batchNumber", chainage, "receivedQuantity", po_line_item_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      `INSERT INTO grn ("projectId", "workOrderId", "poId", "vehicleNumber", "batchNumber", chainage, "receivedQuantity", po_line_item_id, owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [resolvedProjectId, resolvedWorkOrderId, poId, vehicleNumber || null, batchNumber || null, chainage || null,
-       receivedQuantity, line?.id ?? null]
+       receivedQuantity, line?.id ?? null, req.user?.orgId ?? req.user?.id ?? null]
     );
     const grnId = grnResult.rows[0].id;
 
@@ -298,8 +298,9 @@ router.post('/', async (req, res) => {
 
     // Step 5: Log activity
     await client.query(
-      `INSERT INTO activities ("projectId", description, type) VALUES ($1, $2, $3)`,
-      [resolvedProjectId, `GRN-${String(grnId).padStart(5, '0')} received for PO-${String(poId).padStart(4, '0')} (${receivedQuantity} units of ${po.itemName})`, 'GRN']
+      `INSERT INTO activities ("projectId", description, type, owner_id) VALUES ($1, $2, $3, $4)`,
+      [resolvedProjectId, `GRN-${String(grnId).padStart(5, '0')} received for PO-${String(poId).padStart(4, '0')} (${receivedQuantity} units of ${po.itemName})`, 'GRN',
+       req.user?.orgId ?? req.user?.id ?? null]
     );
 
     await client.query('COMMIT');

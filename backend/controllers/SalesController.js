@@ -321,9 +321,10 @@ exports.generatePO = async (req, res) => {
       seq: await nextSeq(db, { ownerId, docType: 'purchase_order', fyStart: profile.fyStart }),
     });
     const { rows } = await db.query(
-      `INSERT INTO purchase_orders ("projectId","vendorId","itemName",quantity,"unitPrice","poNumber",customer_order_id,quotation_id,status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending') RETURNING id`,
-      [projectId, line.vendor_id, quote.part_description, quote.quantity || 1, line.unit_price || 0, poNumber, customerOrderId, quote.id]
+      `INSERT INTO purchase_orders ("projectId","vendorId","itemName",quantity,"unitPrice","poNumber",customer_order_id,quotation_id,status,owner_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending',$9) RETURNING id`,
+      [projectId, line.vendor_id, quote.part_description, quote.quantity || 1, line.unit_price || 0, poNumber, customerOrderId, quote.id,
+       req.user?.orgId ?? req.user?.id ?? null]
     );
     await db.query(
       `INSERT INTO po_line_items ("poId", sno, description, uom, quantity, "unitPrice")

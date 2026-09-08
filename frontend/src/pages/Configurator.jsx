@@ -21,7 +21,7 @@ import {
   Settings, Users as UsersIcon, ShieldCheck, History, AlertTriangle,
   Check, X, Plus, Trash2, Save, Info, RotateCcw,
   Tags, Hash, GitBranch, ChevronLeft, ChevronRight, Search, Pencil,
-  BadgeCheck, Lock, UserPlus,
+  BadgeCheck, Lock, UserPlus, HardHat,
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
@@ -30,6 +30,7 @@ import PeopleDirectory from '../components/PeopleDirectory';
 import AddPersonModal from '../components/AddPersonModal';
 import PersonEditor from '../components/PersonEditor';
 import CategoryAdmin from '../components/CategoryAdmin';
+import ModuleSettings from '../components/ModuleSettings';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
 
@@ -77,6 +78,11 @@ const TILES = [
     stat: () => 'audit trail',
   },
   {
+    key: 'modules', label: 'Modules', icon: HardHat, ready: true,
+    blurb: 'Which parts of the product this business uses. Contracting screens are off for most.',
+    stat: (d) => (d.modulesOn == null ? '—' : `${d.modulesOn} on`),
+  },
+  {
     key: 'numbering', label: 'Document numbering', icon: Hash, ready: false,
     blurb: 'The prefix and series on your purchase orders, invoices and challans.',
   },
@@ -86,7 +92,7 @@ const TILES = [
   },
 ];
 
-const SECTIONS = ['people', 'roles', 'categories', 'history'];
+const SECTIONS = ['people', 'roles', 'categories', 'history', 'modules'];
 
 export default function Configurator() {
   /* The section comes from the URL, so the rail can link straight to one and
@@ -100,7 +106,7 @@ export default function Configurator() {
 
   const [counts, setCounts] = useState({});
   const toast = useToast();
-  const { role } = usePermissions();
+  const { role, modules: orgModules, reload: reloadPermissions } = usePermissions();
 
   /* One call per tile stat. Failures are swallowed on purpose: a tile that
      cannot show a count is still a tile you can open, and a broken number
@@ -173,6 +179,12 @@ export default function Configurator() {
       {tab === 'people' && <People />}
       {tab === 'roles' && <Roles />}
       {tab === 'categories' && <CategoryAdmin api={api} toast={toast} />}
+      {tab === 'modules' && (
+        <ModuleSettings api={api} toast={toast} modules={orgModules}
+          /* The rail is drawn from /auth/me, so it has to be re-read before
+             a switch shows up anywhere but on this screen. */
+          onSaved={reloadPermissions} />
+      )}
       {tab === 'history' && <ChangeHistory />}
     </Wrap>
   );

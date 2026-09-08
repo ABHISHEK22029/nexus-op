@@ -88,7 +88,7 @@ export const MODULES = [
          plate" from a different screen than "who are our vendors". */
       { label: 'Vendors', path: '/vendors', resource: 'vendors',
         hint: 'Directory and what each one supplies' },
-      { label: 'Indents', path: '/indent', resource: 'indent' },
+      { label: 'Indents', path: '/indent', resource: 'indent', module: 'contracting' },
       { label: 'Vendor quotes', path: '/quotations', resource: 'quotations',
         badge: { endpoint: 'quotations', field: 'awaiting_quotes', tone: 'info', title: 'still short of three quotes' } },
       { group: 'Buy & receive' },
@@ -138,8 +138,8 @@ export const MODULES = [
       { label: 'Milestones', path: '/milestones', resource: 'milestones',
         badge: { endpoint: 'milestones', field: 'behind_plan', tone: 'danger', title: 'behind plan' } },
       { group: 'Measure' },
-      { label: 'Bill of quantities', path: '/boq', resource: 'boq' },
-      { label: 'Measurement book', path: '/mb', resource: 'mb' },
+      { label: 'Bill of quantities', path: '/boq', resource: 'boq', module: 'contracting' },
+      { label: 'Measurement book', path: '/mb', resource: 'mb', module: 'contracting' },
     ],
   },
   {
@@ -149,7 +149,7 @@ export const MODULES = [
     landing: '/expenses',
     items: [
       { label: 'Expenses', path: '/expenses', resource: 'expenses' },
-      { label: 'RA bills', path: '/bills', resource: 'bills' },
+      { label: 'RA bills', path: '/bills', resource: 'bills', module: 'contracting' },
       { label: 'Reports', path: '/reports' },
     ],
   },
@@ -241,6 +241,19 @@ export const UNGATED_PATHS = [
 
 export const ADMIN_ONLY_PATHS = ['/configurator'];
 
+/** Which optional feature area a path belongs to, or null if always on. */
+export const PATH_MODULES = Object.fromEntries(
+  MODULES.flatMap(m => m.items.filter(i => i.path && i.module).map(i => [i.path, i.module]))
+);
+/* Named apart from moduleForPath below, which answers a different question:
+   that one says which RAIL module to highlight. Two exported functions with
+   one name is how a menu highlight ends up deciding what you may open. */
+export function optionalModuleForPath(pathname = '') {
+  const p = String(pathname);
+  const hit = Object.keys(PATH_MODULES).find(k => p === k || p.startsWith(k + '/'));
+  return hit ? PATH_MODULES[hit] : null;
+}
+
 const SORTED = Object.keys(PATH_RESOURCES).sort((a, b) => b.length - a.length);
 
 /** The resource governing a path, or null if deliberately ungated. */
@@ -279,12 +292,20 @@ export function moduleForPath(pathname = '') {
 }
 
 /** Panel entries this user may actually open, group headings included. */
-export function visibleItems(moduleKey, can, role) {
+export function visibleItems(moduleKey, can, role, modules = null) {
   const m = MODULES.find(x => x.key === moduleKey);
   if (!m) return [];
 
+  /* An item belonging to an optional module is hidden when the organisation
+     has not switched that module on. Distinct from a permission: a screen
+     you lack the role for is refused, a module you have not enabled simply
+     is not part of your product. Absent settings mean everything is on, so
+     an install that predates the switch behaves exactly as before. */
+  const moduleOn = (key) => !key || !modules || modules[key] !== false;
+
   const allowed = m.items.filter(i => {
     if (i.group) return true;                       // decided below
+    if (!moduleOn(i.module)) return false;
     /* Owner is the person who created the organisation. Restricting this to
        the literal 'Administrator' — the cross-tenant platform role — meant a
        founder could not see the Configure menu at all, so they could not add
@@ -304,13 +325,13 @@ export function visibleItems(moduleKey, can, role) {
 }
 
 /** Just the navigable entries — no headings. */
-export function visibleLinks(moduleKey, can, role) {
-  return visibleItems(moduleKey, can, role).filter(i => i.path);
+export function visibleLinks(moduleKey, can, role, modules = null) {
+  return visibleItems(moduleKey, can, role, modules).filter(i => i.path);
 }
 
 /** Modules with at least one reachable screen. */
-export function visibleModules(can, role) {
-  return MODULES.filter(m => visibleLinks(m.key, can, role).length > 0);
+export function visibleModules(can, role, modules = null) {
+  return MODULES.filter(m => visibleLinks(m.key, can, role, modules).length > 0);
 }
 
 /** Every badge declared across the nav, deduped by endpoint so the panel

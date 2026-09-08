@@ -241,7 +241,10 @@ async function acceptInvite(req, res) {
 async function me(req, res) {
   try {
     const result = await db.query(
-      `SELECT id, email, name, role, org_id FROM users WHERE id = $1 AND is_active = TRUE`,
+      `SELECT u.id, u.email, u.name, u.role, u.org_id, COALESCE(c.modules, '{}'::jsonb) AS modules
+         FROM users u
+         LEFT JOIN company_profile c ON c.owner_id = u.org_id
+        WHERE u.id = $1 AND u.is_active = TRUE`,
       [req.user.id]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Session no longer valid' });

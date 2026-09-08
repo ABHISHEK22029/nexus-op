@@ -50,11 +50,17 @@ app.use(express.json());
 /* ══════════════════════════════════════════════════════════
    UTILITY: Activity Logger
    ══════════════════════════════════════════════════════════ */
-const logActivity = async (projectId, type, description) => {
+/* ownerId is not optional in practice, even though the signature tolerates
+   its absence. The activity feed reads as plain English — "Vendor Ashok
+   Steel added", "RA-0003 generated — Net ₹4,12,000" — and GET /activities
+   had no ownership condition at all, so one company's feed was a readable
+   narrative of every other company's week. Writing the owner here is what
+   lets that list be scoped at all. */
+const logActivity = async (projectId, type, description, ownerId = null) => {
   try {
     await db.query(
-      `INSERT INTO activities ("projectId", type, description, timestamp) VALUES ($1, $2, $3, NOW())`,
-      [projectId || null, type, description]
+      `INSERT INTO activities ("projectId", type, description, timestamp, owner_id) VALUES ($1, $2, $3, NOW(), $4)`,
+      [projectId || null, type, description, ownerId]
     );
   } catch (err) {
     console.error('Activity log error:', err.message);
@@ -294,7 +300,7 @@ app.patch('/milestones/:id', async (req, res) => {
       [req.params.id]
     );
     await logActivity(woResult.rows[0]?.projectId, 'MILESTONE_UPDATED',
-      `Milestone #${req.params.id} updated to ${actualPercent}% complete`);
+      `Milestone #${req.params.id} updated to ${actualPercent}% complete`, req.user?.orgId ?? req.user?.id ?? null);
 
     res.json({ success: true, id: Number(req.params.id), actualPercent });
   } catch (err) {
@@ -373,7 +379,7 @@ app.post('/vendors', async (req, res) => {
       `INSERT INTO vendors (${quoted}) VALUES (${ph}) RETURNING id`,
       [projectId || null, req.user?.orgId ?? req.user?.id ?? null, ...values]
     );
-    await logActivity(projectId, 'VENDOR_ADDED', `Vendor "${name}" added to project`);
+    await logActivity(projectId, 'VENDOR_ADDED', `Vendor "${name}" added to project`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({ id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -461,17 +467,18 @@ app.post('/po', async (req, res) => {
       `INSERT INTO purchase_orders (
         "projectId", "vendorId", "workOrderId", "itemName", quantity, "unitPrice",
         "poNumber", "quoteRef", "paymentTerms", "priceBasis", "pnfInsurance",
-        "loadingScope", "warranty", "amountInWords", "indentId", gst_rate, status
+        "loadingScope", "warranty", "amountInWords", "indentId", gst_rate, status, owner_id
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'Pending') RETURNING id`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'Pending', $17) RETURNING id`,
       [
         projectId, vendorId, workOrderId || null, itemName, quantity, unitPrice || null,
         poNumber, quoteRef || null, paymentTerms || null, priceBasis || 'Ex Works',
         pnfInsurance || 'Vendor Scope', loadingScope || 'Buyer Scope', warranty || '12 months',
-        amountInWords || null, indentId || null, (gstRate === undefined || gstRate === '' ? 18 : Number(gstRate))
+        amountInWords || null, indentId || null, (gstRate === undefined || gstRate === '' ? 18 : Number(gstRate)),
+        req.user?.orgId ?? req.user?.id ?? null
       ]
     );
-    await logActivity(projectId, 'PO_CREATED', `${poNumber} created for "${itemName}"`);
+    await logActivity(projectId, 'PO_CREATED', `${poNumber} created for "${itemName}"`, req.user?.orgId ?? req.user?.id ?? null);
     const poValue = (Number(quantity) || 0) * (Number(unitPrice) || 0);
     notify('admins', { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${itemName} · ₹${poValue.toLocaleString('en-IN')}`, entityType: 'po', entityId: rows[0].id, link: `/po/${rows[0].id}` });
     res.json({ id: rows[0].id, poNumber });
@@ -567,6 +574,9 @@ const COMPANY_PROFILE_COLUMNS = [
      insisting. setup_completed_at is what stops the first-run screen showing
      twice; it is a timestamp the client sets once it has answered. */
   'employee_count', 'setup_completed_at',
+  /* Which optional feature areas this organisation has switched on. A
+     preference, not a permission — see migration 056. */
+  'modules',
   /* doc_prefix was added by migration 042 and used by shared/docNumber, but
      left out of this list — so the PUT silently dropped it and no business
      could actually set the prefix that goes on its own purchase orders. The
@@ -624,7 +634,7 @@ app.patch('/po/:id/approve', async (req, res) => {
     if (po.approval_status === 'Rejected')
       return res.status(409).json({ error: 'This PO was rejected in sign-off and cannot proceed' });
     await db.query(`UPDATE purchase_orders SET status = 'Approved' WHERE id = $1`, [req.params.id]);
-    await logActivity(po.projectId, 'PO_APPROVED', `PO-${po.id} "${po.itemName}" approved`);
+    await logActivity(po.projectId, 'PO_APPROVED', `PO-${po.id} "${po.itemName}" approved`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({ success: true, status: 'Approved' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -639,7 +649,7 @@ app.patch('/po/:id/approval', allow('po-approval', 'write'), async (req, res) =>
     const po = (await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id])).rows[0];
     if (!po) return res.status(404).json({ error: 'PO not found' });
     await db.query(`UPDATE purchase_orders SET approval_status = $1, approval_remark = $2 WHERE id = $3`, [decision, remark || null, req.params.id]);
-    await logActivity(po.projectId, 'PO_APPROVAL', `PO-${po.id} sign-off: ${decision}${remark ? ' — ' + remark : ''}`);
+    await logActivity(po.projectId, 'PO_APPROVAL', `PO-${po.id} sign-off: ${decision}${remark ? ' — ' + remark : ''}`, req.user?.orgId ?? req.user?.id ?? null);
     notify('admins', { type: 'APPROVAL_NEEDED', title: `PO ${po.poNumber} ${decision.toLowerCase()}`, message: `${req.user.name || 'A manager'} ${decision === 'Approved' ? 'signed off' : 'rejected'} this PO`, entityType: 'po', entityId: Number(req.params.id), link: `/po/${req.params.id}` });
     res.json({ success: true, approvalStatus: decision });
   } catch (err) {
@@ -708,7 +718,7 @@ app.patch('/po/:id/dispatch', async (req, res) => {
     if (po.status !== 'Approved')
       return res.status(400).json({ error: `Cannot dispatch a PO with status "${po.status}"` });
     await db.query(`UPDATE purchase_orders SET status = 'Dispatched' WHERE id = $1`, [req.params.id]);
-    await logActivity(po.projectId, 'PO_DISPATCHED', `PO-${po.id} "${po.itemName}" dispatched to vendor`);
+    await logActivity(po.projectId, 'PO_DISPATCHED', `PO-${po.id} "${po.itemName}" dispatched to vendor`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({ success: true, status: 'Dispatched' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -731,6 +741,15 @@ const INDENTS = `(
 app.get('/indent', async (req, res) => {
   try {
     const where = [], params = [];
+    /* Owner-scoped. This list had no ownership condition at all, so a
+       brand new organisation opened it and found another company's site
+       records. All three of these tables carry owner_id; the handlers
+       simply never used it — which is why the earlier sweep missed them:
+       it matched lines that mentioned owner_id, and these mentioned none. */
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user.orgId);
+      where.push(`owner_id = $${params.length}`);
+    }
     if (req.query.projectId) {
       params.push(req.query.projectId);
       where.push(`"projectId" = $${params.length}`);
@@ -755,12 +774,15 @@ app.post('/indent', async (req, res) => {
   const { projectId, workOrderId, boqId, requestedQuantity, requiredDate, chainage } = req.body;
   try {
     const { rows } = await db.query(
-      `INSERT INTO indents ("projectId", "workOrderId", "boqId", "requestedQuantity", "requiredDate", chainage, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'Pending') RETURNING id`,
-      [projectId, workOrderId || null, boqId, requestedQuantity, requiredDate, chainage]
+            /* owner_id, or the row is invisible to the organisation that
+         created it the moment the list is scoped — the same silent hole
+         POST /vendors had. */
+      `INSERT INTO indents ("projectId", "workOrderId", "boqId", "requestedQuantity", "requiredDate", chainage, status, owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7) RETURNING id`,
+      [projectId, workOrderId || null, boqId, requestedQuantity, requiredDate, chainage, req.user?.orgId ?? req.user?.id ?? null]
     );
     await logActivity(projectId, 'INDENT_CREATED',
-      `Indent #${rows[0].id} raised for ${requestedQuantity} units at ${chainage || 'N/A'}`);
+      `Indent #${rows[0].id} raised for ${requestedQuantity} units at ${chainage || 'N/A'}`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({ id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -777,7 +799,7 @@ app.put('/indent/:id/status', async (req, res) => {
     const indent = indentResult.rows[0];
     if (!indent) return res.status(404).json({ error: 'Indent not found' });
     await db.query('UPDATE indents SET status = $1 WHERE id = $2', [status, req.params.id]);
-    await logActivity(indent.projectId, 'INDENT_UPDATED', `Indent #${req.params.id} status → ${status}`);
+    await logActivity(indent.projectId, 'INDENT_UPDATED', `Indent #${req.params.id} status → ${status}`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({
       success: true, status,
       suggestPO: status === 'Approved',
@@ -959,6 +981,15 @@ const BOQ_ITEMS = `(
 app.get('/boq', async (req, res) => {
   try {
     const where = [], params = [];
+    /* Owner-scoped. This list had no ownership condition at all, so a
+       brand new organisation opened it and found another company's site
+       records. All three of these tables carry owner_id; the handlers
+       simply never used it — which is why the earlier sweep missed them:
+       it matched lines that mentioned owner_id, and these mentioned none. */
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user.orgId);
+      where.push(`owner_id = $${params.length}`);
+    }
     if (req.query.projectId) {
       params.push(req.query.projectId);
       where.push(`"projectId" = $${params.length}`);
@@ -984,9 +1015,12 @@ app.post('/boq', async (req, res) => {
   const { projectId, itemCode, description, unit, estimatedQuantity, rate } = req.body;
   try {
     const { rows } = await db.query(
-      `INSERT INTO boq_items ("projectId", "itemCode", description, unit, "estimatedQuantity", rate)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [projectId, itemCode, description, unit, estimatedQuantity, rate]
+            /* owner_id, or the row is invisible to the organisation that
+         created it the moment the list is scoped — the same silent hole
+         POST /vendors had. */
+      `INSERT INTO boq_items ("projectId", "itemCode", description, unit, "estimatedQuantity", rate, owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [projectId, itemCode, description, unit, estimatedQuantity, rate, req.user?.orgId ?? req.user?.id ?? null]
     );
     res.json({ id: rows[0].id });
   } catch (err) {
@@ -1009,6 +1043,15 @@ const MEASUREMENT_BOOK = `(
 app.get('/mb', async (req, res) => {
   try {
     const where = [], params = [];
+    /* Owner-scoped. This list had no ownership condition at all, so a
+       brand new organisation opened it and found another company's site
+       records. All three of these tables carry owner_id; the handlers
+       simply never used it — which is why the earlier sweep missed them:
+       it matched lines that mentioned owner_id, and these mentioned none. */
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user.orgId);
+      where.push(`owner_id = $${params.length}`);
+    }
     if (req.query.projectId) {
       params.push(req.query.projectId);
       where.push(`"projectId" = $${params.length}`);
@@ -1033,12 +1076,15 @@ app.post('/mb', async (req, res) => {
   const { projectId, workOrderId, boqId, chainage, length, width, depth, measuredQuantity } = req.body;
   try {
     const { rows } = await db.query(
-      `INSERT INTO measurement_book ("projectId", "workOrderId", "boqId", chainage, length, width, depth, "measuredQuantity")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [projectId, workOrderId || null, boqId, chainage, length, width, depth, measuredQuantity]
+            /* owner_id, or the row is invisible to the organisation that
+         created it the moment the list is scoped — the same silent hole
+         POST /vendors had. */
+      `INSERT INTO measurement_book ("projectId", "workOrderId", "boqId", chainage, length, width, depth, "measuredQuantity", owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [projectId, workOrderId || null, boqId, chainage, length, width, depth, measuredQuantity, req.user?.orgId ?? req.user?.id ?? null]
     );
     await logActivity(projectId, 'MB_ENTRY',
-      `MB entry at ${chainage || 'N/A'}: ${measuredQuantity} units recorded`);
+      `MB entry at ${chainage || 'N/A'}: ${measuredQuantity} units recorded`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({ id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1265,7 +1311,7 @@ function billTransition(action) {
       await db.query('UPDATE bills SET status = $1, updated_at = NOW() WHERE id = $2', [tr.to, req.params.id]);
       const ref = bill.bill_number || `RA-${String(bill.id).padStart(4, '0')}`;
       const tail = action === 'pay' ? ` (₹${Number(bill.netAmount || 0).toLocaleString('en-IN')})` : '';
-      await logActivity(bill.projectId, tr.type, `Invoice ${ref} ${tr.verb}${tail}`);
+      await logActivity(bill.projectId, tr.type, `Invoice ${ref} ${tr.verb}${tail}`, req.user?.orgId ?? req.user?.id ?? null);
       res.json({ success: true, status: tr.to });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1340,7 +1386,7 @@ function registerCrud(route, table, cols, logType) {
     try {
       const r = await db.query(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = $${i}${own.sql} RETURNING *`, vals);
       if (!r.rowCount) return res.status(404).json({ error: 'Record not found' });
-      if (logType) await logActivity(r.rows[0].projectId || null, logType, `${route} #${req.params.id} updated`);
+      if (logType) await logActivity(r.rows[0].projectId || null, logType, `${route} #${req.params.id} updated`, req.user?.orgId ?? req.user?.id ?? null);
       res.json(r.rows[0]);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
@@ -1352,7 +1398,7 @@ function registerCrud(route, table, cols, logType) {
         `DELETE FROM ${table} WHERE id = $1${own.sql} RETURNING id, "projectId"`,
         [req.params.id, ...own.params]);
       if (!r.rowCount) return res.status(404).json({ error: 'Record not found' });
-      if (logType) await logActivity(r.rows[0].projectId || null, logType, `${route} #${req.params.id} deleted`);
+      if (logType) await logActivity(r.rows[0].projectId || null, logType, `${route} #${req.params.id} deleted`, req.user?.orgId ?? req.user?.id ?? null);
       res.json({ success: true });
     } catch (err) {
       // friendly message for FK violations
@@ -1375,12 +1421,21 @@ registerCrud('grn', 'grn', ['vehicleNumber', 'batchNumber', 'chainage', 'receive
    ══════════════════════════════════════════════════════════ */
 app.get('/activities', async (req, res) => {
   try {
-    let query = 'SELECT * FROM activities ORDER BY timestamp DESC LIMIT 200';
-    let params = [];
-    if (req.query.projectId) {
-      query = 'SELECT * FROM activities WHERE "projectId" = $1 ORDER BY timestamp DESC LIMIT 200';
-      params.push(req.query.projectId);
+    /* This list had no ownership condition at all. The activity feed is
+       written in plain English and names vendors, purchase orders and bill
+       values, so an unscoped feed is not an abstract leak — it is a
+       readable account of another company's trading. */
+    const where = [], params = [];
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.orgId ?? req.user?.id ?? -1);
+      where.push(`owner_id = $${params.length}`);
     }
+    if (req.query.projectId) {
+      params.push(req.query.projectId);
+      where.push(`"projectId" = $${params.length}`);
+    }
+    const query = `SELECT * FROM activities${where.length ? ' WHERE ' + where.join(' AND ') : ''}`
+      + ' ORDER BY timestamp DESC LIMIT 200';
     const { rows } = await db.query(query, params);
     res.json(rows || []);
   } catch (err) {

@@ -15,6 +15,14 @@ const WORK_ORDERS = `(
 exports.getWorkOrders = async (req, res) => {
   try {
     const where = [], params = [];
+    /* Owner-scoped. This list had a project filter and nothing else, so a
+       work order — which names a subcontractor and carries the contract
+       value agreed with them — was readable by every organisation on the
+       database. */
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.orgId ?? req.user?.id ?? -1);
+      where.push(`owner_id = $${params.length}`);
+    }
     if (req.query.projectId) {
       params.push(req.query.projectId);
       where.push(`"projectId" = $${params.length}`);
@@ -41,9 +49,13 @@ exports.createWorkOrder = async (req, res) => {
   const { projectId, vendorId, name, boqId, startDate, endDate, contractValue, status } = req.body;
   try {
     const { rows } = await db.query(
-      `INSERT INTO work_orders ("projectId", "vendorId", name, "boqId", "startDate", "endDate", "contractValue", status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [projectId, vendorId, name, boqId || null, startDate, endDate, contractValue, status || 'In Progress']
+      /* owner_id, or the work order belongs to nobody: invisible in the
+         creating organisation's own list, and unattached to the company
+         whose subcontractor it binds. */
+      `INSERT INTO work_orders ("projectId", "vendorId", name, "boqId", "startDate", "endDate", "contractValue", status, owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [projectId, vendorId, name, boqId || null, startDate, endDate, contractValue, status || 'In Progress',
+       req.user?.orgId ?? req.user?.id ?? null]
     );
     res.json({ id: rows[0].id, message: 'Work Order Bound Successfully' });
   } catch (err) {

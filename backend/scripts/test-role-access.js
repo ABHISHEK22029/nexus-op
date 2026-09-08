@@ -20,6 +20,7 @@
    ══════════════════════════════════════════════════════════════════════ */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const db = require('../db');
+const { purgeOrg } = require('./lib/purgeOrg');
 
 const API = process.env.API_BASE || 'http://localhost:5099';
 if (/^https:|onrender\.com|vercel\.app/.test(API)) {
@@ -176,12 +177,13 @@ const rows = (b) => (Array.isArray(b) ? b : (b.items || b.users || []));
   }
 
   /* ── clean up ──────────────────────────────────────────── */
-  /* By owner AND by name. Deleting on owner_id alone left four vendors
+  /* Every owned table, in an order worked out from the database rather
+     than kept by hand here — a hardcoded list goes stale silently the
+     next time a table grows an owner_id. */
+  await purgeOrg(db, orgId);
+  /* Still by name as well. Deleting on owner_id alone left four vendors
      behind when POST /vendors was not setting one — the cleanup could not
      match a NULL. */
-  for (const t of ['customers', 'vendors', 'inventory', 'company_profile']) {
-    await db.query(`DELETE FROM ${t} WHERE owner_id = $1`, [orgId]).catch(() => {});
-  }
   for (const [t, col] of [['customers', 'name'], ['vendors', 'name'], ['inventory', '"itemName"']]) {
     await db.query(`DELETE FROM ${t} WHERE ${col} LIKE $1`, [`%${stamp}`]).catch(() => {});
   }

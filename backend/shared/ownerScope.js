@@ -21,7 +21,7 @@ const { isCrossTenant } = require('../shared/roles');
  *
  * orgId is the founder's id, and a founder's own orgId is their id, so
  * nothing that exists today changes hands. */
-const orgOf = (req) => req.user?.orgId ?? req.user?.id ?? -1;
+const orgOf = (req) => req.user?.orgId ?? req.user?.orgId ?? -1;
 
 /** Build `WHERE id = $1 [AND owner_id = $2]` plus its params. */
 function scopedById(req, id) {
