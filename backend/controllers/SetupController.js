@@ -53,9 +53,16 @@ exports.readiness = async (req, res) => {
           WHERE (raw_material_id IS NOT NULL OR sku_id IS NOT NULL)${scope()})          AS stock_linked,
         (SELECT COUNT(*) FROM customers WHERE TRUE${scope()})                           AS customers,
         (SELECT COUNT(*) FROM vendors WHERE TRUE${scope()})                             AS vendors,
+        /* These two were the only counts here without ${'$'}{scope()}, so a brand
+           new organisation was told its GSTIN and bank details were already
+           done — because ANOTHER company had filled theirs in. A readiness
+           check that reports somebody else's readiness is worse than none:
+           it sends people to raise invoices that print "Not configured". */
         (SELECT COUNT(*) FROM company_profile
-          WHERE bank_name IS NOT NULL AND bank_account_no IS NOT NULL AND bank_ifsc IS NOT NULL) AS company_bank,
-        (SELECT COUNT(*) FROM company_profile WHERE gstin IS NOT NULL AND gstin <> '') AS company_gstin
+          WHERE bank_name IS NOT NULL AND bank_account_no IS NOT NULL
+            AND bank_ifsc IS NOT NULL${scope()})                                        AS company_bank,
+        (SELECT COUNT(*) FROM company_profile
+          WHERE gstin IS NOT NULL AND gstin <> ''${scope()})                            AS company_gstin
     `);
     const c = rows[0];
     const num = (v) => Number(v) || 0;

@@ -1,4 +1,5 @@
 const db = require('../db');
+const { profileFor } = require('../shared/companyProfile');
 const { runList } = require('../shared/listQuery');
 
 /* ── Indian amount-in-words ───────────────────────────────── */
@@ -53,8 +54,12 @@ exports.generateRABill = async (req, res) => {
     const vendor = venRes.rows[0] || {};
 
     // Place of supply → intra vs inter state
-    const compRes = await client.query('SELECT * FROM company_profile ORDER BY id LIMIT 1');
-    const company = compRes.rows[0] || {};
+    /* This one was missed when the other nine were scoped, because it says
+       ORDER BY id rather than plain LIMIT 1 — a different spelling of the
+       same fault. It decides the state code the bill is taxed on, so with
+       more than one organisation on the database an RA bill could be taxed
+       against another company's state. */
+    const company = (await profileFor(client, req.user?.orgId)) || {};
     const compSc = company.stateCode || stateCode(company.gstin);
     const venSc = stateCode(vendor.gstin);
     const intraState = !compSc || !venSc ? true : compSc === venSc;
