@@ -37,7 +37,11 @@ export default function Users() {
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
   const s = q.summary || {};
-  const isAdmin = role === 'Administrator';
+  /* An Owner administers their own organisation, so this page's admin
+     affordances — the link through to Configurator → People, "Manage
+     roles" — belong to them too. Same reasoning as RoleRoute and the nav
+     filter; this was the last place still testing the literal. */
+  const isAdmin = role === 'Administrator' || role === 'Owner';
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>

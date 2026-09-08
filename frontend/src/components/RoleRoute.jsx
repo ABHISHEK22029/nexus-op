@@ -25,7 +25,16 @@ export default function RoleRoute({ resource, action = 'read', children }) {
   if (loading) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Checking access…</div>;
 
   if (isAdminOnlyPath(location.pathname)) {
-    if (role === 'Administrator') return children;
+    /* Owner too. This was the THIRD gate on the Configurator — the nav
+       filter and the page's own check were both opened up, and this one
+       still turned a founder away at the door with "Not part of your role"
+       on a screen that had already been made to work for them.
+     *
+       An Owner administers their own organisation: every endpoint behind
+       this screen is scoped to their org, built-in roles cannot be edited
+       from here, and the cross-tenant Administrator role cannot be granted
+       by anyone who does not already hold it. */
+    if (role === 'Administrator' || role === 'Owner') return children;
     return <Denied role={role} roleLabel={roleLabel} what="the Configurator" action="open" />;
   }
 

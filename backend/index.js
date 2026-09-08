@@ -157,7 +157,13 @@ app.use((req, res, next) => {
        or delete one for a caller who is not cross-tenant, because those are
        shared by every business on the install. That check belongs there and
        not here, since it depends on which role is being touched. */
-    if (parts[1] === 'users' || parts[1] === 'roles') segment = 'users';
+    /* `catalogue` is the list of resources a role CAN be granted — built
+       from code, identical for every organisation, and holding no data at
+       all. The roles screen loads it alongside the roles themselves, so
+       refusing it made the whole screen render empty for an Owner: the
+       Promise.all rejected and nothing after it ran. A blocked read that
+       another read depends on looks like a blank feature, not a refusal. */
+    if (['users', 'roles', 'catalogue'].includes(parts[1])) segment = 'users';
     else if (!isCrossTenant(req.user?.role)) {
       return res.status(403).json({
         error: 'Not permitted',
