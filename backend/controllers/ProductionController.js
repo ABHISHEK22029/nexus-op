@@ -184,7 +184,7 @@ exports.createOrder = async (req, res) => {
          it, so every production order was unowned — invisible to owner
          scoping and the reason finished goods landed on a NULL-owner stock
          row while dispatch used the challan owner. */
-      [projectId || null, workOrderId || null, prodNumber, productName, plannedQty || null, outputUom || 'nos', notes || null, req.user?.id || null]
+      [projectId || null, workOrderId || null, prodNumber, productName, plannedQty || null, outputUom || 'nos', notes || null, req.user?.orgId || null]
     );
     res.json({ id: rows[0].id, prodNumber });
   } catch (err) {
@@ -301,7 +301,7 @@ exports.addOutput = async (req, res) => {
        because of that would be the same "output goes nowhere" bug wearing a
        different hat. */
     const invRow = await stock.resolveInventoryRow(client, {
-      ownerId: order.owner_id || req.user?.id || null,
+      ownerId: order.owner_id || req.user?.orgId || null,
       skuId: order.sku_id || null,
       itemName,
       uom: uom || 'nos',
@@ -322,7 +322,7 @@ exports.addOutput = async (req, res) => {
        what made it easy to miss — the half that worked looked like the whole. */
     if (invRow && Number(outputQty) > 0) {
       await stock.stockIn(client, {
-        ownerId: order.owner_id || req.user?.id || null,
+        ownerId: order.owner_id || req.user?.orgId || null,
         inventoryId: invRow.id,
         skuId: order.sku_id || null,
         itemName,
@@ -423,7 +423,7 @@ exports.getSummary = async (req, res) => {
       ? await db.query('SELECT id FROM production_orders WHERE "projectId" = $1', [projectId])
       : isCrossTenant(req.user?.role)
         ? await db.query('SELECT id FROM production_orders')
-        : await db.query('SELECT id FROM production_orders WHERE owner_id = $1', [req.user?.id ?? -1]);
+        : await db.query('SELECT id FROM production_orders WHERE owner_id = $1', [req.user?.orgId ?? -1]);
     const ys = [...(await computeYields(rows.map(o => o.id))).values()];
     const withInput = ys.filter(y => y.inputWeight > 0);
     const avgYield = withInput.length ? round(withInput.reduce((s, y) => s + (y.yieldPct || 0), 0) / withInput.length) : null;
@@ -463,7 +463,7 @@ exports.createFromOrderItem = async (req, res) => {
       `INSERT INTO production_orders ("projectId", prod_number, product_name, planned_qty, output_uom, customer_order_id, sku_id, owner_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [projectId || null, prodNumber, item.description, item.quantity || null, item.unit || 'nos',
-       item.customer_order_id, item.sku_id, req.user?.id || null]
+       item.customer_order_id, item.sku_id, req.user?.orgId || null]
     );
     const prodId = po.rows[0].id;
     let bomLines = 0;

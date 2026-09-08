@@ -19,7 +19,7 @@ exports.list = async (req, res) => {
   try {
     const admin = isAdmin(req);
     const where = [], params = [];
-    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    if (!admin) { params.push(req.user.orgId); where.push(`owner_id = $${params.length}`); }
     // Joined in a subquery so the customer/party name is searchable too —
     // people look for "Apollo", not for an invoice number they don't have.
     const result = await runList(db, {
@@ -88,7 +88,7 @@ exports.create = async (req, res) => {
     /* A challan number travels with the goods under Rule 55, so two loads
        carrying the same one is a real problem at a checkpoint. */
     const num = `DC-${String(await nextSeq(client, {
-      ownerId: req.user?.id, docType: 'delivery_challan',
+      ownerId: req.user?.orgId, docType: 'delivery_challan',
     })).padStart(4, '0')}`;
     const { rows } = await client.query(
       `INSERT INTO delivery_challans (owner_id, customer_id, customer_order_id, challan_number, challan_date,
@@ -97,7 +97,7 @@ exports.create = async (req, res) => {
       /* Rule 55 requires the date on a delivery challan — it is the document
          that travels with the goods. Same empty-date-field cause as the
          quotation and the invoice. */
-      [req.user?.id || null, customerId, customerOrderId || null, num, challanDate || null,
+      [req.user?.orgId || null, customerId, customerOrderId || null, num, challanDate || null,
        dispatchThrough || null, vehicleNo || null, lrNo || null, placeOfSupply || null, totalValue, notes || null]);
     const dcId = rows[0].id;
     let so = 0;

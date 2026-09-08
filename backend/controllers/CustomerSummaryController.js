@@ -18,7 +18,7 @@ exports.summary = async (req, res) => {
     // Owner-scoped: a customer belonging to another tenant must 404, not leak.
     const where = ['id = $1'];
     const params = [id];
-    if (!isAdmin(req)) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    if (!isAdmin(req)) { params.push(req.user.orgId); where.push(`owner_id = $${params.length}`); }
     const customer = (await db.query(`SELECT * FROM customers WHERE ${where.join(' AND ')}`, params)).rows[0];
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 

@@ -16,7 +16,7 @@ exports.create = async (req, res) => {
       `INSERT INTO attachments (owner_id, entity_type, entity_id, filename, mime, size_bytes, data)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        RETURNING id, filename, mime, size_bytes, created_at`,
-      [req.user?.id || null, entityType, entityId, req.file.originalname, req.file.mimetype, req.file.size, req.file.buffer]
+      [req.user?.orgId || null, entityType, entityId, req.file.originalname, req.file.mimetype, req.file.size, req.file.buffer]
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }

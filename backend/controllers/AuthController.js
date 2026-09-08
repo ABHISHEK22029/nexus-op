@@ -14,7 +14,10 @@ async function login(req, res) {
   }
   try {
     const result = await db.query(
-      `SELECT id, email, password_hash, name, role, is_active
+      /* org_id must come back here, or signToken stamps the token with
+         the person's own id as their organisation — and an employee then
+         sees only what they typed themselves, not their employer's. */
+      `SELECT id, email, password_hash, name, role, is_active, org_id
          FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
       [email]
     );
@@ -30,7 +33,14 @@ async function login(req, res) {
 
     db.query(`UPDATE users SET last_login = NOW() WHERE id = $1`, [user.id]).catch(() => {});
 
-    const safeUser = { id: user.id, email: user.email, name: user.name, role: user.role };
+    /* org_id has to survive this trim. Selecting it and then dropping it
+       here left signToken with nothing, so the token said the person's
+       organisation was themselves — and an employee saw only the rows they
+       had typed, not their employer's. */
+    const safeUser = {
+      id: user.id, email: user.email, name: user.name, role: user.role,
+      org_id: user.org_id ?? user.id,
+    };
     return res.json({ token: signToken(safeUser), user: safeUser });
   } catch (err) {
     console.error('Login error:', err.message);
@@ -95,12 +105,40 @@ async function register(req, res) {
       return res.status(409).json({ error: 'An account with this email already exists' });
     }
     const hash = await bcrypt.hash(password, 10);
-    const result = await db.query(
-      `INSERT INTO users (email, password_hash, name, role, is_active)
-       VALUES (LOWER($1), $2, $3, 'User', TRUE)
-       RETURNING id, email, name, role`,
-      [email, hash, name]
-    );
+    /* Registering creates an ORGANISATION, not just a login. The person who
+       does it is its owner: they name the company on the first-run screen,
+       and they are the one who adds staff and gives them roles. Stored as
+       'Owner' rather than the old 'User', which was a legacy string that
+       merely resolved to Owner and showed up in the Configurator's health
+       banner as something to tidy up.
+     *
+     * NOT 'Administrator' — that role is cross_tenant and reads every
+     * organisation on the install. Handing it to whoever signs up would let
+     * any stranger read every other business's data.
+     *
+     * org_id is the founder's own id, which is not known until the row
+     * exists. A data-modifying CTE cannot do this in one statement:
+     * Postgres runs WITH sub-statements against the same snapshot, so an
+     * UPDATE in the outer query cannot see the row the INSERT just made.
+     * Two statements in one transaction, so an account is never left
+     * belonging to organisation zero. */
+    const client = await db.getClient();
+    let result;
+    try {
+      await client.query('BEGIN');
+      const ins = await client.query(
+        `INSERT INTO users (email, password_hash, name, role, is_active, org_id)
+         VALUES (LOWER($1), $2, $3, 'Owner', TRUE, 0) RETURNING id`,
+        [email, hash, name]);
+      result = await client.query(
+        `UPDATE users SET org_id = id WHERE id = $1
+         RETURNING id, email, name, role, org_id`,
+        [ins.rows[0].id]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally { client.release(); }
     const user = result.rows[0];
     return res.status(201).json({ token: signToken(user), user });
   } catch (err) {
@@ -113,7 +151,7 @@ async function register(req, res) {
 async function me(req, res) {
   try {
     const result = await db.query(
-      `SELECT id, email, name, role FROM users WHERE id = $1 AND is_active = TRUE`,
+      `SELECT id, email, name, role, org_id FROM users WHERE id = $1 AND is_active = TRUE`,
       [req.user.id]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Session no longer valid' });

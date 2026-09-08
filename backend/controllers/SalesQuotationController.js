@@ -69,7 +69,7 @@ exports.list = async (req, res) => {
   try {
     const admin = isAdmin(req);
     const where = [], params = [];
-    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    if (!admin) { params.push(req.user.orgId); where.push(`owner_id = $${params.length}`); }
     // Joined in a subquery so the customer/party name is searchable too —
     // people look for "Apollo", not for an invoice number they don't have.
     const result = await runList(db, {
@@ -121,7 +121,7 @@ exports.create = async (req, res) => {
     /* From a sequence, not a count. COUNT(*) + 1 reissues a number after a
        delete and hands the same one to two people creating at once. */
     const qnum = `QT-${String(await nextSeq(client, {
-      ownerId: req.user?.id, docType: 'quotation',
+      ownerId: req.user?.orgId, docType: 'quotation',
     })).padStart(4, '0')}`;
     const { rows } = await client.query(
       `INSERT INTO sales_quotations (owner_id, customer_id, quote_number, quote_date, valid_until,
@@ -133,7 +133,7 @@ exports.create = async (req, res) => {
          date is what "valid until" is read against, and the same omission
          on an invoice breaks Rule 46(b). Defaulted in SQL rather than in the
          handler so it holds for any caller, not just this form. */
-      [req.user?.id || null, customerId, qnum, quoteDate || null, validUntil || null,
+      [req.user?.orgId || null, customerId, qnum, quoteDate || null, validUntil || null,
        t.subTotal, discount || 0, gstRate ?? 18, interstate, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null, terms || null]);
     const qid = rows[0].id;
     let so = 0;
@@ -184,7 +184,7 @@ exports.convertToOrder = async (req, res) => {
     if (!items.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Quotation has no line items' }); }
 
     const onum = `CO-${String(await nextSeq(client, {
-      ownerId: req.user?.id, docType: 'customer_order',
+      ownerId: req.user?.orgId, docType: 'customer_order',
     })).padStart(4, '0')}`;
 
     /* Carry the money across, not just the lines.

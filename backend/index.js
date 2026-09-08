@@ -92,7 +92,7 @@ async function scopeProjectAccess(req, res, next) {
   try {
     const { rows } = await db.query('SELECT owner_id FROM projects WHERE id = $1', [pid]);
     if (!rows[0]) return res.status(404).json({ error: 'Project not found' });
-    if (rows[0].owner_id !== req.user.id) {
+    if (rows[0].owner_id !== req.user.orgId) {
       return res.status(403).json({ error: 'You do not have access to this project' });
     }
     next();
@@ -125,10 +125,35 @@ const UNGATED = new Set([
 ]);
 
 app.use((req, res, next) => {
-  const segment = req.path.split('/').filter(Boolean)[0];
+  const parts = req.path.split('/').filter(Boolean);
+  let segment = parts[0];
   if (!segment || UNGATED.has(segment)) return next();
 
   const action = ACTION_FOR_METHOD[req.method] || WRITE;
+
+  /* `/admin` is not one resource, and matching on the first segment alone
+     treated it as one.
+   *
+   * /admin/users manages the people in YOUR organisation — the handlers are
+   * scoped to the caller's org — so it is the `users` resource and an Owner
+   * may reach it. That is the whole point of a founder being able to add
+   * their own staff.
+   *
+   * Everything else under /admin edits role_definitions and
+   * role_permissions, which are GLOBAL tables shared by every organisation
+   * on the install. An Owner widening "Sales" would widen it for every
+   * other business too, so those stay with the cross-tenant role. */
+  if (segment === 'admin') {
+    if (parts[1] === 'users') segment = 'users';
+    else if (!isCrossTenant(req.user?.role)) {
+      return res.status(403).json({
+        error: 'Not permitted',
+        detail: 'Role definitions are shared across every organisation, so only a platform administrator can change them.',
+        resource: 'roles', action,
+      });
+    } else return next();
+  }
+
   if (can(req.user?.role, segment, action)) return next();
 
   return res.status(403).json({
@@ -454,7 +479,7 @@ app.post('/po/:id/items', async (req, res) => {
         );
       }
       // Approval gate: if the PO value exceeds the owner's threshold, hold it for sign-off.
-      const thr = (await client.query('SELECT po_approval_threshold FROM automation_settings WHERE owner_id = $1', [req.user?.id || 0])).rows[0]?.po_approval_threshold || 0;
+      const thr = (await client.query('SELECT po_approval_threshold FROM automation_settings WHERE owner_id = $1', [req.user?.orgId || 0])).rows[0]?.po_approval_threshold || 0;
       const needsApproval = thr > 0 && subtotal > thr;
       await client.query(`UPDATE purchase_orders SET approval_status = $1 WHERE id = $2`, [needsApproval ? 'Pending Approval' : 'Not Required', poId]);
       await client.query('COMMIT');
@@ -534,7 +559,7 @@ app.put('/company-profile', allow('company-profile', 'write'), async (req, res) 
        used to be a true singleton, so the second business to fill in the
        first-run screen OVERWROTE the first business's name, GSTIN and bank
        details rather than creating its own. */
-    const ownerId = req.user?.id ?? null;
+    const ownerId = req.user?.orgId ?? null;
     const existing = await db.query(
       ownerId != null
         ? 'SELECT id FROM company_profile WHERE owner_id = $1 LIMIT 1'
@@ -600,8 +625,8 @@ app.patch('/po/:id/approval', allow('po-approval', 'write'), async (req, res) =>
 
 app.get('/automation-settings', async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT * FROM automation_settings WHERE owner_id = $1', [req.user.id]);
-    res.json(rows[0] || { owner_id: req.user.id, po_approval_threshold: 0 });
+    const { rows } = await db.query('SELECT * FROM automation_settings WHERE owner_id = $1', [req.user.orgId]);
+    res.json(rows[0] || { owner_id: req.user.orgId, po_approval_threshold: 0 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.put('/automation-settings', allow('automation-settings', 'write'), async (req, res) => {
@@ -1052,7 +1077,7 @@ function registerOwnedCrud(route, table, cols, searchCols) {
       const isAdmin = isCrossTenant(req.user?.role);
       // Owner scoping stays a WHERE fragment so search/filter/sort compose on top.
       const scope = isAdmin ? { where: [], params: [] }
-        : { where: ['owner_id = $1'], params: [req.user.id] };
+        : { where: ['owner_id = $1'], params: [req.user.orgId] };
       const result = await runList(db, {
         table,
         query: req.query,
@@ -1078,7 +1103,7 @@ function registerOwnedCrud(route, table, cols, searchCols) {
       const vals = cols.map(c => (req.body[c] === undefined ? null : req.body[c]));
       const { rows } = await db.query(
         `INSERT INTO ${table} (owner_id, ${colList}) VALUES ($1, ${ph}) RETURNING id`,
-        [req.user?.id || null, ...vals]
+        [req.user?.orgId || null, ...vals]
       );
       res.json({ id: rows[0].id });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1251,7 +1276,7 @@ app.delete('/bills/:id', async (req, res) => {
    exists but belongs to somebody else is itself a leak. */
 function ownerClause(req, startIndex) {
   if (isCrossTenant(req.user?.role)) return { sql: '', params: [] };
-  return { sql: ` AND owner_id = $${startIndex}`, params: [req.user.id] };
+  return { sql: ` AND owner_id = $${startIndex}`, params: [req.user.orgId] };
 }
 
 function registerCrud(route, table, cols, logType) {

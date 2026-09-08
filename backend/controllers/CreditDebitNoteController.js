@@ -51,7 +51,7 @@ exports.list = async (req, res) => {
   try {
     const admin = isAdmin(req);
     const where = [], params = [];
-    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    if (!admin) { params.push(req.user.orgId); where.push(`owner_id = $${params.length}`); }
     // Joined in a subquery so the customer/party name is searchable too —
     // people look for "Apollo", not for an invoice number they don't have.
     const result = await runList(db, {
@@ -116,13 +116,13 @@ exports.create = async (req, res) => {
     /* Credit and debit notes run separate series, so the document type
        carries the note type with it. */
     const num = `${prefix}-${String(await nextSeq(client, {
-      ownerId: req.user?.id, docType: `note_${noteType}`,
+      ownerId: req.user?.orgId, docType: `note_${noteType}`,
     })).padStart(4, '0')}`;
     const { rows } = await client.query(
       `INSERT INTO credit_debit_notes (owner_id, note_type, party_type, party_id, ref_type, ref_id, ref_number, note_number, note_date, reason,
          sub_total, gst_rate, interstate, cgst, sgst, igst, gst_total, total, amount_in_words, notes)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
-      [req.user?.id || null, noteType, partyType, partyId, refType || null, refId || null, refNumber || null, num, noteDate || null, reason || null,
+      [req.user?.orgId || null, noteType, partyType, partyId, refType || null, refId || null, refNumber || null, num, noteDate || null, reason || null,
        subTotal, gstRate || 0, interstate, cgst, sgst, igst, gstTotal, total, amountInWords(total), notes || null]);
     const nid = rows[0].id;
     let so = 0;

@@ -71,7 +71,7 @@ exports.create = async (req, res) => {
        VALUES ($1,$2,$3,$4)
        ON CONFLICT DO NOTHING
        RETURNING id, kind, name, description`,
-      [req.user?.id ?? null, kind, norm(name), description || null]);
+      [req.user?.orgId ?? null, kind, norm(name), description || null]);
     if (!rows[0]) return res.status(409).json({ error: 'That category already exists' });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }

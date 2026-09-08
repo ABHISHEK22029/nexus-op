@@ -15,7 +15,7 @@ const { runList } = require('../shared/listQuery');
 exports.movements = async (req, res) => {
   try {
     const where = [], params = [];
-    if (!isCrossTenant(req.user?.role)) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    if (!isCrossTenant(req.user?.role)) { params.push(req.user.orgId); where.push(`owner_id = $${params.length}`); }
     const result = await runList(db, {
       table: `(SELECT m.*,
                       CASE WHEN m.quantity >= 0 THEN 'in' ELSE 'out' END AS direction,
@@ -44,7 +44,7 @@ exports.forItem = async (req, res) => {
   try {
     const params = [req.params.id];
     let scope = '';
-    if (!isCrossTenant(req.user?.role)) { params.push(req.user.id); scope = ` AND owner_id = $${params.length}`; }
+    if (!isCrossTenant(req.user?.role)) { params.push(req.user.orgId); scope = ` AND owner_id = $${params.length}`; }
     const item = (await db.query(`SELECT * FROM inventory WHERE id = $1${scope}`, params)).rows[0];
     if (!item) return res.status(404).json({ error: 'Stock item not found' });
 
@@ -115,7 +115,7 @@ exports.create = async (req, res) => {
     }
 
     const row = await stock.resolveInventoryRow(client, {
-      ownerId: req.user?.id,
+      ownerId: req.user?.orgId,
       skuId: skuId || null,
       rawMaterialId: rawMaterialId || null,
       itemName: name,
@@ -141,7 +141,7 @@ exports.create = async (req, res) => {
        ledger and the balance agree from the very first row. */
     if (qty !== 0) {
       await stock.stockIn(client, {
-        ownerId: req.user?.id, inventoryId: row.id,
+        ownerId: req.user?.orgId, inventoryId: row.id,
         skuId: skuId || null, rawMaterialId: rawMaterialId || null,
         itemName: name, quantity: qty, uom: baseUom, unitCost,
         movementType: 'opening',
@@ -178,7 +178,7 @@ exports.adjust = async (req, res) => {
     await client.query('BEGIN');
     const params = [req.params.id];
     let scope = '';
-    if (!isCrossTenant(req.user?.role)) { params.push(req.user.id); scope = ` AND owner_id = $${params.length}`; }
+    if (!isCrossTenant(req.user?.role)) { params.push(req.user.orgId); scope = ` AND owner_id = $${params.length}`; }
     const row = (await client.query(`SELECT * FROM inventory WHERE id = $1${scope}`, params)).rows[0];
     if (!row) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Stock item not found' }); }
 

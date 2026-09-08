@@ -26,7 +26,7 @@ exports.list = async (req, res) => {
        emits the bind placeholder $1; `${params.length}` would emit the
        literal 1 and quietly hand back another tenant's links. */
     const where = [], params = [];
-    if (!isAdmin(req)) { params.push(req.user.id); where.push(`(owner_id = $${params.length} OR owner_id IS NULL)`); }
+    if (!isAdmin(req)) { params.push(req.user.orgId); where.push(`(owner_id = $${params.length} OR owner_id IS NULL)`); }
     if (req.query.vendorId) { params.push(req.query.vendorId); where.push(`vendor_id = $${params.length}`); }
     if (req.query.materialId) { params.push(req.query.materialId); where.push(`raw_material_id = $${params.length}`); }
 
@@ -101,7 +101,7 @@ exports.create = async (req, res) => {
        ON CONFLICT (vendor_id, raw_material_id) DO UPDATE
          SET ${cols.filter(c => !['vendor_id', 'raw_material_id'].includes(c)).map(c => `"${c}" = EXCLUDED."${c}"`).join(', ') || 'vendor_id = EXCLUDED.vendor_id'}
        RETURNING *`,
-      [req.user?.id || null, ...values]
+      [req.user?.orgId || null, ...values]
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }

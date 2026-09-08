@@ -233,7 +233,7 @@ router.post('/', async (req, res) => {
 
        Matched on owner and material instead — the two things that actually
        identify a stock balance. */
-    const ownerId = req.user?.id || null;
+    const ownerId = req.user?.orgId || null;
     const invResult = materialId
       ? await client.query(
         `SELECT * FROM inventory

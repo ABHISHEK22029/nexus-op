@@ -276,7 +276,11 @@ export function visibleItems(moduleKey, can, role) {
 
   const allowed = m.items.filter(i => {
     if (i.group) return true;                       // decided below
-    if (i.adminOnly) return role === 'Administrator';
+    /* Owner is the person who created the organisation. Restricting this to
+       the literal 'Administrator' — the cross-tenant platform role — meant a
+       founder could not see the Configure menu at all, so they could not add
+       their own staff or give anyone a role in their own company. */
+    if (i.adminOnly) return role === 'Administrator' || role === 'Owner';
     return !i.resource || can(i.resource, 'read');
   });
 

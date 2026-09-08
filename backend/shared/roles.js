@@ -145,7 +145,21 @@ const ROLES = {
       ...g(['po-approval'], [WRITE]),
       ...g(['company-profile', 'automation-settings'], [READ, WRITE]),
       ...g(CATEGORIES, ALL),
-      // Not `users`: adding people to the platform stays with Administrator.
+      /* `users` MEANS SOMETHING DIFFERENT NOW.
+       *
+       * This was withheld because adding people was adding them to the
+       * platform, which belonged to Administrator. Since migration 052 a
+       * user belongs to an organisation and /admin/users is scoped to the
+       * caller's — an Owner sees and edits their own staff and nobody
+       * else's. Withholding it now means the person who created a company
+       * cannot add their own employees or give them a role, which is not a
+       * safety property, just a dead end.
+       *
+       * Read and write, not delete: deactivating somebody is reversible and
+       * keeps their history attached, deleting them is neither. And the
+       * cross-tenant Administrator role still cannot be granted by anyone
+       * who does not already hold it — see AdminController.createUser. */
+      ...g(['users'], [READ, WRITE]),
     },
   },
 

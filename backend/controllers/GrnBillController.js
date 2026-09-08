@@ -82,7 +82,7 @@ exports.create = async (req, res) => {
     await client.query('BEGIN');
     const t = compute(items, { freight, otherCharges, discount, gstRate, interstate, roundOff });
     const billNumber = `GB-${String(await nextSeq(client, {
-      ownerId: req.user?.id, docType: 'grn_bill',
+      ownerId: req.user?.orgId, docType: 'grn_bill',
     })).padStart(4, '0')}`;
     const { rows } = await client.query(
       `INSERT INTO grn_bills ("projectId", grn_id, po_id, vendor_id, bill_number, vendor_bill_ref, bill_date,
@@ -190,7 +190,7 @@ const isAdmin = (req) => isCrossTenant(req.user?.role);
 // grn_bills are project-scoped (no owner_id); non-admins see their projects' bills.
 const projScope = (req, alias = 'gb') => isAdmin(req)
   ? { clause: '', params: [] }
-  : { clause: ` AND ${alias}."projectId" IN (SELECT id FROM projects WHERE owner_id = $1)`, params: [req.user.id] };
+  : { clause: ` AND ${alias}."projectId" IN (SELECT id FROM projects WHERE owner_id = $1)`, params: [req.user.orgId] };
 
 // POST /grn-bills/:id/payment — record a payment to the vendor
 exports.addPayment = async (req, res) => {

@@ -119,15 +119,25 @@ export default function Configurator() {
     };
   }, []);
 
-  if (role && role !== 'Administrator') {
+  /* An Owner is the person who created the organisation, and they were shut
+     out of this screen — so the founder of a company could not add their own
+     staff or give anyone a role. Only a platform Administrator could, which
+     makes no sense for a product businesses sign up to themselves.
+   *
+   * They administer THEIR organisation, not the platform: every endpoint
+   * behind this screen is scoped to the caller's org, and Administrator —
+   * the cross-tenant role that reads every business on the install — cannot
+   * be granted from here by someone who does not already hold it. */
+  const MAY_CONFIGURE = ['Administrator', 'Owner'];
+  if (role && !MAY_CONFIGURE.includes(role)) {
     return (
       <Wrap>
         <div style={{ textAlign: 'center', padding: 48 }}>
           <ShieldCheck size={28} style={{ color: 'var(--text-muted)', marginBottom: 10 }} />
-          <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0 0 6px' }}>Administrators only</h2>
+          <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0 0 6px' }}>Not your area</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
             You're signed in as <strong>{role}</strong>. The Configurator changes who can do what,
-            so it's limited to administrators.
+            so it's limited to whoever owns the organisation.
           </p>
         </div>
       </Wrap>

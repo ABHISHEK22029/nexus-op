@@ -19,7 +19,7 @@ exports.getOrders = async (req, res) => {
   try {
     const admin = isAdmin(req);
     const where = [], params = [];
-    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    if (!admin) { params.push(req.user.orgId); where.push(`owner_id = $${params.length}`); }
     /* Customer name joined in a subquery so it is searchable — people look
        for "Apollo", not for CO-0004. order_value is derived from the lines
        because the header carries no total of its own; the page needs it for
@@ -81,7 +81,7 @@ exports.createOrder = async (req, res) => {
        count still reissues a number after a delete, and two people creating
        at once both read it before either commits. */
     const orderNumber = `CO-${String(await nextSeq(client, {
-      ownerId: req.user?.id, docType: 'customer_order',
+      ownerId: req.user?.orgId, docType: 'customer_order',
     })).padStart(4, '0')}`;
 
     const { rows } = await client.query(
@@ -93,7 +93,7 @@ exports.createOrder = async (req, res) => {
           adjustment_label, adjustment, round_off, total, amount_in_words, terms)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
        RETURNING id`,
-      [req.user?.id || null, customerId, orderNumber, customerPoRef || null, orderDate || null,
+      [req.user?.orgId || null, customerId, orderNumber, customerPoRef || null, orderDate || null,
        notes || null, status || 'Open',
        expectedShipmentDate || null, paymentTerms || null,
        paymentTermsDays ?? cust?.payment_terms_days ?? null, deliveryMethod || null, salesperson || null,
@@ -172,7 +172,7 @@ exports.getQuotations = async (req, res) => {
   try {
     const admin = isAdmin(req);
     const where = [], params = [];
-    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    if (!admin) { params.push(req.user.orgId); where.push(`owner_id = $${params.length}`); }
     /* The quoted vendors are the human-readable handle here — "who did we
        ask for the flange?" — so their names are rolled up in a subquery and
        made searchable alongside the part description. quote_count drives the
@@ -215,7 +215,7 @@ exports.createQuotation = async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO quotations (owner_id, customer_order_item_id, part_description, quantity, unit)
        VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [req.user?.id || null, customerOrderItemId || null, partDescription, quantity || null, unit || 'nos']
+      [req.user?.orgId || null, customerOrderItemId || null, partDescription, quantity || null, unit || 'nos']
     );
     res.json({ id: rows[0].id });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -313,7 +313,7 @@ exports.generatePO = async (req, res) => {
        loadProfile(db) took no owner, so it returned the first
        organisation's profile to everybody — which is how owner 5's purchase
        orders came to be prefixed "Kirashi". */
-    const ownerId = req.user?.id || null;
+    const ownerId = req.user?.orgId || null;
     const profile = await loadProfile(db, ownerId);
     const poNumber = docNumber({
       profile,

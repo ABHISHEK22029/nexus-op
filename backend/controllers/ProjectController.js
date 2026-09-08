@@ -39,7 +39,7 @@ exports.createProject = async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO projects (name, "clientName", type, "startDate", "endDate", status, owner_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [name, clientName, type, startDate, endDate, status || 'Active', req.user?.id || null]
+      [name, clientName, type, startDate, endDate, status || 'Active', req.user?.orgId || null]
     );
     res.json({ id: rows[0].id, message: 'Project Created Successfully' });
   } catch (err) {

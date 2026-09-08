@@ -12,17 +12,28 @@
    ══════════════════════════════════════════════════════════ */
 const { isCrossTenant } = require('../shared/roles');
 
+/* WHICH ORGANISATION, not which person.
+ *
+ * These read req.user.id, so a row belonged to whoever typed it in. Add an
+ * employee and they would create data their own employer could not see, and
+ * see none of the company's customers, vendors or stock — every account was
+ * its own island and "add someone to my organisation" could not work.
+ *
+ * orgId is the founder's id, and a founder's own orgId is their id, so
+ * nothing that exists today changes hands. */
+const orgOf = (req) => req.user?.orgId ?? req.user?.id ?? -1;
+
 /** Build `WHERE id = $1 [AND owner_id = $2]` plus its params. */
 function scopedById(req, id) {
   // Admin is the tenant-wide role in this deployment and sees everything.
   if (isCrossTenant(req.user?.role)) return { where: 'id = $1', params: [id] };
-  return { where: 'id = $1 AND owner_id = $2', params: [id, req.user?.id ?? -1] };
+  return { where: 'id = $1 AND owner_id = $2', params: [id, orgOf(req)] };
 }
 
 /** Append ` AND owner_id = $n` to an existing parameterised query. */
 function andOwner(req, params) {
   if (isCrossTenant(req.user?.role)) return '';
-  params.push(req.user?.id ?? -1);
+  params.push(orgOf(req));
   return ` AND owner_id = $${params.length}`;
 }
 

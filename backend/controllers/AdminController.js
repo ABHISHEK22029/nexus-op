@@ -23,8 +23,34 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const R = require('../shared/roles');
+const { isCrossTenant } = require('../shared/roles');
 
 const SYSTEM_IMMUTABLE = 'Administrator';
+
+/**
+ * The user being acted on must be in the caller's organisation.
+ *
+ * Every by-id route here read `WHERE id = $1` with no other condition. That
+ * was tolerable while only a cross-tenant Administrator could reach them;
+ * once a founder administers their own company it becomes a way to reset
+ * another business's user's password, or change their role, by guessing a
+ * number. Sequential ids make guessing trivial.
+ *
+ * Returns the row, or null after answering 404 — not 403, because "you may
+ * not touch this" still confirms the account exists.
+ */
+async function userInOrg(req, res, id, columns = 'id, email, role, is_active, org_id') {
+  const params = [id];
+  let scope = '';
+  if (!isCrossTenant(req.user?.role)) {
+    params.push(req.user?.orgId ?? req.user?.id ?? -1);
+    scope = ` AND org_id = $${params.length}`;
+  }
+  const { rows } = await db.query(
+    `SELECT ${columns} FROM users WHERE id = $1${scope}`, params);
+  if (!rows[0]) { res.status(404).json({ error: 'User not found' }); return null; }
+  return rows[0];
+}
 
 /* Every stored role string that resolves to Administrator, legacy aliases
    included. Counting `WHERE role = 'Administrator'` misses the account
@@ -299,15 +325,28 @@ function accessSummary(role) {
 
 exports.listUsers = async (req, res) => {
   try {
+    /* Scoped to the caller's organisation. There was no condition at all, so
+       this returned every account on the install — name, email, role and
+       last login — to anyone who could reach it. That was survivable only
+       while the Configurator was Administrator-only; the moment a founder
+       can administer their own company, it would have handed them the
+       directory of every other business on the platform. */
+    const params = [];
+    let scope = '';
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.orgId ?? req.user?.id ?? -1);
+      scope = ` WHERE u.org_id = $${params.length}`;
+    }
     const { rows } = await db.query(
       `SELECT u.id, u.name, u.email, u.role, u.is_active, u.created_at, u.last_login,
               u.employee_code, u.job_title, u.department, u.phone, u.reports_to, u.notes,
+              u.org_id,
               m.name AS reports_to_name,
               rd.label AS role_label, rd.role IS NULL AS role_is_legacy
        FROM users u
        LEFT JOIN role_definitions rd ON rd.role = u.role
-       LEFT JOIN users m ON m.id = u.reports_to
-       ORDER BY u.id`
+       LEFT JOIN users m ON m.id = u.reports_to${scope}
+       ORDER BY u.id`, params
     );
     res.json({
       users: rows.map(u => {
@@ -337,7 +376,8 @@ exports.updateUser = async (req, res) => {
   const cols = PERSON_COLUMNS.filter(c => c in (req.body || {}));
   if (!cols.length) return res.status(400).json({ error: 'Nothing to update' });
   try {
-    const { rows: exists } = await db.query('SELECT id FROM users WHERE id = $1', [id]);
+    const exists = { rows: (await userInOrg(req, res, id, 'id')) ? [{ id }] : [] };
+        if (!exists.rows.length) return;
     if (!exists[0]) return res.status(404).json({ error: 'No such user' });
 
     // Nobody reports to themselves, and a blank code is NULL not ''.
@@ -392,13 +432,27 @@ exports.createUser = async (req, res) => {
     const known = await db.query('SELECT 1 FROM role_definitions WHERE role = $1', [chosen]);
     if (!known.rowCount) return res.status(400).json({ error: `Unknown role: ${chosen}` });
 
+    /* Administrator is cross_tenant — it reads every organisation on the
+       install, not just this one. So a founder administering their own
+       company must not be able to hand it out, or "add an employee" becomes
+       a way to grant somebody access to every other business on the
+       platform. Only somebody who already holds it may pass it on. */
+    if (isCrossTenant(chosen) && !isCrossTenant(req.user?.role)) {
+      return res.status(403).json({
+        error: 'That role can see every organisation on the platform, so it cannot be granted from here',
+      });
+    }
+
     const bcrypt = require('bcryptjs');
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await db.query(
-      `INSERT INTO users (email, password_hash, name, role, department, is_active)
-       VALUES (LOWER($1), $2, $3, $4, $5, TRUE)
-       RETURNING id, email, name, role, department, is_active`,
-      [email, hash, name, chosen, department || null]
+      /* org_id is the whole point of adding somebody. Without it the new
+         account is its own organisation: they would create customers and
+         stock their employer cannot see, and see none of the company's. */
+      `INSERT INTO users (email, password_hash, name, role, department, is_active, org_id)
+       VALUES (LOWER($1), $2, $3, $4, $5, TRUE, $6)
+       RETURNING id, email, name, role, department, is_active, org_id`,
+      [email, hash, name, chosen, department || null, req.user?.orgId ?? req.user?.id]
     );
     await log(req, chosen, 'assigned', { userId: rows[0].id, email: rows[0].email, created: true });
     res.status(201).json({ user: rows[0] });
@@ -418,7 +472,8 @@ exports.resetPassword = async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
   try {
-    const user = (await db.query('SELECT id, email FROM users WHERE id = $1', [id])).rows[0];
+    const user = await userInOrg(req, res, id, 'id, email');
+        if (!user) return;
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const bcrypt = require('bcryptjs');
@@ -433,7 +488,8 @@ exports.setUserRole = async (req, res) => {
   const id = Number(req.params.id);
   const { role } = req.body || {};
   try {
-    const user = (await db.query('SELECT id, email, role, is_active FROM users WHERE id = $1', [id])).rows[0];
+    const user = await userInOrg(req, res, id);
+        if (!user) return;
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     if (id === req.user?.id) {
@@ -467,7 +523,8 @@ exports.setUserActive = async (req, res) => {
   const id = Number(req.params.id);
   const active = req.body?.isActive !== false;
   try {
-    const user = (await db.query('SELECT id, email, role, is_active FROM users WHERE id = $1', [id])).rows[0];
+    const user = await userInOrg(req, res, id);
+        if (!user) return;
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     if (id === req.user?.id) {

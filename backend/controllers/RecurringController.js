@@ -67,7 +67,7 @@ exports.create = async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO recurring_profiles (owner_id, doc_type, title, customer_id, amount, frequency, next_run, notes, payload)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [req.user?.id || null, docType, title.trim(), customerId || null, r2(amount), frequency || 'monthly',
+      [req.user?.orgId || null, docType, title.trim(), customerId || null, r2(amount), frequency || 'monthly',
        nextRun, notes || null, payload ? JSON.stringify(payload) : null]
     );
     res.json(rows[0]);

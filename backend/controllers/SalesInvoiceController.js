@@ -140,7 +140,7 @@ exports.create = async (req, res) => {
        number is a GSTR-1 filing error, so this is the call site that
        mattered most. */
     const invNumber = `INV-${String(await nextSeq(client, {
-      ownerId: req.user?.id, docType: 'sales_invoice',
+      ownerId: req.user?.orgId, docType: 'sales_invoice',
     })).padStart(4, '0')}`;
     const c = tax.customer || {};
     const bt = billTo || {};
@@ -157,7 +157,7 @@ exports.create = async (req, res) => {
          The builder's date field starts empty, so 3 of 4 invoices on this
          database had none — a document that is not a valid tax invoice and
          that nothing in the product would have told anyone about. */
-      [req.user?.id || null, customerId, customerOrderId || null, invNumber, invoiceDate || null,
+      [req.user?.orgId || null, customerId, customerOrderId || null, invNumber, invoiceDate || null,
        t.subTotal, discount || 0, gstRate ?? 18, isInter, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null,
        tax.placeOfSupply || null, tax.placeOfSupplyCode || null, !!reverseCharge, dueDate || null, terms || null, ewayBillNo || null,
        bt.name || c.name || null, bt.address || c.billing_address || null, bt.gstin || c.gstin || null, bt.state || c.state || null,
@@ -195,7 +195,7 @@ exports.list = async (req, res) => {
   try {
     const admin = isAdmin(req);
     const where = [], params = [];
-    if (!admin) { params.push(req.user.id); where.push(`owner_id = $${params.length}`); }
+    if (!admin) { params.push(req.user.orgId); where.push(`owner_id = $${params.length}`); }
     // Joined in a subquery so the customer/party name is searchable too —
     // people look for "Apollo", not for an invoice number they don't have.
     const result = await runList(db, {

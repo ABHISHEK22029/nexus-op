@@ -14,7 +14,14 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
 
 function signToken(user) {
   return jwt.sign(
-    { sub: user.id, email: user.email, role: user.role, name: user.name },
+    /* `org` is which organisation this person works for, which is not the
+       same question as who they are. Business data is scoped on the
+       organisation so that an employee sees the company's customers and
+       stock rather than only the rows they typed themselves.
+
+       A founder's organisation is their own id, so a token issued before
+       this existed still resolves correctly — see the fallback below. */
+    { sub: user.id, org: user.org_id ?? user.id, email: user.email, role: user.role, name: user.name },
     JWT_SECRET,
     { expiresIn: TOKEN_TTL }
   );
@@ -30,7 +37,15 @@ function authenticate(req, res, next) {
   }
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    req.user = { id: payload.sub, email: payload.email, role: payload.role, name: payload.name };
+    req.user = {
+      id: payload.sub,
+      /* Falls back to the user's own id for tokens issued before org_id
+         existed, which is exactly right: everyone who signed in before this
+         was the sole member of their own organisation. So nobody is logged
+         out and nothing they own moves. */
+      orgId: payload.org ?? payload.sub,
+      email: payload.email, role: payload.role, name: payload.name,
+    };
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired session' });

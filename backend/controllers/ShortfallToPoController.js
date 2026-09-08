@@ -27,7 +27,7 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 /* computeRequirements takes an options object, not the request — it is
    called from a scheduler too, where there is no req to hand it. */
 const reqOpts = (req) => ({
-  ownerId: req.user?.id,
+  ownerId: req.user?.orgId,
   admin: isCrossTenant(req.user?.role),
   orderId: req.query?.orderId || req.body?.orderId || null,
   projectId: req.query?.projectId || req.body?.projectId || null,
@@ -88,7 +88,7 @@ exports.create = async (req, res) => {
          so the offset is no longer needed — and no longer wrong the moment
          somebody else raises one at the same time. */
       const poNumber = `PO-${String(await nextSeq(client, {
-        ownerId: req.user?.id, docType: 'purchase_order',
+        ownerId: req.user?.orgId, docType: 'purchase_order',
       })).padStart(4, '0')}`;
 
       /* purchase_orders has no totalValue column — the header value is
@@ -109,7 +109,7 @@ exports.create = async (req, res) => {
             whatever happened to be first. */
          v.lines.length === 1 ? v.lines[0].material : `${v.lines.length} materials (shortfall)`,
          totalQty, blendedRate,
-         'Pending', req.user?.id || null, 'Auto: material shortfall']
+         'Pending', req.user?.orgId || null, 'Auto: material shortfall']
       );
       const poId = rows[0].id;
 

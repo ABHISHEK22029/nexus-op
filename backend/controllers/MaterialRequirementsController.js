@@ -226,7 +226,7 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
 exports.list = async (req, res) => {
   try {
     const { materials, issues } = await computeRequirements({
-      ownerId: req.user?.id, admin: isAdmin(req),
+      ownerId: req.user?.orgId, admin: isAdmin(req),
       orderId: req.query.orderId || null,
       projectId: req.query.projectId || null,
     });
@@ -260,7 +260,7 @@ exports.list = async (req, res) => {
 exports.orderReadiness = async (req, res) => {
   try {
     const { lines, issues } = await computeRequirements({
-      ownerId: req.user?.id, admin: isAdmin(req),
+      ownerId: req.user?.orgId, admin: isAdmin(req),
       orderId: req.params.id, projectId: req.query.projectId || null,
     });
     if (!lines.length) {
