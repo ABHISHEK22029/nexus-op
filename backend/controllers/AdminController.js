@@ -407,18 +407,27 @@ exports.updateUser = async (req, res) => {
    there is no way to add a colleague at all. Closing one door and not
    opening the other would have been worse than leaving it open.
 
-   The administrator sets the first password and hands it over. A proper
-   invite-by-email flow needs mail delivery this deployment does not have
-   yet, and a temporary password given in person is how most SMEs of this
-   size onboard anyway. `must_change_password` records that it is temporary
-   so the flow can be tightened later without re-identifying which accounts
-   were created this way. */
+   Two ways to add somebody, and the invite is the better one:
+
+     · WITH a password — the owner sets one and hands it over. Known to two
+       people from the moment it exists, and in practice never changed.
+     · WITHOUT one — an invite. The account is created in the owner's
+       organisation with the role they chose, but cannot be signed into
+       until the person follows a one-time link and picks their own
+       password. The owner never knows it.
+
+   The link is returned here rather than emailed. Sending mail from the
+   server needs SPF and DKIM before it stops going to spam and arrives from
+   an address nobody recognises — the same reasoning as emailing an invoice.
+   The owner sends it however they already talk to their staff. */
 exports.createUser = async (req, res) => {
   const { name, email, password, role, department } = req.body || {};
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'Name, email and password are required' });
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Name and email are required' });
   }
-  if (String(password).length < 8) {
+  /* A password is optional: omitting it means "invite them". */
+  const inviting = !password;
+  if (!inviting && String(password).length < 8) {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -444,18 +453,49 @@ exports.createUser = async (req, res) => {
     }
 
     const bcrypt = require('bcryptjs');
-    const hash = await bcrypt.hash(password, 10);
+    const crypto = require('crypto');
+
+    /* An invited account gets no password hash at all, so it cannot be
+       signed into — login refuses a null hash explicitly rather than
+       trusting bcrypt to. The token is random and stored only as a SHA-256
+       digest: a leaked database should not hand out working invite links.
+       Seven days, because an invite that works forever is a credential
+       nobody remembers issuing. */
+    const hash = inviting ? null : await bcrypt.hash(password, 10);
+    const inviteToken = inviting ? crypto.randomBytes(32).toString('base64url') : null;
+    const inviteHash = inviteToken
+      ? crypto.createHash('sha256').update(inviteToken).digest('hex') : null;
+    const inviteExpiry = inviting
+      ? new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString() : null;
+
     const { rows } = await db.query(
       /* org_id is the whole point of adding somebody. Without it the new
          account is its own organisation: they would create customers and
          stock their employer cannot see, and see none of the company's. */
-      `INSERT INTO users (email, password_hash, name, role, department, is_active, org_id)
-       VALUES (LOWER($1), $2, $3, $4, $5, TRUE, $6)
+      `INSERT INTO users (email, password_hash, name, role, department, is_active, org_id,
+                          invite_token_hash, invite_expires_at, invited_by)
+       VALUES (LOWER($1), $2, $3, $4, $5, TRUE, $6, $7, $8, $9)
        RETURNING id, email, name, role, department, is_active, org_id`,
-      [email, hash, name, chosen, department || null, req.user?.orgId ?? req.user?.id]
+      [email, hash, name, chosen, department || null, req.user?.orgId ?? req.user?.id,
+       inviteHash, inviteExpiry, inviting ? (req.user?.id ?? null) : null]
     );
-    await log(req, chosen, 'assigned', { userId: rows[0].id, email: rows[0].email, created: true });
-    res.status(201).json({ user: rows[0] });
+    await log(req, chosen, 'assigned', {
+      userId: rows[0].id, email: rows[0].email, created: true, invited: inviting,
+    });
+
+    /* The token is returned exactly once, here, and never stored in a form
+       it could be read back from. If the owner loses the link they reissue
+       it rather than recovering it. */
+    res.status(201).json({
+      user: { ...rows[0], pending: inviting },
+      ...(inviting ? {
+        invite: {
+          token: inviteToken,
+          expiresAt: inviteExpiry,
+          path: `/accept-invite?token=${inviteToken}`,
+        },
+      } : {}),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

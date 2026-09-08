@@ -58,6 +58,7 @@ import PlatformCapabilities from './pages/PlatformCapabilities';
 import HowItWorks from './pages/HowItWorks';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import AcceptInvite from './pages/AcceptInvite';
 import Onboarding from './pages/Onboarding';
 import GetStarted from './pages/GetStarted';
 import POInvoice from './pages/POInvoice';
@@ -164,6 +165,9 @@ const AppRoutes = () => {
       {/* ── Auth ── */}
       <Route path="/login"       element={<Login />} />
       <Route path="/signup"      element={<Signup />} />
+      {/* Unauthenticated: an invited person has no password yet. The link
+          in their message is the credential. */}
+      <Route path="/accept-invite" element={<AcceptInvite />} />
       {/* First run: two questions, no sidebar, no wall. The older
           /onboarding and /beta-onboarding flows are still routed for anyone
           who wants the full company-details form, but nothing sends a new

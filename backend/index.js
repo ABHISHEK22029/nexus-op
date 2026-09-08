@@ -77,6 +77,10 @@ app.get('/public/metal-prices', metalPricesController.get);
    ══════════════════════════════════════════════════════════ */
 app.post('/auth/login', authController.login);
 app.post('/auth/register', authController.register);
+/* Both unauthenticated by necessity: an invited person has no password
+   yet, which is the point. The token is the credential. */
+app.get('/auth/invite/:token', authController.inviteInfo);
+app.post('/auth/accept-invite', authController.acceptInvite);
 
 app.use(authenticate); // ⬇ all routes below are protected
 

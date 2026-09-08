@@ -26,6 +26,13 @@ async function login(req, res) {
     if (!user || !user.is_active) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+    /* An invited account has no password until the person accepts. Relying
+       on bcrypt.compare to reject a null hash is trusting a library to fail
+       in the direction we want; this states it. Same generic message, so a
+       pending invite is not distinguishable from a wrong password. */
+    if (!user.password_hash) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -147,6 +154,89 @@ async function register(req, res) {
   }
 }
 
+/* ══════════════════════════════════════════════════════════
+   Accepting an invite.
+
+   Unauthenticated by necessity — the person has no password yet, which is
+   the whole point. The token IS the authentication, so it is treated like
+   one: looked up by its SHA-256 digest, single use, and expired after seven
+   days.
+
+   What it does NOT do is let the invitee choose anything but their
+   password. The organisation and the role were decided by whoever invited
+   them and are not in the request body; accepting an invite must not be a
+   way to pick your own permissions.
+   ══════════════════════════════════════════════════════════ */
+
+// GET /auth/invite/:token -> { name, email, organisation, role } or 404
+async function inviteInfo(req, res) {
+  try {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update(String(req.params.token || '')).digest('hex');
+    const { rows } = await db.query(
+      `SELECT u.name, u.email, u.role, u.invite_expires_at, c.name AS org_name
+         FROM users u
+         LEFT JOIN company_profile c ON c.owner_id = u.org_id
+        WHERE u.invite_token_hash = $1`, [hash]);
+    const inv = rows[0];
+    /* One message for "no such invite" and "expired". Distinguishing them
+       tells someone holding a stale link that it was once real. */
+    if (!inv || (inv.invite_expires_at && new Date(inv.invite_expires_at) < new Date())) {
+      return res.status(404).json({ error: 'This invitation is not valid any more. Ask for a new one.' });
+    }
+    return res.json({
+      name: inv.name, email: inv.email, role: inv.role,
+      organisation: inv.org_name || null,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+// POST /auth/accept-invite  { token, password } -> { token, user }
+async function acceptInvite(req, res) {
+  const { token, password } = req.body || {};
+  if (!token || !password) return res.status(400).json({ error: 'Token and password are required' });
+  if (String(password).length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+  const client = await db.getClient();
+  try {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update(String(token)).digest('hex');
+    await client.query('BEGIN');
+
+    /* FOR UPDATE so two submissions of the same link cannot both succeed —
+       the second waits, then finds the token already cleared. */
+    const { rows } = await client.query(
+      `SELECT id, email, name, role, org_id, invite_expires_at
+         FROM users WHERE invite_token_hash = $1 FOR UPDATE`, [hash]);
+    const user = rows[0];
+    if (!user || (user.invite_expires_at && new Date(user.invite_expires_at) < new Date())) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'This invitation is not valid any more. Ask for a new one.' });
+    }
+
+    const bcrypt = require('bcryptjs');
+    const pwHash = await bcrypt.hash(password, 10);
+    await client.query(
+      `UPDATE users
+          SET password_hash = $1, invite_token_hash = NULL, invite_expires_at = NULL,
+              is_active = TRUE, last_login = NOW()
+        WHERE id = $2`, [pwHash, user.id]);
+    await client.query('COMMIT');
+
+    const safeUser = {
+      id: user.id, email: user.email, name: user.name, role: user.role,
+      org_id: user.org_id ?? user.id,
+    };
+    return res.json({ token: signToken(safeUser), user: safeUser });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    return res.status(500).json({ error: err.message });
+  } finally { client.release(); }
+}
+
 // GET /auth/me -> current user (requires authenticate middleware)
 async function me(req, res) {
   try {
@@ -166,4 +256,4 @@ async function me(req, res) {
   }
 }
 
-module.exports = { login, register, me };
+module.exports = { login, register, me, inviteInfo, acceptInvite };
