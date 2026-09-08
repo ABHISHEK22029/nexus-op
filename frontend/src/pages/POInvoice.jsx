@@ -4,6 +4,7 @@ import { ArrowLeft, Printer, Download, Mail } from 'lucide-react';
 import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
 import html2pdf from 'html2pdf.js';
+import EmailDocumentModal from '../components/EmailDocumentModal';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -17,6 +18,7 @@ const POInvoice = () => {
   const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const invoiceRef = useRef(null);
+  const [emailing, setEmailing] = useState(false);
 
   useEffect(() => {
     const fetchInvoiceData = async () => {
@@ -82,7 +84,7 @@ const POInvoice = () => {
       html2canvas:  { scale: 2, useCORS: true },
       jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
-    html2pdf().set(opt).from(element).save();
+    return html2pdf().set(opt).from(element).save();
   };
 
   const handlePrint = () => {
@@ -99,7 +101,9 @@ const POInvoice = () => {
           <ArrowLeft size={16} /> Back to POs
         </button>
         <div className="flex items-center gap-3">
-          <button className="inv-act-btn">
+          {/* This button had no onClick at all — it rendered, it looked
+              like the others, and clicking it did nothing. */}
+          <button onClick={() => setEmailing(true)} className="inv-act-btn">
             <Mail size={16} /> Email Vendor
           </button>
           <button onClick={handleDownloadPdf} className="inv-act-btn">
@@ -288,6 +292,25 @@ const POInvoice = () => {
         </div>
 
       </div>
+
+      {emailing && (
+        <EmailDocumentModal
+          kind="po"
+          number={po.poNumber || `PO-${po.id}`}
+          to={po.contactEmail}
+          partyName={po.contactName || po.vendorName}
+          company={company}
+          amount={po.netAmount ?? po.grandTotal}
+          extra={[
+            ['Item', po.itemName],
+            ['Quantity', po.quantity],
+            ['Payment terms', po.paymentTerms],
+          ]}
+          closing="Please confirm acceptance and the expected delivery date."
+          onDownloadPdf={handleDownloadPdf}
+          onClose={() => setEmailing(false)}
+        />
+      )}
     </div>
   );
 };

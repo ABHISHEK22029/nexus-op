@@ -15,7 +15,8 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Truck, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Printer, Truck, AlertTriangle, Mail } from 'lucide-react';
+import EmailDocumentModal from '../components/EmailDocumentModal';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate,
 } from '../components/DocumentKit';
@@ -27,6 +28,7 @@ export default function DeliveryChallanDoc() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [dc, setDc] = useState(null);
+  const [emailing, setEmailing] = useState(false);
   const [err, setErr] = useState(false);
 
   useEffect(() => {
@@ -59,7 +61,12 @@ export default function DeliveryChallanDoc() {
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, gap: 8, flexWrap: 'wrap' }}>
         <button onClick={() => navigate('/delivery-challans')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All Challans</button>
-        <button onClick={() => window.print()} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {/* The challan travels with the goods; the customer usually wants
+              it ahead of the lorry. */}
+          <button onClick={() => setEmailing(true)} className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Mail size={15} /> Email</button>
+          <button onClick={() => window.print()} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
+        </div>
       </div>
 
       {/* Screen-only. The driver finds out at the checkpost otherwise. */}
@@ -157,6 +164,19 @@ export default function DeliveryChallanDoc() {
         <SignatureBlock company={co} receiver="Received the goods in good condition (name, sign & date)" />
         <DocFooter company={co} right={dc.challan_number} note="Goods once dispatched are transported at the consignee's risk unless otherwise agreed." />
       </div>
+      {emailing && (
+        <EmailDocumentModal
+          kind="challan"
+          number={dc.challan_number}
+          to={cust.email}
+          partyName={cust.contact_name || cust.name}
+          company={dc.company || {}}
+          amount={dc.total_value}
+          extra={[['Dispatched by', dc.dispatch_through], ['Vehicle', dc.vehicle_no], ['LR number', dc.lr_no]]}
+          closing="Please confirm receipt when the goods arrive."
+          onClose={() => setEmailing(false)}
+        />
+      )}
     </div>
   );
 }

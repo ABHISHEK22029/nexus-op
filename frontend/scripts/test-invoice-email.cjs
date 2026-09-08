@@ -64,7 +64,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   const draft = await page.evaluate(() => {
     const dlg = [...document.querySelectorAll('div')].find(
-      d => getComputedStyle(d).position === 'fixed' && /Email this invoice/i.test(d.innerText));
+      d => getComputedStyle(d).position === 'fixed' && /Email this/i.test(d.innerText));
     if (!dlg) return null;
     const inputs = [...dlg.querySelectorAll('input')];
     const ta = dlg.querySelector('textarea');
@@ -97,7 +97,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         el.dispatchEvent(new Event('input', { bubbles: true }));
       };
       const dlg = [...document.querySelectorAll('div')].find(
-        d => getComputedStyle(d).position === 'fixed' && /Email this invoice/i.test(d.innerText));
+        d => getComputedStyle(d).position === 'fixed' && /Email this/i.test(d.innerText));
       const inputs = [...dlg.querySelectorAll('input')];
       setV(inputs[0], 'buyer@example.test');
       setV(inputs[1], 'Custom subject line');

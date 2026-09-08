@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { useToast } from '../context/ToastContext';
-import EmailInvoiceModal from '../components/EmailInvoiceModal';
+import EmailDocumentModal from '../components/EmailDocumentModal';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -272,8 +272,17 @@ export default function SalesInvoiceDoc() {
       </div>
 
       {emailing && (
-        <EmailInvoiceModal
-          inv={inv}
+        <EmailDocumentModal
+          kind="invoice"
+          number={inv.invoice_number}
+          to={inv.customer?.email}
+          partyName={inv.customer?.contact_name || inv.customer?.name}
+          company={co}
+          amount={inv.net_amount}
+          extra={[
+            ['Already paid', Number(inv.amount_paid) > 0 ? `₹${Number(inv.amount_paid).toLocaleString('en-IN')}` : null],
+            ['Payable by', inv.due_date],
+          ]}
           onClose={() => setEmailing(false)}
           /* The same PDF the toolbar produces, so what is attached is
              exactly what was on screen. */

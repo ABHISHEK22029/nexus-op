@@ -11,8 +11,9 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, ArrowRightLeft, Clock } from 'lucide-react';
+import { ArrowLeft, Printer, ArrowRightLeft, Clock , Mail} from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import EmailDocumentModal from '../components/EmailDocumentModal';
 import {
   CompanyHeader, Party, BankBox, TermsBox, SignatureBlock, DocFooter,
   NotATaxInvoice, ComplianceWarning, complianceGaps, rup, fmtDate,
@@ -25,6 +26,7 @@ export default function SalesQuotationDoc() {
   const navigate = useNavigate();
   const toast = useToast();
   const [q, setQ] = useState(null);
+  const [emailing, setEmailing] = useState(false);
   const [err, setErr] = useState(false);
 
   useEffect(() => {
@@ -76,6 +78,8 @@ export default function SalesQuotationDoc() {
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, gap: 8, flexWrap: 'wrap' }}>
         <button onClick={() => navigate('/sales-quotations')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All Quotations</button>
         <div style={{ display: 'flex', gap: 8 }}>
+          {/* A quotation that cannot be sent is a quotation nobody reads. */}
+          <button onClick={() => setEmailing(true)} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Mail size={15} /> Email</button>
           <button onClick={() => window.print()} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
           {q.status !== 'Converted'
             ? <button onClick={convert} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowRightLeft size={15} /> Convert to Order</button>
@@ -189,6 +193,19 @@ export default function SalesQuotationDoc() {
         <SignatureBlock company={co} />
         <DocFooter company={co} right={q.quote_number} />
       </div>
+      {emailing && (
+        <EmailDocumentModal
+          kind="quotation"
+          number={q.quote_number}
+          to={cust.email}
+          partyName={cust.contact_name || cust.name}
+          company={co}
+          amount={q.net_amount}
+          extra={[['Valid until', q.valid_until]]}
+          closing="Let us know if you'd like us to proceed, or if anything needs adjusting."
+          onClose={() => setEmailing(false)}
+        />
+      )}
     </div>
   );
 }

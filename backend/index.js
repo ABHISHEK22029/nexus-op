@@ -148,17 +148,26 @@ app.use((req, res, next) => {
    * on the install. An Owner widening "Sales" would widen it for every
    * other business too, so those stay with the cross-tenant role. */
   if (segment === 'admin') {
-    if (parts[1] === 'users') segment = 'users';
+    /* Both /admin/users and /admin/roles manage YOUR organisation now —
+       migration 055 gave role_definitions an org_id, so a company can
+       define its own roles without touching anybody else's. Both map to the
+       `users` resource, which an Owner holds.
+
+       The controller is what keeps a built-in role safe: it refuses to edit
+       or delete one for a caller who is not cross-tenant, because those are
+       shared by every business on the install. That check belongs there and
+       not here, since it depends on which role is being touched. */
+    if (parts[1] === 'users' || parts[1] === 'roles') segment = 'users';
     else if (!isCrossTenant(req.user?.role)) {
       return res.status(403).json({
         error: 'Not permitted',
-        detail: 'Role definitions are shared across every organisation, so only a platform administrator can change them.',
-        resource: 'roles', action,
+        detail: 'That part of the Configurator is limited to a platform administrator.',
+        resource: 'admin', action,
       });
     } else return next();
   }
 
-  if (can(req.user?.role, segment, action)) return next();
+  if (can(req.user?.role, segment, action, req.user?.orgId)) return next();
 
   return res.status(403).json({
     error: 'Not permitted',

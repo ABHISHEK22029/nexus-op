@@ -32,7 +32,7 @@ function deny(res, resource, action) {
 function allow(resource, action = READ) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Not signed in' });
-    if (can(req.user.role, resource, action)) return next();
+    if (can(req.user.role, resource, action, req.user?.orgId)) return next();
     return deny(res, resource, action);
   };
 }
@@ -42,7 +42,7 @@ function guard(resource) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Not signed in' });
     const action = ACTION_FOR_METHOD[req.method] || WRITE;
-    if (can(req.user.role, resource, action)) return next();
+    if (can(req.user.role, resource, action, req.user?.orgId)) return next();
     return deny(res, resource, action);
   };
 }

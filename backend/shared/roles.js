@@ -250,21 +250,44 @@ const LEGACY = {
    installation where nobody can do anything. */
 let OVERLAY = null;         // { role: { label, crossTenant, isSystem, grants } }
 
+/* Roles a single organisation defined for itself, keyed by org id.
+ *
+ * Kept separate from OVERLAY rather than flattened into it, because two
+ * companies may both call something "Foreman" and mean different things. A
+ * flat map would let one organisation's definition answer another's
+ * question, which is the same class of fault as one company's profile
+ * appearing on another's invoice. */
+let ORG_OVERLAY = {};       // { orgId: { role: def } }
+
 /** Replace the in-memory role set. Called at boot and after any edit. */
-function setOverlay(roles) {
+function setOverlay(roles, orgRoles) {
   OVERLAY = (roles && Object.keys(roles).length) ? roles : null;
+  ORG_OVERLAY = orgRoles || {};
 }
 function getOverlay() { return OVERLAY; }
 function overlayLoaded() { return OVERLAY !== null; }
 
-/** The effective definition for a role — DB if present, else code. */
-function roleDef(name) {
+/**
+ * The effective definition for a role.
+ *
+ * An organisation's own role wins over a built-in of the same name, so a
+ * company that defines "Sales" gets its own. Falling back to the built-in
+ * set and then to the compiled-in defaults means a database that is briefly
+ * unreachable degrades to something usable rather than to an installation
+ * where nobody can do anything.
+ */
+function roleDef(name, orgId = null) {
+  if (orgId != null && ORG_OVERLAY[orgId] && ORG_OVERLAY[orgId][name]) {
+    return ORG_OVERLAY[orgId][name];
+  }
   return (OVERLAY && OVERLAY[name]) || ROLES[name] || null;
 }
 
-/** Every role name currently in effect. */
-function effectiveRoleNames() {
-  return OVERLAY ? Object.keys(OVERLAY) : Object.keys(ROLES);
+/** Every role name currently in effect — an organisation's own included. */
+function effectiveRoleNames(orgId = null) {
+  const base = OVERLAY ? Object.keys(OVERLAY) : Object.keys(ROLES);
+  const own = orgId != null && ORG_OVERLAY[orgId] ? Object.keys(ORG_OVERLAY[orgId]) : [];
+  return [...new Set([...base, ...own])];
 }
 
 /** Does this role see across workspaces? Only the platform role should. */
@@ -292,22 +315,22 @@ function rolesResolvingTo(target) {
   return [...out];
 }
 
-function normaliseRole(role) {
+function normaliseRole(role, orgId = null) {
   if (!role) return 'Viewer';
-  if (roleDef(role)) return role;
+  if (roleDef(role, orgId)) return role;
   return LEGACY[role] || 'Viewer';
 }
 
 /** Core check. Deny by default. */
-function can(role, resource, action = READ) {
-  const r = normaliseRole(role);
+function can(role, resource, action = READ, orgId = null) {
+  const r = normaliseRole(role, orgId);
   /* Administrator is short-circuited in code, not read from the overlay.
      It is the recovery path: if a permission edit goes wrong, someone must
      still be able to get in and undo it. An Administrator whose access
      depends on an editable row is an Administrator who can be edited out of
      existence. */
   if (r === 'Administrator') return true;
-  const def = roleDef(r);
+  const def = roleDef(r, orgId);
   const grants = def?.grants;
   if (!grants || grants === 'all') return grants === 'all';
   if (COMMON_READ.includes(resource) && action === READ) return true;
@@ -316,8 +339,8 @@ function can(role, resource, action = READ) {
 }
 
 /** The whole answer for one user, for /auth/me — so the UI never guesses. */
-function permissionsFor(role) {
-  const r = normaliseRole(role);
+function permissionsFor(role, orgId = null) {
+  const r = normaliseRole(role, orgId);
   const out = {};
   /* Resource list comes from the catalogue, which is code — a role may only
      ever be granted a resource the product actually routes. An admin cannot
@@ -387,27 +410,46 @@ async function seedRolePermissions(db) {
 /** Read the live role set into memory. Safe to call repeatedly. */
 async function loadRoles(db) {
   const defs = await db.query(
-    'SELECT role, label, description, is_system, cross_tenant FROM role_definitions ORDER BY sort_order, role'
+    'SELECT role, label, description, is_system, cross_tenant, org_id FROM role_definitions ORDER BY sort_order, role'
   );
-  if (!defs.rows.length) { setOverlay(null); return 0; }
+  if (!defs.rows.length) { setOverlay(null, {}); return 0; }
 
-  const perms = await db.query('SELECT role, resource, actions FROM role_permissions');
+  const perms = await db.query('SELECT role, resource, actions, org_id FROM role_permissions');
+
+  /* Two layers: the built-in roles every organisation gets, and each
+     organisation's own. A company that defines its own "Sales" must not
+     have that definition answer another company's question, so they are
+     never merged into one map. */
   const byRole = {};
+  const byOrg = {};
+  const bucket = (orgId) => {
+    if (orgId == null) return byRole;
+    return (byOrg[orgId] ||= {});
+  };
+
   for (const d of defs.rows) {
-    byRole[d.role] = {
+    bucket(d.org_id)[d.role] = {
       label: d.label,
       description: d.description,
       isSystem: d.is_system,
-      crossTenant: d.cross_tenant,
+      /* Belt and braces with the CHECK constraint in migration 055: a role
+         an organisation defined is never cross-tenant, whatever the row
+         says. Reading every business on the install is not something a
+         company can award itself. */
+      crossTenant: d.org_id == null ? d.cross_tenant : false,
+      orgId: d.org_id ?? null,
       grants: {},
     };
   }
   for (const p of perms.rows) {
-    if (!byRole[p.role]) continue;               // orphan row, ignore
-    byRole[p.role].grants[p.resource] = p.actions || [];
+    const target = bucket(p.org_id)[p.role];
+    if (!target) continue;                       // orphan row, ignore
+    target.grants[p.resource] = p.actions || [];
   }
-  setOverlay(byRole);
-  return Object.keys(byRole).length;
+
+  setOverlay(byRole, byOrg);
+  return Object.keys(byRole).length +
+         Object.values(byOrg).reduce((n, m) => n + Object.keys(m).length, 0);
 }
 
 /**

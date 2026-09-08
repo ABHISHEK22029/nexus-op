@@ -1,22 +1,23 @@
 /* ══════════════════════════════════════════════════════════
-   Emailing an invoice — drafted here, sent from your own mailbox.
+   Emailing any document — drafted here, sent from your own mailbox.
 
-   The alternative was sending it from the server, and it is worse for a
-   business. Mail from an application's infrastructure needs SPF and DKIM
-   set up before it stops landing in spam, arrives from an address the
-   customer does not recognise, and replies go somewhere nobody reads. Mail
-   from your own Gmail arrives from you, threads with the rest of the
+   Started as the invoice-only version. Quotations, delivery challans,
+   credit notes and purchase orders all end the same way: somebody produces
+   a PDF and then leaves the product to send it. The reasoning is identical,
+   so the component is one and the differences are data.
+
+   Why not send from the server: mail from an application's infrastructure
+   needs SPF and DKIM before it stops landing in spam, arrives from an
+   address the recipient does not recognise, and replies go somewhere nobody
+   reads. From your own mailbox it arrives from you, threads with the
    conversation, and lands in your Sent folder where you can prove you sent
    it.
 
-   The catch, stated plainly rather than hidden: neither a mailto: link nor
-   Gmail's compose URL can attach a file — no web page may put a file into
-   another site's compose window. So the PDF is downloaded first and the
-   person attaches it. Two clicks, and no infrastructure to maintain.
-
-   Because of that, the payment details go in the BODY as well as in the
-   attachment. If the attachment is forgotten, the customer still knows what
-   is owed, by when, and where to send it.
+   The catch, stated in the dialog rather than hidden: neither mailto: nor
+   Gmail's compose URL can attach a file — no page may put a file into
+   another site's compose window. So the PDF downloads first and the person
+   attaches it. Because of that, the facts that matter go in the BODY too:
+   if the attachment is forgotten, the message still says what it is about.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useMemo } from 'react';
 import { X, Mail, Paperclip, ExternalLink } from 'lucide-react';
@@ -25,57 +26,82 @@ import { useToast } from '../context/ToastContext';
 const rup = n => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 const onDate = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : null);
 
-/** The message a supplier would actually write, filled in from the invoice. */
-function draftBody(inv) {
-  const co = inv.company || {};
-  const cust = inv.customer || {};
-  const due = Math.max(0, Number(inv.net_amount || 0) - Number(inv.amount_paid || 0));
+/* What each kind of document is called, and how it opens. Kept as data so
+   adding one is a line here rather than another component. */
+const KINDS = {
+  invoice:   { noun: 'invoice',          opening: 'Please find attached our invoice',        pays: true },
+  quotation: { noun: 'quotation',        opening: 'Please find attached our quotation',      pays: false },
+  challan:   { noun: 'delivery challan', opening: 'Goods have been dispatched under delivery challan', pays: false },
+  note:      { noun: 'note',             opening: 'Please find attached our',                pays: false },
+  po:        { noun: 'purchase order',   opening: 'Please find attached our purchase order', pays: false },
+};
 
-  const lines = [
-    `Dear ${cust.contact_name || cust.name || 'Sir/Madam'},`,
-    '',
-    `Please find attached our invoice ${inv.invoice_number}${inv.invoice_date ? ` dated ${onDate(inv.invoice_date)}` : ''}.`,
-    '',
-    `Invoice number : ${inv.invoice_number}`,
-    `Amount         : ${rup(inv.net_amount)}`,
-  ];
-  if (Number(inv.amount_paid) > 0) {
-    lines.push(`Already paid   : ${rup(inv.amount_paid)}`);
-    lines.push(`Balance due    : ${rup(due)}`);
-  }
-  if (inv.due_date) lines.push(`Payable by     : ${onDate(inv.due_date)}`);
-
-  /* Bank details in the body, not only on the attachment. An invoice a
-     customer cannot pay from is an invoice that gets chased. */
-  if (co.bank_name || co.bank_account_no || co.upi_id) {
-    lines.push('', 'Payment details');
-    if (co.bank_name) lines.push(`  Bank    : ${co.bank_name}`);
-    if (co.bank_account_no) lines.push(`  Account : ${co.bank_account_no}`);
-    if (co.bank_ifsc) lines.push(`  IFSC    : ${co.bank_ifsc}`);
-    if (co.upi_id) lines.push(`  UPI     : ${co.upi_id}`);
-  }
-
-  lines.push('', 'Please let us know if anything needs correcting.', '',
-    'Thank you,', co.name || '');
-  return lines.filter(l => l !== undefined).join('\n');
-}
-
-export default function EmailInvoiceModal({ inv, onClose, onDownloadPdf }) {
+export default function EmailDocumentModal({
+  kind = 'invoice',
+  number,                 // the document number, e.g. INV-0004
+  to: initialTo = '',     // the recipient's email, if we have one
+  partyName,              // who it goes to — used in the greeting
+  company: companyProp,   // whose document it is
+  amount,                 // headline value, optional
+  extra: extraProp,       // [[label, value], …] — due date, valid until, vehicle
+  closing,                // a last line, if the kind wants one
+  onDownloadPdf,
+  onClose,
+}) {
   const toast = useToast();
-  const co = inv.company || {};
-  const [to, setTo] = useState(inv.customer?.email || '');
+  const k = KINDS[kind] || KINDS.invoice;
+  /* Same nullability trap as `to`: these arrive as null from a document
+     that has no company loaded yet, and a default parameter would not
+     catch it. */
+  const company = companyProp ?? {};
+  const extra = extraProp ?? [];
+
+  const body0 = useMemo(() => {
+    const lines = [
+      `Dear ${partyName || 'Sir/Madam'},`,
+      '',
+      `${k.opening} ${number}.`,
+      '',
+      `${k.noun[0].toUpperCase()}${k.noun.slice(1)} number : ${number}`,
+    ];
+    if (amount != null) lines.push(`Amount${' '.repeat(Math.max(1, 16 - 'Amount'.length))}: ${rup(amount)}`);
+    for (const [label, value] of extra) {
+      if (value == null || value === '') continue;
+      const v = /date|until|by/i.test(label) ? (onDate(value) || value) : value;
+      lines.push(`${label}${' '.repeat(Math.max(1, 16 - label.length))}: ${v}`);
+    }
+
+    /* Payment details in the body, not only on the attachment. A document a
+       customer cannot pay from is a document that gets chased. */
+    if (k.pays && (company.bank_name || company.bank_account_no || company.upi_id)) {
+      lines.push('', 'Payment details');
+      if (company.bank_name) lines.push(`  Bank    : ${company.bank_name}`);
+      if (company.bank_account_no) lines.push(`  Account : ${company.bank_account_no}`);
+      if (company.bank_ifsc) lines.push(`  IFSC    : ${company.bank_ifsc}`);
+      if (company.upi_id) lines.push(`  UPI     : ${company.upi_id}`);
+    }
+
+    lines.push('', closing || 'Please let us know if anything needs correcting.', '',
+      'Thank you,', company.name || '');
+    return lines.join('\n');
+  }, [kind, number, partyName, amount, JSON.stringify(extra), company.name]);
+
+  /* `initialTo = ''` in the signature is not enough: a default parameter
+     only applies to undefined, and a customer with no email on file gives
+     NULL. That reached `to.trim()` and threw, so the dialog never opened at
+     all — the button worked and nothing happened. */
+  const [to, setTo] = useState(initialTo ?? '');
   const [subject, setSubject] = useState(
-    `Invoice ${inv.invoice_number}${co.name ? ` from ${co.name}` : ''}`);
-  const [body, setBody] = useState(() => draftBody(inv));
+    `${k.noun[0].toUpperCase()}${k.noun.slice(1)} ${number}${company.name ? ` from ${company.name}` : ''}`);
+  const [body, setBody] = useState(body0);
   const [downloaded, setDownloaded] = useState(false);
 
-  const noBank = !(co.bank_name || co.bank_account_no || co.upi_id);
+  const noBank = k.pays && !(company.bank_name || company.bank_account_no || company.upi_id);
 
   const gmailUrl = useMemo(() => {
     const p = new URLSearchParams({ view: 'cm', fs: '1', to, su: subject, body });
     return `https://mail.google.com/mail/?${p.toString()}`;
   }, [to, subject, body]);
-
   const mailtoUrl = useMemo(
     () => `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
     [to, subject, body]);
@@ -86,7 +112,7 @@ export default function EmailInvoiceModal({ inv, onClose, onDownloadPdf }) {
     if (!valid) return toast.error('Enter the address to send it to');
     /* The PDF first, so it is already in Downloads when the compose window
        opens and the attach dialog has something to point at. */
-    try { await onDownloadPdf?.(); setDownloaded(true); } catch { /* not fatal */ }
+    if (onDownloadPdf) { try { await onDownloadPdf(); setDownloaded(true); } catch { /* not fatal */ } }
     window.open(url, '_blank', 'noopener');
   };
 
@@ -114,7 +140,7 @@ export default function EmailInvoiceModal({ inv, onClose, onDownloadPdf }) {
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--border-subtle)' }}>
           <div style={{ flex: 1 }}>
             <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-              <Mail size={17} style={{ color: 'var(--brand-amber)' }} /> Email this invoice
+              <Mail size={17} style={{ color: 'var(--brand-amber)' }} /> Email this {k.noun}
             </h2>
             <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               Drafted here, sent from your own mailbox — so it arrives from you and replies come back to you.
@@ -130,10 +156,10 @@ export default function EmailInvoiceModal({ inv, onClose, onDownloadPdf }) {
           <div style={{ marginBottom: 13 }}>
             <label style={label}>To</label>
             <input value={to} onChange={e => setTo(e.target.value)}
-              placeholder="buyer@company.com" style={input} />
-            {!inv.customer?.email && (
+              placeholder="their email address" style={input} />
+            {!initialTo && (
               <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', margin: '5px 0 0' }}>
-                No email on file for {inv.customer?.name || 'this customer'} — add one and it will fill itself in next time.
+                No email on file for {partyName || 'them'} — add one and it will fill itself in next time.
               </p>
             )}
           </div>
@@ -170,9 +196,11 @@ export default function EmailInvoiceModal({ inv, onClose, onDownloadPdf }) {
           }}>
             <Paperclip size={14} style={{ flexShrink: 0, marginTop: 1 }} />
             <span>
-              {downloaded
-                ? <><strong>{inv.invoice_number}.pdf is in your Downloads</strong> — attach it in the compose window.</>
-                : <>The PDF downloads when you continue. Attach it in the compose window: no website can put a file into another site's compose box for you.</>}
+              {!onDownloadPdf
+                ? <>Attach the PDF from this page in the compose window.</>
+                : downloaded
+                  ? <><strong>{number}.pdf is in your Downloads</strong> — attach it in the compose window.</>
+                  : <>The PDF downloads when you continue. Attach it in the compose window: no website can put a file into another site's compose box for you.</>}
             </span>
           </div>
         </div>
@@ -189,7 +217,7 @@ export default function EmailInvoiceModal({ inv, onClose, onDownloadPdf }) {
             <button onClick={onClose} className="btn-secondary btn-sm">Cancel</button>
             <button onClick={() => open(gmailUrl)} className="btn-primary btn-sm"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <ExternalLink size={14} /> Download PDF &amp; open Gmail
+              <ExternalLink size={14} /> {onDownloadPdf ? 'Download PDF & open Gmail' : 'Open Gmail'}
             </button>
           </div>
         </div>

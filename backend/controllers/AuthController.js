@@ -249,7 +249,7 @@ async function me(req, res) {
        own copy of the rules — a second copy is a copy that drifts, and a
        drifted permission table is worse than none because it gets trusted.
        Here the UI can only ever render what the server already agreed to. */
-    const { role, label, permissions } = permissionsFor(result.rows[0].role);
+    const { role, label, permissions } = permissionsFor(result.rows[0].role, result.rows[0].org_id);
     return res.json({ ...result.rows[0], role, roleLabel: label, permissions });
   } catch (err) {
     return res.status(500).json({ error: err.message });

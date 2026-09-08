@@ -107,9 +107,16 @@ exports.catalogue = async (req, res) => {
 /* ── Roles ───────────────────────────────────────────────── */
 exports.listRoles = async (req, res) => {
   try {
+    /* Built-in roles, plus any this organisation defined for itself.
+       Another company's custom roles are not listed — they are not
+       assignable here and naming them would leak how other businesses
+       organise themselves. */
+    const callerOrg = isCrossTenant(req.user?.role) ? null : (req.user?.orgId ?? req.user?.id);
     const defs = await db.query(
-      `SELECT rd.role, rd.label, rd.description, rd.is_system, rd.cross_tenant, rd.sort_order
-       FROM role_definitions rd ORDER BY rd.sort_order, rd.role`
+      `SELECT rd.role, rd.label, rd.description, rd.is_system, rd.cross_tenant, rd.sort_order, rd.org_id
+       FROM role_definitions rd
+       WHERE rd.org_id IS NULL OR rd.org_id IS NOT DISTINCT FROM $1
+       ORDER BY rd.sort_order, rd.role`, [callerOrg]
     );
 
     /* Counted by EFFECTIVE role, in JS, because normaliseRole lives here and
@@ -117,13 +124,18 @@ exports.listRoles = async (req, res) => {
        on an installation whose administrator is stored under the legacy value
        'Admin'. Deletability is decided by this count, so an undercount would
        have offered to delete a role people are actually using. */
-    const allUsers = (await db.query('SELECT role FROM users')).rows;
+    const allUsers = (await db.query(
+      callerOrg == null ? 'SELECT role FROM users'
+                        : 'SELECT role FROM users WHERE org_id = $1',
+      callerOrg == null ? [] : [callerOrg])).rows;
     const effectiveCount = {};
     for (const u of allUsers) {
       const r = R.normaliseRole(u.role);
       effectiveCount[r] = (effectiveCount[r] || 0) + 1;
     }
-    const perms = await db.query('SELECT role, resource, actions FROM role_permissions');
+    const perms = await db.query(
+      `SELECT role, resource, actions FROM role_permissions
+        WHERE org_id IS NULL OR org_id IS NOT DISTINCT FROM $1`, [callerOrg]);
     const byRole = {};
     for (const p of perms.rows) (byRole[p.role] ||= {})[p.resource] = p.actions || [];
 
@@ -145,8 +157,11 @@ exports.listRoles = async (req, res) => {
         isSystem: r.is_system,
         crossTenant: r.cross_tenant,
         userCount: effectiveCount[r.role] || 0,
-        editable: r.role !== SYSTEM_IMMUTABLE,
-        deletable: !r.is_system && (effectiveCount[r.role] || 0) === 0,
+        isOwn: r.org_id != null,
+        /* A built-in is shared by every organisation, so only the platform
+           role may edit one. Yours are yours. */
+        editable: r.role !== SYSTEM_IMMUTABLE && (callerOrg == null || r.org_id != null),
+        deletable: !r.is_system && r.org_id != null && (effectiveCount[r.role] || 0) === 0,
         permissions: byRole[r.role] || {},
       })),
       legacyRolesInUse: legacy.rows.map(l => ({
@@ -161,8 +176,32 @@ exports.updateRole = async (req, res) => {
   const role = req.params.role;
   const { permissions, label, description } = req.body || {};
   try {
-    const def = (await db.query('SELECT * FROM role_definitions WHERE role = $1', [role])).rows[0];
-    if (!def) return res.status(404).json({ error: 'Role not found' });
+    /* WHOSE role is this?
+     *
+     * A non-platform caller may only touch a role their own organisation
+     * defined. Built-in roles are shared by every business on the install —
+     * an Owner widening "Sales" would widen it for all of them, which is
+     * precisely why this endpoint used to be closed to them entirely.
+     *
+     * 404 rather than 403 for another organisation's role, so this cannot
+     * be used to discover what roles other companies have invented. */
+    const callerOrg = isCrossTenant(req.user?.role) ? null : (req.user?.orgId ?? req.user?.id);
+    const def = (await db.query(
+      `SELECT * FROM role_definitions
+        WHERE role = $1 AND org_id IS NOT DISTINCT FROM $2`,
+      [role, callerOrg])).rows[0];
+    if (!def) {
+      if (callerOrg == null) return res.status(404).json({ error: 'Role not found' });
+      const builtin = await db.query(
+        'SELECT 1 FROM role_definitions WHERE role = $1 AND org_id IS NULL', [role]);
+      if (builtin.rowCount) {
+        return res.status(403).json({
+          error: `"${role}" is a built-in role, shared by every organisation`,
+          detail: 'Copy it into a role of your own and change that instead.',
+        });
+      }
+      return res.status(404).json({ error: 'Role not found' });
+    }
 
     if (role === SYSTEM_IMMUTABLE) {
       return res.status(400).json({
@@ -188,7 +227,11 @@ exports.updateRole = async (req, res) => {
       const client = await db.getClient();
       try {
         await client.query('BEGIN');
-        await client.query('DELETE FROM role_permissions WHERE role = $1', [role]);
+        /* Scoped, or editing your own role would wipe the built-in of the
+           same name for every other organisation. */
+        await client.query(
+          'DELETE FROM role_permissions WHERE role = $1 AND org_id IS NOT DISTINCT FROM $2',
+          [role, callerOrg]);
         for (const [resource, actions] of Object.entries(permissions)) {
           // Silently ignoring an unknown resource would let a typo look like
           // a saved permission, so reject instead.
@@ -199,8 +242,8 @@ exports.updateRole = async (req, res) => {
           const clean = (Array.isArray(actions) ? actions : []).filter(a => validActions.has(a));
           if (!clean.length) continue;
           await client.query(
-            'INSERT INTO role_permissions (role, resource, actions) VALUES ($1,$2,$3)',
-            [role, resource, clean]
+            'INSERT INTO role_permissions (role, resource, actions, org_id) VALUES ($1,$2,$3,$4)',
+            [role, resource, clean, callerOrg]
           );
         }
         await client.query('COMMIT');
@@ -211,8 +254,9 @@ exports.updateRole = async (req, res) => {
     if (label || description !== undefined) {
       await db.query(
         `UPDATE role_definitions SET label = COALESCE($1,label),
-           description = COALESCE($2,description), updated_at = NOW() WHERE role = $3`,
-        [label || null, description ?? null, role]
+           description = COALESCE($2,description), updated_at = NOW()
+         WHERE role = $3 AND org_id IS NOT DISTINCT FROM $4`,
+        [label || null, description ?? null, role, callerOrg]
       );
     }
 
@@ -227,14 +271,31 @@ exports.createRole = async (req, res) => {
   if (!role || !/^[A-Za-z][A-Za-z0-9 _-]{1,38}$/.test(role)) {
     return res.status(400).json({ error: 'Role name must be 2–39 characters, starting with a letter' });
   }
+  /* A platform administrator creates a BUILT-IN role, offered to every
+     organisation. Anyone else creates one for their own company, which no
+     other company can see or assign. That is what makes this safe to open
+     up: an Owner defining "Store keeper" changes nothing for anybody else.
+
+     Before migration 055 both tables were global, so this endpoint could
+     only ever create a role for the whole install — which is why it was
+     Administrator-only and why an Owner could assign the seven built-ins
+     and never define an eighth. */
+  const orgId = isCrossTenant(req.user?.role) ? null : (req.user?.orgId ?? req.user?.id);
+
   try {
-    const exists = (await db.query('SELECT 1 FROM role_definitions WHERE role = $1', [role])).rowCount;
-    if (exists) return res.status(409).json({ error: `Role "${role}" already exists` });
+    /* Clashing with a BUILT-IN name is refused even for a different
+       organisation. "Sales" meaning two things depending on who is asking
+       is exactly the confusion this should not introduce. */
+    const clash = await db.query(
+      `SELECT 1 FROM role_definitions
+        WHERE role = $1 AND (org_id IS NULL OR org_id IS NOT DISTINCT FROM $2)`,
+      [role, orgId]);
+    if (clash.rowCount) return res.status(409).json({ error: `Role "${role}" already exists` });
 
     await db.query(
-      `INSERT INTO role_definitions (role, label, description, is_system, cross_tenant, sort_order)
-       VALUES ($1,$2,$3,FALSE,FALSE,$4)`,
-      [role, label || role, description || null, 200]
+      `INSERT INTO role_definitions (role, label, description, is_system, cross_tenant, sort_order, org_id)
+       VALUES ($1,$2,$3,FALSE,FALSE,$4,$5)`,
+      [role, label || role, description || null, 200, orgId]
     );
 
     /* Starting from an existing role beats starting from nothing: a blank
@@ -242,7 +303,11 @@ exports.createRole = async (req, res) => {
        means "like Sales, but also X". */
     let grants = permissions;
     if (!grants && copyFrom) {
-      const src = (await db.query('SELECT resource, actions FROM role_permissions WHERE role = $1', [copyFrom])).rows;
+      /* Copy from a built-in, or from one of this organisation's own. */
+      const src = (await db.query(
+        `SELECT resource, actions FROM role_permissions
+          WHERE role = $1 AND (org_id IS NULL OR org_id IS NOT DISTINCT FROM $2)`,
+        [copyFrom, orgId])).rows;
       grants = Object.fromEntries(src.map(r => [r.resource, r.actions]));
     }
     const validResources = new Set(Object.keys(R.RESOURCES));
@@ -251,7 +316,9 @@ exports.createRole = async (req, res) => {
       if (!validResources.has(resource)) continue;
       const clean = (Array.isArray(actions) ? actions : []).filter(a => validActions.has(a));
       if (!clean.length) continue;
-      await db.query('INSERT INTO role_permissions (role, resource, actions) VALUES ($1,$2,$3)', [role, resource, clean]);
+      await db.query(
+        'INSERT INTO role_permissions (role, resource, actions, org_id) VALUES ($1,$2,$3,$4)',
+        [role, resource, clean, orgId]);
     }
 
     await refresh();
@@ -263,8 +330,32 @@ exports.createRole = async (req, res) => {
 exports.deleteRole = async (req, res) => {
   const role = req.params.role;
   try {
-    const def = (await db.query('SELECT * FROM role_definitions WHERE role = $1', [role])).rows[0];
-    if (!def) return res.status(404).json({ error: 'Role not found' });
+    /* WHOSE role is this?
+     *
+     * A non-platform caller may only touch a role their own organisation
+     * defined. Built-in roles are shared by every business on the install —
+     * an Owner widening "Sales" would widen it for all of them, which is
+     * precisely why this endpoint used to be closed to them entirely.
+     *
+     * 404 rather than 403 for another organisation's role, so this cannot
+     * be used to discover what roles other companies have invented. */
+    const callerOrg = isCrossTenant(req.user?.role) ? null : (req.user?.orgId ?? req.user?.id);
+    const def = (await db.query(
+      `SELECT * FROM role_definitions
+        WHERE role = $1 AND org_id IS NOT DISTINCT FROM $2`,
+      [role, callerOrg])).rows[0];
+    if (!def) {
+      if (callerOrg == null) return res.status(404).json({ error: 'Role not found' });
+      const builtin = await db.query(
+        'SELECT 1 FROM role_definitions WHERE role = $1 AND org_id IS NULL', [role]);
+      if (builtin.rowCount) {
+        return res.status(403).json({
+          error: `"${role}" is a built-in role, shared by every organisation`,
+          detail: 'Copy it into a role of your own and change that instead.',
+        });
+      }
+      return res.status(404).json({ error: 'Role not found' });
+    }
     if (def.is_system) {
       return res.status(400).json({
         error: `"${role}" is a built-in role and cannot be deleted`,
@@ -279,7 +370,12 @@ exports.deleteRole = async (req, res) => {
         userCount: users,
       });
     }
-    await db.query('DELETE FROM role_definitions WHERE role = $1', [role]);   // cascades to permissions
+    await db.query(
+      'DELETE FROM role_permissions WHERE role = $1 AND org_id IS NOT DISTINCT FROM $2',
+      [role, callerOrg]);
+    await db.query(
+      'DELETE FROM role_definitions WHERE role = $1 AND org_id IS NOT DISTINCT FROM $2',
+      [role, callerOrg]);
     await refresh();
     await log(req, role, 'deleted', null);
     res.json({ success: true });
