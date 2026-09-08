@@ -3,8 +3,22 @@ import { useNavigate, Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Loader2, AlertCircle, Building2, Sparkles } from 'lucide-react';
 
-const DEMO_EMAIL = 'admin@nexusop.com';
-const DEMO_PASSWORD = 'admin123';
+/* The demo login used to be two string literals here, which meant a working
+   administrator password was compiled into the JavaScript bundle and served
+   to anyone who opened the site. Not a hypothetical: this is deployed on a
+   public URL, self-registration is now open, and "admin123" is in the
+   public repository and its history.
+ *
+ * It now comes from the build environment, so it exists only where somebody
+ * has deliberately set it — a demo instance — and is absent from a normal
+ * production build. The button disappears with it rather than prefilling
+ * blanks and failing.
+ *
+ * This does not undo the exposure. The password still needs changing; what
+ * it stops is the next build shipping it again. */
+const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || '';
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || '';
+const DEMO_AVAILABLE = Boolean(DEMO_EMAIL && DEMO_PASSWORD);
 
 export default function Login() {
   const navigate = useNavigate();
@@ -184,18 +198,22 @@ export default function Login() {
             <span style={{ fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.04em', background: 'var(--brand-amber-muted)', color: 'var(--brand-amber)', padding: '2px 7px', borderRadius: 99, textTransform: 'uppercase' }}>Soon</span>
           </button>
 
-          {/* Try the demo — reveals the test login only on click */}
-          <button
-            type="button" onClick={revealDemo}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              padding: '11px 16px', borderRadius: 10, marginTop: 10, cursor: 'pointer',
-              background: 'transparent', border: '1px dashed var(--brand-amber)',
-              color: 'var(--brand-amber)', fontSize: '0.82rem', fontWeight: 700,
-            }}
-          >
-            <Sparkles size={14}/> {showDemo ? 'Demo login filled — press Sign In' : 'Try the demo account'}
-          </button>
+          {/* Only on a build that was given demo credentials. Without them
+              this button is absent rather than prefilling two blanks and
+              failing on submit. */}
+          {DEMO_AVAILABLE && (
+            <button
+              type="button" onClick={revealDemo}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '11px 16px', borderRadius: 10, marginTop: 10, cursor: 'pointer',
+                background: 'transparent', border: '1px dashed var(--brand-amber)',
+                color: 'var(--brand-amber)', fontSize: '0.82rem', fontWeight: 700,
+              }}
+            >
+              <Sparkles size={14}/> {showDemo ? 'Demo login filled — press Sign In' : 'Try the demo account'}
+            </button>
+          )}
 
           {/* Sign up */}
           <p style={{ textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 20, marginBottom: 0 }}>

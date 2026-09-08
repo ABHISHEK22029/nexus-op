@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { convert, loadUoms } = require('../shared/uom');
 const stock = require('../shared/stock');
-const { receiptTotals, syncPoReceipt, overReceiptError } = require('../shared/receiptProgress');
+const { receiptTotals, lineProgress, syncPoReceipt, overReceiptError } = require('../shared/receiptProgress');
 const { notify } = require('../notify');
 const { runList } = require('../shared/listQuery');
 
@@ -35,11 +35,39 @@ router.get('/', async (req, res) => {
   }
 });
 
+/* GET /grn/outstanding/:poId — what this purchase order still owes.
+ *
+ * A receipt form needs to show the lines with ordered / received /
+ * outstanding, so somebody at the gate books against the right one. Without
+ * this the form could only offer the header, which is how a three-material
+ * purchase order came to receive one quantity of the first thing on it. */
+router.get('/outstanding/:poId', async (req, res) => {
+  try {
+    const po = (await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.poId])).rows[0];
+    if (!po) return res.status(404).json({ error: 'PO not found' });
+    const lines = await lineProgress(db, po.id);
+    const totals = await receiptTotals(db, po.id);
+    res.json({
+      poId: po.id, poNumber: po.poNumber, status: po.status,
+      itemName: po.itemName,
+      /* A purchase order with no line items is represented as one synthetic
+         line, so the form has a single shape to render rather than two. */
+      lines: lines.length ? lines : [{
+        id: null, sno: 1, description: po.itemName, uom: null,
+        ordered: totals.ordered, received: totals.received,
+        outstanding: totals.outstanding, complete: totals.complete,
+      }],
+      ordered: totals.ordered, received: totals.received, outstanding: totals.outstanding,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Create GRN: Record inward material, mark PO delivered, update inventory
 router.post('/', async (req, res) => {
   // receivedUomCode: the unit the goods actually arrived in (e.g. 'mt').
   // Defaults to the PO line's unit, then the material's purchase unit.
-  const { projectId, workOrderId, poId, vehicleNumber, batchNumber, chainage, receivedQuantity, receivedUomCode } = req.body;
+  const { projectId, workOrderId, poId, vehicleNumber, batchNumber, chainage, receivedQuantity, receivedUomCode,
+          poLineItemId } = req.body;
 
   if (!poId || receivedQuantity === undefined) {
     return res.status(400).json({ error: 'poId and receivedQuantity are required' });
@@ -81,7 +109,37 @@ router.post('/', async (req, res) => {
           : 'PO must be Dispatched before goods can be received against it');
     }
 
-    const totals = await receiptTotals(client, poId);
+    /* WHICH LINE is being received.
+     *
+     * This read po.itemName — the header — and nothing else. A purchase
+     * order for plate, angle and fasteners therefore took one quantity of
+     * whatever the header said, and the other two materials never entered
+     * stock at all. PO 9 on this database has two lines, 3000 and 2000 Cum
+     * of different aggregate, and both still show received_quantity 0 while
+     * the header claims 5000 arrived.
+     *
+     * With one line the answer is unambiguous and is chosen automatically —
+     * 10 of the 11 purchase orders here, so nothing changes for them. With
+     * several, guessing is worse than asking. */
+    const poLines = (await client.query(
+      'SELECT * FROM po_line_items WHERE "poId" = $1 ORDER BY sno, id', [poId])).rows;
+
+    let line = null;
+    if (poLineItemId) {
+      line = poLines.find(l => String(l.id) === String(poLineItemId));
+      if (!line) return await refuse(400, 'That line is not on this purchase order');
+    } else if (poLines.length > 1) {
+      return await refuse(400,
+        `This purchase order has ${poLines.length} lines — say which one is being received. ` +
+        poLines.map(l => `${l.id}: ${l.description} (${l.quantity} ${l.uom || ''})`.trim()).join('; '));
+    } else if (poLines.length === 1) {
+      line = poLines[0];
+    }
+
+    /* What arrived, named by the line when there is one. */
+    const receivedItemName = line?.description || po.itemName;
+
+    const totals = await receiptTotals(client, poId, line?.id ?? null);
     if (totals.complete) {
       return await refuse(409,
         `This purchase order is already fully received (${totals.received} of ${totals.ordered}).`);
@@ -104,9 +162,10 @@ router.post('/', async (req, res) => {
 
     // Step 2: Insert GRN record
     const grnResult = await client.query(
-      `INSERT INTO grn ("projectId", "workOrderId", "poId", "vehicleNumber", "batchNumber", chainage, "receivedQuantity")
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [resolvedProjectId, resolvedWorkOrderId, poId, vehicleNumber || null, batchNumber || null, chainage || null, receivedQuantity]
+      `INSERT INTO grn ("projectId", "workOrderId", "poId", "vehicleNumber", "batchNumber", chainage, "receivedQuantity", po_line_item_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [resolvedProjectId, resolvedWorkOrderId, poId, vehicleNumber || null, batchNumber || null, chainage || null,
+       receivedQuantity, line?.id ?? null]
     );
     const grnId = grnResult.rows[0].id;
 
@@ -126,7 +185,7 @@ router.post('/', async (req, res) => {
       `SELECT * FROM raw_materials
        WHERE btrim(regexp_replace(lower(translate(name, '×X', 'xx')), '[^a-z0-9]+', ' ', 'g')) = $1
        LIMIT 1`,
-      [norm(po.itemName)]
+      [norm(receivedItemName)]
     )).rows[0];
     const materialId = material?.id || null;
 
@@ -186,7 +245,7 @@ router.post('/', async (req, res) => {
           WHERE "itemName" = $1 AND raw_material_id IS NULL
             AND owner_id IS NOT DISTINCT FROM $2
           ORDER BY id LIMIT 1`,
-        [po.itemName, ownerId]);
+        [receivedItemName, ownerId]);
 
     let inventoryId;
     if (invResult.rows.length > 0) {
@@ -204,7 +263,7 @@ router.post('/', async (req, res) => {
       inventoryId = (await client.query(
         `INSERT INTO inventory ("projectId", "itemName", quantity, raw_material_id, uom, unit_cost, owner_id)
          VALUES ($1, $2, 0, $3, $4, $5, $6) RETURNING id`,
-        [resolvedProjectId, po.itemName, materialId,
+        [resolvedProjectId, receivedItemName, materialId,
          material?.base_uom || material?.unit || null, po.unitPrice ?? null, ownerId]
       )).rows[0].id;
     }
@@ -220,7 +279,7 @@ router.post('/', async (req, res) => {
       ownerId,
       inventoryId,
       rawMaterialId: materialId,
-      itemName: po.itemName,
+      itemName: receivedItemName,
       quantity: stockQty,              // positive: goods coming in
       uom: material?.base_uom || material?.unit || null,
       unitCost: po.unitPrice ?? null,

@@ -233,6 +233,84 @@ const state = async (invId) => {
     inv2.forEach(r => created.inventory.push(r.id));
   }
 
+  /* ══ 2c. A MULTI-LINE PURCHASE ORDER ══════════════════════
+     GRN read po.itemName — the header — so an order for three materials
+     received one quantity of whatever the header said and the other two
+     never entered stock. PO 9 on this database has two lines, both still
+     showing received 0 while the header claims 5000 arrived. */
+  console.log('\n  ── 2c. a purchase order with three lines');
+  /* Lines are a second call — POST /po creates the header, POST /po/:id/items
+     replaces its lines with an array. The first version of this passed
+     lineItems to POST /po, which ignores it, so the order came back with a
+     single synthetic line and the test read that as the bug it was hunting. */
+  const po3 = await call('/po', {
+    method: 'POST',
+    body: JSON.stringify({
+      projectId, vendorId, itemName: `${TAG} Assembly kit`, quantity: 60, unitPrice: 100,
+    }),
+  });
+  const po3Id = po3.body.id ?? po3.body.po?.id;
+  if (po3Id) {
+    created.po.push(po3Id);
+    const addLines = await call(`/po/${po3Id}/items`, {
+      method: 'POST',
+      body: JSON.stringify([
+        { sno: 1, description: `${TAG} Plate 6mm`,  quantity: 30, unitPrice: 100, uom: 'nos' },
+        { sno: 2, description: `${TAG} Angle 40mm`, quantity: 20, unitPrice: 100, uom: 'nos' },
+        { sno: 3, description: `${TAG} Bolt M12`,   quantity: 10, unitPrice: 100, uom: 'nos' },
+      ]),
+    });
+    ok(addLines.ok, `three lines added to the order (${addLines.status})`);
+    await call(`/po/${po3Id}/approve`,  { method: 'PATCH', body: '{}' });
+    await call(`/po/${po3Id}/dispatch`, { method: 'PATCH', body: '{}' });
+
+    const out = await call(`/grn/outstanding/${po3Id}`);
+    ok(out.ok, `the outstanding endpoint answers (${out.status})`);
+    ok((out.body.lines || []).length === 3,
+      `it reports all three lines, not just the header (${(out.body.lines || []).length})`);
+
+    /* Receiving without saying which line must be refused, not guessed. */
+    const guess = await call('/grn', {
+      method: 'POST', body: JSON.stringify({ poId: po3Id, receivedQuantity: 30 }),
+    });
+    ok(!guess.ok, `a receipt that does not name a line is refused (${guess.status})`);
+    ok(/say which one/i.test(guess.body?.error || ''), 'and it says why');
+
+    /* Book against the second line only. */
+    const angle = (out.body.lines || []).find(l => /Angle/.test(l.description));
+    const r2 = await call('/grn', {
+      method: 'POST',
+      body: JSON.stringify({ poId: po3Id, poLineItemId: angle.id, receivedQuantity: 20 }),
+    });
+    ok(r2.ok, `the angle line can be received on its own (${r2.status})`);
+    if (r2.body?.grnId) created.grn.push(r2.body.grnId);
+
+    const after = (await call(`/grn/outstanding/${po3Id}`)).body;
+    const byName = (n) => (after.lines || []).find(l => new RegExp(n).test(l.description)) || {};
+    ok(byName('Angle').received === 20, `the angle line shows 20 received → ${byName('Angle').received}`);
+    ok(byName('Plate').received === 0,  `the plate line is untouched → ${byName('Plate').received}`);
+    ok(byName('Bolt').outstanding === 10, `the bolt line still owes 10 → ${byName('Bolt').outstanding}`);
+
+    /* Stock must be created under the LINE's name, not the header's. */
+    const { rows: invRows } = await db.query(
+      `SELECT "itemName", quantity FROM inventory WHERE "itemName" LIKE $1`, [`${TAG}%`]);
+    invRows.forEach(r => {});
+    /* By exact name. `/Angle/` also matched "Angle 50mm" from section 2b,
+       which holds 43 — so the assertion read another test's stock and
+       reported this one as wrong. */
+    const angleStock = invRows.find(r => r.itemName === `${TAG} Angle 40mm`);
+    ok(!!angleStock, `stock was created under the line's name, not the header's (${invRows.map(r => r.itemName).join(', ') || 'none'})`);
+    ok(Number(angleStock?.quantity) === 20, `with the received quantity → ${angleStock?.quantity}`);
+
+    const { rows: ids } = await db.query(`SELECT id FROM inventory WHERE "itemName" LIKE $1`, [`${TAG}%`]);
+    ids.forEach(r => { if (!created.inventory.includes(r.id)) created.inventory.push(r.id); });
+
+    /* The order is Partially Received while two lines are outstanding. */
+    const { rows: [st] } = await db.query('SELECT status FROM purchase_orders WHERE id = $1', [po3Id]);
+    ok(st.status === 'Partially Received',
+      `the order is Partially Received while two lines are owed → ${st.status}`);
+  }
+
   /* ══ 3. STOCK TAKE ═════════════════════════════════════════ */
   console.log('\n  ── 3. stock take');
   const before = (await state(invId)).balance;

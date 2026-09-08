@@ -41,7 +41,28 @@ const OVER_RECEIPT_TOLERANCE = 0.10;
  * quantity — most purchase orders here have a single line and predate
  * po_line_items entirely, so the header is the only figure they carry.
  */
-async function receiptTotals(client, poId) {
+async function receiptTotals(client, poId, poLineItemId = null) {
+  /* Asked of ONE LINE when a line is named. A purchase order for plate,
+     angle and fasteners is three separate obligations, and "is it fully
+     received" has three separate answers — comparing a single line's
+     delivery against the whole order's quantity would let the first line
+     be over-received while the other two had not arrived. */
+  if (poLineItemId != null) {
+    const { rows: [l] } = await client.query(
+      `SELECT
+         (SELECT COALESCE(quantity, 0) FROM po_line_items WHERE id = $1) AS ordered,
+         (SELECT COALESCE(SUM("receivedQuantity"), 0) FROM grn WHERE po_line_item_id = $1) AS received`,
+      [poLineItemId]);
+    const ordered = Number(l.ordered) || 0;
+    const received = Number(l.received) || 0;
+    return {
+      ordered, received,
+      outstanding: Math.max(0, ordered - received),
+      complete: ordered > 0 && received >= ordered - TOL,
+      scope: 'line',
+    };
+  }
+
   const { rows: [t] } = await client.query(
     `SELECT
        (SELECT COALESCE(SUM(quantity), 0) FROM po_line_items WHERE "poId" = $1) AS line_qty,
@@ -57,7 +78,31 @@ async function receiptTotals(client, poId) {
     received,
     outstanding: Math.max(0, ordered - received),
     complete: ordered > 0 && received >= ordered - TOL,
+    scope: 'order',
   };
+}
+
+/**
+ * Every line of a purchase order, with what is ordered, received and still
+ * owed — what a receipt form needs to show somebody standing at the gate.
+ */
+async function lineProgress(client, poId) {
+  const { rows } = await client.query(
+    `SELECT l.id, l.sno, l.description, l.uom, l.quantity AS ordered,
+            COALESCE((SELECT SUM(g."receivedQuantity") FROM grn g
+                       WHERE g.po_line_item_id = l.id), 0) AS received
+       FROM po_line_items l
+      WHERE l."poId" = $1
+      ORDER BY l.sno, l.id`, [poId]);
+  return rows.map(r => {
+    const ordered = Number(r.ordered) || 0;
+    const received = Number(r.received) || 0;
+    return {
+      ...r, ordered, received,
+      outstanding: Math.max(0, ordered - received),
+      complete: ordered > 0 && received >= ordered - TOL,
+    };
+  });
 }
 
 /**
@@ -90,6 +135,14 @@ async function syncPoReceipt(client, poId) {
     'UPDATE purchase_orders SET received_quantity = $1 WHERE id = $2',
     [t.received, poId]);
 
+  /* Keep each line's own total current too, so the receipt form can show
+     what is still owed per line without recomputing it every time. */
+  await client.query(
+    `UPDATE po_line_items l
+        SET received_quantity = COALESCE(
+              (SELECT SUM(g."receivedQuantity") FROM grn g WHERE g.po_line_item_id = l.id), 0)
+      WHERE l."poId" = $1`, [poId]);
+
   if (t.received <= 0) {
     return { ...t, status: null, changed: false };
   }
@@ -103,6 +156,6 @@ async function syncPoReceipt(client, poId) {
 }
 
 module.exports = {
-  receiptTotals, syncPoReceipt, overReceiptError,
+  receiptTotals, lineProgress, syncPoReceipt, overReceiptError,
   OVER_RECEIPT_TOLERANCE,
 };
