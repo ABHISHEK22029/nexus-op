@@ -32,7 +32,7 @@ exports.list = async (req, res) => {
     const where = ['is_active'];
     if (kind) { params.push(kind); where.push(`kind = $${params.length}`); }
     if (!isCrossTenant(req.user?.role)) {
-      params.push(req.user?.id ?? -1);
+      params.push(req.user?.orgId ?? -1);
       /* NULL owner_id means a category that shipped with the product rather
          than one this business created. Both are usable. */
       where.push(`(owner_id = $${params.length} OR owner_id IS NULL)`);

@@ -22,7 +22,7 @@ const { isCrossTenant } = require('../shared/roles');
 exports.readiness = async (req, res) => {
   try {
     const admin = isCrossTenant(req.user?.role);
-    const owner = req.user?.id;
+    const owner = req.user?.orgId;
     // Owner-scoped unless the platform admin is looking.
     const scope = (col = 'owner_id') => (admin ? '' : ` AND ${col} = ${Number(owner) || -1}`);
     /* Twelve scalar counts in ONE statement, not twelve concurrent queries.

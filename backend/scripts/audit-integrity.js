@@ -100,6 +100,24 @@ const CHECKS = [
     sql: `SELECT id, "itemName", quantity FROM inventory WHERE owner_id IS NULL ORDER BY id`,
   },
   {
+    /* Found the hard way: POST /vendors never wrote owner_id, so four
+       vendors were invisible to everyone including the person who added
+       them. A create path that forgets the owner is silent until somebody
+       goes looking for the record, so it is worth asking of every table
+       rather than only the one that failed. */
+    area: 'Master data', severity: 'BROKEN',
+    name: 'a business record with no owner',
+    why: 'owner-scoped lists cannot see it, so it is invisible to the company that created it',
+    sql: `SELECT 'vendor'   AS kind, id, COALESCE(name,'(unnamed)') AS label FROM vendors   WHERE owner_id IS NULL
+           UNION ALL
+          SELECT 'customer',   id, COALESCE(name,'(unnamed)')       FROM customers WHERE owner_id IS NULL
+           UNION ALL
+          SELECT 'project',    id, COALESCE(name,'(unnamed)')       FROM projects  WHERE owner_id IS NULL
+           UNION ALL
+          SELECT 'work order', id, COALESCE(name,'(unnamed)')       FROM work_orders WHERE owner_id IS NULL
+          ORDER BY 1, 2`,
+  },
+  {
     area: 'Stock', severity: 'WARN',
     name: 'the same item held on more than one row',
     why: 'a reorder level on one row is compared against a fraction of the stock',

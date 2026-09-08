@@ -129,7 +129,7 @@ exports.getOrders = async (req, res) => {
       params.push(projectId);
       where.push(`"projectId" = $${params.length}`);
     } else if (!isCrossTenant(req.user?.role)) {
-      params.push(req.user?.id ?? -1);
+      params.push(req.user?.orgId ?? -1);
       where.push(`owner_id = $${params.length}`);
     }
     const result = await runList(db, {
@@ -176,7 +176,7 @@ exports.createOrder = async (req, res) => {
      need a project: "make 200 brackets for Apollo" is a complete instruction. */
   if (!productName) return res.status(400).json({ error: 'productName is required' });
   try {
-    const prodNumber = await nextProdNumber(projectId, req.user?.id);
+    const prodNumber = await nextProdNumber(projectId, req.user?.orgId);
     const { rows } = await db.query(
       `INSERT INTO production_orders ("projectId", "workOrderId", prod_number, product_name, planned_qty, output_uom, notes, owner_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
@@ -448,10 +448,10 @@ exports.createFromOrderItem = async (req, res) => {
       `SELECT coi.* FROM customer_order_items coi
        JOIN customer_orders co ON co.id = coi.customer_order_id
        WHERE coi.id = $1${isCrossTenant(req.user?.role) ? '' : ' AND co.owner_id = $2'}`,
-      isCrossTenant(req.user?.role) ? [req.params.itemId] : [req.params.itemId, req.user?.id]
+      isCrossTenant(req.user?.role) ? [req.params.itemId] : [req.params.itemId, req.user?.orgId]
     )).rows[0];
     if (!item) return res.status(404).json({ error: 'Order line not found' });
-    const prodNumber = await nextProdNumber(projectId, req.user?.id);
+    const prodNumber = await nextProdNumber(projectId, req.user?.orgId);
     /* owner_id is set here for the same reason createOrder sets it: an
        unowned production order is invisible to owner scoping, and its
        finished goods land on a NULL-owner stock row while dispatch looks up

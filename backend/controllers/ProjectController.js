@@ -12,7 +12,7 @@ exports.getProjects = async (req, res) => {
   try {
     const where = [], params = [];
     if (!isCrossTenant(req.user?.role)) {
-      params.push(req.user.id);
+      params.push(req.user.orgId);
       where.push(`owner_id = $${params.length}`);
     }
     const result = await runList(db, {

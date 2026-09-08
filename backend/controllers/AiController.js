@@ -57,7 +57,7 @@ const TOOLS = [
 const HANDLERS = {
   async get_business_overview(_args, req) {
     const admin = isAdmin(req);
-    const uid = req.user.id;
+    const uid = req.user.orgId;
     const own = admin ? '' : ' AND owner_id = $1';
     const proj = admin ? '' : ' AND "projectId" IN (SELECT id FROM projects WHERE owner_id = $1)';
     const p = admin ? [] : [uid];
@@ -88,7 +88,7 @@ const HANDLERS = {
         WHERE si.due_date < CURRENT_DATE AND si.status <> 'Paid' AND si.net_amount > COALESCE(si.amount_paid,0)
         ${admin ? '' : 'AND si.owner_id = $1'}
         ORDER BY si.due_date ASC LIMIT 25`,
-      admin ? [] : [req.user.id]);
+      admin ? [] : [req.user.orgId]);
     if (!rows.length) return { message: 'No overdue invoices. 🎉' };
     return rows.map(r => ({ invoice: r.invoice_number, customer: r.customer, outstanding: inr(r.net_amount - r.paid), dueDate: r.due_date, daysOverdue: r.days_overdue }));
   },
@@ -100,7 +100,7 @@ const HANDLERS = {
          FROM purchase_orders WHERE approval_status = 'Pending Approval'
         ${admin ? '' : 'AND "projectId" IN (SELECT id FROM projects WHERE owner_id = $1)'}
         ORDER BY id DESC LIMIT 25`,
-      admin ? [] : [req.user.id]);
+      admin ? [] : [req.user.orgId]);
     if (!rows.length) return { message: 'No purchase orders are waiting for sign-off.' };
     return rows.map(r => ({ po: r.poNumber, item: r.itemName, qty: r.quantity, unitPrice: r.unitPrice != null ? inr(r.unitPrice) : null }));
   },
@@ -127,7 +127,7 @@ const HANDLERS = {
         WHERE (co.order_number ILIKE $1 OR c.name ILIKE $1)
         ${admin ? '' : 'AND co.owner_id = $2'}
         ORDER BY co.id DESC LIMIT 5`,
-      admin ? [q] : [q, req.user.id]);
+      admin ? [q] : [q, req.user.orgId]);
     if (!rows.length) return { message: 'No matching customer orders.' };
     const out = [];
     for (const o of rows) {
@@ -143,7 +143,7 @@ const HANDLERS = {
     const { rows } = await db.query(
       `SELECT name, gstin, state, contact_name, phone FROM customers
         WHERE name ILIKE $1 ${admin ? '' : 'AND owner_id = $2'} ORDER BY name LIMIT 10`,
-      admin ? [q] : [q, req.user.id]);
+      admin ? [q] : [q, req.user.orgId]);
     if (!rows.length) return { message: 'No matching customers.' };
     return rows.map(r => ({ name: r.name, gstin: r.gstin, state: r.state, contact: r.contact_name, phone: r.phone }));
   },
@@ -153,7 +153,7 @@ const HANDLERS = {
     const q = `%${(args?.sku || '').trim()}%`;
     const sku = (await db.query(
       `SELECT id, name, unit FROM skus WHERE name ILIKE $1 ${admin ? '' : 'AND owner_id = $2'} ORDER BY name LIMIT 1`,
-      admin ? [q] : [q, req.user.id])).rows[0];
+      admin ? [q] : [q, req.user.orgId])).rows[0];
     if (!sku) return { message: 'No matching SKU/product.' };
     const lines = (await db.query('SELECT component_name, qty_per_unit, uom FROM sku_bom WHERE sku_id = $1 ORDER BY id', [sku.id])).rows;
     if (!lines.length) return { sku: sku.name, message: 'No recipe (BOM) set for this product yet. Set one on Catalog → SKUs → Recipe.' };
@@ -163,7 +163,7 @@ const HANDLERS = {
   async list_vendor_payables(_args, req) {
     const admin = isAdmin(req);
     const scope = admin ? '' : 'AND gb."projectId" IN (SELECT id FROM projects WHERE owner_id = $1)';
-    const params = admin ? [] : [req.user.id];
+    const params = admin ? [] : [req.user.orgId];
     const { rows } = await db.query(
       `SELECT gb.bill_number, v.name AS vendor, (gb.net_amount - COALESCE(gb.amount_paid,0)) AS outstanding,
               (CURRENT_DATE - COALESCE(gb.due_date, gb.bill_date)) AS days_overdue, gb.payment_status
@@ -182,7 +182,7 @@ const HANDLERS = {
          FROM delivery_challans dc LEFT JOIN customers c ON c.id = dc.customer_id
         ${admin ? '' : 'WHERE dc.owner_id = $1'}
         ORDER BY dc.id DESC LIMIT 20`,
-      admin ? [] : [req.user.id]);
+      admin ? [] : [req.user.orgId]);
     if (!rows.length) return { message: 'No delivery challans yet.' };
     return rows.map(r => ({ challan: r.challan_number, customer: r.customer, value: inr(r.total_value), status: r.status, vehicle: r.vehicle_no, date: r.challan_date }));
   },
@@ -195,7 +195,7 @@ const HANDLERS = {
         WHERE sq.status NOT IN ('Converted','Rejected')
         ${admin ? '' : 'AND sq.owner_id = $1'}
         ORDER BY sq.id DESC LIMIT 25`,
-      admin ? [] : [req.user.id]);
+      admin ? [] : [req.user.orgId]);
     if (!rows.length) return { message: 'No open quotations.' };
     return rows.map(r => ({ quote: r.quote_number, customer: r.customer, amount: inr(r.net_amount), status: r.status, validUntil: r.valid_until }));
   },

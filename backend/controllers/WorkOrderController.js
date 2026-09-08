@@ -81,7 +81,7 @@ exports.createMilestone = async (req, res) => {
     const own = isCrossTenant(req.user?.role)
       ? await db.query('SELECT id FROM work_orders WHERE id = $1', [workOrderId])
       : await db.query('SELECT id FROM work_orders WHERE id = $1 AND owner_id = $2',
-          [workOrderId, req.user.id]);
+          [workOrderId, req.user.orgId]);
     if (!own.rowCount) return res.status(404).json({ error: 'Work order not found' });
 
     const { rows } = await db.query(
@@ -108,7 +108,7 @@ exports.getMilestones = async (req, res) => {
        work order it hangs off. */
     const where = [], params = [];
     if (!isCrossTenant(req.user?.role)) {
-      params.push(req.user.id);
+      params.push(req.user.orgId);
       where.push(`owner_id = $${params.length}`);
     }
     const result = await runList(db, {

@@ -300,7 +300,7 @@ app.get('/vendors', async (req, res) => {
        through registerOwnedCrud; this route and /inventory are hand-written
        and were missed. Cross-tenant roles (Administrator) still see all. */
     if (!isCrossTenant(req.user?.role)) {
-      params.push(req.user.id);
+      params.push(req.user.orgId);
       where.push(`owner_id = $${params.length}`);
     }
     if (req.query.projectId) { params.push(req.query.projectId); where.push(`"projectId" = $${params.length}`); }
@@ -347,11 +347,16 @@ app.post('/vendors', async (req, res) => {
   try {
     const cols = VENDOR_COLUMNS.filter(c => c in req.body);
     const values = cols.map(c => (req.body[c] === '' ? null : req.body[c]));
-    const quoted = ['"projectId"', ...cols.map(c => `"${c}"`)].join(', ');
-    const ph = ['$1', ...cols.map((_, i) => `$${i + 2}`)].join(', ');
+    /* owner_id was never written here. Harmless while the list was
+       unscoped; the moment it was owner-scoped, every vendor added through
+       this endpoint became invisible to everybody — including the person
+       who had just added it. Four rows on this database are in that state.
+       They are the organisation's, like every other business record. */
+    const quoted = ['"projectId"', 'owner_id', ...cols.map(c => `"${c}"`)].join(', ');
+    const ph = ['$1', '$2', ...cols.map((_, i) => `$${i + 3}`)].join(', ');
     const { rows } = await db.query(
       `INSERT INTO vendors (${quoted}) VALUES (${ph}) RETURNING id`,
-      [projectId || null, ...values]
+      [projectId || null, req.user?.orgId ?? req.user?.id ?? null, ...values]
     );
     await logActivity(projectId, 'VENDOR_ADDED', `Vendor "${name}" added to project`);
     res.json({ id: rows[0].id });
@@ -639,7 +644,7 @@ app.put('/automation-settings', allow('automation-settings', 'write'), async (re
     await db.query(
       `INSERT INTO automation_settings (owner_id, po_approval_threshold, updated_at) VALUES ($1,$2,NOW())
        ON CONFLICT (owner_id) DO UPDATE SET po_approval_threshold = EXCLUDED.po_approval_threshold, updated_at = NOW()`,
-      [req.user.id, t]
+      [req.user.orgId, t]
     );
     res.json({ success: true, po_approval_threshold: t });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -801,7 +806,7 @@ app.get('/inventory', async (req, res) => {
        cosmetic leak: those quantities feed the deficiency engine and the
        dashboard's stock value. */
     if (!isCrossTenant(req.user?.role)) {
-      params.push(req.user.id);
+      params.push(req.user.orgId);
       where.push(`owner_id = $${params.length}`);
     }
     if (req.query.projectId) { params.push(req.query.projectId); where.push(`"projectId" = $${params.length}`); }

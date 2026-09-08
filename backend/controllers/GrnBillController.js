@@ -122,7 +122,7 @@ exports.list = async (req, res) => {
        reference, long before anyone recalls "GB-0007". */
     const where = [], params = [];
     if (!isCrossTenant(req.user?.role)) {
-      params.push(req.user.id);
+      params.push(req.user.orgId);
       where.push(`owner_id = $${params.length}`);
     }
     const result = await runList(db, {

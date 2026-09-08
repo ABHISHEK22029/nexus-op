@@ -50,7 +50,7 @@ exports.list = async (req, res) => {
          LEFT JOIN customers c ON c.id = rp.customer_id
         ${admin ? '' : 'WHERE rp.owner_id = $1'}
         ORDER BY rp.active DESC, rp.next_run ASC`,
-      admin ? [] : [req.user.id]
+      admin ? [] : [req.user.orgId]
     );
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
