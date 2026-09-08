@@ -75,6 +75,19 @@ const ORGS = [
       body: JSON.stringify({ name: `Buyer of ${o.key} ${stamp}`, gstin: `33ZZZZZ1234Z1Z5`, state: 'Tamil Nadu' }),
     }, o.token);
     o.customerId = cust.body?.id;
+
+    /* Registered in Tamil Nadu (33), taking delivery in Karnataka (29).
+       Under GST the split follows the PLACE OF SUPPLY, so for org A — also
+       in 33 — this is an INTERSTATE sale despite matching GSTINs. Reading
+       the customer's registration instead gets it exactly backwards. */
+    const shipCust = await call('/customers', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: `Ships-elsewhere ${o.key} ${stamp}`, gstin: '33ZZZZZ1234Z1Z5',
+        state: 'Tamil Nadu', shipping_state: 'Karnataka',
+      }),
+    }, o.token);
+    o.shipCustomerId = shipCust.body?.id;
   }
   ok(ORGS.every(o => o.token && o.customerId), 'two organisations, different names, GSTINs and states');
 
@@ -101,6 +114,26 @@ const ORGS = [
     ok(!!full.interstate === expectInterstate,
       `${o.key}: taxed against its OWN state — ${expectInterstate ? 'IGST' : 'CGST+SGST'} ` +
       `(cgst ${full.cgst} sgst ${full.sgst} igst ${full.igst})`);
+  }
+
+  /* ── place of supply follows the ship-to ───────────────── */
+  console.log('\n  ── and is taxed on where the goods go');
+  for (const o of ORGS) {
+    if (!o.shipCustomerId) { ok(false, `${o.key}: no ship-elsewhere customer`); continue; }
+    const q = await call('/sales-quotations', {
+      method: 'POST',
+      body: JSON.stringify({
+        customerId: o.shipCustomerId, gstRate: 18, notes: stamp,
+        items: [{ description: 'Panel', quantity: 1, rate: 1000 }],
+      }),
+    }, o.token);
+    if (!q.ok) { ok(false, `${o.key}: quotation refused — ${q.body.error}`); continue; }
+    const full = (await call(`/sales-quotations/${q.body.id}`, {}, o.token)).body;
+    /* Delivery is in 29. Org A is 33 → interstate. Org B is 29 → intra. */
+    const expectInterstate = o.state !== '29';
+    ok(!!full.interstate === expectInterstate,
+      `${o.key}: a customer registered in 33 but shipping to 29 is taxed on the SHIP-TO — ` +
+      `${expectInterstate ? 'IGST' : 'CGST+SGST'} (cgst ${full.cgst} igst ${full.igst})`);
   }
 
   /* ── a delivery challan from each ──────────────────────── */

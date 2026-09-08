@@ -5,6 +5,7 @@
    sales-invoice logic; owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { isInterstate } = require('../shared/gstStates');
 const { profileFor } = require('../shared/companyProfile');
 const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
@@ -59,9 +60,24 @@ async function deriveInterstate(exec, customerId, ownerId = null) {
   let company = null, customer = null;
   try { company = await profileFor(exec, ownerId, '*'); } catch { /* optional */ }
   if (customerId) customer = (await exec.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
-  const companyState = String(company?.stateCode || (company?.gstin || '').substring(0, 2) || '');
-  const custState = String(customer?.gstin || '').substring(0, 2);
-  return !!custState && !!companyState && custState !== companyState;
+  /* PLACE OF SUPPLY, not the customer's registration.
+   *
+   * Under GST the CGST+SGST vs IGST split follows where the goods actually
+   * go. This read only the customer's GSTIN, so a customer registered in
+   * one state but taking delivery in another was quoted the wrong tax —
+   * and a quotation is what the customer agrees a price against, so the
+   * error carries into the order and the invoice.
+   *
+   * SalesInvoiceController.resolveTax has followed the ship-to address for
+   * a while; this is the same rule, and the same precedence: shipping
+   * state, then billing state, then whatever the GSTIN implies.
+   *
+   * Also uses the shared helper rather than slicing two characters by hand,
+   * so "Telangana" and "36" compare equal instead of never matching. */
+  const supplier = company?.stateCode || company?.gstin || null;
+  const placeOfSupply =
+    customer?.shipping_state || customer?.state || customer?.gstin || null;
+  return isInterstate(supplier, placeOfSupply) === true;
 }
 
 // GET /sales-quotations
@@ -116,7 +132,7 @@ exports.create = async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-    const interstate = await deriveInterstate(client, customerId, req.user?.id);
+    const interstate = await deriveInterstate(client, customerId, req.user?.orgId);
     const t = compute(items, { discount, gstRate, interstate, roundOff });
     /* From a sequence, not a count. COUNT(*) + 1 reissues a number after a
        delete and hands the same one to two people creating at once. */

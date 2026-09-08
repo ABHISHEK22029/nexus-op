@@ -5,6 +5,7 @@
    source invoice / bill. Documents (statements/exports net them).
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { isInterstate } = require('../shared/gstStates');
 const { profileFor } = require('../shared/companyProfile');
 const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
@@ -41,9 +42,20 @@ async function deriveInterstate(exec, partyType, partyId, ownerId = null) {
     const tbl = partyType === 'vendor' ? 'vendors' : 'customers';
     party = (await exec.query(`SELECT * FROM ${tbl} WHERE id = $1`, [partyId])).rows[0];
   }
-  const companyState = String(company?.stateCode || (company?.gstin || '').substring(0, 2) || '');
-  const partyState = String(party?.gstin || '').substring(0, 2);
-  return !!partyState && !!companyState && partyState !== companyState;
+  /* Place of supply — see the note in SalesQuotationController.
+   *
+   * A credit note reverses a supply, so it must be taxed the same way that
+   * supply was. Reading only the party's GSTIN meant a note against an
+   * interstate sale could come out as CGST+SGST, which does not reverse
+   * anything: the original IGST stays claimed and the return does not
+   * balance.
+   *
+   * A vendor has no ship-to on this system, so for the debit-note side the
+   * GSTIN is the whole answer and the fallbacks simply do not apply. */
+  const supplier = company?.stateCode || company?.gstin || null;
+  const placeOfSupply =
+    party?.shipping_state || party?.state || party?.gstin || null;
+  return isInterstate(supplier, placeOfSupply) === true;
 }
 
 // GET /credit-debit-notes
@@ -104,7 +116,7 @@ exports.create = async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-    const interstate = await deriveInterstate(client, partyType, partyId, req.user?.id);
+    const interstate = await deriveInterstate(client, partyType, partyId, req.user?.orgId);
     const lines = items.map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
     const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
     const gstTotal = r2(subTotal * (Number(gstRate) || 0) / 100);

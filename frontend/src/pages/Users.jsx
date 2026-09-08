@@ -17,15 +17,30 @@
    What is left here is the thing this page is genuinely good for: finding a
    colleague, and seeing at a glance who is in which department.
    ══════════════════════════════════════════════════════════ */
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Users as UsersIcon, Lock, Settings, ShieldCheck } from 'lucide-react';
+import AddPersonModal from '../components/AddPersonModal';
+import { Users as UsersIcon, Lock, Settings, ShieldCheck, UserPlus } from 'lucide-react';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
 export default function Users() {
   const { can, role } = usePermissions();
   const q = useListQuery('users', { pageSize: 25 });
+  const [adding, setAdding] = useState(false);
+  /* The modal offers whatever roles the server will actually accept — an
+     empty list would render a dropdown with nothing in it, and a hardcoded
+     one is how this page came to offer "Staff" and "Manager", roles no
+     account has ever held. */
+  const [roles, setRoles] = useState([]);
+  useEffect(() => {
+    const t = localStorage.getItem('nexus_token');
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/admin/roles`,
+      { headers: t ? { Authorization: `Bearer ${t}` } : {} })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setRoles(d?.roles || []))
+      .catch(() => {});
+  }, []);
 
   if (q.error && /not permitted/i.test(q.error)) return (
     <div style={{ maxWidth: 560, margin: '60px auto 0', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -72,10 +87,19 @@ export default function Users() {
           options: [{ value: 'true', label: 'Active' }, { value: 'false', label: 'Inactive' }],
         }]}
         right={isAdmin && (
-          <Link to="/configurator" className="btn-secondary"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-            <Settings size={13} /> Manage roles
-          </Link>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link to="/configurator/roles" className="btn-secondary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+              <Settings size={13} /> Manage roles
+            </Link>
+            {/* The screen called "Team" is where somebody goes to add a
+                colleague. Sending them to the Configurator to do it was a
+                detour through a menu they had no reason to know about. */}
+            <button onClick={() => setAdding(true)} className="btn-primary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+              <UserPlus size={13} /> Add person
+            </button>
+          </div>
         )}
       />
 
@@ -121,6 +145,8 @@ export default function Users() {
       </div>
 
       <Pagination q={q} />
+
+      {adding && <AddPersonModal roles={roles} onClose={() => setAdding(false)} onSaved={q.reload} />}
     </div>
   );
 }

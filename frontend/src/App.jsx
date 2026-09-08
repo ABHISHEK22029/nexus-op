@@ -1,71 +1,71 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import AppNav from './components/AppNav';
-import Dashboard from './pages/Dashboard';
-import Projects from './pages/Projects';
-import WorkOrders from './pages/WorkOrders';
-import Vendors from './pages/Vendors';
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Projects = lazy(() => import('./pages/Projects'));
+const WorkOrders = lazy(() => import('./pages/WorkOrders'));
+const Vendors = lazy(() => import('./pages/Vendors'));
 /* The 47-field VendorForm is no longer routed — /vendors/:id/edit uses
    VendorFormMinimal, so adding and editing a vendor are the same form. */
 /* The 47-field, 5-tab vendor form is kept for editing an existing vendor,
    where the extra fields are occasionally wanted. Creating one now uses the
    short form — 22 of 36 columns had never been filled once on real data. */
-import VendorFormMinimal from './pages/VendorFormMinimal';
-import PurchaseOrders from './pages/PurchaseOrders';
-import Inventory from './pages/Inventory';
-import ActivityLog from './pages/ActivityLog';
-import Bills from './pages/Bills';
-import ProcessFlow from './pages/ProcessFlow';
-import BOQ from './pages/BOQ';
-import Indent from './pages/Indent';
-import MeasurementBook from './pages/MeasurementBook';
-import Milestones from './pages/Milestones';
-import GRN from './pages/GRN';
-import Production from './pages/Production';
-import ProductionOrder from './pages/ProductionOrder';
-import Customers from './pages/Customers';
-import CustomerOrders from './pages/CustomerOrders';
-import SKUs from './pages/SKUs';
-import RawMaterials from './pages/RawMaterials';
-import Quotations from './pages/Quotations';
-import GrnBillBuilder from './pages/GrnBillBuilder';
-import GrnBillDoc from './pages/GrnBillDoc';
-import SalesInvoices from './pages/SalesInvoices';
-import SalesInvoiceBuilder from './pages/SalesInvoiceBuilder';
-import SalesInvoiceDoc from './pages/SalesInvoiceDoc';
-import Expenses from './pages/Expenses';
-import Reports from './pages/Reports';
-import Users from './pages/Users';
-import ImportData from './pages/Import';
-import Automation from './pages/Automation';
-import CompanyProfile from './pages/CompanyProfile';
-import Configurator from './pages/Configurator';
-import MaterialRequirements from './pages/MaterialRequirements';
-import VendorSupplies from './pages/VendorSupplies';
-import Items from './pages/Items';
-import CustomerDetail from './pages/CustomerDetail';
-import SmartKnowledge from './pages/SmartKnowledge';
-import KnowledgeArticle from './pages/KnowledgeArticle';
-import SalesQuotations from './pages/SalesQuotations';
-import SalesQuotationDoc from './pages/SalesQuotationDoc';
-import Payables from './pages/Payables';
-import DeliveryChallans from './pages/DeliveryChallans';
-import DeliveryChallanDoc from './pages/DeliveryChallanDoc';
-import CreditDebitNotes from './pages/CreditDebitNotes';
-import CreditDebitNoteDoc from './pages/CreditDebitNoteDoc';
-import Welcome from './pages/Welcome';
-import PlatformCapabilities from './pages/PlatformCapabilities';
-import HowItWorks from './pages/HowItWorks';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import AcceptInvite from './pages/AcceptInvite';
-import Onboarding from './pages/Onboarding';
-import GetStarted from './pages/GetStarted';
-import POInvoice from './pages/POInvoice';
-import RABillInvoice from './pages/RABillInvoice';
-import BetaWelcome from './pages/BetaWelcome';
-import FirstRun from './pages/FirstRun';
-import BetaOnboarding from './pages/BetaOnboarding';
+const VendorFormMinimal = lazy(() => import('./pages/VendorFormMinimal'));
+const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const ActivityLog = lazy(() => import('./pages/ActivityLog'));
+const Bills = lazy(() => import('./pages/Bills'));
+const ProcessFlow = lazy(() => import('./pages/ProcessFlow'));
+const BOQ = lazy(() => import('./pages/BOQ'));
+const Indent = lazy(() => import('./pages/Indent'));
+const MeasurementBook = lazy(() => import('./pages/MeasurementBook'));
+const Milestones = lazy(() => import('./pages/Milestones'));
+const GRN = lazy(() => import('./pages/GRN'));
+const Production = lazy(() => import('./pages/Production'));
+const ProductionOrder = lazy(() => import('./pages/ProductionOrder'));
+const Customers = lazy(() => import('./pages/Customers'));
+const CustomerOrders = lazy(() => import('./pages/CustomerOrders'));
+const SKUs = lazy(() => import('./pages/SKUs'));
+const RawMaterials = lazy(() => import('./pages/RawMaterials'));
+const Quotations = lazy(() => import('./pages/Quotations'));
+const GrnBillBuilder = lazy(() => import('./pages/GrnBillBuilder'));
+const GrnBillDoc = lazy(() => import('./pages/GrnBillDoc'));
+const SalesInvoices = lazy(() => import('./pages/SalesInvoices'));
+const SalesInvoiceBuilder = lazy(() => import('./pages/SalesInvoiceBuilder'));
+const SalesInvoiceDoc = lazy(() => import('./pages/SalesInvoiceDoc'));
+const Expenses = lazy(() => import('./pages/Expenses'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Users = lazy(() => import('./pages/Users'));
+const ImportData = lazy(() => import('./pages/Import'));
+const Automation = lazy(() => import('./pages/Automation'));
+const CompanyProfile = lazy(() => import('./pages/CompanyProfile'));
+const Configurator = lazy(() => import('./pages/Configurator'));
+const MaterialRequirements = lazy(() => import('./pages/MaterialRequirements'));
+const VendorSupplies = lazy(() => import('./pages/VendorSupplies'));
+const Items = lazy(() => import('./pages/Items'));
+const CustomerDetail = lazy(() => import('./pages/CustomerDetail'));
+const SmartKnowledge = lazy(() => import('./pages/SmartKnowledge'));
+const KnowledgeArticle = lazy(() => import('./pages/KnowledgeArticle'));
+const SalesQuotations = lazy(() => import('./pages/SalesQuotations'));
+const SalesQuotationDoc = lazy(() => import('./pages/SalesQuotationDoc'));
+const Payables = lazy(() => import('./pages/Payables'));
+const DeliveryChallans = lazy(() => import('./pages/DeliveryChallans'));
+const DeliveryChallanDoc = lazy(() => import('./pages/DeliveryChallanDoc'));
+const CreditDebitNotes = lazy(() => import('./pages/CreditDebitNotes'));
+const CreditDebitNoteDoc = lazy(() => import('./pages/CreditDebitNoteDoc'));
+const Welcome = lazy(() => import('./pages/Welcome'));
+const PlatformCapabilities = lazy(() => import('./pages/PlatformCapabilities'));
+const HowItWorks = lazy(() => import('./pages/HowItWorks'));
+const Login = lazy(() => import('./pages/Login'));
+const Signup = lazy(() => import('./pages/Signup'));
+const AcceptInvite = lazy(() => import('./pages/AcceptInvite'));
+const Onboarding = lazy(() => import('./pages/Onboarding'));
+const GetStarted = lazy(() => import('./pages/GetStarted'));
+const POInvoice = lazy(() => import('./pages/POInvoice'));
+const RABillInvoice = lazy(() => import('./pages/RABillInvoice'));
+const BetaWelcome = lazy(() => import('./pages/BetaWelcome'));
+const FirstRun = lazy(() => import('./pages/FirstRun'));
+const BetaOnboarding = lazy(() => import('./pages/BetaOnboarding'));
 import { PermissionProvider, usePermissions } from './context/PermissionContext';
 import { ProjectProvider, useProject } from './context/ProjectContext';
 import { AuthProvider } from './context/AuthContext';
@@ -160,7 +160,12 @@ const MarketingLayout = ({ children }) => (
 
 /* ─── Route Controller ──────────────────────────────────── */
 const AppRoutes = () => {
+  /* Each screen arrives when it is opened, rather than all sixty arriving
+     before the login form can render. The fallback is deliberately quiet —
+     a spinner that flashes for eighty milliseconds is worse than nothing,
+     and these chunks are small now that they are separate. */
   return (
+    <Suspense fallback={<div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading…</div>}>
     <Routes>
       {/* ── Auth ── */}
       <Route path="/login"       element={<Login />} />
@@ -248,6 +253,7 @@ const AppRoutes = () => {
       <Route path="/milestones"        element={<AppLayout><Milestones /></AppLayout>} />
       <Route path="*"                  element={<NotFound />} />
     </Routes>
+    </Suspense>
   );
 };
 

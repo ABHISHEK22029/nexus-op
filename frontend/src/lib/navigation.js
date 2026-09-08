@@ -96,9 +96,18 @@ export const MODULES = [
         badge: { endpoint: 'po', field: 'awaiting_approval', tone: 'warn', title: 'awaiting approval' } },
       { label: 'Goods received', path: '/grn', resource: 'grn' },
       { group: 'Pay' },
-      { label: 'Vendor bills', path: '/bills', resource: 'bills',
-        badge: { endpoint: 'bills', field: 'pending_approval', tone: 'warn', title: 'pending approval' } },
-      { label: 'Payables', path: '/payables', resource: 'payables' },
+      /* "Vendor bills" used to sit here pointing at /bills, which is the RA
+         Bills Engine — running-account billing against a measurement book,
+         a civil-contracting screen. So the Purchases menu offered vendor
+         bills and opened something else entirely, and the same path
+         appeared twice in the nav under two different names.
+       *
+         What a buyer actually wants here is what is owed and how old it
+         is, which is Payables — it reads grn_bills and records payments
+         against them. RA bills keep their own entry under Projects, where
+         the label matches the screen. */
+      { label: 'Payables', path: '/payables', resource: 'payables',
+        hint: 'What you owe suppliers, and how overdue it is' },
     ],
   },
   {

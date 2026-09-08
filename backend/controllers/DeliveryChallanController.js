@@ -58,7 +58,9 @@ exports.prefill = async (req, res) => {
     const items = (await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [co.id])).rows
       .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0 }));
     const customer = co.customer_id ? (await db.query('SELECT * FROM customers WHERE id = $1', [co.customer_id])).rows[0] : null;
-    res.json({ customerOrder: co, customerId: co.customer_id, customer, placeOfSupply: customer?.state || '', items });
+    res.json({ customerOrder: co, customerId: co.customer_id, customer, /* Ship-to first: the place of supply is where the goods GO, and a
+         challan is the document that travels with them. */
+      placeOfSupply: customer?.shipping_state || customer?.state || '', items });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
