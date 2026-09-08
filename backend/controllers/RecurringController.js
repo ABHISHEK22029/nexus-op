@@ -9,6 +9,7 @@
    what the user entered on the profile.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { profileFor } = require('../shared/companyProfile');
 const { nextSeq } = require('../shared/docNumber');
 const { assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
@@ -123,7 +124,11 @@ async function generateInvoice(client, p) {
   let interstate = false;
   if (p.customer_id) {
     let company = null;
-    try { company = (await client.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+    /* No request here — the scheduler runs this. The organisation comes from
+       the recurring profile itself. Reaching for req.user would have thrown
+       into the catch below and quietly produced an invoice with no company
+       name, address or GSTIN on it. */
+    try { company = await profileFor(client, p.owner_id); } catch { /* optional */ }
     const cust = (await client.query('SELECT * FROM customers WHERE id = $1', [p.customer_id])).rows[0];
     const companyState = String(company?.stateCode || (company?.gstin || '').substring(0, 2) || '');
     const custState = String(cust?.gstin || '').substring(0, 2);

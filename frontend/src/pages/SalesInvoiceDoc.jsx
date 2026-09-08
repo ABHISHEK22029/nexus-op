@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { useToast } from '../context/ToastContext';
+import EmailInvoiceModal from '../components/EmailInvoiceModal';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -14,6 +15,7 @@ export default function SalesInvoiceDoc() {
   const [inv, setInv] = useState(null);
   const [pay, setPay] = useState({ amount: '', mode: 'Bank', reference: '', paidDate: '' });
   const ref = useRef(null);
+  const [emailing, setEmailing] = useState(false);
 
   const load = () => fetch(`${API}/sales-invoices/${id}`).then(r => r.ok ? r.json() : null).then(setInv);
   useEffect(() => { load(); }, [id]);
@@ -78,6 +80,10 @@ export default function SalesInvoiceDoc() {
             {['Draft', 'Sent', 'Partially Paid', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <button onClick={pdf} className="inv-act-btn"><Download size={15} /> PDF</button>
+          {/* Sending it was the missing step: an invoice could be produced
+              and printed, and there was no way to get it to the customer
+              without leaving the product. */}
+          <button onClick={() => setEmailing(true)} className="inv-act-btn"><Mail size={15} /> Email</button>
           <button onClick={() => window.print()} className="inv-act-btn primary"><Printer size={15} /> Print</button>
         </div>
       </div>
@@ -264,6 +270,16 @@ export default function SalesInvoiceDoc() {
           <div className="inv-footer-right">{inv.invoice_number} &nbsp;|&nbsp; {date}</div>
         </div>
       </div>
+
+      {emailing && (
+        <EmailInvoiceModal
+          inv={inv}
+          onClose={() => setEmailing(false)}
+          /* The same PDF the toolbar produces, so what is attached is
+             exactly what was on screen. */
+          onDownloadPdf={pdf}
+        />
+      )}
     </div>
   );
 }

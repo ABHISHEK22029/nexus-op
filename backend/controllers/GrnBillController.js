@@ -4,6 +4,7 @@
    rates, add freight / other charges / discount, pick GST.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { profileFor } = require('../shared/companyProfile');
 const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
@@ -57,7 +58,7 @@ exports.prefill = async (req, res) => {
     // Shared intra/inter rule: derive from vendor vs company state code (GSTIN
     // first two digits). Same logic the PO invoice uses. The bill can override.
     let company = null;
-    try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
     const companyState = String(company?.stateCode || (company?.gstin || '').substring(0, 2) || '');
     const vendorState = String(vendor?.gstin || '').substring(0, 2);
     const interstate = !!vendorState && !!companyState && vendorState !== companyState;
@@ -157,7 +158,7 @@ exports.getById = async (req, res) => {
     const vendor = bill.vendor_id ? (await db.query('SELECT * FROM vendors WHERE id = $1', [bill.vendor_id])).rows[0] : null;
     const payments = (await db.query('SELECT * FROM vendor_payments WHERE grn_bill_id = $1 ORDER BY id', [req.params.id])).rows;
     let company = null;
-    try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
     res.json({ ...bill, items, vendor, payments, company });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

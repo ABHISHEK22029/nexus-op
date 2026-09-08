@@ -5,6 +5,7 @@
    All owner-scoped: admin sees all, a user sees only their own.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { profileFor } = require('../shared/companyProfile');
 const { computeOrder } = require('../shared/orderTotals');
 const { docNumber, loadProfile, nextSeq } = require('../shared/docNumber');
 const { isInterstate } = require('../shared/gstStates');
@@ -68,7 +69,7 @@ exports.createOrder = async (req, res) => {
        invoice it becomes cannot disagree about the tax. */
     const cust = (await client.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
     let company = null;
-    try { company = (await client.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+    try { company = await profileFor(client, req.user?.orgId); } catch { /* optional */ }
     const supplyState = cust?.shipping_state || cust?.state || null;
     const inter = isInterstate(company?.stateCode || company?.gstin, supplyState);
 

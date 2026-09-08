@@ -4,6 +4,7 @@
    the goods value for the e-way bill. Owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { profileFor } = require('../shared/companyProfile');
 const { nextSeq } = require('../shared/docNumber');
 const stock = require('../shared/stock');
 const { isCrossTenant } = require('../shared/roles');
@@ -70,7 +71,7 @@ exports.getById = async (req, res) => {
     const items = (await db.query('SELECT * FROM delivery_challan_items WHERE delivery_challan_id = $1 ORDER BY sort_order', [req.params.id])).rows;
     const customer = dc.customer_id ? (await db.query('SELECT * FROM customers WHERE id = $1', [dc.customer_id])).rows[0] : null;
     let company = null;
-    try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
     res.json({ ...dc, items, customer, company });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

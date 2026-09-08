@@ -4,6 +4,7 @@
    customer order; editable; records payments; owner-scoped.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { profileFor } = require('../shared/companyProfile');
 const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
@@ -55,10 +56,22 @@ function compute(items, { discount = 0, gstRate = 18, interstate = false, roundO
  * Precedence for place of supply: explicit override → customer's shipping
  * state → customer's billing state → the state in their GSTIN.
  */
-async function resolveTax(customerId, placeOfSupplyOverride) {
+/* Takes the executor and the organisation.
+ *
+ * There is no `req` in here, so reading req.user threw a ReferenceError
+ * straight into the catch below — leaving `company` null, `supplierState`
+ * null, and therefore the interstate test false on EVERY invoice. That is
+ * CGST+SGST charged on an interstate sale, which is the wrong tax on a
+ * document the customer files.
+ *
+ * `exec` because one caller runs inside an open transaction: reaching for
+ * the pool there makes a single request need two connections at once, which
+ * deadlocks a pool of four.
+ */
+async function resolveTax(exec, ownerId, customerId, placeOfSupplyOverride) {
   let company = null, customer = null;
-  try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
-  if (customerId) customer = (await db.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
+  try { company = await profileFor(exec, ownerId); } catch { /* optional */ }
+  if (customerId) customer = (await exec.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
 
   const supplierState = company?.stateCode || company?.gstin || null;
   const placeOfSupply =
@@ -93,7 +106,7 @@ exports.prefill = async (req, res) => {
     if (!co) return res.status(404).json({ error: 'Customer order not found' });
     const items = (await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [co.id])).rows
       .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0 }));
-    const t = await resolveTax(co.customer_id);
+    const t = await resolveTax(db, req.user?.orgId, co.customer_id);
     const c = t.customer || {};
     const termsDays = c.payment_terms_days ?? t.company?.default_payment_terms_days ?? 30;
     const due = new Date(); due.setDate(due.getDate() + Number(termsDays || 0));
@@ -132,7 +145,8 @@ exports.create = async (req, res) => {
     await client.query('BEGIN');
     // Place of supply drives the tax split. Trust an explicit choice from the
     // form; otherwise resolve it from the customer's shipping/billing state.
-    const tax = await resolveTax(customerId, placeOfSupply);
+    /* On the transaction's client, not the pool — see resolveTax. */
+    const tax = await resolveTax(client, req.user?.orgId, customerId, placeOfSupply);
     const isInter = interstate === undefined || interstate === null ? tax.interstate : !!interstate;
     const t = compute(items, { discount, gstRate, interstate: isInter, roundOff });
     /* A tax invoice number must be unique within the financial year — Rule
@@ -228,7 +242,7 @@ exports.getById = async (req, res) => {
     const payments = (await db.query('SELECT * FROM sales_payments WHERE sales_invoice_id = $1 ORDER BY id', [req.params.id])).rows;
     const customer = inv.customer_id ? (await db.query('SELECT * FROM customers WHERE id = $1', [inv.customer_id])).rows[0] : null;
     let company = null;
-    try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
     res.json({ ...inv, items, payments, customer, company });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

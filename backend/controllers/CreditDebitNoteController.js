@@ -89,7 +89,7 @@ exports.getById = async (req, res) => {
       party = (await db.query(`SELECT * FROM ${tbl} WHERE id = $1`, [n.party_id])).rows[0];
     }
     let company = null;
-    try { company = (await db.query('SELECT * FROM company_profile LIMIT 1')).rows[0] || null; } catch { /* optional */ }
+    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
     res.json({ ...n, items, party, company });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
