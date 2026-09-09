@@ -83,14 +83,43 @@ const logActivity = async (projectId, type, description, ownerId = null) => {
    server in Oregon pays ~250ms per query to reach it instead of ~25ms. If
    this says anything other than an Asian region, that is the finding. */
 const STARTED_AT = new Date().toISOString();
-app.get('/health', (req, res) => res.json({
-  status: 'ok',
-  timestamp: new Date().toISOString(),
-  commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'local',
-  branch: process.env.RENDER_GIT_BRANCH || null,
-  region: process.env.RENDER_REGION || process.env.FLY_REGION || 'unknown',
-  startedAt: STARTED_AT,
-}));
+/* There is deliberately no `region` field. An earlier version reported
+   process.env.RENDER_REGION, which does not exist: Render publishes
+   RENDER_SERVICE_NAME, RENDER_GIT_COMMIT and a handful of others, and
+   nothing for the region. So it read "unknown" on a service that was
+   deployed perfectly correctly, and looked like a fault.
+
+   `GET /health?db=1` answers what region was standing in for, and answers
+   it better. The database is in ap-south-1 (Mumbai). A server beside it
+   round-trips in ~25ms; one in Oregon takes ~250ms — on every query, and a
+   screen makes three to seven. Measuring the distance beats naming a
+   datacentre. Behind a flag because health gets polled and this costs a
+   connection out of a pool of four. */
+app.get('/health', async (req, res) => {
+  const body = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'local',
+    branch: process.env.RENDER_GIT_BRANCH || null,
+    service: process.env.RENDER_SERVICE_NAME || 'local',
+    startedAt: STARTED_AT,
+  };
+  if (req.query.db) {
+    const t0 = Date.now();
+    try {
+      await db.query('SELECT 1');
+      body.dbRoundTripMs = Date.now() - t0;
+      /* Named, so the number means something without a lookup table. */
+      body.dbProximity = body.dbRoundTripMs < 80 ? 'same region as the database'
+        : body.dbRoundTripMs < 160 ? 'near the database'
+        : 'FAR from the database — every query pays this';
+    } catch (e) {
+      body.status = 'degraded';
+      body.dbError = e.message;
+    }
+  }
+  res.json(body);
+});
 
 /* Public metal rates for the Kirashi site (no auth; CORS is open above).
    The backend does the 12h refresh + caching; the static site just reads this. */
