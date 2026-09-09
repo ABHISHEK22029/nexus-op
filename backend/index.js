@@ -396,11 +396,25 @@ app.get('/po', async (req, res) => {
        who they bought from and what they bought.
        Project scoping is unchanged — ?projectId is still an exact filter,
        and scopeProjectAccess above already refuses another owner's project. */
+
+    /* Owner-scoped. This list had no ownership condition of any kind, so a
+       business that signed up a minute ago opened Purchase Orders and read
+       fourteen of somebody else's — vendor names, items, and an order book
+       of ₹63,20,000 on the summary cards. A project filter is not
+       ownership: most of these orders carry no project at all.
+
+       ?projectId still narrows within what you own; it never widens. */
+    const where = [], params = [];
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.orgId ?? req.user?.id ?? -1);
+      where.push(`owner_id = $${params.length}`);
+    }
     const result = await runList(db, {
       table: `(SELECT po.*, v.name AS "vendorName", wo.name AS "workOrderName"
                  FROM purchase_orders po
                  LEFT JOIN vendors v ON po."vendorId" = v.id
                  LEFT JOIN work_orders wo ON po."workOrderId" = wo.id) AS po`,
+      where, params,
       query: req.query,
       searchColumns: ["poNumber", "vendorName", "itemName", "workOrderName", "status", "quoteRef"],
       filterColumns: ["status", "approval_status", "projectId", "vendorId", "workOrderId"],
@@ -431,6 +445,14 @@ app.get('/po/:id', async (req, res) => {
        WHERE po.id = $1`, [req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'PO not found' });
+    /* Scoping the list was not enough: PO ids are small integers, so the
+       detail screen handed over another company's order — vendor name,
+       address, GSTIN, contact and prices — to anyone who asked for the id.
+       404, not 403, so "not yours" and "does not exist" read the same. */
+    if (!isCrossTenant(req.user?.role)
+        && String(rows[0].owner_id ?? '') !== String(req.user?.orgId ?? req.user?.id ?? '')) {
+      return res.status(404).json({ error: 'PO not found' });
+    }
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

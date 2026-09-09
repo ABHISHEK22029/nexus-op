@@ -5,6 +5,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { assertOwned } = require('../shared/ownerScope');
+const { isCrossTenant } = require('../shared/roles');
 
 // POST /attachments  (multipart: file + entityType + entityId)
 exports.create = async (req, res) => {
@@ -27,10 +28,20 @@ exports.list = async (req, res) => {
   const { entityType, entityId } = req.query;
   if (!entityType || !entityId) return res.status(400).json({ error: 'entityType and entityId are required' });
   try {
+    /* Owner-scoped. entity_type + entity_id is not a secret — ids are small
+       integers — so without this, naming any (type, id) pair listed another
+       company's uploaded documents. `remove` already checked ownership;
+       only the two read paths were open, which is the wrong way round. */
+    const params = [entityType, entityId];
+    let scope = '';
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.orgId ?? req.user?.id ?? -1);
+      scope = ` AND owner_id = $${params.length}`;
+    }
     const { rows } = await db.query(
       `SELECT id, filename, mime, size_bytes, created_at
-         FROM attachments WHERE entity_type = $1 AND entity_id = $2 ORDER BY id DESC`,
-      [entityType, entityId]
+         FROM attachments WHERE entity_type = $1 AND entity_id = $2${scope} ORDER BY id DESC`,
+      params
     );
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -39,6 +50,11 @@ exports.list = async (req, res) => {
 // GET /attachments/:id/download  (streams the file)
 exports.download = async (req, res) => {
   try {
+    /* The most serious of the three: this streams the FILE, not a row.
+       Fetching by id alone meant counting up from 1 handed over every
+       document any business had uploaded — signed POs, invoices, whatever
+       was attached. `remove` was checked and both reads were not. */
+    if (!await assertOwned(db, req, res, 'attachments', req.params.id, { columns: 'id' })) return;
     const { rows } = await db.query('SELECT filename, mime, data FROM attachments WHERE id = $1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     const f = rows[0];

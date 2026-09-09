@@ -6,6 +6,7 @@ const stock = require('../shared/stock');
 const { receiptTotals, lineProgress, syncPoReceipt, overReceiptError } = require('../shared/receiptProgress');
 const { notify } = require('../notify');
 const { runList } = require('../shared/listQuery');
+const { isCrossTenant } = require('../shared/roles');
 
 /* List GRN records, scoped to a project.
 
@@ -16,6 +17,14 @@ const { runList } = require('../shared/listQuery');
 router.get('/', async (req, res) => {
   try {
     const where = [], params = [];
+    /* Owner-scoped. Goods receipts record what physically arrived, against
+       whose order, on which vehicle — and this list had no ownership
+       condition, so a new organisation could read another company's
+       deliveries. Same omission as the purchase orders they belong to. */
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.orgId ?? req.user?.id ?? -1);
+      where.push(`owner_id = $${params.length}`);
+    }
     if (req.query.projectId) {
       params.push(req.query.projectId);
       where.push(`"projectId" = $${params.length}`);
