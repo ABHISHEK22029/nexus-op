@@ -131,6 +131,28 @@ const post = (p, b, t) => call(p, { method: 'POST', body: JSON.stringify(b) }, t
     else refused++;
   }
 
+  /* ── and WRITES, which are the worse half ────────────────
+     Reading another company's record is bad; changing it is worse.
+     check-unscoped-mutations passed the whole time PATCH /users/:id was
+     open, because it looks for owner_id and people are scoped by org_id —
+     so a static check that knows one column name cannot answer this. Ask
+     the server instead. */
+  const WRITES = [
+    ['PATCH', '/users/:id', A.id, { name: 'HACKED', is_active: false }, "another company's staff"],
+    ['PATCH', '/customers/:id', cust.body?.id, { name: `HACKED ${stamp}` }, "another company's customer"],
+    ['PATCH', '/vendors/:id', vend.body?.id, { name: `HACKED ${stamp}` }, "another company's vendor"],
+    ['PATCH', '/po/:id', po.body?.id, { itemName: `HACKED ${stamp}` }, "another company's order"],
+    ['DELETE', '/customers/:id', cust.body?.id, null, "another company's customer"],
+    ['DELETE', '/attachments/:id', att.body?.id, null, "another company's file"],
+  ];
+  for (const [method, pattern, id, payload, label] of WRITES) {
+    if (!id) { console.log(`   ?  ${method} ${pattern} — nothing to aim at, not tested`); continue; }
+    const r = await call(pattern.replace(':id', id),
+      { method, ...(payload ? { body: JSON.stringify(payload) } : {}) }, B.token);
+    if (r.ok) leaks.push({ path: `${method} ${pattern.replace(':id', id)}`, label: `CHANGED ${label}`, status: r.status, sample: r.raw.slice(0, 90) });
+    else refused++;
+  }
+
   /* The list form too — it takes params, so the fresh-org sweep cannot
      reach it, and it was open. */
   const attList = await call(`/attachments?entityType=po&entityId=${po.body?.id}`, {}, B.token);

@@ -41,6 +41,13 @@ const LISTS = [
   '/boq', '/mb', '/indent', '/milestones', '/production-orders',
   '/activities', '/attachments', '/notifications', '/recurring-profiles',
   '/admin/users', '/expenses', '/reports/summary',
+  /* Aggregates, not lists — and the most-read screen in the product. A
+     dashboard leaks differently: no rows, just somebody else's totals on
+     four cards, which is how /po showed ₹63,20,000 while the table was
+     still loading. Added because these route groups were the ones no test
+     touched at all. */
+  '/dashboard', '/outstanding', '/recurring', '/automation-settings',
+  '/users', '/supply-categories',
 ];
 
 const stamp = Date.now().toString(36);
@@ -82,15 +89,22 @@ let clean = 0; const leaks = [];
     const summaryLeak = summary && Object.values(summary)
       .some(v => Number(v) > 0);
 
+    /* A dashboard answers with bare aggregate keys — totalVendors,
+       totalBilled — not {items} or {summary}, so the row and summary
+       checks both see nothing and pass. Read the numbers directly. */
+    const aggregateLeak = !Array.isArray(body) && Object.entries(body || {})
+      .some(([k, v]) => /count|total|value|amount|outstanding|paid/i.test(k) && Number(v) > 0);
+
     /* The people directory is the one list a new organisation is not
        empty: it contains the founder who just signed up. Their own
        account is not a leak — anyone else's is. */
-    const foreign = path === '/admin/users'
+    const isPeople = path === '/admin/users' || path === '/users';
+    const foreign = isPeople
       ? rows.filter(u => String(u.email || '') !== `fresh-${stamp}@example.test`)
       : rows;
 
-    if (foreign.length || (path !== '/admin/users' && total > 0) || summaryLeak) {
-      leaks.push({ path, rows: foreign.length, total, summary });
+    if (foreign.length || (!isPeople && total > 0) || (!isPeople && summaryLeak) || (!isPeople && aggregateLeak)) {
+      leaks.push({ path, rows: foreign.length, total, summary: summary || (aggregateLeak ? body : null) });
     } else clean++;
   }
 

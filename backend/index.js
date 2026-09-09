@@ -236,9 +236,22 @@ app.get('/users', allow('users', 'read'), async (req, res) => {
     /* Column list is fixed and never includes password_hash — the search,
        filter and sort whitelists below are all drawn from it, so no query
        string can widen what this endpoint returns. */
+    /* Scoped to the organisation. This one is org_id, not owner_id — a
+       person belongs to a company, they are not owned by one.
+
+       Without it the team page listed every account on the platform: 27
+       people, their names, emails and roles, plus a header counting other
+       businesses' seats. /admin/users was scoped and this one, serving the
+       same screen, was not. */
+    const where = [], params = [];
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.orgId ?? req.user?.id ?? -1);
+      where.push(`(org_id = $${params.length} OR id = $${params.length})`);
+    }
     const result = await runList(db, {
       table: 'users',
       select: 'id, email, name, role, department, is_active, last_login, created_at',
+      where, params,
       query: req.query,
       searchColumns: ["name", "email", "role", "department"],
       filterColumns: ["role", "department", "is_active"],
@@ -262,7 +275,26 @@ app.patch('/users/:id', allow('users', 'write'), async (req, res) => {
   if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
   try {
     const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
-    const { rowCount } = await db.query(`UPDATE users SET ${clause} WHERE id = $${sets.length + 1}`, [...sets.map(c => req.body[c]), req.params.id]);
+    const args = [...sets.map(c => req.body[c]), req.params.id];
+    /* Confined to your own organisation. `allow('users','write')` says this
+       ROLE may edit people; it says nothing about WHICH people, so without
+       this an office manager in one company could rename, re-role or
+       deactivate another company's staff by id. The read beside it had the
+       same gap; a write is the worse half.
+
+       The row simply does not match, so it answers 404 — the same as a
+       user that does not exist, which is what someone outside the
+       organisation should be told. */
+    let scope = '';
+    if (!isCrossTenant(req.user?.role)) {
+      args.push(req.user?.orgId ?? req.user?.id ?? -1);
+      const g = `$${args.length}`;
+      /* org_id names the founder, so the founder's own row is matched by
+         `id`, not by `org_id`. Both, or an owner cannot edit themselves. */
+      scope = ` AND (org_id = ${g} OR id = ${g})`;
+    }
+    const { rowCount } = await db.query(
+      `UPDATE users SET ${clause} WHERE id = $${sets.length + 1}${scope}`, args);
     if (!rowCount) return res.status(404).json({ error: 'User not found' });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
