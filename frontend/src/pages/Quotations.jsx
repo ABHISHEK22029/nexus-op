@@ -108,8 +108,12 @@ export default function Quotations() {
       {showForm && (
         <form onSubmit={create} style={{ ...card, padding: 18, marginBottom: 18, display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ flex: 2, minWidth: 220 }}><label style={lbl}>Part / material to quote *</label><input style={input} placeholder="MS Angle 50x50x6" value={head.partDescription} onChange={e => setHead({ ...head, partDescription: e.target.value })} /></div>
-          <div style={{ flex: 1, minWidth: 90 }}><label style={lbl}>Qty</label><input style={input} type="number" placeholder="1000" value={head.quantity} onChange={e => setHead({ ...head, quantity: e.target.value })} /></div>
+          {/* Unit before quantity, matching every other document screen.
+              There is no total here on purpose: this is a request for
+              quotation, so the price is what the vendors come back with —
+              it is on their reply rows below, not on the ask. */}
           <div style={{ flex: 1, minWidth: 80 }}><label style={lbl}>Unit</label><input style={input} value={head.unit} onChange={e => setHead({ ...head, unit: e.target.value })} /></div>
+          <div style={{ flex: 1, minWidth: 90 }}><label style={lbl}>Qty</label><input style={input} type="number" placeholder="1000" value={head.quantity} onChange={e => setHead({ ...head, quantity: e.target.value })} /></div>
           <button type="submit" className="btn-primary btn-sm">Create</button>
         </form>
       )}

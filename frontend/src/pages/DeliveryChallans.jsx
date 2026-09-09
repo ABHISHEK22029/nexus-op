@@ -48,6 +48,10 @@ export default function DeliveryChallans() {
 
   const setLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
 
+  /* Quantity times rate. Number('') is 0, so a half-filled line adds
+     nothing instead of spreading NaN across every other total. */
+  const lineTotal = (l) => (Number(l.quantity) || 0) * (Number(l.rate) || 0);
+
   const prefillFromOrder = async (orderId) => {
     setHead(h => ({ ...h, customerOrderId: orderId }));
     if (!orderId) return;
@@ -161,9 +165,21 @@ export default function DeliveryChallans() {
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
               <div style={{ flex: 2.5 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} /></div>
               <div style={{ flex: 0.9 }}><label style={lbl}>HSN</label><input style={input} value={l.hsn} onChange={e => setLine(i, { hsn: e.target.value })} /></div>
-              <div style={{ flex: 0.7 }}><label style={lbl}>Qty</label><input style={input} type="number" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
+              {/* Unit before quantity, as everywhere else. The money column
+                  stays "Value" and not "Rate": rule 55 asks a challan for
+                  the taxable value of the goods being moved, and this is a
+                  movement document, not a priced sale. The line total still
+                  earns its place — it is what the challan declares. */}
               <div style={{ flex: 0.6 }}><label style={lbl}>Unit</label><input style={input} value={l.uom} onChange={e => setLine(i, { uom: e.target.value })} /></div>
+              <div style={{ flex: 0.7 }}><label style={lbl}>Qty</label><input style={input} type="number" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
               <div style={{ flex: 0.9 }}><label style={lbl}>Value ₹</label><input style={input} type="number" value={l.rate} onChange={e => setLine(i, { rate: e.target.value })} /></div>
+              <div style={{ flex: 0.9 }}>
+                <label style={lbl}>Total ₹</label>
+                <div style={{ ...input, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                  background: 'var(--bg-elevated)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                  {lineTotal(l) ? lineTotal(l).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                </div>
+              </div>
               <button type="button" onClick={() => setLines(ls => ls.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', paddingBottom: 9 }}><X size={16} /></button>
             </div>
           ))}

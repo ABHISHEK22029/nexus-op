@@ -130,6 +130,7 @@ export default function DeliveryChallanDoc() {
               <th style={{ ...th, textAlign: 'left' }}>#</th>
               <th style={{ ...th, textAlign: 'left' }}>Description</th>
               <th style={{ ...th, textAlign: 'left' }}>HSN</th>
+              <th style={{ ...th, textAlign: 'center' }}>UOM</th>
               <th style={{ ...th, textAlign: 'right' }}>Qty</th>
               <th style={{ ...th, textAlign: 'right' }}>Value</th>
             </tr></thead>
@@ -139,7 +140,8 @@ export default function DeliveryChallanDoc() {
                   <td style={td}>{i + 1}</td>
                   <td style={{ ...td, fontWeight: 600 }}>{it.description}</td>
                   <td style={{ ...td, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{it.hsn || '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{it.quantity} {it.uom}</td>
+                  <td style={{ ...td, textAlign: 'center', color: 'var(--text-muted)' }}>{it.uom || '—'}</td>
+                  <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{it.quantity}</td>
                   <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>₹{rup(it.amount)}</td>
                 </tr>
               ))}

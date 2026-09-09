@@ -138,6 +138,7 @@ export default function SalesQuotationDoc() {
               <th style={th}>#</th>
               <th style={th}>Description</th>
               <th style={th}>HSN</th>
+              <th style={{ ...th, textAlign: 'center' }}>UOM</th>
               <th style={{ ...th, textAlign: 'right' }}>Qty</th>
               <th style={{ ...th, textAlign: 'right' }}>Rate</th>
               <th style={{ ...th, textAlign: 'right' }}>Amount</th>
@@ -148,7 +149,8 @@ export default function SalesQuotationDoc() {
                   <td style={td}>{i + 1}</td>
                   <td style={{ ...td, fontWeight: 600 }}>{it.description}</td>
                   <td style={{ ...td, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{it.hsn || '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{it.quantity} {it.uom}</td>
+                  <td style={{ ...td, textAlign: 'center', color: 'var(--text-muted)' }}>{it.uom || '—'}</td>
+                  <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{it.quantity}</td>
                   <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>₹{rup(it.rate)}</td>
                   <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>₹{rup(it.amount)}</td>
                 </tr>
