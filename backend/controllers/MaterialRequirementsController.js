@@ -66,10 +66,14 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
       b.component_name,
       COALESCE(b.qty_per_unit, 0) AS qty_per_unit,
       COALESCE(b.uom_code, b.uom) AS bom_uom,
-      rm.name          AS material_name,
-      rm.base_uom, rm.purchase_uom, rm.category, rm.moq, rm.lead_time_days,
-      rm.standard_rate, rm.weight_per_piece_kg, rm.length_mm, rm.width_mm,
-      rm.thickness_mm, rm.density_kg_m3, rm.is_critical,
+      /* The material's own columns — name, category, dimensions, rate —
+         used to be selected here. They describe the MATERIAL, not the
+         order line, so every one of them was repeated on all 1990 rows
+         for the 16 materials that actually came back.
+
+         The query executes in 10ms; sending the result took 3,054ms and
+         1.1MB. Almost none of that was the answer. The material master is
+         read once below instead. */
       COALESCE((
         SELECT SUM(po_out.output_qty) FROM production_output po_out
         JOIN production_orders po ON po.id = po_out.production_order_id
@@ -79,10 +83,23 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
     JOIN customer_order_items coi ON coi.customer_order_id = co.id
     LEFT JOIN skus s      ON s.id = coi.sku_id
     LEFT JOIN sku_bom b   ON b.sku_id = coi.sku_id
-    LEFT JOIN raw_materials rm ON rm.id = b.raw_material_id
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY co.id, coi.id
   `, params)).rows;
+
+  /* The material master, once. 235 rows here against 1990 there, and the
+     wide columns travel a single time each. Keyed by id so the loop below
+     reads exactly what the join used to give it.
+
+     A material that has been deleted while a BOM still points at it is
+     simply absent, which is what the LEFT JOIN produced too — the loop
+     already falls back to the BOM's component_name. */
+  const materialRows = (await db.query(
+    `SELECT id, name, base_uom, purchase_uom, category, moq, lead_time_days,
+            standard_rate, weight_per_piece_kg, length_mm, width_mm,
+            thickness_mm, density_kg_m3, is_critical
+       FROM raw_materials`)).rows;
+  const materialById = new Map(materialRows.map(r => [r.id, r]));
 
   // ── 2. Stock on hand, per material ──
   const stockParams = [];
@@ -138,19 +155,24 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
     const perUnit = Number(d.qty_per_unit) || 0;
     const rawNeed = remaining * perUnit;
 
+    /* What the LEFT JOIN used to attach to every row. Empty rather than
+       undefined so each field below reads the same as a NULL from the
+       join did. */
+    const rm = materialById.get(d.raw_material_id) || {};
+
     // Convert the BOM quantity into the material's base unit.
-    const from = String(d.bom_uom || d.base_uom || '').toLowerCase();
-    const to = String(d.base_uom || '').toLowerCase();
+    const from = String(d.bom_uom || rm.base_uom || '').toLowerCase();
+    const to = String(rm.base_uom || '').toLowerCase();
     let need = rawNeed, conversion = null;
     if (rawNeed > 0 && from && to && from !== to) {
       const item = {
-        base_uom: d.base_uom, weight_per_piece_kg: d.weight_per_piece_kg,
-        length_mm: d.length_mm, width_mm: d.width_mm, thickness_mm: d.thickness_mm, density_kg_m3: d.density_kg_m3,
+        base_uom: rm.base_uom, weight_per_piece_kg: rm.weight_per_piece_kg,
+        length_mm: rm.length_mm, width_mm: rm.width_mm, thickness_mm: rm.thickness_mm, density_kg_m3: rm.density_kg_m3,
       };
       const c = convert(rawNeed, from, to, { uoms, item, itemUoms: itemUoms[d.raw_material_id] || [] });
       if (c.ok) { need = c.qty; conversion = `${rawNeed} ${from} → ${c.qty} ${to}`; }
       else {
-        issues.push({ level: 'error', material: d.material_name, message: `Cannot convert the BOM quantity (${from}) into stock units (${to}). ${c.reason}` });
+        issues.push({ level: 'error', material: rm.name, message: `Cannot convert the BOM quantity (${from}) into stock units (${to}). ${c.reason}` });
         need = 0;
       }
     }
@@ -159,14 +181,14 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
     if (!byMaterial.has(key)) {
       byMaterial.set(key, {
         raw_material_id: key,
-        material: d.material_name || d.component_name,
-        category: d.category,
-        base_uom: d.base_uom,
-        purchase_uom: d.purchase_uom,
-        moq: d.moq != null ? Number(d.moq) : null,
-        lead_time_days: d.lead_time_days,
-        standard_rate: d.standard_rate != null ? Number(d.standard_rate) : null,
-        is_critical: !!d.is_critical,
+        material: rm.name || d.component_name,
+        category: rm.category,
+        base_uom: rm.base_uom,
+        purchase_uom: rm.purchase_uom,
+        moq: rm.moq != null ? Number(rm.moq) : null,
+        lead_time_days: rm.lead_time_days,
+        standard_rate: rm.standard_rate != null ? Number(rm.standard_rate) : null,
+        is_critical: !!rm.is_critical,
         required: 0,
         available: stock.get(key) || 0,
         on_order: onOrder.get(key) || 0,
@@ -181,7 +203,7 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
       order_id: d.order_id, order_number: d.order_number, line_id: d.line_id,
       product: d.product_name || d.line_description,
       ordered: Number(d.ordered_qty), produced: Number(d.produced_qty), remaining,
-      raw_material_id: key, material: d.material_name || d.component_name,
+      raw_material_id: key, material: rm.name || d.component_name,
       per_unit: perUnit, bom_uom: from, base_uom: to,
       need: r4(need), available: stock.get(key) || 0, conversion,
     });

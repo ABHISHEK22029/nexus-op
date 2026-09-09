@@ -70,7 +70,27 @@ const logActivity = async (projectId, type, description, ownerId = null) => {
 /* ══════════════════════════════════════════════════════════
    HEALTH CHECK
    ══════════════════════════════════════════════════════════ */
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+/* Health, and enough to answer "is production running the code I pushed?"
+ *
+   That question could not be answered from outside: /health returned a
+   status and a timestamp, both identical in every build, so telling a
+   current deploy from a three-week-old one meant guessing from which
+   routes happened to 404. Render sets RENDER_GIT_COMMIT on every deploy;
+   where it is absent (running locally) the field simply says so.
+
+   `region` is here because it is the single biggest thing in this
+   application's latency: the database is in ap-south-1 (Mumbai), and a
+   server in Oregon pays ~250ms per query to reach it instead of ~25ms. If
+   this says anything other than an Asian region, that is the finding. */
+const STARTED_AT = new Date().toISOString();
+app.get('/health', (req, res) => res.json({
+  status: 'ok',
+  timestamp: new Date().toISOString(),
+  commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'local',
+  branch: process.env.RENDER_GIT_BRANCH || null,
+  region: process.env.RENDER_REGION || process.env.FLY_REGION || 'unknown',
+  startedAt: STARTED_AT,
+}));
 
 /* Public metal rates for the Kirashi site (no auth; CORS is open above).
    The backend does the 12h refresh + caching; the static site just reads this. */

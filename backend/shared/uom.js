@@ -140,10 +140,34 @@ function convert(qty, fromCode, toCode, { uoms, item = {}, itemUoms = [] } = {})
 }
 
 /** Load the canonical unit table once and hand back a lookup Map. */
+/* The unit table is reference data — kilogram, metre, number — and it is
+   the same for every organisation and every request. It was being read
+   from the database on each call, which costs one round trip.
+ *
+   That round trip is ~25ms with the server sitting near the database and
+   ~250ms with the two in different regions, so on a request that does six
+   queries it is a sixth of the wait for a table that has not changed since
+   it was seeded.
+ *
+   Cached in memory with a short TTL rather than forever: someone adding a
+   unit in Configure should see it take effect without a restart, and a
+   minute of staleness on a conversion factor is harmless. `uomCacheClear`
+   exists so a write can invalidate it immediately. */
+let UOM_CACHE = null;
+let UOM_CACHE_AT = 0;
+const UOM_TTL_MS = 60_000;
+
 async function loadUoms(db) {
+  const now = Date.now();
+  if (UOM_CACHE && now - UOM_CACHE_AT < UOM_TTL_MS) return UOM_CACHE;
   const { rows } = await db.query('SELECT code, dimension, factor_to_base FROM uom');
-  return new Map(rows.map(r => [r.code, r]));
+  UOM_CACHE = new Map(rows.map(r => [r.code, r]));
+  UOM_CACHE_AT = now;
+  return UOM_CACHE;
 }
+
+/** Drop the cached units — call after anything writes to the uom table. */
+function uomCacheClear() { UOM_CACHE = null; UOM_CACHE_AT = 0; }
 
 /** Everything convert() needs for one item. */
 async function itemContext(db, rawMaterialId, uoms) {
@@ -152,4 +176,4 @@ async function itemContext(db, rawMaterialId, uoms) {
   return { uoms: uoms || await loadUoms(db), item, itemUoms };
 }
 
-module.exports = { convert, weightPerPiece, loadUoms, itemContext, round };
+module.exports = { convert, weightPerPiece, loadUoms, uomCacheClear, itemContext, round };
