@@ -204,13 +204,40 @@ exports.addPayment = async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+
+    /* Never pay a vendor more than the bill is worth. This is the same
+       guard as on the sales side, and here the money is going OUT — a
+       misplaced digit is a real payment made against a bill that did not
+       ask for it, and the payables total stops matching what is owed.
+       FOR UPDATE so two payments entered at once cannot each read the
+       old total and both be allowed. */
+    const cur = (await client.query(
+      `SELECT g.net_amount,
+              COALESCE((SELECT SUM(amount) FROM vendor_payments WHERE grn_bill_id = g.id), 0) AS paid
+         FROM grn_bills g WHERE g.id = $1 FOR UPDATE`,
+      [req.params.id])).rows[0];
+    if (cur) {
+      const net = Number(cur.net_amount || 0);
+      const already = Number(cur.paid || 0);
+      const due = net - already;
+      if (Number(amount) > due + 0.01) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: due <= 0.01
+            ? `This bill is already paid in full (₹${net.toFixed(2)}). Nothing is outstanding.`
+            : `That is more than is outstanding. Bill ₹${net.toFixed(2)}, already paid ₹${already.toFixed(2)}, so ₹${due.toFixed(2)} remains.`,
+          netAmount: net, alreadyPaid: already, outstanding: Math.max(0, due),
+        });
+      }
+    }
+
     await client.query(
       `INSERT INTO vendor_payments (grn_bill_id, amount, mode, reference, paid_date, notes) VALUES ($1,$2,$3,$4,$5,$6)`,
       [req.params.id, Number(amount), mode || 'Bank', reference || null, paidDate || null, notes || null]);
     const paid = (await client.query('SELECT COALESCE(SUM(amount),0) s FROM vendor_payments WHERE grn_bill_id = $1', [req.params.id])).rows[0].s;
     const bill = (await client.query('SELECT net_amount, bill_number, vendor_id FROM grn_bills WHERE id = $1', [req.params.id])).rows[0];
     if (!bill) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bill not found' }); }
-    const pstatus = paid >= (bill.net_amount || 0) ? 'Paid' : paid > 0 ? 'Partially Paid' : 'Unpaid';
+    const pstatus = Number(paid) >= Number(bill.net_amount || 0) ? 'Paid' : Number(paid) > 0 ? 'Partially Paid' : 'Unpaid';
     await client.query('UPDATE grn_bills SET amount_paid = $1, payment_status = $2 WHERE id = $3', [r2(paid), pstatus, req.params.id]);
     await client.query('COMMIT');
     notify('admins', { type: 'VENDOR_PAID', title: `Vendor payment · ${bill.bill_number}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank'} — ${pstatus}`, entityType: 'grn_bill', entityId: Number(req.params.id), link: '/payables' });

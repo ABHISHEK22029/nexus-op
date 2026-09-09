@@ -110,8 +110,14 @@ const call = async (path, opts = {}) => {
   ok(seq && Number(seq.last_seq) > Number(cnt.c),
     `the sequence has moved past the row count — ${seq?.last_seq} issued vs ${cnt.c} rows present`);
 
-  /* ── 4. every existing number is unique ───────────────── */
-  console.log('\n  ── across the whole database');
+  /* ── 4. every existing number is unique WITHIN ITS COMPANY ─
+     Per owner, not across the database. Rule 46 requires an invoice
+     number to be unique for the supplier issuing it — every business
+     starts at INV-0001, and two companies both having one is correct.
+     The global check passed only while a single organisation had ever
+     issued an invoice; the second one to sign up made it fail while
+     nothing was actually wrong. */
+  console.log('\n  ── within each company');
   for (const [table, col, label] of [
     ['sales_quotations', 'quote_number', 'quotations'],
     ['customer_orders', 'order_number', 'customer orders'],
@@ -119,10 +125,11 @@ const call = async (path, opts = {}) => {
     ['delivery_challans', 'challan_number', 'delivery challans'],
   ]) {
     const { rows } = await db.query(
-      `SELECT ${col} n, COUNT(*) k FROM ${table} WHERE ${col} IS NOT NULL
-        GROUP BY 1 HAVING COUNT(*) > 1`);
+      `SELECT owner_id, ${col} n, COUNT(*) k FROM ${table} WHERE ${col} IS NOT NULL
+        GROUP BY 1, 2 HAVING COUNT(*) > 1`);
     ok(rows.length === 0,
-      `${label}: no duplicate numbers${rows.length ? ` — ${rows.map(r => `${r.n}×${r.k}`).join(', ')}` : ''}`);
+      `${label}: no company issues the same number twice` +
+      `${rows.length ? ` — ${rows.map(r => `owner ${r.owner_id}: ${r.n}×${r.k}`).join(', ')}` : ''}`);
   }
 
   /* ── clean up ─────────────────────────────────────────── */

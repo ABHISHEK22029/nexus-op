@@ -258,13 +258,46 @@ exports.addPayment = async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+
+    /* A receipt cannot exceed what is owed.
+     *
+     * Without this an invoice worth ₹11,800 accepted ₹1,11,799 and still
+     * reported itself "Paid", and the list summary then said received
+     * ₹1,11,799 against billed ₹11,800 — the receivables figure an owner
+     * reads on the dashboard, wrong by the size of the typo.
+     *
+     * Read inside the transaction and FOR UPDATE, or two payments landing
+     * together each see the old total and both pass. */
+    const cur = (await client.query(
+      `SELECT s.net_amount,
+              COALESCE((SELECT SUM(amount) FROM sales_payments WHERE sales_invoice_id = s.id), 0) AS paid
+         FROM sales_invoices s WHERE s.id = $1 FOR UPDATE`,
+      [req.params.id])).rows[0];
+    if (cur) {
+      const net = Number(cur.net_amount || 0);
+      const already = Number(cur.paid || 0);
+      const due = net - already;
+      /* A paisa of slack: net_amount is numeric and the final instalment is
+         often computed by subtraction on the client, so an exact settlement
+         can arrive a fraction over and must not be refused. */
+      if (Number(amount) > due + 0.01) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: due <= 0.01
+            ? `This invoice is already settled in full (₹${net.toFixed(2)}). Nothing is outstanding.`
+            : `That is more than is outstanding. Invoice ₹${net.toFixed(2)}, already received ₹${already.toFixed(2)}, so ₹${due.toFixed(2)} remains.`,
+          netAmount: net, alreadyPaid: already, outstanding: Math.max(0, due),
+        });
+      }
+    }
+
     await client.query(
       `INSERT INTO sales_payments (sales_invoice_id, amount, mode, reference, paid_date) VALUES ($1,$2,$3,$4,$5)`,
       [req.params.id, Number(amount), mode || 'Bank', reference || null, paidDate || null]
     );
     const paid = (await client.query('SELECT COALESCE(SUM(amount),0) s FROM sales_payments WHERE sales_invoice_id = $1', [req.params.id])).rows[0].s;
     const inv = (await client.query('SELECT net_amount FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0];
-    const status = paid >= (inv?.net_amount || 0) ? 'Paid' : 'Partially Paid';
+    const status = Number(paid) >= Number(inv?.net_amount || 0) ? 'Paid' : 'Partially Paid';
     await client.query('UPDATE sales_invoices SET amount_paid = $1, status = $2 WHERE id = $3', [r2(paid), status, req.params.id]);
     const invNo = (await client.query('SELECT invoice_number FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0]?.invoice_number;
     await client.query('COMMIT');
