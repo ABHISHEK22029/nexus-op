@@ -55,6 +55,13 @@ export default function CustomerOrders() {
   useEffect(() => { loadPickLists(); }, []);
 
   const setLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+
+  /* Quantity times rate. Both arrive from number inputs as strings, and an
+     empty box is '' — Number('') is 0, so a half-filled line contributes
+     nothing rather than NaN, which would spread through the order total and
+     show "₹NaN" next to every other line. */
+  const lineTotal = (l) => (Number(l.quantity) || 0) * (Number(l.targetPrice) || 0);
+  const orderTotal = () => lines.reduce((sum, l) => sum + lineTotal(l), 0);
   const pickSku = (i, skuId) => {
     const sku = skus.find(s => String(s.id) === String(skuId));
     setLine(i, sku ? { skuId, description: sku.name, unit: sku.unit || 'nos', targetPrice: sku.price || '' } : { skuId: '' });
@@ -180,13 +187,50 @@ export default function CustomerOrders() {
                 </select>
               </div>
               <div style={{ flex: 2 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} placeholder="Part / product" /></div>
-              <div style={{ flex: 0.8 }}><label style={lbl}>Qty</label><input style={input} type="number" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
+              {/* Unit, quantity, rate, total — in that order, matching the
+                  purchase order screen, which already read this way. A person
+                  entering "10539.4 Kgs at ₹62" reaches for the unit while
+                  they are still thinking about what they are counting, and
+                  the two numbers that multiply together sit side by side. */}
               <div style={{ flex: 0.7 }}><label style={lbl}>Unit</label><input style={input} value={l.unit} onChange={e => setLine(i, { unit: e.target.value })} /></div>
-              <div style={{ flex: 0.9 }}><label style={lbl}>Target ₹</label><input style={input} type="number" value={l.targetPrice} onChange={e => setLine(i, { targetPrice: e.target.value })} /></div>
+              <div style={{ flex: 0.8 }}><label style={lbl}>Qty</label><input style={input} type="number" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
+              {/* Was "Target ₹", which reads as an aspiration rather than a
+                  price. It is the rate for one unit and every other screen
+                  calls it that. */}
+              <div style={{ flex: 0.9 }}><label style={lbl}>Unit rate ₹</label><input style={input} type="number" value={l.targetPrice} onChange={e => setLine(i, { targetPrice: e.target.value })} /></div>
+              {/* The line's own value. There was no total anywhere on this
+                  form: you could enter ten thousand kilos at a rate and the
+                  screen would never tell you what the order came to, so the
+                  only way to check a decimal was in your head. Read-only —
+                  it is quantity times rate, not a third thing to key in. */}
+              <div style={{ flex: 0.9 }}>
+                <label style={lbl}>Total ₹</label>
+                <div style={{
+                  ...input, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                  background: 'var(--bg-elevated)', color: 'var(--text-primary)',
+                  fontVariantNumeric: 'tabular-nums', fontWeight: 600,
+                }}>
+                  {lineTotal(l) ? lineTotal(l).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                </div>
+              </div>
               <button type="button" onClick={() => setLines(ls => ls.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', paddingBottom: 9 }}><X size={16} /></button>
             </div>
           ))}
-          <button type="button" onClick={() => setLines([...lines, { skuId: '', description: '', quantity: '', unit: 'nos', targetPrice: '' }])} className="btn-secondary" style={{ fontSize: '0.78rem', marginTop: 4 }}><Plus size={14} /> Add line</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+            <button type="button" onClick={() => setLines([...lines, { skuId: '', description: '', quantity: '', unit: 'nos', targetPrice: '' }])} className="btn-secondary" style={{ fontSize: '0.78rem' }}><Plus size={14} /> Add line</button>
+            {/* What the order comes to, before it is saved. The ORDER VALUE
+                card above only counts saved orders, so until now there was
+                no way to check the figure against the customer's PO while
+                you still had it on screen. */}
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                Order total
+              </span>
+              <span style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                ₹{orderTotal().toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <button type="submit" className="btn-primary btn-sm">Create Order</button>
