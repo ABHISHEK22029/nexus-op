@@ -62,7 +62,15 @@ exports.readiness = async (req, res) => {
           WHERE bank_name IS NOT NULL AND bank_account_no IS NOT NULL
             AND bank_ifsc IS NOT NULL${scope()})                                        AS company_bank,
         (SELECT COUNT(*) FROM company_profile
-          WHERE gstin IS NOT NULL AND gstin <> ''${scope()})                            AS company_gstin
+          WHERE gstin IS NOT NULL AND gstin <> ''${scope()})                            AS company_gstin,
+        /* The name, which nothing was checking. Someone who clicks "Skip
+           for now" on the first-run screen has no company name at all, and
+           the only thing that chased them for it was that same screen —
+           which now stops appearing once skipped. Without this check
+           nothing would ever ask again, and their invoices would go out
+           with no letterhead. */
+        (SELECT COUNT(*) FROM company_profile
+          WHERE COALESCE(TRIM(name), '') <> ''${scope()})                               AS company_name
     `);
     const c = rows[0];
     const num = (v) => Number(v) || 0;
@@ -72,11 +80,23 @@ exports.readiness = async (req, res) => {
     const stockRows = num(c.stock_rows), stockLinked = num(c.stock_linked);
     const customers = num(c.customers), vendors = num(c.vendors);
     const companyBank = num(c.company_bank), companyGstin = num(c.company_gstin);
+    const companyName = num(c.company_name);
 
     /* Ordered by what unblocks the most. Each says what it COSTS, because
        "add BOMs" is a chore and "without this the system cannot tell you
        what to buy" is a reason. */
     const checks = [
+      /* First, because it is the one thing a document cannot be issued
+         without, and because it is what the skipped first-run screen was
+         asking for. */
+      {
+        key: 'company_name',
+        label: 'Your business name',
+        ok: companyName > 0,
+        have: companyName > 0 ? 'set' : 'not set',
+        cost: 'Quotations and invoices print the name at the top. Without it they go out with no letterhead, and a customer cannot tell who is billing them.',
+        fix: 'Settings → Company profile',
+      },
       {
         key: 'company',
         label: 'Company GSTIN and bank details',

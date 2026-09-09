@@ -61,6 +61,26 @@ export default function FirstRun() {
     }
   };
 
+  /* Records that the person was asked and chose to defer, then leaves.
+     Deliberately writes no name — an invented one would print on their
+     invoices, and the dashboard's readiness list would fall silent about
+     the very thing they skipped.
+
+     If the write fails we still let them through. The point of this button
+     is to get out of the way; trapping someone behind a failed request on
+     the escape hatch would be worse than asking them again tomorrow. */
+  const skip = async () => {
+    try {
+      const token = getToken();
+      await fetch(`${API}/company-profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ setup_completed_at: new Date().toISOString() }),
+      });
+    } catch { /* ignore — see above */ }
+    navigate('/dashboard', { replace: true });
+  };
+
   const input = {
     width: '100%', padding: '13px 15px', fontSize: '0.95rem',
     background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
@@ -156,11 +176,22 @@ export default function FirstRun() {
         </button>
 
         {/* An escape hatch, because someone evaluating the product should not
-            have to name their company to see a screen. The banner on the
-            dashboard will still ask. */}
+            have to name their company to see a screen. The readiness list on
+            the dashboard chases the name from here on.
+
+            Skipping RECORDS that the question was asked. It used to only
+            navigate away, writing nothing — so the condition that raised
+            this screen was still true on the next sign-in, and the person
+            was asked for their company name and headcount every single time
+            they logged in, forever. Reported from the live product by
+            someone who had built vendors and purchase orders and was still
+            being shown a setup form.
+
+            No name is invented: only the timestamp is stored, so the
+            dashboard still knows the profile is incomplete and says so. */}
         <button
           type="button"
-          onClick={() => navigate('/dashboard', { replace: true })}
+          onClick={skip}
           style={{
             display: 'block', margin: '16px auto 0', background: 'none', border: 'none',
             color: 'var(--text-muted)', fontSize: '0.83rem', cursor: 'pointer',
