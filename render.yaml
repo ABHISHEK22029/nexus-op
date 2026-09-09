@@ -35,6 +35,15 @@ services:
     # A region CANNOT be changed on an existing Render service. Moving
     # means creating a new service and pointing the frontend at it.
     region: singapore
+    # Without this, Render defaults a new web service to 0.5c-512mb, which
+    # is a PAID plan — the blueprint then stops and asks for a card before
+    # it will create anything. Omitting the field does not mean "free".
+    #
+    # Free is 0.1 CPU / 512MB, spins down after 15 minutes idle (~1 minute
+    # to wake), and draws on 750 instance-hours per workspace per month.
+    # Change this to 0.5c-512mb when the cold start stops being acceptable;
+    # that is the only thing on this page that costs money.
+    plan: free
     envVars:
       - key: DATABASE_URL
         sync: false
