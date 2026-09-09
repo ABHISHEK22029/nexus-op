@@ -650,7 +650,19 @@ app.get('/company-profile', async (req, res) => {
        when the profile has no name, and that row already had one. So a new
        account skipped onboarding and silently adopted someone else's
        identity. */
-    const row = await profileFor(db, req.user?.id);
+    /* orgId, not id. The profile belongs to the COMPANY, and PUT writes it
+       under req.user.orgId — as do all twelve other readers in this
+       codebase. This one read used the individual's id, which is the same
+       number only for the founder, because their org is identified by
+       their own user id.
+
+       For anyone invited into an organisation the two differ, so an
+       employee read a profile that did not exist: Settings showed an empty
+       company, and App.jsx — which sends you to the first-run screen when
+       the profile has no name — sent them to "Set up your workspace" on
+       every single sign-in, for a company that was already set up by their
+       employer. */
+    const row = await profileFor(db, req.user?.orgId ?? req.user?.id);
     const rows = row ? [row] : [];
     /* No row means nobody has set this business up yet — say so, rather than
        inventing one.
