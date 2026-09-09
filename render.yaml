@@ -20,13 +20,33 @@ services:
     rootDir: backend
     buildCommand: npm install
     startCommand: node index.js
+    # ── REGION: the single biggest lever on this app's speed ──
+    #
+    # The database is Supabase ap-south-1 (Mumbai). A service in Oregon
+    # pays ~250ms per query reaching it; from Singapore it is ~55ms, and
+    # ~25ms measured from India. A screen makes 3-7 queries, so on the
+    # US-West service that is 0.75-1.75 SECONDS of pure distance, before
+    # any work is done. The users are in India too, so they pay the same
+    # gap again on their own hop to the server.
+    #
+    # Singapore is the closest region Render offers to Mumbai; there is no
+    # Indian region. Frankfurt is roughly twice as far.
+    #
+    # A region CANNOT be changed on an existing Render service. Moving
+    # means creating a new service and pointing the frontend at it.
+    region: singapore
     envVars:
       - key: DATABASE_URL
         sync: false
       - key: NODE_ENV
         value: production
+      # NOT generateValue. A fresh secret invalidates every token that has
+      # already been issued, so everyone signed in is logged out the moment
+      # the frontend switches over. Copy the value from the existing
+      # service so sessions survive the move; sync:false keeps it out of
+      # this file, which is public.
       - key: JWT_SECRET
-        generateValue: true
+        sync: false
       # Self-registration. Without one of these, POST /auth/register answers
       # 403 "Self-registration is disabled" and the /signup page cannot work
       # — which is how it stood until now.
@@ -40,3 +60,22 @@ services:
       # (sync: false), which new users must present to register.
       - key: ALLOW_SELF_REGISTRATION
         value: "true"
+      # Session-mode pooler: each pool slot holds one real Postgres
+      # connection for as long as the service is up. Two services running
+      # side by side during a region cutover hold 4 each. Keep the overlap
+      # short and do not raise this while both are live.
+      - key: PG_POOL_MAX
+        value: "4"
+      # Everything below is optional; the app runs without them. Listed so
+      # a new service can be brought up with the same behaviour as the old
+      # one rather than subtly different.
+      - key: JWT_TTL
+        value: 12h
+      - key: METALPRICEAPI_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: openai/gpt-4o-mini
+      - key: OPENROUTER_REFERRER
+        sync: false
