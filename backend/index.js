@@ -105,8 +105,16 @@ app.get('/health', async (req, res) => {
     startedAt: STARTED_AT,
   };
   if (req.query.db) {
-    const t0 = Date.now();
     try {
+      /* Two queries, and the second is the one reported. The first may have
+         to open a physical connection — TCP plus TLS to Supabase, ~300ms —
+         and that is connection setup, not distance. Measuring it made a
+         correctly placed Singapore service report 481ms and call itself
+         "FAR from the database" on the first probe after it woke, while the
+         steady-state answer was 63ms. A number that says the opposite of
+         the truth once per wake-up is worse than no number. */
+      await db.query('SELECT 1');
+      const t0 = Date.now();
       await db.query('SELECT 1');
       body.dbRoundTripMs = Date.now() - t0;
       /* Named, so the number means something without a lookup table. */
