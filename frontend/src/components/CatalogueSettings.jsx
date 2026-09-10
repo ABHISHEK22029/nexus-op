@@ -9,9 +9,10 @@
    feature is a URL you paste into a WhatsApp group.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { Store, Check, ExternalLink, Eye, EyeOff, Search, Share2, MessageCircle, Mail, Pencil, Image as ImageIcon } from 'lucide-react';
+import { Store, Check, ExternalLink, Eye, EyeOff, Search, Share2, MessageCircle, Mail, Pencil, Plus, Image as ImageIcon } from 'lucide-react';
 import CatalogueProductEditor from './CatalogueProductEditor';
 import Thumb from './CatalogueThumb';
+import CatalogueAddProduct from './CatalogueAddProduct';
 
 export default function CatalogueSettings({ api, toast }) {
   const [s, setS] = useState(null);
@@ -20,6 +21,7 @@ export default function CatalogueSettings({ api, toast }) {
   const [copied, setCopied] = useState(false);
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState(null);
+  const [adding, setAdding] = useState(false);
 
   const load = async () => {
     try {
@@ -217,17 +219,29 @@ export default function CatalogueSettings({ api, toast }) {
           <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
             What appears — {publishedCount} of {products.length} published
           </div>
-          <div style={{ marginLeft: 'auto', position: 'relative' }}>
-            <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a product"
-              style={{ ...input, paddingLeft: 28, width: 200 }} />
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a product"
+                style={{ ...input, paddingLeft: 28, width: 180 }} />
+            </div>
+            <button type="button" onClick={() => setAdding(true)} className="btn-primary btn-sm"
+              style={{ display: 'inline-flex', gap: 5, alignItems: 'center', whiteSpace: 'nowrap' }}>
+              <Plus size={14} /> Add product
+            </button>
           </div>
         </div>
 
         {products.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            No products yet. Add them under <strong>Stock → Products</strong>, then publish them here.
-          </p>
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0 0 12px' }}>
+              Nothing to show on your catalogue yet.
+            </p>
+            <button type="button" onClick={() => setAdding(true)} className="btn-primary btn-sm"
+              style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+              <Plus size={14} /> Add your first product
+            </button>
+          </div>
         ) : (
           <div style={{ maxHeight: 380, overflowY: 'auto' }}>
             {shown.map((p, i) => (
@@ -281,6 +295,18 @@ export default function CatalogueSettings({ api, toast }) {
 
       {/* One editor for whichever row is open. Rendered here rather than
           per row so a hundred products do not each mount a drawer. */}
+      <CatalogueAddProduct
+        open={adding} api={api} toast={toast}
+        onClose={() => setAdding(false)}
+        onCreated={(made) => {
+          setProducts(ps => [made, ...ps]);
+          /* Straight into the editor: a product with no photograph and no
+             headline is not yet worth publishing, and this is the moment
+             somebody is willing to write both. */
+          setEditing(made);
+        }}
+      />
+
       <CatalogueProductEditor
         product={editing} api={api} toast={toast}
         onClose={() => setEditing(null)}
