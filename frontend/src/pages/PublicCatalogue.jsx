@@ -45,7 +45,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ShoppingBag, Send, X, Phone, Globe, Mail, ArrowLeft, Check, Package, Search,
-  ChevronLeft, ChevronRight, MessageCircle, Clock, Layers,
+  ChevronLeft, ChevronRight, MessageCircle, Clock, Layers, Share2,
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -158,34 +158,77 @@ export default function PublicCatalogue() {
     <Shell>
       <Ring accent={accent} />
 
-      {/* ══ sticky bar ══ */}
+      {/* ══ sticky bar ══
+          A name in bold and two buttons was a browser chrome, not a
+          masthead. What it has now:
+
+            · a monogram when the business has no logo. Every business that
+              signs up has a name; almost none upload a logo on day one, so
+              the identity has to come from somewhere, and initials in the
+              accent give the bar an anchor on the left.
+            · a second line under the name — the catalogue's own count —
+              which turns a label into a masthead and tells a visitor what
+              they have arrived at.
+            · a share control, because the person most likely to pass this
+              on is somebody already looking at it. Native share on a
+              phone, copy to clipboard everywhere else.
+            · the enquiry button carries a count, so the basket is visible
+              without opening it. */}
       <header style={{
-        position: 'sticky', top: 0, zIndex: 30, background: 'rgba(255,255,255,0.88)',
-        backdropFilter: 'saturate(180%) blur(10px)', borderBottom: '1px solid #e9ecef',
+        position: 'sticky', top: 0, zIndex: 30, background: 'rgba(255,255,255,0.9)',
+        backdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid #eceff2',
       }}>
-        <Wrap style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 22px' }}>
-          {co.logo && <img src={co.logo} alt="" style={{ height: 28 }} />}
-          <div style={{ flex: 1, minWidth: 0, fontSize: '0.95rem', fontWeight: 800, letterSpacing: '-0.015em' }}>
-            {co.name || 'Catalogue'}
+        <Wrap style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 22px' }}>
+          {co.logo
+            ? <img src={co.logo} alt="" style={{ height: 34, width: 'auto' }} />
+            : <Monogram name={co.name} accent={accent} />}
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: '0.96rem', fontWeight: 800, letterSpacing: '-0.018em',
+              color: '#0f1319', lineHeight: 1.2, whiteSpace: 'nowrap',
+              overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {co.name || 'Catalogue'}
+            </div>
+            <div style={{ fontSize: '0.73rem', color: '#8b929a', marginTop: 1, fontWeight: 600 }}>
+              {cat.catalogueTotal ?? cat.total} products
+              {cat.categories?.length ? ` · ${cat.categories.length} categories` : ''}
+            </div>
           </div>
+
+          <ShareButton accent={accent} title={`${co.name || 'Catalogue'} — what we make`} />
+
           {cat.whatsapp && (
             <a href={`https://wa.me/${String(cat.whatsapp).replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
+              title="Message us on WhatsApp"
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 13px',
-                border: '1px solid #dfe3e8', borderRadius: 9, color: '#111827',
-                textDecoration: 'none', fontSize: '0.8rem', fontWeight: 700,
+                display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px',
+                border: '1px solid #e2e6ea', borderRadius: 10, color: '#0f1319',
+                textDecoration: 'none', fontSize: '0.81rem', fontWeight: 700, background: '#fff',
               }}>
-              <MessageCircle size={14} /> WhatsApp
+              <MessageCircle size={15} style={{ color: '#25D366' }} />
+              <span style={{ display: 'inline' }}>WhatsApp</span>
             </a>
           )}
+
           <button onClick={() => setShowBasket(true)} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 15px',
-            borderRadius: 9, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.82rem',
-            background: basket.length ? accent : '#f1f3f5', color: basket.length ? '#fff' : '#5b6470',
-            boxShadow: basket.length ? `0 6px 18px -6px ${accent}` : 'none', transition: 'all 160ms',
+            position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '10px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            fontWeight: 800, fontSize: '0.82rem',
+            background: basket.length ? accent : '#0f1319', color: '#fff',
+            boxShadow: basket.length ? `0 8px 20px -8px ${accent}` : '0 2px 8px -3px rgba(15,19,25,0.4)',
+            transition: 'all 170ms',
           }}>
             <ShoppingBag size={15} />
-            {basket.length ? `${basket.length} in enquiry` : 'Enquiry'}
+            Enquiry
+            {basket.length > 0 && (
+              <span style={{
+                minWidth: 20, height: 20, borderRadius: 999, background: 'rgba(255,255,255,0.24)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.72rem', fontWeight: 800, padding: '0 5px',
+              }}>{basket.length}</span>
+            )}
           </button>
         </Wrap>
       </header>
@@ -397,6 +440,50 @@ const Ring = ({ accent }) => (
 /* The number and its label on one line, not stacked. Stacked they read as
    dashboard tiles, which is the wrong register for a page selling
    something — here they are simply two facts in a sentence. */
+/* Initials in the accent, for the great majority of businesses that have
+   not uploaded a logo. Two words give two letters, one gives one — never
+   three, which stops looking like a mark and starts looking like a typo. */
+function Monogram({ name, accent }) {
+  const initials = String(name || 'C').trim().split(/\s+/).slice(0, 2)
+    .map(w => w[0]).join('').toUpperCase();
+  return (
+    <div aria-hidden style={{
+      width: 34, height: 34, borderRadius: 9, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: accent, color: '#fff', fontWeight: 800, fontSize: '0.86rem',
+      letterSpacing: '-0.02em',
+    }}>{initials}</div>
+  );
+}
+
+/* Share, with the phone's own sheet where there is one — that is what
+   puts the link into WhatsApp in two taps, which is how this actually
+   travels. Everywhere else it copies and says so. */
+function ShareButton({ accent, title }) {
+  const [copied, setCopied] = useState(false);
+  const share = async () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      try { await navigator.share({ title, url }); return; } catch { /* dismissed */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true); setTimeout(() => setCopied(false), 1900);
+    } catch { /* clipboard blocked — nothing useful to say */ }
+  };
+  return (
+    <button onClick={share} title="Share this catalogue" aria-label="Share this catalogue"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px',
+        border: `1px solid ${copied ? accent : '#e2e6ea'}`, borderRadius: 10,
+        background: '#fff', color: copied ? accent : '#0f1319',
+        cursor: 'pointer', fontSize: '0.81rem', fontWeight: 700, transition: 'all 160ms',
+      }}>
+      {copied ? <><Check size={15} /> Copied</> : <><Share2 size={15} /> Share</>}
+    </button>
+  );
+}
+
 const HeroStat = ({ n, label }) => (
   <span style={{
     display: 'inline-flex', alignItems: 'baseline', gap: 7,

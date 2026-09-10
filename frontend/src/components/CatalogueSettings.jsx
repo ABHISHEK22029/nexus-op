@@ -9,7 +9,7 @@
    feature is a URL you paste into a WhatsApp group.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { Store, Copy, Check, ExternalLink, Eye, EyeOff, Search } from 'lucide-react';
+import { Store, Check, ExternalLink, Eye, EyeOff, Search, Share2, MessageCircle, Mail } from 'lucide-react';
 
 export default function CatalogueSettings({ api, toast }) {
   const [s, setS] = useState(null);
@@ -53,6 +53,21 @@ export default function CatalogueSettings({ api, toast }) {
   if (!s) return <p style={{ color: 'var(--text-muted)' }}>Loading…</p>;
 
   const url = `${window.location.origin}/c/${s.slug || ''}`;
+  /* Their own words where they have written them — a message that says what
+     the business makes travels better than a bare link. */
+  const shareText = s.headline
+    ? `${s.headline} — our catalogue`
+    : 'Our catalogue — see what we make';
+
+  const share = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: shareText, url }); return; } catch { /* dismissed */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true); setTimeout(() => setCopied(false), 1900);
+    } catch { toast.error('Could not copy — select the address above instead.'); }
+  };
   const shown = products.filter(p =>
     !q || `${p.name} ${p.sku_code || ''} ${p.headline || ''}`.toLowerCase().includes(q.toLowerCase()));
   const publishedCount = products.filter(p => p.is_published).length;
@@ -81,20 +96,50 @@ export default function CatalogueSettings({ api, toast }) {
               : 'Nothing is public until you turn this on. Set the address below first.'}
           </p>
           {s.is_published && s.slug && (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'grid', gap: 8 }}>
               <code style={{
-                fontSize: '0.8rem', padding: '7px 10px', borderRadius: 7, background: 'var(--bg-elevated)',
+                fontSize: '0.82rem', padding: '9px 11px', borderRadius: 8, background: 'var(--bg-elevated)',
                 color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', wordBreak: 'break-all',
+                fontFamily: 'var(--font-mono)',
               }}>{url}</code>
-              <button type="button" onClick={() => {
-                navigator.clipboard?.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1800);
-              }} className="btn-secondary btn-sm" style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
-                {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy link</>}
-              </button>
-              <a href={url} target="_blank" rel="noreferrer" className="btn-secondary btn-sm"
-                style={{ textDecoration: 'none', display: 'inline-flex', gap: 5, alignItems: 'center' }}>
-                <ExternalLink size={13} /> Open
-              </a>
+
+              {/* Sharing is the point of the whole feature, so it gets real
+                  controls rather than a URL to select by hand.
+
+                  WhatsApp first and deliberately: for an Indian SME this is
+                  where a catalogue link actually travels, and wa.me with the
+                  text prefilled means one tap to a customer or a group. The
+                  device's own share sheet sits behind "Share" where the
+                  browser offers one, and copying is the fallback that works
+                  everywhere. */}
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${url}`)}`}
+                  target="_blank" rel="noreferrer"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 13px',
+                    borderRadius: 8, textDecoration: 'none', fontSize: '0.8rem', fontWeight: 700,
+                    background: '#25D366', color: '#fff',
+                  }}>
+                  <MessageCircle size={14} /> Share on WhatsApp
+                </a>
+
+                <button type="button" onClick={share} className="btn-secondary btn-sm"
+                  style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                  {copied ? <><Check size={13} /> Copied</> : <><Share2 size={13} /> Share</>}
+                </button>
+
+                <a href={`mailto:?subject=${encodeURIComponent(shareText)}&body=${encodeURIComponent(`${shareText}\n\n${url}`)}`}
+                  className="btn-secondary btn-sm"
+                  style={{ textDecoration: 'none', display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                  <Mail size={13} /> Email
+                </a>
+
+                <a href={url} target="_blank" rel="noreferrer" className="btn-secondary btn-sm"
+                  style={{ textDecoration: 'none', display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                  <ExternalLink size={13} /> Open
+                </a>
+              </div>
             </div>
           )}
         </div>
