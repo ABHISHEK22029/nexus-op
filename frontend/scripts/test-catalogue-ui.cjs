@@ -110,7 +110,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok(!/Sign in|Log in|Dashboard|Purchases/i.test(text), 'no app navigation leaks onto the public page');
 
   /* add to the basket and send */
-  await guest.evaluate(() => [...document.querySelectorAll('button')].find(b => /Add to enquiry/i.test(b.innerText))?.click());
+  /* The card's button reads "Add"; only the product page says "Add to
+     enquiry". Matching the longer label found nothing on the grid. */
+  await guest.evaluate(() => [...document.querySelectorAll('article button')]
+    .find(b => /^Add$/i.test(b.innerText.trim()))?.click());
   await sleep(1200);
   ok(await guest.evaluate(() => /Your enquiry/i.test(document.body.innerText)),
     'adding opens the enquiry basket');
@@ -121,9 +124,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       s.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true }));
     };
     const p = (ph) => [...document.querySelectorAll('input')].find(i => i.placeholder === ph);
-    set(p('Your name *'), 'Ramesh Kumar');
-    set(p('Company'), 'Sahasra Infra');
-    set(p('Phone'), '9866644456');
+    const put = (ph, v) => { const el = p(ph); if (el) set(el, v); };
+    put('Your name *', 'Ramesh Kumar');
+    put('Company', 'Sahasra Infra');
+    put('Phone', '9866644456');
   });
   await sleep(400);
   await guest.evaluate(() => [...document.querySelectorAll('button')].find(b => /Send enquiry/i.test(b.innerText))?.click());

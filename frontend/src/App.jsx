@@ -13,6 +13,7 @@ const Vendors = lazy(() => import('./pages/Vendors'));
 const VendorFormMinimal = lazy(() => import('./pages/VendorFormMinimal'));
 const PublicCatalogue = lazy(() => import('./pages/PublicCatalogue'));
 const Enquiries = lazy(() => import('./pages/Enquiries'));
+const CataloguePage = lazy(() => import('./pages/CataloguePage'));
 const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const ActivityLog = lazy(() => import('./pages/ActivityLog'));
@@ -216,6 +217,7 @@ const AppRoutes = () => {
       <Route path="/production/:id"    element={<AppLayout><ProductionOrder /></AppLayout>} />
 
       {/* ── Customer-order → procurement flow ── */}
+      <Route path="/catalogue"       element={<AppLayout><CataloguePage /></AppLayout>} />
       <Route path="/enquiries"       element={<AppLayout><Enquiries /></AppLayout>} />
       <Route path="/customers"       element={<AppLayout><Customers /></AppLayout>} />
       <Route path="/customer-orders" element={<AppLayout><CustomerOrders /></AppLayout>} />

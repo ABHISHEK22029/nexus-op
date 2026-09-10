@@ -45,31 +45,85 @@ exports.publicCatalogue = async (req, res) => {
     const slug = cleanSlug(req.params.slug);
     if (!slug) return res.status(404).json({ error: 'Catalogue not found' });
 
+    /* The settings and the business's identity in one round trip. They are
+       both keyed on the same owner, and this is the first thing a
+       visitor's browser waits on — a separate profile lookup was a second
+       trip to Mumbai for four columns.
+     *
+       The company columns are named explicitly and narrowly. company_profile
+       also holds a GSTIN and a bank account number, and this response is
+       public; a SELECT * here would put them on the internet. */
     const { rows: [cat] } = await db.query(
-      `SELECT owner_id, slug, headline, subhead, show_prices,
-              whatsapp_number, theme_accent
-         FROM catalogue_settings
-        WHERE LOWER(slug) = $1 AND is_published IS TRUE`, [slug]);
+      `SELECT cs.owner_id, cs.slug, cs.headline, cs.subhead, cs.show_prices,
+              cs.whatsapp_number, cs.theme_accent,
+              cp.name AS co_name, cp."tradeName" AS co_trade, cp.logo_url AS co_logo,
+              cp.website AS co_website, cp.phone AS co_phone, cp.email AS co_email
+         FROM catalogue_settings cs
+         LEFT JOIN company_profile cp ON cp.owner_id = cs.owner_id
+        WHERE LOWER(cs.slug) = $1 AND cs.is_published IS TRUE`, [slug]);
     if (!cat) return res.status(404).json({ error: 'Catalogue not found' });
 
-    /* The business's own name and logo, so the page is theirs and not
-       ours. Deliberately a narrow column list: company_profile also holds
-       bank account numbers and a GSTIN, and this response is public. */
-    const company = await profileFor(db, cat.owner_id,
-      'name, "tradeName", logo_url, website, phone, email')
-      .catch(() => null);
+    const company = cat.co_name ? {
+      name: cat.co_name, tradeName: cat.co_trade, logo_url: cat.co_logo,
+      website: cat.co_website, phone: cat.co_phone, email: cat.co_email,
+    } : null;
 
-    const { rows: products } = await db.query(
+    /* Paginated and searchable. A fabricator's catalogue is not six things
+       — the sample this was built against runs to a hundred — and sending
+       all of them to a phone on a site connection is the difference
+       between a page that opens and one that does not. */
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 24, 1), 60);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+    const q = String(req.query.q || '').trim().slice(0, 80);
+
+    const params = [cat.owner_id];
+    let search = '';
+    if (q) {
+      params.push(`%${q}%`);
+      search = ` AND (s.name ILIKE $${params.length} OR s.headline ILIKE $${params.length}
+                      OR s.use_case ILIKE $${params.length} OR s.sku_code ILIKE $${params.length})`;
+    }
+    const base = `FROM skus s
+      WHERE s.owner_id = $1 AND s.is_published IS TRUE
+        AND s.catalogue_slug IS NOT NULL${search}`;
+
+    /* COUNT(*) OVER() rather than a second query. The total and the page
+       come back together, which halves the round trips — and on the public
+       page that is the difference a visitor actually feels, because it is
+       the first thing their browser waits for. */
+    const rowParams = [...params, !!cat.show_prices, limit, offset];
+    const { rows } = await db.query(
       `SELECT s.id, s.catalogue_slug AS slug, s.name, s.headline, s.use_case,
               s.unit, s.moq, s.lead_time_note, s.sort_order,
-              CASE WHEN $2 THEN s.price ELSE NULL END AS price,
+              CASE WHEN $${params.length + 1} THEN s.price ELSE NULL END AS price,
               (SELECT cp.id FROM catalogue_photos cp
-                WHERE cp.sku_id = s.id ORDER BY cp.sort_order, cp.id LIMIT 1) AS photo_id
-         FROM skus s
-        WHERE s.owner_id = $1 AND s.is_published IS TRUE
-          AND s.catalogue_slug IS NOT NULL
-        ORDER BY s.sort_order, s.name`,
-      [cat.owner_id, !!cat.show_prices]);
+                WHERE cp.sku_id = s.id ORDER BY cp.sort_order, cp.id LIMIT 1) AS photo_id,
+              COUNT(*) OVER()::int AS total_count
+       ${base}
+        ORDER BY s.sort_order, s.name
+        LIMIT $${params.length + 2} OFFSET $${params.length + 3}`,
+      rowParams);
+
+    /* Zero rows means zero rows — the window function has nothing to
+       report from, so an empty page past the end says 0 rather than the
+       real total. Only matters for a request that asks beyond the last
+       page, which the UI does not do. */
+    const total = rows.length ? rows[0].total_count : 0;
+    const products = rows.map(({ total_count, ...p }) => p);
+
+    /* How big the catalogue is, as opposed to how many matched a search.
+       The hero reads "N products listed", which is a statement about the
+       business — searching for "cross arm" should not make it claim they
+       only make five things. Only costs a query when a search is running;
+       without one the two numbers are the same. */
+    let catalogueTotal = total;
+    if (q) {
+      const { rows: [all] } = await db.query(
+        `SELECT COUNT(*)::int AS n FROM skus s
+          WHERE s.owner_id = $1 AND s.is_published IS TRUE AND s.catalogue_slug IS NOT NULL`,
+        [cat.owner_id]);
+      catalogueTotal = all.n;
+    }
 
     res.json({
       slug: cat.slug,
@@ -84,6 +138,7 @@ exports.publicCatalogue = async (req, res) => {
         phone: company.phone, email: company.email,
       } : null,
       products,
+      total, catalogueTotal, limit, offset, q,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

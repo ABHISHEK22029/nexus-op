@@ -66,6 +66,10 @@ export const MODULES = [
          a call back, and it goes cold faster than anything else here. */
       { label: 'Enquiries', path: '/enquiries', resource: 'enquiries',
         badge: { endpoint: 'enquiries', field: 'new', tone: 'info', title: 'not yet read' } },
+      /* A menu entry of its own, not a Configurator tile. The catalogue is
+         something a business works ON — deciding what to list, writing the
+         copy, sharing the link — not a setting they touch once. */
+      { label: 'Catalogue', path: '/catalogue', resource: 'catalogue' },
       { label: 'Customers', path: '/customers', resource: 'customers' },
       { label: 'Quotations', path: '/sales-quotations', resource: 'sales-quotations',
         badge: { endpoint: 'sales-quotations', field: 'expired', tone: 'warn', title: 'expired' } },
@@ -210,6 +214,7 @@ export const MODULES = [
 const DETAIL_ROUTES = {
   '/customers/': 'sales',
   '/enquiries': 'sales',
+  '/catalogue': 'sales',
   '/sales-quotations/': 'sales',
   '/sales-invoices/': 'sales',
   '/delivery-challans/': 'sales',
