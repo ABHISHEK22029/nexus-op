@@ -44,6 +44,8 @@ const RESOURCES = {
   'sales-quotations': 'Quotations',
   'sales-invoices': 'Sales invoices',
   'delivery-challans': 'Delivery challans',
+  enquiries: 'Enquiries',
+  catalogue: 'Public catalogue',
   // Procurement
   vendors: 'Vendors',
   'vendor-items': 'Vendor supplies',
@@ -98,7 +100,11 @@ const COMMON_READ = ['dashboard', 'activities', 'notifications', 'attachments', 
 
 const g = (resources, actions) => Object.fromEntries(resources.map(r => [r, actions]));
 
-const SALES = ['customers', 'customer-orders', 'sales-quotations', 'sales-invoices', 'delivery-challans'];
+/* Enquiries sit in SALES rather than in an admin group: the person who
+   follows up a lead from the public catalogue is the person who quotes it,
+   and making that a separate permission would mean a salesperson can send
+   a quotation but not read the enquiry that prompted it. */
+const SALES = ['customers', 'customer-orders', 'sales-quotations', 'sales-invoices', 'delivery-challans', 'enquiries'];
 const PROCUREMENT = ['vendors', 'vendor-items', 'po', 'indent', 'quotations', 'raw-materials', 'grn'];
 
 /* Granted explicitly per role rather than folded into SALES or PROCUREMENT.
@@ -143,7 +149,7 @@ const ROLES = {
     grants: {
       ...g([...SALES, ...PROCUREMENT, ...INVENTORY, ...PRODUCTION, ...FINANCE], ALL),
       ...g(['po-approval'], [WRITE]),
-      ...g(['company-profile', 'automation-settings'], [READ, WRITE]),
+      ...g(['company-profile', 'automation-settings', 'catalogue'], [READ, WRITE]),
       ...g(CATEGORIES, ALL),
       /* `users` MEANS SOMETHING DIFFERENT NOW.
        *

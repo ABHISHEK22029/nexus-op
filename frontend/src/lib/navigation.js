@@ -62,6 +62,10 @@ export const MODULES = [
        a second source for the number. */
     items: [
       { group: 'Sell' },
+      /* First in the group on purpose: an enquiry is a stranger waiting for
+         a call back, and it goes cold faster than anything else here. */
+      { label: 'Enquiries', path: '/enquiries', resource: 'enquiries',
+        badge: { endpoint: 'enquiries', field: 'new', tone: 'info', title: 'not yet read' } },
       { label: 'Customers', path: '/customers', resource: 'customers' },
       { label: 'Quotations', path: '/sales-quotations', resource: 'sales-quotations',
         badge: { endpoint: 'sales-quotations', field: 'expired', tone: 'warn', title: 'expired' } },
@@ -205,6 +209,7 @@ export const MODULES = [
    panel with things you never navigate to directly. */
 const DETAIL_ROUTES = {
   '/customers/': 'sales',
+  '/enquiries': 'sales',
   '/sales-quotations/': 'sales',
   '/sales-invoices/': 'sales',
   '/delivery-challans/': 'sales',

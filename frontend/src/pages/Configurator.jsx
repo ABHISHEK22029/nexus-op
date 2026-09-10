@@ -21,7 +21,7 @@ import {
   Settings, Users as UsersIcon, ShieldCheck, History, AlertTriangle,
   Check, X, Plus, Trash2, Save, Info, RotateCcw,
   Tags, Hash, GitBranch, ChevronLeft, ChevronRight, Search, Pencil,
-  BadgeCheck, Lock, UserPlus, HardHat,
+  BadgeCheck, Lock, UserPlus, HardHat, Store,
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
@@ -31,6 +31,7 @@ import AddPersonModal from '../components/AddPersonModal';
 import PersonEditor from '../components/PersonEditor';
 import CategoryAdmin from '../components/CategoryAdmin';
 import ModuleSettings from '../components/ModuleSettings';
+import CatalogueSettings from '../components/CatalogueSettings';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
 
@@ -83,6 +84,11 @@ const TILES = [
     stat: (d) => (d.modulesOn == null ? '—' : `${d.modulesOn} on`),
   },
   {
+    key: 'catalogue', label: 'Catalogue', icon: Store, ready: true,
+    blurb: 'A public page of what you sell, at a link you can share. Enquiries come back into Sales.',
+    stat: (d) => (d.cataloguePublished == null ? '—' : d.cataloguePublished ? 'live' : 'not published'),
+  },
+  {
     key: 'numbering', label: 'Document numbering', icon: Hash, ready: false,
     blurb: 'The prefix and series on your purchase orders, invoices and challans.',
   },
@@ -92,7 +98,7 @@ const TILES = [
   },
 ];
 
-const SECTIONS = ['people', 'roles', 'categories', 'history', 'modules'];
+const SECTIONS = ['people', 'roles', 'categories', 'history', 'modules', 'catalogue'];
 
 export default function Configurator() {
   /* The section comes from the URL, so the rail can link straight to one and
@@ -179,6 +185,8 @@ export default function Configurator() {
       {tab === 'people' && <People />}
       {tab === 'roles' && <Roles />}
       {tab === 'categories' && <CategoryAdmin api={api} toast={toast} />}
+      {tab === 'catalogue' && <CatalogueSettings api={api} toast={toast} />}
+
       {tab === 'modules' && (
         <ModuleSettings api={api} toast={toast} modules={orgModules}
           /* The rail is drawn from /auth/me, so it has to be re-read before

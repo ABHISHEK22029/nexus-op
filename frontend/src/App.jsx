@@ -11,6 +11,8 @@ const Vendors = lazy(() => import('./pages/Vendors'));
    where the extra fields are occasionally wanted. Creating one now uses the
    short form — 22 of 36 columns had never been filled once on real data. */
 const VendorFormMinimal = lazy(() => import('./pages/VendorFormMinimal'));
+const PublicCatalogue = lazy(() => import('./pages/PublicCatalogue'));
+const Enquiries = lazy(() => import('./pages/Enquiries'));
 const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const ActivityLog = lazy(() => import('./pages/ActivityLog'));
@@ -168,6 +170,13 @@ const AppRoutes = () => {
     <Suspense fallback={<div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading…</div>}>
     <Routes>
       {/* ── Auth ── */}
+      {/* The public catalogue. Outside AppLayout on purpose: a stranger
+          arriving from a WhatsApp link has no token, so the nav, the
+          permission context and the first-run gate would all either crash
+          or redirect them to a login they have no business seeing. */}
+      <Route path="/c/:slug"               element={<PublicCatalogue />} />
+      <Route path="/c/:slug/:productSlug"  element={<PublicCatalogue />} />
+
       <Route path="/login"       element={<Login />} />
       <Route path="/signup"      element={<Signup />} />
       {/* Unauthenticated: an invited person has no password yet. The link
@@ -207,6 +216,7 @@ const AppRoutes = () => {
       <Route path="/production/:id"    element={<AppLayout><ProductionOrder /></AppLayout>} />
 
       {/* ── Customer-order → procurement flow ── */}
+      <Route path="/enquiries"       element={<AppLayout><Enquiries /></AppLayout>} />
       <Route path="/customers"       element={<AppLayout><Customers /></AppLayout>} />
       <Route path="/customer-orders" element={<AppLayout><CustomerOrders /></AppLayout>} />
       <Route path="/customer-orders/:coId/invoice" element={<AppLayout><SalesInvoiceBuilder /></AppLayout>} />

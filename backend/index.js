@@ -4,6 +4,7 @@ const cors = require('cors');
 const db = require('./db');
 const cache = require('./cache');
 const metalPricesController = require('./controllers/MetalPricesController');
+const catalogueController = require('./controllers/CatalogueController');
 
 const projectController = require('./controllers/ProjectController');
 const workOrderController = require('./controllers/WorkOrderController');
@@ -132,6 +133,23 @@ app.get('/health', async (req, res) => {
 /* Public metal rates for the Kirashi site (no auth; CORS is open above).
    The backend does the 12h refresh + caching; the static site just reads this. */
 app.get('/public/metal-prices', metalPricesController.get);
+
+/* ══════════════════════════════════════════════════════════
+   THE PUBLIC CATALOGUE — deliberately above app.use(authenticate)
+ *
+   A stranger opening a link from a WhatsApp group has no token. These four
+   routes are the only ones in the product that answer without one, and
+   what they will disclose is decided entirely by publication: a catalogue
+   that is not published, or a product that is not published, does not
+   exist as far as they are concerned.
+ *
+   Every one of them is scoped inside its SQL rather than by a check that
+   follows, so there is no path where a later edit forgets the condition.
+   ══════════════════════════════════════════════════════════ */
+app.get('/public/catalogue/photo/:id',            catalogueController.publicPhoto);
+app.get('/public/catalogue/:slug',                catalogueController.publicCatalogue);
+app.get('/public/catalogue/:slug/:productSlug',   catalogueController.publicProduct);
+app.post('/public/catalogue/:slug/enquiry',       catalogueController.publicEnquiry);
 
 /* ══════════════════════════════════════════════════════════
    AUTHENTICATION (public: login) + GATE
@@ -807,6 +825,22 @@ app.get('/recurring/:id/runs', recurringController.runs);
 app.post('/recurring/run-now', allow('recurring', 'write'), recurringController.runNow);
 
 // ── Sales Quotations (Wave 1A) → convert to Customer Order ──
+/* ══════════════════════════════════════════════════════════
+   CATALOGUE (the business's own side) and ENQUIRIES
+ *
+   Enquiries are a sales resource, not an admin one: the person who follows
+   up a lead is the person who quotes it.
+   ══════════════════════════════════════════════════════════ */
+app.get('/catalogue/settings',        allow('catalogue', 'read'),  catalogueController.getSettings);
+app.put('/catalogue/settings',        allow('catalogue', 'write'), catalogueController.saveSettings);
+app.get('/catalogue/products',        allow('catalogue', 'read'),  catalogueController.listProducts);
+app.patch('/catalogue/products/:id',  allow('catalogue', 'write'), catalogueController.updateProduct);
+
+app.get('/enquiries',                 allow('enquiries', 'read'),  catalogueController.listEnquiries);
+app.get('/enquiries/:id',             allow('enquiries', 'read'),  catalogueController.getEnquiry);
+app.patch('/enquiries/:id/status',    allow('enquiries', 'write'), catalogueController.setEnquiryStatus);
+app.post('/enquiries/:id/convert',    allow('enquiries', 'write'), catalogueController.convertEnquiry);
+
 app.get('/sales-quotations', salesQuotationController.list);
 app.get('/sales-quotations/:id', salesQuotationController.getById);
 app.post('/sales-quotations', salesQuotationController.create);
