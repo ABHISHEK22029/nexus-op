@@ -82,23 +82,28 @@ const PNG = Buffer.from(
     moq: '100',
     lead: '3 weeks from drawing approval',
   };
-  await page.evaluate((t) => {
-    const setVal = (el, v) => {
+  const missingFields = await page.evaluate((t) => {
+    const missing = [];
+    const setVal = (el, v, what) => {
+      if (!el) { missing.push(what); return; }
       const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement : window.HTMLInputElement;
       Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(el, v);
       el.dispatchEvent(new Event('input', { bubbles: true }));
     };
     const dialog = document.querySelector('[role="dialog"]');
     const byPlaceholder = (p) => dialog.querySelector(`[placeholder="${p}"]`);
-    setVal(byPlaceholder('Line hardware'), t.category);
-    setVal(byPlaceholder('100'), t.moq);
-    setVal(byPlaceholder('Distribution poles on 11kV lines'), t.use_case);
-    setVal(byPlaceholder('3 weeks from drawing approval'), t.lead);
+    setVal(byPlaceholder('Line hardware'), t.category, 'category');
+    setVal(byPlaceholder('100'), t.moq, 'moq');
+    setVal(byPlaceholder('Distribution poles on 11kV lines'), t.use_case, 'use case');
+    setVal(byPlaceholder('3 weeks from approval'), t.lead, 'lead time');
     /* The headline box uses the product's own name as its placeholder. */
     const inputs = [...dialog.querySelectorAll('input')];
     const head = inputs.find(i => /CRSARM/.test(i.placeholder || ''));
-    if (head) setVal(head, t.headline);
+    setVal(head, t.headline, 'headline');
+    return missing;
   }, typed);
+  ok(missingFields.length === 0,
+    `every field is present in the editor${missingFields.length ? ' — missing: ' + missingFields.join(', ') : ''}`);
   await sleep(500);
 
   /* ── upload a photograph ── */

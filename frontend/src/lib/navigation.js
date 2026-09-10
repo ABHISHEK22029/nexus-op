@@ -202,6 +202,14 @@ export const MODULES = [
       { group: 'Business' },
       { label: 'Categories', path: '/configurator/categories', adminOnly: true,
         hint: 'Your words for what you buy and sell' },
+      /* Modules and Catalogue had tiles on the Configurator page and no
+         entry in this menu, so the only way to reach either was to open
+         "All settings" first and spot the tile. A tile without a menu
+         entry reads as something half-wired. */
+      { label: 'Modules', path: '/configurator/modules', adminOnly: true,
+        hint: 'Which parts of the product this business uses' },
+      { label: 'Catalogue', path: '/configurator/catalogue', adminOnly: true,
+        hint: 'Your public page and what appears on it' },
       { label: 'Change history', path: '/configurator/history', adminOnly: true,
         hint: 'Who widened access, and when' },
     ],

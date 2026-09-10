@@ -346,10 +346,22 @@ exports.saveSettings = async (req, res) => {
 exports.listProducts = async (req, res) => {
   try {
     const owner = ownerOf(req);
-    const admin = isCrossTenant(req.user?.role);
-    const params = [];
-    let scope = '';
-    if (!admin) { params.push(owner); scope = ` WHERE owner_id = $${params.length}`; }
+    /* Owner-scoped for EVERYONE, including a cross-tenant Administrator.
+     *
+       This screen is "my catalogue", not "every catalogue on the
+       platform". Letting the Administrator role bypass the scope here did
+       two bad things at once: it listed every other business's product
+       names on one org's screen, and it listed products this account
+       cannot touch — every other handler in this file is strictly
+       owner-scoped, so opening one and trying to add a photograph
+       answered "Product not found" for a product that was right there on
+       the list.
+     *
+       An Administrator who needs to manage another organisation's
+       catalogue signs in as that organisation. A cross-tenant read makes
+       sense for an audit screen; it makes none for an editor. */
+    const params = [owner];
+    const scope = ' WHERE owner_id = $1';
     const { rows } = await db.query(
       `SELECT id, sku_code, name, unit, price, headline, use_case, moq,
               lead_time_note, catalogue_slug, is_published, sort_order,
