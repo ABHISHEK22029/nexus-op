@@ -9,7 +9,9 @@
    feature is a URL you paste into a WhatsApp group.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { Store, Check, ExternalLink, Eye, EyeOff, Search, Share2, MessageCircle, Mail } from 'lucide-react';
+import { Store, Check, ExternalLink, Eye, EyeOff, Search, Share2, MessageCircle, Mail, Pencil, Image as ImageIcon } from 'lucide-react';
+import CatalogueProductEditor from './CatalogueProductEditor';
+import Thumb from './CatalogueThumb';
 
 export default function CatalogueSettings({ api, toast }) {
   const [s, setS] = useState(null);
@@ -17,6 +19,7 @@ export default function CatalogueSettings({ api, toast }) {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [q, setQ] = useState('');
+  const [editing, setEditing] = useState(null);
 
   const load = async () => {
     try {
@@ -229,17 +232,38 @@ export default function CatalogueSettings({ api, toast }) {
           <div style={{ maxHeight: 380, overflowY: 'auto' }}>
             {shown.map((p, i) => (
               <div key={p.id} style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 2px',
+                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 2px',
                 borderTop: i ? '1px solid var(--border-subtle)' : 'none',
               }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                {/* A thumbnail, because "does this one have a photograph"
+                    is the question this list is most often opened to
+                    answer, and a row of grey squares says it at a glance. */}
+                <div style={{
+                  width: 38, height: 38, borderRadius: 8, flexShrink: 0, overflow: 'hidden',
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {p.photo_id
+                    ? <Thumb photoId={p.photo_id} />
+                    : <ImageIcon size={15} style={{ color: 'var(--text-disabled)' }} />}
+                </div>
+
+                <div onClick={() => setEditing(p)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
                   <div style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {p.headline || p.name}
                   </div>
                   <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
-                    {p.sku_code}{p.catalogue_slug ? ` · /c/${s.slug}/${p.catalogue_slug}` : ''}
+                    {p.sku_code}
+                    {p.catalogue_category ? ` · ${p.catalogue_category}` : ''}
+                    {p.photo_count ? ` · ${p.photo_count} photo${p.photo_count > 1 ? 's' : ''}` : ' · no photo'}
                   </div>
                 </div>
+
+                <button type="button" onClick={() => setEditing(p)} className="btn-secondary btn-sm"
+                  style={{ display: 'inline-flex', gap: 5, alignItems: 'center', fontSize: '0.76rem' }}>
+                  <Pencil size={12} /> Edit
+                </button>
+
                 <button type="button" onClick={() => toggleProduct(p)} style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 7,
                   fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer',
@@ -254,6 +278,17 @@ export default function CatalogueSettings({ api, toast }) {
           </div>
         )}
       </div>
+
+      {/* One editor for whichever row is open. Rendered here rather than
+          per row so a hundred products do not each mount a drawer. */}
+      <CatalogueProductEditor
+        product={editing} api={api} toast={toast}
+        onClose={() => setEditing(null)}
+        onSaved={(saved) => {
+          setProducts(ps => ps.map(x => x.id === saved.id ? { ...x, ...saved } : x));
+          setEditing(e => (e && e.id === saved.id ? { ...e, ...saved } : e));
+        }}
+      />
     </div>
   );
 }

@@ -354,7 +354,11 @@ exports.listProducts = async (req, res) => {
       `SELECT id, sku_code, name, unit, price, headline, use_case, moq,
               lead_time_note, catalogue_slug, is_published, sort_order,
               catalogue_category,
-              (SELECT COUNT(*)::int FROM catalogue_photos cp WHERE cp.sku_id = skus.id) AS photo_count
+              (SELECT COUNT(*)::int FROM catalogue_photos cp WHERE cp.sku_id = skus.id) AS photo_count,
+              /* The first photograph's id, so the list can show a
+                 thumbnail without one request per row. */
+              (SELECT cp.id FROM catalogue_photos cp
+                WHERE cp.sku_id = skus.id ORDER BY cp.sort_order, cp.id LIMIT 1) AS photo_id
          FROM skus${scope}
         ORDER BY is_published DESC, sort_order, name`, params);
     res.json(rows);
@@ -443,6 +447,27 @@ exports.addPhoto = async (req, res) => {
       [owner, sku.id, att.id, count.n, (req.body.alt || '').slice(0, 160) || null]);
 
     res.json(photo);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* The owner's own view of a photograph.
+ *
+   The public route refuses anything not currently published, which is
+   right for a stranger and wrong here: the person deciding whether a
+   product is ready to list needs to see the picture BEFORE they list it.
+   Owner-scoped, so it shows their photographs and nobody else's. */
+exports.ownerPhoto = async (req, res) => {
+  try {
+    const owner = ownerOf(req);
+    const { rows: [row] } = await db.query(
+      `SELECT a.mime, a.data
+         FROM catalogue_photos cp
+         JOIN attachments a ON a.id = cp.attachment_id
+        WHERE cp.id = $1 AND cp.owner_id = $2`, [req.params.photoId, owner]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.setHeader('Content-Type', row.mime || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(row.data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

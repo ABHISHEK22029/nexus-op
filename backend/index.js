@@ -847,7 +847,8 @@ app.get('/catalogue/products',        allow('catalogue', 'read'),  catalogueCont
 app.patch('/catalogue/products/:id',  allow('catalogue', 'write'), catalogueController.updateProduct);
 app.get('/catalogue/products/:id/photos',           allow('catalogue', 'read'),  catalogueController.listPhotos);
 app.post('/catalogue/products/:id/photos',          allow('catalogue', 'write'), upload.single('file'), catalogueController.addPhoto);
-app.delete('/catalogue/photos/:photoId',            allow('catalogue', 'write'), catalogueController.deletePhoto);
+app.get('/catalogue/photos/:photoId/image',          allow('catalogue', 'read'),  catalogueController.ownerPhoto);
+app.delete('/catalogue/photos/:photoId',             allow('catalogue', 'write'), catalogueController.deletePhoto);
 
 app.get('/enquiries',                 allow('enquiries', 'read'),  catalogueController.listEnquiries);
 app.get('/enquiries/:id',             allow('enquiries', 'read'),  catalogueController.getEnquiry);
