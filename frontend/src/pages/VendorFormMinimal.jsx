@@ -56,6 +56,44 @@ const GST_STATES = {
 };
 const stateFromGstin = (g) => GST_STATES[String(g || '').slice(0, 2)] || null;
 
+/* Defined at module scope, NOT inside the component.
+ *
+   It used to live in the component body, which meant every render produced
+   a brand new function — a different component TYPE as far as React is
+   concerned. React cannot reconcile a new type with the old one, so on each
+   keystroke it unmounted this whole subtree and mounted a fresh one,
+   throwing away the DOM input and the caret with it.
+ *
+   The symptom: type one character into PAN or the bank fields, and the
+   cursor is gone. Type another and it lands nowhere. Only the fields inside
+   a Section were affected — name, phone and GSTIN sit outside one and were
+   always fine, which is what made it look like a glitch on those fields
+   specifically. */
+const CARD = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
+
+const Section = ({ open, onToggle, icon: Icon, title, blurb, filled = 0, children }) => (
+    <div style={{ ...CARD, marginTop: 12, overflow: 'hidden' }}>
+      <button type="button" onClick={onToggle}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+          padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+        }}>
+        {open ? <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronRight size={16} style={{ color: 'var(--text-muted)' }} />}
+        <Icon size={16} style={{ color: 'var(--brand-amber)' }} />
+        <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{title}</span>
+        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>{blurb}</span>
+        {filled > 0 && !open && (
+          <span style={{
+            fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+            background: 'hsl(28,100%,54%,0.14)', color: 'var(--brand-amber)', whiteSpace: 'nowrap',
+          }}>{filled} recorded</span>
+        )}
+      </button>
+      {open && <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>{children}</div>}
+    </div>
+  );
+
+
 export default function VendorFormMinimal() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -192,7 +230,7 @@ export default function VendorFormMinimal() {
   });
   const lbl = { display: 'block', fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 };
   const hint = { fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 5 };
-  const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
+  const card = CARD;
 
   /* How many of a section's fields already hold something. A collapsed
      heading that says "3 recorded" is the difference between "there is
@@ -202,27 +240,6 @@ export default function VendorFormMinimal() {
     return typeof v === 'boolean' ? v : String(v ?? '').trim() !== '';
   }).length;
 
-  const Section = ({ open, onToggle, icon: Icon, title, blurb, filled = 0, children }) => (
-    <div style={{ ...card, marginTop: 12, overflow: 'hidden' }}>
-      <button type="button" onClick={onToggle}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-          padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
-        }}>
-        {open ? <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronRight size={16} style={{ color: 'var(--text-muted)' }} />}
-        <Icon size={16} style={{ color: 'var(--brand-amber)' }} />
-        <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{title}</span>
-        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>{blurb}</span>
-        {filled > 0 && !open && (
-          <span style={{
-            fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-            background: 'hsl(28,100%,54%,0.14)', color: 'var(--brand-amber)', whiteSpace: 'nowrap',
-          }}>{filled} recorded</span>
-        )}
-      </button>
-      {open && <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>{children}</div>}
-    </div>
-  );
 
   /* Without this the edit form paints empty for a moment and then fills in,
      which reads as "this vendor has no details" — and anyone who started
