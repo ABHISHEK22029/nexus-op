@@ -10,15 +10,25 @@
      · the identity is the BUSINESS's, from their own profile.
 
    ── on the look ─────────────────────────────────────────────────────
-   The first version was too flat: a pale search box, no filters, cards
-   with nothing to hold the eye. Fine as a data table, wrong for a page
-   whose whole job is to make a stranger want to ask for a price.
+   Two passes to get here, and both were wrong in a way worth recording.
 
-   What it does now, and why:
+   The first was flat — a pale search box that read as decoration, no
+   filters, cards with nothing to hold the eye. Fine as a data table,
+   wrong for a page whose whole job is to make a stranger want to ask for
+   a price.
 
-     · a dark hero. The page is otherwise white, so one confident block at
-       the top gives it a spine, and the accent sits on dark far better
-       than on grey.
+   The second overcorrected into a dark hero. It gave the page a spine and
+   it also gave it a wall: a heavy block a visitor had to get past before
+   seeing a single product, on a page that exists to show products.
+
+   What it is now:
+
+     · light throughout. The confidence comes from the type and the space
+       around it, not from a colour field — a large display line, generous
+       air, one hairline rule, the numbers set beside it rather than
+       stacked into dashboard tiles.
+     · the accent appears three times: the eyebrow, its rule, the phone
+       icon. Used that sparingly it reads as chosen rather than applied.
      · category filters as real chips with counts, so a visitor who wants
        line hardware does not have to already know the word for it.
      · a search field with weight — a border you can see, a ring on focus.
@@ -187,48 +197,62 @@ export default function PublicCatalogue() {
         </Wrap>
       ) : (
         <>
-          {/* ══ hero — dark, so the page has a spine ══ */}
-          <section style={{
-            background: 'linear-gradient(150deg, #12161c 0%, #1b2129 55%, #12161c 100%)',
-            color: '#fff', position: 'relative', overflow: 'hidden',
-          }}>
-            <div aria-hidden style={{
-              position: 'absolute', top: -140, right: -110, width: 460, height: 460, borderRadius: '50%',
-              background: `radial-gradient(circle, ${accent}2e 0%, transparent 68%)`,
-            }} />
-            <Wrap style={{ padding: '62px 22px 54px', position: 'relative' }}>
+          {/* ══ hero ══
+              The dark slab is gone. It gave the page a spine but it also
+              gave it a wall — a heavy block a visitor has to get past
+              before they see a single product, on a page whose whole job
+              is to show what this business makes.
+
+              Light and quiet instead, and the confidence comes from the
+              type and the space around it rather than from a colour
+              field: a large display line, generous air, one hairline
+              rule, and the numbers set as small caps beside it. The
+              accent appears three times in total — the eyebrow, the rule
+              and the phone icon — which is what makes it read as chosen
+              rather than applied. */}
+          <section style={{ borderBottom: '1px solid #eceff2', background: '#fff' }}>
+            <Wrap style={{ padding: 'clamp(40px, 7vw, 76px) 22px clamp(30px, 4vw, 44px)' }}>
               <div style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: '0.7rem', fontWeight: 800,
-                letterSpacing: '0.13em', textTransform: 'uppercase', color: accent, marginBottom: 18,
+                display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: '0.7rem', fontWeight: 800,
+                letterSpacing: '0.14em', textTransform: 'uppercase', color: accent, marginBottom: 20,
               }}>
-                <span style={{ width: 24, height: 2, background: accent, display: 'inline-block' }} />
+                <span style={{ width: 26, height: 2, background: accent, display: 'inline-block', borderRadius: 2 }} />
                 What we make
               </div>
+
               <h1 style={{
-                fontSize: 'clamp(2rem, 5.4vw, 3.4rem)', fontWeight: 800, margin: 0,
-                lineHeight: 1.05, letterSpacing: '-0.032em', textWrap: 'balance', maxWidth: '17ch',
-                /* Explicit. index.css sets `h1 { color: var(--text-primary) }`
-                   globally, which beats the white this section inherits down
-                   — the headline rendered near-black on a near-black band and
-                   was all but invisible. This page must not depend on the
-                   app's theme tokens: it has no signed-in user to have a
-                   theme. */
-                color: '#fff', fontFamily: 'inherit',
+                fontSize: 'clamp(2.1rem, 5.6vw, 3.6rem)', fontWeight: 800, margin: 0,
+                lineHeight: 1.03, letterSpacing: '-0.035em', textWrap: 'balance', maxWidth: '16ch',
+                /* Explicit, because index.css sets `h1 { color:
+                   var(--text-primary) }` globally and this page has no
+                   signed-in user whose theme that token should follow. */
+                color: '#0f1319', fontFamily: 'inherit',
               }}>
                 {cat.headline || co.name}
               </h1>
+
               {cat.subhead && (
-                <p style={{ color: '#aab3bf', fontSize: '1.06rem', marginTop: 18, maxWidth: '52ch', lineHeight: 1.62 }}>
+                <p style={{
+                  color: '#5b636d', fontSize: 'clamp(0.98rem, 1.4vw, 1.12rem)', marginTop: 20,
+                  maxWidth: '50ch', lineHeight: 1.65,
+                }}>
                   {cat.subhead}
                 </p>
               )}
-              <div style={{ display: 'flex', gap: 26, marginTop: 32, flexWrap: 'wrap' }}>
-                <HeroStat n={cat.catalogueTotal ?? cat.total} label="products listed" accent={accent} />
-                {cat.categories?.length > 0 && <HeroStat n={cat.categories.length} label="categories" accent={accent} />}
+
+              {/* One hairline, then the facts. Separated by rules rather
+                  than boxes — nothing here needs a container. */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 0, marginTop: 36, flexWrap: 'wrap',
+                borderTop: '1px solid #eceff2', paddingTop: 22,
+              }}>
+                <HeroStat n={cat.catalogueTotal ?? cat.total} label="products" />
+                {cat.categories?.length > 0 && <HeroStat n={cat.categories.length} label="categories" />}
                 {co.phone && (
                   <a href={`tel:${co.phone}`} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 8, color: '#fff',
-                    textDecoration: 'none', alignSelf: 'flex-end', fontSize: '0.9rem', fontWeight: 600,
+                    display: 'inline-flex', alignItems: 'center', gap: 8, color: '#0f1319',
+                    textDecoration: 'none', fontSize: '0.92rem', fontWeight: 700,
+                    paddingLeft: 26, marginLeft: 4, borderLeft: '1px solid #eceff2',
                   }}>
                     <Phone size={15} style={{ color: accent }} /> {co.phone}
                   </a>
@@ -312,16 +336,28 @@ export default function PublicCatalogue() {
       )}
 
       {/* ══ closing band ══ */}
-      <footer style={{ background: '#12161c', color: '#aab3bf' }}>
-        <Wrap style={{ padding: '38px 22px 46px' }}>
-          <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', marginBottom: 6 }}>{co.name}</div>
-          <p style={{ fontSize: '0.87rem', margin: '0 0 18px', maxWidth: '46ch', lineHeight: 1.6 }}>
-            Tell us what you need and how many. We will come back with a price.
+      {/* Light too. A dark footer under a light page was the same slab
+          problem at the other end, and the closing line matters more than
+          the block it sits on. */}
+      <footer style={{ background: '#fafbfc', borderTop: '1px solid #eceff2', color: '#5b636d' }}>
+        <Wrap style={{ padding: '44px 22px 54px' }}>
+          <p style={{
+            fontSize: 'clamp(1.05rem, 2vw, 1.3rem)', fontWeight: 700, color: '#0f1319',
+            margin: '0 0 8px', maxWidth: '26ch', lineHeight: 1.3, letterSpacing: '-0.02em',
+          }}>
+            Tell us what you need and how many.
           </p>
-          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: '0.87rem' }}>
-            {co.phone && <a href={`tel:${co.phone}`} style={dark}><Phone size={13} /> {co.phone}</a>}
-            {co.email && <a href={`mailto:${co.email}`} style={dark}><Mail size={13} /> {co.email}</a>}
-            {co.website && <a href={co.website} style={dark}><Globe size={13} /> {String(co.website).replace(/^https?:\/\//, '')}</a>}
+          <p style={{ fontSize: '0.92rem', margin: '0 0 24px', maxWidth: '44ch', lineHeight: 1.6 }}>
+            We will come back with a price.
+          </p>
+          <div style={{
+            display: 'flex', gap: 22, flexWrap: 'wrap', fontSize: '0.88rem',
+            borderTop: '1px solid #eceff2', paddingTop: 20, alignItems: 'center',
+          }}>
+            <span style={{ fontWeight: 800, color: '#0f1319' }}>{co.name}</span>
+            {co.phone && <a href={`tel:${co.phone}`} style={quiet}><Phone size={13} style={{ color: accent }} /> {co.phone}</a>}
+            {co.email && <a href={`mailto:${co.email}`} style={quiet}><Mail size={13} style={{ color: accent }} /> {co.email}</a>}
+            {co.website && <a href={co.website} style={quiet}><Globe size={13} style={{ color: accent }} /> {String(co.website).replace(/^https?:\/\//, '')}</a>}
           </div>
         </Wrap>
       </footer>
@@ -352,19 +388,25 @@ const Wrap = ({ children, style }) => (
 const Center = ({ children }) => (
   <p style={{ color: '#6b7280', textAlign: 'center', padding: '70px 20px' }}>{children}</p>
 );
-const dark = { color: 'inherit', textDecoration: 'none', display: 'inline-flex', gap: 6, alignItems: 'center' };
+const quiet = { color: '#5b636d', textDecoration: 'none', display: 'inline-flex', gap: 6, alignItems: 'center', fontWeight: 600 };
 /* the accent as a hairline at the very top — one detail, cheaply earned */
 const Ring = ({ accent }) => (
   <div aria-hidden style={{ height: 3, background: `linear-gradient(90deg, ${accent}, ${accent}66 60%, transparent)` }} />
 );
 
-const HeroStat = ({ n, label, accent }) => (
-  <div>
-    <div style={{ fontSize: '1.7rem', fontWeight: 800, lineHeight: 1, letterSpacing: '-0.02em' }}>{n}</div>
-    <div style={{ fontSize: '0.78rem', color: '#8892a0', marginTop: 5, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700 }}>
-      {label}
-    </div>
-  </div>
+/* The number and its label on one line, not stacked. Stacked they read as
+   dashboard tiles, which is the wrong register for a page selling
+   something — here they are simply two facts in a sentence. */
+const HeroStat = ({ n, label }) => (
+  <span style={{
+    display: 'inline-flex', alignItems: 'baseline', gap: 7,
+    paddingRight: 26, marginRight: 4, borderRight: '1px solid #eceff2',
+  }}>
+    <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0f1319', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+      {n}
+    </span>
+    <span style={{ fontSize: '0.82rem', color: '#7b838c', fontWeight: 600 }}>{label}</span>
+  </span>
 );
 
 /* A search box with a visible edge and a focus ring. The first version was
