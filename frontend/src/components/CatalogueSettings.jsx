@@ -116,7 +116,11 @@ export default function CatalogueSettings({ api, toast }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
           <div>
             <label style={lbl}>Web address</label>
-            <input style={input} value={s.slug || ''} placeholder="kirashi"
+            {/* Neutral placeholders. These ship to every business that uses
+                the product, so an example taken from one customer's name
+                would appear as the suggestion in all of them — the backend
+                already proposes a slug from their own company name. */}
+            <input style={input} value={s.slug || ''} placeholder="your-company"
               onChange={e => setS({ ...s, slug: e.target.value })} />
             <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 3 }}>
               Lower case, no spaces. This is what people will see in the link.
@@ -135,12 +139,12 @@ export default function CatalogueSettings({ api, toast }) {
         </div>
         <div style={{ marginTop: 12 }}>
           <label style={lbl}>Headline</label>
-          <input style={input} value={s.headline || ''} placeholder="Fabricated galvanized materials"
+          <input style={input} value={s.headline || ''} placeholder="What you make, in your words"
             onChange={e => setS({ ...s, headline: e.target.value })} />
         </div>
         <div style={{ marginTop: 12 }}>
           <label style={lbl}>A line underneath</label>
-          <input style={input} value={s.subhead || ''} placeholder="11kV line hardware, made to spec"
+          <input style={input} value={s.subhead || ''} placeholder="A line of detail underneath"
             onChange={e => setS({ ...s, subhead: e.target.value })} />
         </div>
 
