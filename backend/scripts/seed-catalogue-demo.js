@@ -27,6 +27,8 @@ const ownerArg = args.indexOf('--owner');
 const SLUG = (args[args.indexOf('--slug') + 1] || 'nordic-flatpack').toLowerCase();
 
 /* ── the fabricated items, from the purchase order ──────────────────── */
+const LINE = 'Line hardware';
+const DTR = 'Transformer fittings';
 const FABRICATED = [
   ['VC-01', '11 KV V cross arm', '75 × 40 × 6 mm', 'Nos', 10.5394, 'Distribution poles on 11kV lines'],
   ['VC-02', '11 KV back clamp for V cross arm', '50 × 6 mm', 'Nos', 1.0526, 'Pairs with the V cross arm'],

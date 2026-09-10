@@ -78,6 +78,23 @@ exports.publicCatalogue = async (req, res) => {
 
     const params = [cat.owner_id];
     let search = '';
+
+    /* Only categories that actually have published products behind them.
+       Offering a filter that returns nothing is worse than not offering
+       one, and the counts let the page show how much is in each. */
+    const { rows: cats } = await db.query(
+      `SELECT catalogue_category AS name, COUNT(*)::int AS n
+         FROM skus
+        WHERE owner_id = $1 AND is_published IS TRUE
+          AND catalogue_slug IS NOT NULL
+          AND COALESCE(TRIM(catalogue_category), '') <> ''
+        GROUP BY 1 ORDER BY 2 DESC, 1`, [cat.owner_id]);
+
+    const category = String(req.query.category || '').trim().slice(0, 60);
+    if (category) {
+      params.push(category);
+      search += ` AND s.catalogue_category = $${params.length}`;
+    }
     if (q) {
       params.push(`%${q}%`);
       search = ` AND (s.name ILIKE $${params.length} OR s.headline ILIKE $${params.length}
@@ -95,6 +112,7 @@ exports.publicCatalogue = async (req, res) => {
     const { rows } = await db.query(
       `SELECT s.id, s.catalogue_slug AS slug, s.name, s.headline, s.use_case,
               s.unit, s.moq, s.lead_time_note, s.sort_order,
+              s.catalogue_category AS category,
               CASE WHEN $${params.length + 1} THEN s.price ELSE NULL END AS price,
               (SELECT cp.id FROM catalogue_photos cp
                 WHERE cp.sku_id = s.id ORDER BY cp.sort_order, cp.id LIMIT 1) AS photo_id,
@@ -117,7 +135,7 @@ exports.publicCatalogue = async (req, res) => {
        only make five things. Only costs a query when a search is running;
        without one the two numbers are the same. */
     let catalogueTotal = total;
-    if (q) {
+    if (q || category) {
       const { rows: [all] } = await db.query(
         `SELECT COUNT(*)::int AS n FROM skus s
           WHERE s.owner_id = $1 AND s.is_published IS TRUE AND s.catalogue_slug IS NOT NULL`,
@@ -137,8 +155,8 @@ exports.publicCatalogue = async (req, res) => {
         logo: company.logo_url, website: company.website,
         phone: company.phone, email: company.email,
       } : null,
-      products,
-      total, catalogueTotal, limit, offset, q,
+      products, categories: cats,
+      total, catalogueTotal, limit, offset, q, category,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
@@ -335,6 +353,7 @@ exports.listProducts = async (req, res) => {
     const { rows } = await db.query(
       `SELECT id, sku_code, name, unit, price, headline, use_case, moq,
               lead_time_note, catalogue_slug, is_published, sort_order,
+              catalogue_category,
               (SELECT COUNT(*)::int FROM catalogue_photos cp WHERE cp.sku_id = skus.id) AS photo_count
          FROM skus${scope}
         ORDER BY is_published DESC, sort_order, name`, params);
@@ -361,6 +380,7 @@ exports.updateProduct = async (req, res) => {
     const sets = [], vals = [];
     const put = (col, v) => { if (v !== undefined) { vals.push(v); sets.push(`${col} = $${vals.length}`); } };
     put('headline', b.headline);
+    put('catalogue_category', b.catalogue_category);
     put('use_case', b.use_case);
     put('moq', b.moq === '' ? null : b.moq);
     put('lead_time_note', b.lead_time_note);
@@ -380,6 +400,75 @@ exports.updateProduct = async (req, res) => {
       }
       throw e;
     }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* ── product photographs ────────────────────────────────────────────
+ *
+   The table existed from the first migration and nothing could write to
+   it, so every product on the public page showed a grey placeholder. A
+   catalogue of grey boxes is not a catalogue.
+
+   The bytes go into `attachments`, which already has an upload path and a
+   size limit, and catalogue_photos points at them. One home for a file,
+   and the public photo route joins back through here to check the product
+   is still published. */
+exports.addPhoto = async (req, res) => {
+  try {
+    const owner = ownerOf(req);
+    if (!req.file) return res.status(400).json({ error: 'No image was uploaded.' });
+    if (!/^image\//.test(req.file.mimetype || '')) {
+      return res.status(400).json({ error: 'That is not an image. JPEG, PNG or WebP.' });
+    }
+    const { rows: [sku] } = await db.query(
+      'SELECT id FROM skus WHERE id = $1 AND owner_id = $2', [req.params.id, owner]);
+    if (!sku) return res.status(404).json({ error: 'Product not found' });
+
+    /* Enough for a product grid; a phone photo straight off the camera is
+       several megabytes and every visitor would pay for it. */
+    const { rows: [count] } = await db.query(
+      'SELECT COUNT(*)::int n FROM catalogue_photos WHERE sku_id = $1', [sku.id]);
+    if (count.n >= 6) {
+      return res.status(409).json({ error: 'Six photographs is the limit for one product.' });
+    }
+
+    const { rows: [att] } = await db.query(
+      `INSERT INTO attachments (owner_id, entity_type, entity_id, filename, mime, size_bytes, data)
+       VALUES ($1,'catalogue',$2,$3,$4,$5,$6) RETURNING id`,
+      [owner, sku.id, req.file.originalname, req.file.mimetype, req.file.size, req.file.buffer]);
+
+    const { rows: [photo] } = await db.query(
+      `INSERT INTO catalogue_photos (owner_id, sku_id, attachment_id, sort_order, alt_text)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id, sort_order, alt_text`,
+      [owner, sku.id, att.id, count.n, (req.body.alt || '').slice(0, 160) || null]);
+
+    res.json(photo);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.listPhotos = async (req, res) => {
+  try {
+    const owner = ownerOf(req);
+    const { rows } = await db.query(
+      `SELECT cp.id, cp.sort_order, cp.alt_text
+         FROM catalogue_photos cp JOIN skus s ON s.id = cp.sku_id
+        WHERE cp.sku_id = $1 AND s.owner_id = $2
+        ORDER BY cp.sort_order, cp.id`, [req.params.id, owner]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.deletePhoto = async (req, res) => {
+  try {
+    const owner = ownerOf(req);
+    /* Deleting the attachment cascades to catalogue_photos, so the file
+       does not linger in the database after its last reference is gone. */
+    const { rows: [p] } = await db.query(
+      `SELECT cp.attachment_id FROM catalogue_photos cp
+        WHERE cp.id = $1 AND cp.owner_id = $2`, [req.params.photoId, owner]);
+    if (!p) return res.status(404).json({ error: 'Photograph not found' });
+    await db.query('DELETE FROM attachments WHERE id = $1 AND owner_id = $2', [p.attachment_id, owner]);
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

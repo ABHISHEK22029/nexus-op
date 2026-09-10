@@ -104,6 +104,16 @@ app.get('/health', async (req, res) => {
     branch: process.env.RENDER_GIT_BRANCH || null,
     service: process.env.RENDER_SERVICE_NAME || 'local',
     startedAt: STARTED_AT,
+    /* Redis is optional and degrades silently — without REDIS_URL every
+       cache call no-ops and requests fall through to the database, which is
+       correct but indistinguishable from outside. Saying so here is the
+       only way to answer "is the cache actually on in production?" without
+       reading the dashboard. */
+    cache: cache.enabled?.() ? 'redis' : 'off',
+    /* How long this instance has been up. On a free plan that answers a
+       different question: anything much past 15 minutes means something is
+       pinging the service, because Render spins an idle one down. */
+    uptimeMinutes: Math.round(process.uptime() / 60),
   };
   if (req.query.db) {
     try {
@@ -835,6 +845,9 @@ app.get('/catalogue/settings',        allow('catalogue', 'read'),  catalogueCont
 app.put('/catalogue/settings',        allow('catalogue', 'write'), catalogueController.saveSettings);
 app.get('/catalogue/products',        allow('catalogue', 'read'),  catalogueController.listProducts);
 app.patch('/catalogue/products/:id',  allow('catalogue', 'write'), catalogueController.updateProduct);
+app.get('/catalogue/products/:id/photos',           allow('catalogue', 'read'),  catalogueController.listPhotos);
+app.post('/catalogue/products/:id/photos',          allow('catalogue', 'write'), upload.single('file'), catalogueController.addPhoto);
+app.delete('/catalogue/photos/:photoId',            allow('catalogue', 'write'), catalogueController.deletePhoto);
 
 app.get('/enquiries',                 allow('enquiries', 'read'),  catalogueController.listEnquiries);
 app.get('/enquiries/:id',             allow('enquiries', 'read'),  catalogueController.getEnquiry);
