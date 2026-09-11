@@ -271,7 +271,7 @@ export default function CatalogueProductEditor({ product, api, toast, onClose, o
             <div style={{ display: 'grid', gap: 12 }}>
               <div>
                 <label style={lbl}>Headline</label>
-                <input style={input} value={form.headline} placeholder={product.name}
+                <input style={input} value={form.headline} aria-label="Headline" placeholder={product.name}
                   onChange={e => set('headline', e.target.value)} />
                 <p style={hint}>
                   Shown instead of the internal name. Leave it blank to use “{product.name}”.
@@ -280,6 +280,7 @@ export default function CatalogueProductEditor({ product, api, toast, onClose, o
               <div>
                 <label style={lbl}>What it is for</label>
                 <textarea style={{ ...input, minHeight: 62, resize: 'vertical' }} value={form.use_case}
+                  aria-label="What it is for"
                   placeholder="Distribution poles on 11kV lines"
                   onChange={e => set('use_case', e.target.value)} />
               </div>
@@ -292,19 +293,19 @@ export default function CatalogueProductEditor({ product, api, toast, onClose, o
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
               <div>
                 <label style={lbl}>Category</label>
-                <input style={input} value={form.catalogue_category} placeholder="Line hardware"
+                <input style={input} value={form.catalogue_category} aria-label="Category" placeholder="Line hardware"
                   onChange={e => set('catalogue_category', e.target.value)} />
                 <p style={hint}>Becomes a filter.</p>
               </div>
               <div>
                 <label style={lbl}>Minimum order</label>
-                <input style={input} type="number" value={form.moq} placeholder="100"
+                <input style={input} type="number" value={form.moq} aria-label="Minimum order" placeholder="100"
                   onChange={e => set('moq', e.target.value)} />
                 <p style={hint}>In {product.unit || 'nos'}.</p>
               </div>
               <div>
                 <label style={lbl}>Lead time</label>
-                <input style={input} value={form.lead_time_note} placeholder="3 weeks from approval"
+                <input style={input} value={form.lead_time_note} aria-label="Lead time" placeholder="3 weeks from approval"
                   onChange={e => set('lead_time_note', e.target.value)} />
               </div>
             </div>
@@ -314,7 +315,7 @@ export default function CatalogueProductEditor({ product, api, toast, onClose, o
           <div style={section}>
             <div style={sectionTitle}>Link</div>
             <input style={{ ...input, fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}
-              value={form.catalogue_slug} placeholder="11-kv-v-cross-arm"
+              value={form.catalogue_slug} aria-label="Web address" placeholder="11-kv-v-cross-arm"
               onChange={e => set('catalogue_slug', e.target.value)} />
             <p style={hint}>
               The end of this product’s own address. Changing it breaks any link already shared.

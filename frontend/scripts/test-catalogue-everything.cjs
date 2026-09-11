@@ -135,21 +135,29 @@ const dlg = (page, fn, arg) => page.evaluate((f, a) => {
     const set = (el, v) => { if (!el) return;
       Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(el, v);
       el.dispatchEvent(new Event('input',{bubbles:true})); };
-    set(dialog.querySelector('[placeholder="11 KV V cross arm 75 × 40 × 6"]'), arg);
-    set(dialog.querySelector('[placeholder="VC-01"]'), 'VC-01');
-    set(dialog.querySelector('[placeholder="Nos"]'), 'Nos');
-    set(dialog.querySelector('[placeholder="833"]'), '833');
+    const by = (l) => dialog.querySelector('[aria-label="' + l + '"]');
+    set(by('Name'), arg); set(by('Code'), 'VC-01'); set(by('Unit'), 'Nos'); set(by('Rate'), '833');
+    /* Untick "list it straight away", so the assertion below that nothing
+       is published by creation is testing the default path deliberately
+       rather than by accident. */
+    const tick = dialog.querySelector('input[type=checkbox]');
+    if (tick && tick.checked) tick.click();
   `, NAME);
   await sleep(400);
-  await dlg(page, `[...dialog.querySelectorAll('button')].find(b => /Add and continue/i.test(b.innerText))?.click();`);
-  await sleep(2400);
+  await dlg(page, `[...dialog.querySelectorAll('button')].find(b => /Add product/i.test(b.innerText))?.click();`);
+  await sleep(3200);
 
   let list = (await api('/catalogue/products')).body;
   const made = list.find(x => x.name === NAME);
   ok(!!made, `the product exists on the server → ${made?.sku_code}`);
   ok(made?.is_published === false, 'and is not published by creation');
+  /* The add form is complete now, so it no longer drops into the editor —
+     which is right, but the photograph and edit steps below need it open. */
+  await page.evaluate(() => [...document.querySelectorAll('button')]
+    .find(b => /^Edit$/.test(b.innerText.trim()))?.click());
+  await sleep(1600);
   ok(await page.evaluate(() => /Photographs/i.test(document.body.innerText)),
-    'and the editor opened on it straight away');
+    'its editor opens from the product row');
 
   /* ══ 4. photographs ══ */
   head('photographs');
@@ -193,11 +201,12 @@ const dlg = (page, fn, arg) => page.evaluate((f, a) => {
       const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement : window.HTMLInputElement;
       Object.getOwnPropertyDescriptor(proto.prototype,'value').set.call(el, v);
       el.dispatchEvent(new Event('input',{bubbles:true})); };
-    set([...dialog.querySelectorAll('input')].find(i => /cross arm/i.test(i.placeholder||'')), arg.headline, 'headline');
-    set(dialog.querySelector('[placeholder="Line hardware"]'), arg.category, 'category');
-    set(dialog.querySelector('[placeholder="100"]'), arg.moq, 'moq');
-    set(dialog.querySelector('[placeholder="Distribution poles on 11kV lines"]'), arg.use_case, 'use case');
-    set(dialog.querySelector('[placeholder="3 weeks from approval"]'), arg.lead, 'lead time');
+    const by = (l) => dialog.querySelector('[aria-label="' + l + '"]');
+    set(by('Headline'), arg.headline, 'headline');
+    set(by('Category'), arg.category, 'category');
+    set(by('Minimum order'), arg.moq, 'moq');
+    set(by('What it is for'), arg.use_case, 'use case');
+    set(by('Lead time'), arg.lead, 'lead time');
     return miss;
   `, typed);
   ok(missing.length === 0, `every field is present${missing.length ? ' — missing: ' + missing.join(', ') : ''}`);
