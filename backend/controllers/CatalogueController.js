@@ -97,8 +97,14 @@ exports.publicCatalogue = async (req, res) => {
     }
     if (q) {
       params.push(`%${q}%`);
-      search = ` AND (s.name ILIKE $${params.length} OR s.headline ILIKE $${params.length}
-                      OR s.use_case ILIKE $${params.length} OR s.sku_code ILIKE $${params.length})`;
+      /* `+=`, not `=`. Assigning here threw the category clause away while
+         leaving its parameter in the array — Postgres then refused the
+         whole query with "could not determine data type of parameter $2",
+         so the public page answered 500 the moment somebody searched
+         inside a category. Either filter alone worked, which is why it
+         survived until the two were tried together. */
+      search += ` AND (s.name ILIKE $${params.length} OR s.headline ILIKE $${params.length}
+                       OR s.use_case ILIKE $${params.length} OR s.sku_code ILIKE $${params.length})`;
     }
     const base = `FROM skus s
       WHERE s.owner_id = $1 AND s.is_published IS TRUE
