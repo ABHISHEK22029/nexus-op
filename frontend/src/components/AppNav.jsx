@@ -19,6 +19,7 @@ import ScopeBar from './ScopeBar';
 import {
   LayoutDashboard, ShoppingBag, ShoppingCart, Package, Factory, Wallet,
   Settings, SlidersHorizontal, Zap, ChevronLeft, ChevronRight, Sun, Moon, Home,
+  Megaphone,
 } from 'lucide-react';
 import { usePermissions } from '../context/PermissionContext';
 import { useTheme } from '../context/ThemeContext';
@@ -27,7 +28,9 @@ import {
   MODULES, moduleForPath, visibleItems, visibleLinks, visibleModules, badgeEndpoints,
 } from '../lib/navigation';
 
-const ICONS = { LayoutDashboard, ShoppingBag, ShoppingCart, Package, Factory, Wallet, Settings, SlidersHorizontal };
+/* A name missing from here silently falls back to the Home icon, so every
+   module added to navigation.js needs its icon added alongside it. */
+const ICONS = { LayoutDashboard, Megaphone, ShoppingBag, ShoppingCart, Package, Factory, Wallet, Settings, SlidersHorizontal };
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const PANEL_KEY = 'maks_nav_panel_open';

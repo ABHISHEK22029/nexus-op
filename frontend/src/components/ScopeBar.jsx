@@ -11,14 +11,17 @@
    dropdown labelled "Context" is worse than no dropdown.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useRef } from 'react';
-import { Building2, Layers, ChevronDown, Check } from 'lucide-react';
+import { Building2, Layers, ChevronDown, Check, Globe } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function ScopeBar() {
   const { projects, activeProject, setActiveProject, usesProjects } = useProject();
+  const { user } = usePermissions();
+  const crossTenant = user?.crossTenant === true;
   const [org, setOrg] = useState(null);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -47,6 +50,28 @@ export default function ScopeBar() {
         <Building2 size={13} />
         <span>{orgName}</span>
       </div>
+
+      {/* A cross-tenant role sees every organisation's customers, quotations
+          and invoices — by design, but indistinguishable from a leak unless
+          it is said out loud. Whoever is in this mode needs to know before
+          they read a number and act on it.
+
+          The flag comes from the server: a workspace can define its own
+          roles, so the browser cannot decide this from the role's name. */}
+      {crossTenant && (
+        <div
+          title="This role reads across every organisation on this installation. Figures you see may belong to another business."
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '2px 8px', borderRadius: 999,
+            background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)',
+            color: '#dc2626', fontSize: '0.68rem', fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap',
+          }}
+        >
+          <Globe size={11} /> All organisations
+        </div>
+      )}
 
       {usesProjects && (
         <div style={{ position: 'relative' }}>

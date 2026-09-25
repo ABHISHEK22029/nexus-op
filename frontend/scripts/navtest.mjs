@@ -17,7 +17,9 @@ t('/items                -> stock',      moduleForPath('/items'), 'stock');
 t('/skus                 -> stock',      moduleForPath('/skus'), 'stock');
 t('/production           -> production', moduleForPath('/production'), 'production');
 t('/mb                   -> production', moduleForPath('/mb'), 'production');
-t('/configurator         -> settings',   moduleForPath('/configurator'), 'settings');
+/* Configure became its own module in the rail; this assertion still
+   expected it to live under Settings. */
+t('/configurator         -> configurator', moduleForPath('/configurator'), 'configurator');
 t('/dashboard            -> home',       moduleForPath('/dashboard'), 'home');
 t('unknown path          -> home',       moduleForPath('/nonsense'), 'home');
 console.log('');

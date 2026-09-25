@@ -48,6 +48,31 @@ export const MODULES = [
     ],
   },
   {
+    /* Marketing sits before Sales because that is the order the work happens:
+       the catalogue is what you put in front of strangers, and an enquiry is
+       a stranger answering it. Both used to live under Sales > Sell, next to
+       Customers and Orders — but those are about people you already deal
+       with, and the two reaching-outward screens were lost among them.
+
+       Enquiries leads, and is the landing page: an enquiry is somebody
+       waiting for a call back, and it goes cold faster than anything else
+       in the product. */
+    key: 'marketing',
+    label: 'Marketing',
+    icon: 'Megaphone',
+    landing: '/enquiries',
+    items: [
+      { label: 'Enquiries', path: '/enquiries', resource: 'enquiries',
+        badge: { endpoint: 'enquiries', field: 'new', tone: 'info', title: 'not yet read' } },
+      /* A menu entry of its own, not a Configurator tile. The catalogue is
+         something a business works ON — deciding what to list, writing the
+         copy, sharing the link — not a setting they touch once. The
+         Configurator keeps its own "Catalogue" entry for the public page's
+         settings; this one is the products. */
+      { label: 'Catalogue', path: '/catalogue', resource: 'catalogue' },
+    ],
+  },
+  {
     key: 'sales',
     label: 'Sales',
     icon: 'ShoppingBag',
@@ -62,14 +87,6 @@ export const MODULES = [
        a second source for the number. */
     items: [
       { group: 'Sell' },
-      /* First in the group on purpose: an enquiry is a stranger waiting for
-         a call back, and it goes cold faster than anything else here. */
-      { label: 'Enquiries', path: '/enquiries', resource: 'enquiries',
-        badge: { endpoint: 'enquiries', field: 'new', tone: 'info', title: 'not yet read' } },
-      /* A menu entry of its own, not a Configurator tile. The catalogue is
-         something a business works ON — deciding what to list, writing the
-         copy, sharing the link — not a setting they touch once. */
-      { label: 'Catalogue', path: '/catalogue', resource: 'catalogue' },
       { label: 'Customers', path: '/customers', resource: 'customers' },
       { label: 'Quotations', path: '/sales-quotations', resource: 'sales-quotations',
         badge: { endpoint: 'sales-quotations', field: 'expired', tone: 'warn', title: 'expired' } },
@@ -97,6 +114,10 @@ export const MODULES = [
       { label: 'Vendors', path: '/vendors', resource: 'vendors',
         hint: 'Directory and what each one supplies' },
       { label: 'Indents', path: '/indent', resource: 'indent', module: 'contracting' },
+      /* Quotations that arrived as files. Same resource as Vendor quotes —
+         the same people raise and decide on both. */
+      { label: 'Quotation files', path: '/vendor-quotations', resource: 'quotations',
+        hint: 'Upload vendor Excel/PDF/Word quotes and compare them' },
       { label: 'Vendor quotes', path: '/quotations', resource: 'quotations',
         badge: { endpoint: 'quotations', field: 'awaiting_quotes', tone: 'info', title: 'still short of three quotes' } },
       { group: 'Buy & receive' },
@@ -221,8 +242,11 @@ export const MODULES = [
    panel with things you never navigate to directly. */
 const DETAIL_ROUTES = {
   '/customers/': 'sales',
-  '/enquiries': 'sales',
-  '/catalogue': 'sales',
+  /* Moved with their menu entries — these decide which rail icon lights up,
+     and left on 'sales' the rail would highlight Sales while the Marketing
+     panel was open. */
+  '/enquiries': 'marketing',
+  '/catalogue': 'marketing',
   '/sales-quotations/': 'sales',
   '/sales-invoices/': 'sales',
   '/delivery-challans/': 'sales',

@@ -4,7 +4,7 @@
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { signToken } = require('../middleware/auth');
-const { permissionsFor } = require('../shared/roles');
+const { permissionsFor, isCrossTenant } = require('../shared/roles');
 
 // POST /auth/login  { email, password } -> { token, user }
 async function login(req, res) {
@@ -253,7 +253,16 @@ async function me(req, res) {
        drifted permission table is worse than none because it gets trusted.
        Here the UI can only ever render what the server already agreed to. */
     const { role, label, permissions } = permissionsFor(result.rows[0].role, result.rows[0].org_id);
-    return res.json({ ...result.rows[0], role, roleLabel: label, permissions });
+    /* Whether this role reads across organisations, decided here rather than
+       inferred in the browser from the role's name. A workspace can define
+       its own roles, so "is this Administrator?" is not a question a client
+       can answer from a string — and the answer decides whether the screen
+       says "you are seeing every organisation's data", which is the one
+       thing a person in this mode must not be left guessing about. */
+    return res.json({
+      ...result.rows[0], role, roleLabel: label, permissions,
+      crossTenant: isCrossTenant(role),
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
