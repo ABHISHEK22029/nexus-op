@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download, Mail } from 'lucide-react';
 import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
-import html2pdf from 'html2pdf.js';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -77,14 +76,11 @@ const POInvoice = () => {
 
   const handleDownloadPdf = () => {
     const element = invoiceRef.current;
-    const opt = {
-      margin:       0,
-      filename:     `${(po.poNumber || `PO-${po.id}`).replace(/\//g, '_')}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-    };
-    return html2pdf().set(opt).from(element).save();
+    const prev = document.title;
+    document.title = (po.poNumber || `PO-${po.id}`).replace(/\//g, '_');
+    window.print();
+    setTimeout(() => { document.title = prev; }, 0);
+    return undefined;
   };
 
   const handlePrint = () => {

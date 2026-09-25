@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
 import Attachments from '../components/Attachments';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -19,7 +18,15 @@ export default function GrnBillDoc() {
     await fetch(`${API}/grn-bills/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     setBill(b => ({ ...b, status }));
   };
-  const pdf = () => html2pdf().set({ margin: 0, filename: `${bill.bill_number}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'in', format: 'a4' } }).from(ref.current).save();
+  const pdf = () => {
+    /* Browser print-to-PDF rather than html2canvas: the output stays real
+       text, the print stylesheet controls page breaks, and the item table
+       repeats its header. The filename comes from document.title. */
+    const prev = document.title;
+    document.title = `${bill.bill_number}`;
+    window.print();
+    setTimeout(() => { document.title = prev; }, 0);
+  };
 
   if (!bill) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading bill…</div>;
   const co = bill.company || {};

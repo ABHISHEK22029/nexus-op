@@ -1,0 +1,123 @@
+/* ══════════════════════════════════════════════════════════════════════
+   Printing a document.
+
+   Before this file there was no @page rule anywhere in the product and
+   only one page (RA Bill) had any print CSS at all. Everything else was
+   printed by handing the browser the screen layout: the nav rail, the
+   module panel, the account button, the assistant and the toolbar all went
+   onto the sheet, the document sat inside an 860px column in the middle of
+   an A4 page, and the item table split mid-row with no header on page two.
+
+   Three of the seven document pages avoided that by using html2pdf, which
+   is worse in a different way: html2canvas paints the page into one long
+   bitmap and slices it at fixed heights, so a row is cut in half wherever
+   the slice happens to land, the text stops being text, and the file is a
+   photograph of an invoice rather than an invoice.
+
+   This is the whole fix, in one place, for all of them. It is CSS, so the
+   output stays real text — selectable, searchable, sharp at any zoom, and
+   about a tenth the file size.
+
+   Rules of the road for anyone adding a document page:
+   · put nothing in .app-page you would not want on paper
+   · wrap any block that must not be split in `.doc-keep`
+   · use a real <thead> for table headers so they repeat on every page
+   ══════════════════════════════════════════════════════════════════════ */
+
+@page {
+  size: A4;
+  /* Slightly wider at the foot: page numbers and the signature block sit
+     there, and 10mm reads as "nearly falling off" once printed. */
+  margin: 12mm 10mm 14mm;
+}
+
+@media print {
+  /* ── 1. Only the page itself prints ────────────────────────────────────
+     Written as "everything except" rather than a list of class names, so a
+     new piece of chrome added to the shell later cannot quietly start
+     appearing on invoices. */
+  .app-layout > *:not(.app-main),
+  .app-main > *:not(.app-page) { display: none !important; }
+
+  html, body,
+  .app-layout, .app-main, .app-page {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  body {
+    color: #000;
+    font-size: 11pt;
+    /* Without this, browsers drop background fills — and the table header
+       band, the totals strip and every status chip go white-on-white. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* The document pages centre themselves in an 860px column for the
+     screen. On paper the sheet IS the column. !important beats the inline
+     style that sets it. */
+  .app-page > div {
+    max-width: none !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* ── 2. Nothing interactive belongs on paper ─────────────────────────── */
+  button, .btn, .btn-sm, .inv-act-btn,
+  select, textarea, input,
+  [role="toolbar"], [data-print="off"] { display: none !important; }
+
+  /* `.no-print` is used on nine elements across the document pages — the
+     toolbars, the compliance warnings, the "this quotation expired" banner —
+     and was never defined anywhere. Every one of them has been printing.
+     Tailwind's `print:hidden` is the other spelling used in this codebase;
+     both are honoured here so neither has to be hunted down and renamed. */
+  .no-print, .print\:hidden { display: none !important; }
+
+  /* ── 3. Tables: the header repeats, rows never split ──────────────────
+     display:table-header-group is what makes a browser reprint <thead> at
+     the top of every page. It only works on a real thead — a styled first
+     row will not repeat. */
+  table { width: 100% !important; border-collapse: collapse !important; }
+  thead { display: table-header-group !important; }
+  tfoot { display: table-footer-group !important; }
+  tr, img, figure { break-inside: avoid !important; page-break-inside: avoid !important; }
+
+  /* ── 4. Blocks that must arrive whole ─────────────────────────────────
+     A totals box split across two sheets is how a customer ends up reading
+     "Total Amount" on one page and the number on the next. */
+  .doc-keep,
+  .inv-header, .inv-party, .inv-parties,
+  .inv-totals, .inv-bank, .inv-sig, .inv-footer,
+  .inv-terms, .inv-amount-words {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* A heading stranded at the foot of a page with its content overleaf. */
+  h1, h2, h3, h4 { break-after: avoid !important; page-break-after: avoid !important; }
+
+  /* ── 5. Links print as text, not as URLs ──────────────────────────────
+     Some print stylesheets expand href after the link text. On an invoice
+     that turns "contact@…" into a line of machine noise. */
+  a, a:visited { color: inherit !important; text-decoration: none !important; }
+  a[href]::after { content: "" !important; }
+
+  /* ── 6. Screen-only flourishes that cost ink and legibility ─────────── */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    transition: none !important;
+    animation: none !important;
+  }
+  .inv-sheet, .doc-sheet { border: 0 !important; border-radius: 0 !important; }
+}

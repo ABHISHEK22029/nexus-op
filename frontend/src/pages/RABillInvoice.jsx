@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download } from 'lucide-react';
 import axios from 'axios';
-import html2pdf from 'html2pdf.js';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const inr = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -38,13 +37,10 @@ export default function RABillInvoice() {
   }, [id]);
 
   const downloadPdf = () => {
-    html2pdf().set({
-      margin: 0,
-      filename: `${(bill.bill_number || `RA-${bill.id}`).replace(/\//g, '_')}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    }).from(ref.current).save();
+    const prev = document.title;
+    document.title = (bill.bill_number || `RA-${bill.id}`).replace(/\//g, '_');
+    window.print();
+    setTimeout(() => { document.title = prev; }, 0);
   };
 
   if (loading) return <div style={{ padding: 60, textAlign: 'center', color: '#555' }}>Loading invoice…</div>;
