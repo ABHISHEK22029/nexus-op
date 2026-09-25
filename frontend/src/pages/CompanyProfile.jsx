@@ -10,6 +10,7 @@
    user what is missing BEFORE a customer's accounts team finds it.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useMemo } from 'react';
+import LogoUploader from '../components/LogoUploader';
 import { Building2, Landmark, ReceiptIndianRupee, Save, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
@@ -128,7 +129,11 @@ export default function CompanyProfile() {
         <Field label="Phone" value={form.phone} onChange={set('phone')} />
         <Field label="Email" value={form.email} onChange={set('email')} />
         <Field label="Website" value={form.website} onChange={set('website')} />
-        <Field label="Logo URL" value={form.logo_url} onChange={set('logo_url')} hint="Public image link, printed on documents" />
+        {/* The file upload leads; the URL field stays underneath for anyone
+            already using one, and as the fallback when nothing is uploaded. */}
+        <LogoUploader />
+        <Field label="Logo URL" value={form.logo_url} onChange={set('logo_url')}
+          hint="Optional fallback — used only when no logo file has been uploaded" />
       </Section>
 
       <Section icon={<ReceiptIndianRupee size={16} />} title="Tax & registration" hint="GSTIN determines your state, which decides CGST+SGST vs IGST.">

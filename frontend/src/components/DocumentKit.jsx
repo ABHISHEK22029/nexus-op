@@ -11,6 +11,7 @@
    isn't one.
    ══════════════════════════════════════════════════════════ */
 import React from 'react';
+import CompanyLogo from './CompanyLogo';
 import { AlertTriangle } from 'lucide-react';
 
 export const rup = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -24,10 +25,9 @@ export function CompanyHeader({ company = {}, title, meta = [] }) {
   return (
     <div className="inv-header">
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        {co.logo_url && (
-          <img src={co.logo_url} alt="" style={{ height: 44, width: 'auto', objectFit: 'contain' }}
-            onError={e => { e.target.style.display = 'none'; }} />
-        )}
+        {/* Prefers the uploaded logo and falls back to logo_url, so a company
+            that pasted a link keeps its letterhead until it uploads a file. */}
+        <CompanyLogo fallbackUrl={co.logo_url || null} height={44} />
         <div>
           <div className="inv-company-name">{co.name || '—'}</div>
           <div className="inv-company-detail">
