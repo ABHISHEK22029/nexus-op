@@ -4,6 +4,8 @@ const cors = require('cors');
 const db = require('./db');
 const cache = require('./cache');
 const metalPricesController = require('./controllers/MetalPricesController');
+const companyLogoController = require('./controllers/CompanyLogoController');
+const vendorQuotationController = require('./controllers/VendorQuotationController');
 const catalogueController = require('./controllers/CatalogueController');
 
 const projectController = require('./controllers/ProjectController');
@@ -224,7 +226,38 @@ app.use((req, res, next) => {
   let segment = parts[0];
   if (!segment || UNGATED.has(segment)) return next();
 
-  const action = ACTION_FOR_METHOD[req.method] || WRITE;
+  let action = ACTION_FOR_METHOD[req.method] || WRITE;
+
+  /* The letterhead logo, which is not the company profile.
+   *
+   * Two things go wrong if this path takes the ordinary treatment.
+   *
+   * Reading: `company-profile` read is held by Administrator, Finance,
+   * Owner and Viewer. Sales and Procurement hold none of it — yet they are
+   * the people raising the quotations and purchase orders the logo is
+   * printed on. Gated normally, the mark would vanish from their documents
+   * and from nobody else's, which is a bug that takes a week to notice.
+   * The logo is the company's public mark, printed on every document its
+   * reader already has open; it is not the bank details next to it.
+   *
+   * Writing: DELETE maps to the `delete` action, and `delete
+   * company-profile` means "destroy this company's identity" — something an
+   * Owner rightly does not hold. Removing a logo is an edit to the profile,
+   * so it is checked as `write`, like uploading one. */
+  if (segment === 'company-profile' && parts[1] === 'logo') {
+    if (req.method === 'GET') return next();
+    action = WRITE;
+  }
+
+  /* An uploaded vendor quotation is a vendor quotation. It is the same
+     business object as /quotations — the same people raise it, read it and
+     decide on it — so it is checked against the same permission rather than
+     inventing `vendor-quotations`, which no role has been granted and which
+     would therefore refuse everybody, including the Owner. (Permissions
+     live in a database overlay that REPLACES the built-in table, so a new
+     resource name is not just a code change; it is a migration for every
+     installation.) */
+  if (segment === 'vendor-quotations') segment = 'quotations';
 
   /* `/admin` is not one resource, and matching on the first segment alone
      treated it as one.
@@ -771,6 +804,26 @@ app.put('/company-profile', allow('company-profile', 'write'), async (req, res) 
   }
 });
 
+/* The logo as an uploaded file rather than a link to someone else's host.
+ *
+ * Writing is guarded: whoever may edit the company's details may set its
+ * mark. Reading deliberately is NOT guarded by allow('company-profile',
+ * 'read'), and that is not an oversight — `company-profile` read is granted
+ * only to Administrator, Finance, Owner and Viewer. Sales and Procurement
+ * have no company-profile permission at all, yet they raise the quotations
+ * and purchase orders that carry the letterhead. GET /company-profile above
+ * is unguarded for the same reason, and guarding these two would have
+ * dropped the logo from precisely those people's documents — silently, and
+ * only for some roles, which is the worst way to find a bug.
+ *
+ * Safe because the handler is owner-scoped: it returns this organisation's
+ * logo or a 404, never another's. */
+app.post('/company-profile/logo', allow('company-profile', 'write'),
+  upload.single('file'), companyLogoController.upload);
+app.get('/company-profile/logo', companyLogoController.get);
+app.get('/company-profile/logo/status', companyLogoController.status);
+app.delete('/company-profile/logo', allow('company-profile', 'write'), companyLogoController.remove);
+
 // PO State Transitions
 app.patch('/po/:id/approve', async (req, res) => {
   try {
@@ -859,6 +912,7 @@ app.get('/sales-quotations', salesQuotationController.list);
 app.get('/sales-quotations/:id', salesQuotationController.getById);
 app.post('/sales-quotations', salesQuotationController.create);
 app.patch('/sales-quotations/:id/status', salesQuotationController.setStatus);
+app.patch('/sales-quotations/:id', salesQuotationController.update);
 app.post('/sales-quotations/:id/convert', salesQuotationController.convertToOrder);
 app.delete('/sales-quotations/:id', salesQuotationController.remove);
 
@@ -1428,6 +1482,17 @@ app.post('/quotations/:id/generate-po', salesController.generatePO);
 /* ── Attachments (files on any record) ── */
 app.post('/attachments',            upload.single('file'), attachmentController.create);
 app.get('/attachments',             attachmentController.list);
+
+/* Vendor quotations that arrive as files — Excel, PDF or Word. The
+   compare route is registered BEFORE /:id so 'compare' is not read as
+   an id. */
+app.post('/vendor-quotations',            upload.single('file'), vendorQuotationController.upload);
+app.get('/vendor-quotations/compare',     vendorQuotationController.compare);
+app.get('/vendor-quotations',             vendorQuotationController.list);
+app.get('/vendor-quotations/:id/file',    vendorQuotationController.file);
+app.get('/vendor-quotations/:id',         vendorQuotationController.getById);
+app.delete('/vendor-quotations/:id',      vendorQuotationController.remove);
+
 app.get('/attachments/:id/download', attachmentController.download);
 app.delete('/attachments/:id',      attachmentController.remove);
 
@@ -1449,6 +1514,7 @@ app.post('/sales-invoices',            salesInvoiceController.create);
 app.get('/sales-invoices/:id',         salesInvoiceController.getById);
 app.post('/sales-invoices/:id/payment', salesInvoiceController.addPayment);
 app.patch('/sales-invoices/:id/status', salesInvoiceController.setStatus);
+app.patch('/sales-invoices/:id',        salesInvoiceController.update);
 app.delete('/sales-invoices/:id',      salesInvoiceController.remove);
 
 /* ══════════════════════════════════════════════════════════

@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import AppNav from './components/AppNav';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+import VendorQuotations from './pages/VendorQuotations';
 const Projects = lazy(() => import('./pages/Projects'));
 const WorkOrders = lazy(() => import('./pages/WorkOrders'));
 const Vendors = lazy(() => import('./pages/Vendors'));
@@ -227,6 +228,7 @@ const AppRoutes = () => {
       <Route path="/skus"            element={<AppLayout><SKUs /></AppLayout>} />
       <Route path="/raw-materials"   element={<AppLayout><RawMaterials /></AppLayout>} />
       <Route path="/quotations"      element={<AppLayout><Quotations /></AppLayout>} />
+      <Route path="/vendor-quotations" element={<AppLayout><VendorQuotations /></AppLayout>} />
       <Route path="/bills"             element={<AppLayout><Bills /></AppLayout>} />
       <Route path="/expenses"          element={<AppLayout><Expenses /></AppLayout>} />
       <Route path="/reports"           element={<AppLayout><Reports /></AppLayout>} />
