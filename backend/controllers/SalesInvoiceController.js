@@ -307,6 +307,130 @@ exports.addPayment = async (req, res) => {
   finally { client.release(); }
 };
 
+/* PATCH /sales-invoices/:id — change an invoice after it exists.
+ *
+ * Stricter than the quotation, because a tax invoice is a statutory
+ * document rather than an offer:
+ *
+ *   Draft                  everything, including the number and the lines
+ *   Sent / Paid / part paid  only what does not alter the tax document —
+ *                          notes, terms, due date, e-way bill number
+ *
+ * Rule 46 requires an invoice number to be unique and sequential per
+ * supplier, and the buyer claims input credit against the figures on the
+ * copy they hold. Quietly changing the rate or the number on an issued
+ * invoice leaves their return disagreeing with yours, and the correction
+ * the law provides for is a credit or debit note — which this product
+ * already has. So once it is issued, the amounts stop being editable here
+ * and the note is the way to change what is owed.
+ *
+ * Money already received is never touched: amount_paid is maintained by
+ * addPayment, so it is not in either list.
+ */
+const INVOICE_DRAFT_FIELDS = ['invoice_number', 'invoice_date', 'due_date', 'discount',
+  'gst_rate', 'round_off', 'notes', 'terms', 'customer_id', 'place_of_supply',
+  'place_of_supply_code', 'reverse_charge', 'bill_to_name', 'bill_to_address',
+  'bill_to_gstin', 'bill_to_state', 'ship_to_name', 'ship_to_address',
+  'ship_to_gstin', 'ship_to_state', 'eway_bill_no'];
+const INVOICE_ISSUED_FIELDS = ['notes', 'terms', 'due_date', 'eway_bill_no'];
+
+exports.update = async (req, res) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const s = scopedById(req, req.params.id);
+    const inv = (await client.query(`SELECT * FROM sales_invoices WHERE ${s.where}`, s.params)).rows[0];
+    if (!inv) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Invoice not found' }); }
+
+    const draft = inv.status === 'Draft';
+    const allowed = draft ? INVOICE_DRAFT_FIELDS : INVOICE_ISSUED_FIELDS;
+    const offered = Object.keys(req.body || {}).filter(k => k !== 'items');
+    const refused = offered.filter(k => !allowed.includes(k));
+    if (refused.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `This invoice has been issued, so ${refused.join(', ')} can no longer be changed. `
+             + `Raise a credit or debit note to correct an issued invoice.`,
+        editable: allowed,
+      });
+    }
+    if (!draft && req.body.items) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Line items can only be changed while the invoice is a Draft. Raise a credit or debit note instead.',
+      });
+    }
+
+    /* Rule 46(b): unique per supplier. */
+    if (draft && req.body.invoice_number && req.body.invoice_number !== inv.invoice_number) {
+      const clash = await client.query(
+        'SELECT id FROM sales_invoices WHERE owner_id = $1 AND invoice_number = $2 AND id <> $3',
+        [inv.owner_id, req.body.invoice_number, inv.id]);
+      if (clash.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `Invoice number ${req.body.invoice_number} is already used.` });
+      }
+    }
+
+    const set = {};
+    for (const k of allowed) if (k in req.body) set[k] = req.body[k];
+
+    if (draft && (req.body.items || 'discount' in set || 'gst_rate' in set
+                  || 'round_off' in set || 'customer_id' in set || 'place_of_supply' in set)) {
+      const items = req.body.items
+        || (await client.query('SELECT * FROM sales_invoice_items WHERE sales_invoice_id = $1 ORDER BY sort_order', [inv.id])).rows;
+      const tax = await resolveTax(client, inv.owner_id, set.customer_id ?? inv.customer_id,
+        set.place_of_supply ?? inv.place_of_supply);
+      const t = compute(items, {
+        discount: set.discount ?? inv.discount,
+        gstRate: set.gst_rate ?? inv.gst_rate,
+        interstate: tax.interstate,
+        roundOff: set.round_off ?? inv.round_off,
+      });
+      Object.assign(set, {
+        sub_total: t.subTotal, interstate: tax.interstate, cgst: t.cgst, sgst: t.sgst,
+        igst: t.igst, gst_total: t.gstTotal, net_amount: t.net,
+        amount_in_words: amountInWords(t.net),
+        place_of_supply: set.place_of_supply ?? tax.placeOfSupply ?? inv.place_of_supply,
+        place_of_supply_code: set.place_of_supply_code ?? tax.placeOfSupplyCode ?? inv.place_of_supply_code,
+      });
+      if (req.body.items) {
+        await client.query('DELETE FROM sales_invoice_items WHERE sales_invoice_id = $1', [inv.id]);
+        let so = 0;
+        for (const l of t.lines) {
+          /* Same column list as create(). sales_invoice_items has no sku_id —
+             only sales_quotation_items does. */
+          await client.query(
+            `INSERT INTO sales_invoice_items (sales_invoice_id, description, hsn, uom, quantity, rate, amount, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [inv.id, l.description, l.hsn || null, l.uom || 'nos',
+             l.quantity || 0, l.rate || 0, l.amount || 0, so++]);
+        }
+      }
+      /* A revised total can land below what has already been received. */
+      if (Number(inv.amount_paid || 0) > t.net + 0.005) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: `₹${Number(inv.amount_paid).toFixed(2)} has already been received against this invoice, `
+               + `which is more than the revised total of ₹${t.net.toFixed(2)}.`,
+        });
+      }
+    }
+
+    const cols = Object.keys(set);
+    if (!cols.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Nothing to update' }); }
+    const clause = cols.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
+    const { rows } = await client.query(
+      `UPDATE sales_invoices SET ${clause} WHERE id = $${cols.length + 1} RETURNING *`,
+      [...cols.map(c => set[c]), inv.id]);
+    await client.query('COMMIT');
+    res.json(rows[0]);
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+};
+
 exports.setStatus = async (req, res) => {
   const { status } = req.body;
   const allowed = ['Draft', 'Sent', 'Partially Paid', 'Paid'];

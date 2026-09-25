@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import CompanyLogo from '../components/CompanyLogo';
+import InlineEdit from '../components/InlineEdit';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
 import { useToast } from '../context/ToastContext';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 
@@ -21,7 +22,34 @@ export default function SalesInvoiceDoc() {
   useEffect(() => { load(); }, [id]);
 
   const setStatus = async (status) => { await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); load(); };
-  const pdf = () => html2pdf().set({ margin: 0, filename: `${inv.invoice_number}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'in', format: 'a4' } }).from(ref.current).save();
+  const pdf = () => {
+    /* Browser print-to-PDF rather than html2canvas: the output stays real
+       text, the print stylesheet controls page breaks, and the item table
+       repeats its header. The filename comes from document.title. */
+    const prev = document.title;
+    document.title = `${inv.invoice_number}`;
+    window.print();
+    setTimeout(() => { document.title = prev; }, 0);
+  };
+
+  /* Save one field from the document itself. The server decides what is
+     still editable once an invoice is issued, and its answer replaces the
+     local row — a changed discount moves every total below it. */
+  const patch = async (field, value) => {
+    try {
+      const res = await fetch(`${API}/sales-invoices/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value === '' ? null : value }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(d.error || 'Could not save'); return { ok: false, error: d.error }; }
+      setInv(prev => ({ ...prev, ...d }));
+      toast.success('Saved');
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  };
+
+  const isDraft = inv?.status === 'Draft';
 
   const recordPayment = async () => {
     if (!pay.amount || +pay.amount <= 0) { toast.error('Enter a payment amount'); return; }
@@ -132,7 +160,7 @@ export default function SalesInvoiceDoc() {
       <div ref={ref} className="invoice-mock">
         <div className="inv-header">
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            {co.logo_url && <img src={co.logo_url} alt="" style={{ height: 44, width: 'auto', objectFit: 'contain' }} onError={e => { e.target.style.display = 'none'; }} />}
+            <CompanyLogo fallbackUrl={co.logo_url || null} height={44} />
             <div>
               <div className="inv-company-name">{co.name || '—'}</div>
               <div className="inv-company-detail">
@@ -146,8 +174,17 @@ export default function SalesInvoiceDoc() {
           </div>
           <div style={{ textAlign: 'right' }}>
             <div className="inv-po-title">Tax Invoice</div>
-            <div className="inv-meta-row">Invoice #: <strong>{inv.invoice_number}</strong></div>
-            <div className="inv-meta-row">Date: <strong>{date}</strong></div>
+            {/* Editable while the invoice is a Draft. Once issued the number
+                and date are particulars of a tax document under Rule 46 —
+                the padlock says so rather than letting someone type into a
+                field the server will refuse. */}
+            <div className="inv-meta-row">Invoice #: <InlineEdit
+              value={inv.invoice_number} field="invoice_number" canEdit={isDraft} onSave={patch}
+              title="An issued invoice number cannot be changed — raise a credit or debit note" /></div>
+            <div className="inv-meta-row">Date: <InlineEdit
+              value={inv.invoice_date?.slice(0, 10)} field="invoice_date" type="date"
+              canEdit={isDraft} onSave={patch} format={fmt}
+              title="An issued invoice date cannot be changed" /></div>
             {dueDate && <div className="inv-meta-row">Due: <strong style={{ color: overdue ? '#dc2626' : undefined }}>{dueDate}{overdue ? ' (overdue)' : ''}</strong></div>}
             <div className="inv-meta-row">Status: <strong>{inv.status}</strong></div>
           </div>

@@ -178,6 +178,119 @@ exports.setStatus = async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
+/* PATCH /sales-quotations/:id — change a quotation after it exists.
+ *
+ * There was no way to do this at all: a typo in a rate meant deleting the
+ * quotation and raising another under a new number, which is why quote
+ * numbers had gaps in them.
+ *
+ * What may change depends on where the quotation has got to:
+ *
+ *   Draft            everything, including the number and the line items
+ *   Sent / Accepted  only the things that are not the offer itself —
+ *                    notes, terms, and how long it stays valid
+ *   Converted        nothing; an order exists against these figures
+ *
+ * The line is drawn there because a quotation is what a customer agrees a
+ * price against. Editing the rates on a quotation they already hold, under
+ * the same number, leaves two different documents claiming to be QT-0007.
+ * Extending its validity does not have that problem.
+ */
+const QUOTE_OPEN_FIELDS = ['quote_number', 'quote_date', 'valid_until', 'discount',
+  'gst_rate', 'round_off', 'notes', 'terms', 'payment_terms_days', 'customer_id'];
+const QUOTE_SENT_FIELDS = ['valid_until', 'notes', 'terms'];
+
+exports.update = async (req, res) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const s = scopedById(req, req.params.id);
+    const q = (await client.query(`SELECT * FROM sales_quotations WHERE ${s.where}`, s.params)).rows[0];
+    if (!q) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Quotation not found' }); }
+
+    if (q.status === 'Converted' || q.converted_order_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'This quotation has been converted to an order and can no longer be edited.',
+      });
+    }
+    const draft = q.status === 'Draft';
+    const allowed = draft ? QUOTE_OPEN_FIELDS : QUOTE_SENT_FIELDS;
+    const offered = Object.keys(req.body || {}).filter(k => k !== 'items');
+    const refused = offered.filter(k => !allowed.includes(k));
+    if (refused.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `This quotation has been sent, so ${refused.join(', ')} can no longer be changed. `
+             + `Set it back to Draft first, or raise a revised quotation.`,
+        editable: allowed,
+      });
+    }
+    if (!draft && req.body.items) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Line items can only be changed while the quotation is a Draft.' });
+    }
+
+    /* A number the customer can quote back at you has to stay unique per
+       supplier — the same rule Rule 46 puts on invoices, and the reason the
+       number comes from a sequence rather than a count. */
+    if (draft && req.body.quote_number && req.body.quote_number !== q.quote_number) {
+      const clash = await client.query(
+        'SELECT id FROM sales_quotations WHERE owner_id = $1 AND quote_number = $2 AND id <> $3',
+        [q.owner_id, req.body.quote_number, q.id]);
+      if (clash.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `Quotation number ${req.body.quote_number} is already used.` });
+      }
+    }
+
+    const set = {};
+    for (const k of allowed) if (k in req.body) set[k] = req.body[k];
+
+    /* Totals are recomputed here, never accepted from the client: the
+       figures on the document must follow from the lines on it. */
+    if (draft && (req.body.items || 'discount' in set || 'gst_rate' in set || 'round_off' in set || 'customer_id' in set)) {
+      const items = req.body.items
+        || (await client.query('SELECT * FROM sales_quotation_items WHERE sales_quotation_id = $1 ORDER BY sort_order', [q.id])).rows;
+      const customerId = set.customer_id ?? q.customer_id;
+      const interstate = await deriveInterstate(client, customerId, q.owner_id);
+      const t = compute(items, {
+        discount: set.discount ?? q.discount,
+        gstRate: set.gst_rate ?? q.gst_rate,
+        interstate,
+        roundOff: set.round_off ?? q.round_off,
+      });
+      Object.assign(set, {
+        sub_total: t.subTotal, interstate, cgst: t.cgst, sgst: t.sgst, igst: t.igst,
+        gst_total: t.gstTotal, net_amount: t.net, amount_in_words: amountInWords(t.net),
+      });
+      if (req.body.items) {
+        await client.query('DELETE FROM sales_quotation_items WHERE sales_quotation_id = $1', [q.id]);
+        let so = 0;
+        for (const l of t.lines) {
+          await client.query(
+            `INSERT INTO sales_quotation_items (sales_quotation_id, sku_id, description, hsn, uom, quantity, rate, amount, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [q.id, l.skuId || l.sku_id || null, l.description, l.hsn || null, l.uom || 'nos',
+             l.quantity || 0, l.rate || 0, l.amount || 0, so++]);
+        }
+      }
+    }
+
+    const cols = Object.keys(set);
+    if (!cols.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Nothing to update' }); }
+    const clause = cols.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
+    const { rows } = await client.query(
+      `UPDATE sales_quotations SET ${clause} WHERE id = $${cols.length + 1} RETURNING *`,
+      [...cols.map(c => set[c]), q.id]);
+    await client.query('COMMIT');
+    res.json(rows[0]);
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+};
+
 // POST /sales-quotations/:id/convert  → creates a Customer Order from the quote
 exports.convertToOrder = async (req, res) => {
   const client = await db.getClient();
