@@ -9,10 +9,21 @@
 
    One function, so there is one place that knows the rule.
 
-   `LIMIT 1` is kept as a fallback for the row that predates owner_id and
-   for callers that genuinely have no user in scope (a cron job, a webhook).
-   That fallback is the old behaviour, so nothing regresses; it simply stops
-   being the only behaviour.
+   There used to be a fallback here: with no ownerId, return
+   `SELECT … ORDER BY id LIMIT 1` — the first profile in the database. It was
+   meant for the row that predates owner_id and for callers with no user in
+   scope (a cron job, a webhook). It has been removed, because what it
+   actually does is hand an arbitrary tenant's name, GSTIN and bank account
+   to whoever asks, and the one place that would use it — an unattended
+   caller rendering a document — is exactly where nobody is watching the
+   output. Every caller today passes an owner, and no row is left with a
+   null owner_id, so the fallback had no legitimate user left; it was only a
+   way for the next careless call site to print company A's bank details on
+   company B's invoice.
+
+   No owner, or no profile for that owner → null. Callers already treat that
+   as "profile not set up yet" and leave the letterhead blank, which is the
+   safe failure: a missing letterhead is noticed, a wrong one is not.
    ══════════════════════════════════════════════════════════════════════ */
 
 /**
@@ -21,18 +32,14 @@
  * @param {string} columns       defaults to everything
  */
 async function profileFor(db, ownerId, columns = '*') {
-  if (ownerId != null) {
-    const { rows } = await db.query(
-      `SELECT ${columns} FROM company_profile WHERE owner_id = $1 LIMIT 1`, [ownerId]);
-    if (rows[0]) return rows[0];
-  }
-  /* No profile of their own yet — a brand new account before it has been
-     through the first-run screen. Returning the install's original row
-     here would hand them somebody else's company identity, so a caller
-     with an ownerId gets null and must treat the profile as unset. */
-  if (ownerId != null) return null;
+  /* No owner in scope: there is no safe answer, so there is no answer.
+     Previously this returned the first profile in the table. */
+  if (ownerId == null) return null;
 
-  const { rows } = await db.query(`SELECT ${columns} FROM company_profile ORDER BY id LIMIT 1`);
+  const { rows } = await db.query(
+    `SELECT ${columns} FROM company_profile WHERE owner_id = $1 LIMIT 1`, [ownerId]);
+  /* Nothing yet — a new account before the first-run screen. Unset, not
+     "borrow somebody else's". */
   return rows[0] || null;
 }
 
