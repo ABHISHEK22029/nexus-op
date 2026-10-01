@@ -32,9 +32,15 @@ const db = require('../db');
 const REFRESH_HOURS = 12;
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-/* How much history to serve. The table keeps every day; this is only what
-   goes down the wire, sized to the longest range the chart offers (3Y). */
-const HISTORY_SERVE_DAYS = 1200;
+/* How much history to keep, and to serve — the same number, because there is
+   no reason to hold a day nobody can look at.
+
+   366, not 365: the chart's 1Y range asks for 365 days BACK FROM TODAY, so a
+   span of exactly 365 days is needed for it to be fully covered. Keeping 365
+   rows gives a span of 364 and the 1Y view would permanently report itself as
+   truncated ("since 2 Oct 2025") instead of "past year". One spare day costs
+   nothing and makes the longest range honest. Leap years are covered too. */
+const HISTORY_DAYS = 366;
 
 /* How far back the provider lets this key reach in one timeframe call.
    Older than 30 days returns 209 "requires a paid plan". */
@@ -150,7 +156,7 @@ async function readHistory() {
   try {
     const { rows } = await db.query(
       `SELECT day, metals, source FROM metal_price_history
-       ORDER BY day DESC LIMIT $1`, [HISTORY_SERVE_DAYS]);
+       ORDER BY day DESC LIMIT $1`, [HISTORY_DAYS]);
     /* db.js parses DATE (oid 1082) to the raw 'YYYY-MM-DD' string, so `day`
        needs no formatting — and must not be put through a JS Date, which is
        what turns a calendar day into the day before for IST readers. */
@@ -159,6 +165,33 @@ async function readHistory() {
     if (isMissingTable(e)) { historyTableMissing = true; console.warn('[metal-prices] metal_price_history missing — run migration 062'); return []; }
     console.error('[metal-prices] history read failed:', e.message);
     return [];
+  }
+}
+
+/* Drop anything past the retention window.
+
+   Once per process, not per request: this endpoint is hit on every view of
+   the Kirashi rates page, and a DELETE per page view is write load on a
+   hosted database to remove, almost always, nothing. The table is capped at
+   366 rows, so over-retaining for a few hours after a restart is harmless —
+   whereas a write on every read is not.
+
+   CURRENT_DATE is the database's date (UTC) while the day keys are IST, so
+   the cutoff can land a day either side. On a 366-day window that is
+   immaterial, and erring a day long is the safe direction. */
+let pruned = false;
+async function pruneHistory() {
+  if (pruned || historyTableMissing) return 0;
+  pruned = true;
+  try {
+    const { rowCount } = await db.query(
+      'DELETE FROM metal_price_history WHERE day < (CURRENT_DATE - $1::int)', [HISTORY_DAYS]);
+    if (rowCount) console.log(`[metal-prices] pruned ${rowCount} day(s) older than ${HISTORY_DAYS} days`);
+    return rowCount;
+  } catch (e) {
+    if (isMissingTable(e)) { historyTableMissing = true; return 0; }
+    console.error('[metal-prices] prune failed:', e.message);
+    return 0;
   }
 }
 
@@ -299,6 +332,7 @@ exports.get = async (req, res) => {
        backfill failure leaves the chart short, which is the state it was
        already in, so it is logged rather than surfaced. */
     try { await backfillFx(); } catch (e) { console.error('[metal-prices] backfill failed:', e.message); }
+    await pruneHistory();
 
     // Fresh cache: reuse the cached USD→INR (no API call) but REBUILD metals from the
     // CURRENT config, so maintained ₹/kg rates (e.g. weekly Raipur steel) reflect at once.
