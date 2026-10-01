@@ -1,0 +1,102 @@
+# Record one day of metal rates, every day.
+#
+# The rates on kirashi.co.in come from /public/metal-prices, and that endpoint
+# only writes a day's row when somebody asks it to — it has no timer of its
+# own. So the price history was really a record of when the site happened to
+# get a visitor: ten recorded days across fifteen calendar ones, with the gaps
+# falling wherever nobody looked.
+#
+# An in-process timer in the backend cannot fix that. The service is on
+# Render's free tier and sleeps after 15 minutes idle, so the timer is usually
+# not running when the day turns over. The trigger has to come from outside,
+# which is what this is.
+#
+# It also warms the service each morning, so the first real visitor of the day
+# is less likely to be the one paying the ~25s cold start.
+
+name: Daily metal rates
+
+on:
+  schedule:
+    # 01:05 UTC = 06:35 IST — after midnight IST, so the row lands on the
+    # correct Indian calendar day (the endpoint keys history by IST date).
+    # GitHub runs scheduled jobs on a best-effort basis and can be minutes
+    # late; for a once-a-day record that is immaterial.
+    - cron: '5 1 * * *'
+  # So this can be tested, and re-run by hand on a day it failed, without
+  # waiting for tomorrow.
+  workflow_dispatch:
+
+# Nothing here reads or writes the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: metal-prices-daily
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ask the backend to record today's rates
+        env:
+          # Override in Settings → Variables if the backend moves.
+          ENDPOINT: ${{ vars.METAL_PRICES_URL || 'https://nexus-op-2.onrender.com/public/metal-prices' }}
+        run: |
+          set -uo pipefail
+
+          # The service may be asleep. A cold start measured ~25s, so the
+          # first attempt gets a long timeout and two retries follow rather
+          # than reporting a failure that was only a sleeping container.
+          for attempt in 1 2 3; do
+            echo "::group::Attempt $attempt"
+            code=$(curl -sS --max-time 120 -o response.json -w '%{http_code}' "$ENDPOINT") && rc=0 || rc=$?
+            echo "curl exit $rc, http $code"
+            echo "::endgroup::"
+            if [ "$rc" -eq 0 ] && [ "$code" = "200" ]; then
+              break
+            fi
+            if [ "$attempt" = "3" ]; then
+              echo "::error::Endpoint did not answer after 3 attempts (last http $code, curl $rc)"
+              exit 1
+            fi
+            sleep 30
+          done
+
+          # A 200 is not success. The endpoint is written to degrade rather
+          # than fail — it answers with fallback prices when the provider is
+          # unreachable and with an empty chart when the history table is
+          # missing — so a green tick here would otherwise hide exactly the
+          # two failures this job exists to catch.
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const d = JSON.parse(readFileSync("response.json", "utf8"));
+            const today = d.last_updated?.slice(0, 10);
+            const hist = Array.isArray(d.history) ? d.history : [];
+            const days = hist.length;
+            const latest = days ? hist[hist.length - 1].date : null;
+
+            console.log(`last_updated : ${d.last_updated}`);
+            console.log(`usd_inr      : ${d.usd_inr}  (stale: ${d.stale})`);
+            console.log(`source       : ${d.provider_source}`);
+            console.log(`history      : ${days} day(s), latest ${latest}`);
+
+            const fail = [];
+            if (d.stale === true) fail.push("served FALLBACK prices — the provider call failed (check METALPRICEAPI_KEY and the monthly request budget)");
+            if (!days) fail.push("history is empty — migration 062 may not have been run on the live database");
+            else if (latest !== today) fail.push(`today (${today}) was not recorded; newest row is ${latest}`);
+
+            if (fail.length) { for (const f of fail) console.error(`::error::${f}`); process.exit(1); }
+            console.log("\nRecorded today.");
+          '
+
+      - name: Keep the response for the run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metal-prices-response
+          path: response.json
+          retention-days: 14
+          if-no-files-found: ignore
