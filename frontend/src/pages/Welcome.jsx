@@ -5,10 +5,13 @@ import {
   Truck, ShoppingCart, BookOpen, Receipt, Workflow, Users,
   FolderGit2, CheckCircle, TrendingUp, Package, Shield,
   Play, Star, Building2, HardHat, IndianRupee, Calculator,
-  Activity, Brain, Factory, ShoppingBag, Files, ReceiptText
+  Activity, Brain, Factory, ShoppingBag, Files, ReceiptText, Store
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
+import ProcessEngine from '../components/marketing/ProcessEngine';
+import CatalogueShowcase from '../components/marketing/CatalogueShowcase';
+import { FeatureGrid } from '../components/marketing/FeatureDiagrams';
 
 /* ── Warm SVG wave dividers (CSOD-inspired organic shapes) ── */
 const WaveDivider = ({ flip = false, color1 = 'hsl(28,80%,90%)', color2 = 'hsl(22,70%,85%)' }) => (
@@ -73,31 +76,6 @@ const Counter = ({ target, suffix = '', duration = 1500 }) => {
   return <span ref={ref}>{count}{suffix}</span>;
 };
 
-/* ── Feature card ── */
-const FeatureCard = ({ icon, title, desc, delay = 0 }) => {
-  const [ref, inView] = useInView(0.05);
-  return (
-    <div
-      ref={ref}
-      className="card card-amber"
-      style={{
-        opacity: inView ? 1 : 0,
-        transform: inView ? 'translateY(0)' : 'translateY(24px)',
-        transition: `all 0.5s ease ${delay}ms`,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px',
-      }}
-    >
-      <div className="icon-badge icon-badge-lg">{icon}</div>
-      <div>
-        <h4 style={{ marginBottom: '8px', color: 'var(--text-primary)' }}>{title}</h4>
-        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>{desc}</p>
-      </div>
-    </div>
-  );
-};
-
 /* ── Role card ── */
 const RoleCard = ({ emoji, role, tagline, modules, color }) => (
   <div
@@ -146,58 +124,6 @@ const RoleCard = ({ emoji, role, tagline, modules, color }) => (
   </div>
 );
 
-/* ── Flow step ── */
-const FlowStep = ({ number, label, icon, active, onClick }) => (
-  <button
-    onClick={onClick}
-    style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      gap: '8px',
-      background: 'none',
-      border: 'none',
-      cursor: 'pointer',
-      padding: '12px',
-      borderRadius: '12px',
-      transition: 'all 200ms ease',
-      opacity: active ? 1 : 0.5,
-    }}
-  >
-    <div
-      style={{
-        width: '48px',
-        height: '48px',
-        borderRadius: '50%',
-        background: active ? 'var(--brand-amber)' : 'var(--bg-elevated)',
-        border: `2px solid ${active ? 'var(--brand-amber)' : 'var(--border-default)'}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: active ? '#fff' : 'var(--text-muted)',
-        fontSize: '16px',
-        boxShadow: active ? 'var(--shadow-amber)' : 'none',
-        transition: 'all 250ms ease',
-      }}
-    >
-      {icon}
-    </div>
-    <span style={{ fontSize: '0.7rem', fontWeight: 600, color: active ? 'var(--brand-amber)' : 'var(--text-muted)', textAlign: 'center', maxWidth: '72px', lineHeight: 1.3 }}>
-      {label}
-    </span>
-  </button>
-);
-
-const flowSteps = [
-  { label: 'Create Project', icon: <FolderGit2 size={18} />, desc: 'Initialize the project context with client, type, timeline. All subsequent data flows from this.' },
-  { label: 'Define BOQ', icon: <FileText size={18} />, desc: 'Set up Bill of Quantities items with itemCode, unit, estimated quantity, and unit rate. This drives all billing.' },
-  { label: 'Raise Indent', icon: <Package size={18} />, desc: 'Site engineers raise material requests against specific BOQ items and work orders.' },
-  { label: 'Issue PO', icon: <ShoppingCart size={18} />, desc: 'Procurement raises purchase orders against vendor firms. Status: Pending → Approved → Dispatched.' },
-  { label: 'Record GRN', icon: <Truck size={18} />, desc: 'On delivery, goods receipt notes are recorded at site. Inventory updates automatically.' },
-  { label: 'Log MB', icon: <BookOpen size={18} />, desc: 'Site engineers record physical measurements (L×W×D) at specific chainages in the Measurement Book.' },
-  { label: 'Generate Bill', icon: <Receipt size={18} />, desc: 'RA Bills are computed from cumulative MB quantities × BOQ rate, minus TDS (2%) and Retention (5%).' },
-];
-
 /* ── Differentiator card (Why Maks Ops) ── */
 const DiffCard = ({ icon, color, title, desc, delay = 0 }) => {
   const [ref, inView] = useInView(0.1);
@@ -237,19 +163,10 @@ const DiffCard = ({ icon, color, title, desc, delay = 0 }) => {
 /* ─────────────────────────────────────────────── */
 const Welcome = () => {
   const navigate = useNavigate();
-  const [activeStep, setActiveStep] = useState(0);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
   const [heroRef, heroInView] = useInView(0.01);
   const [statsRef, statsInView] = useInView(0.1);
   const [featRef, featInView] = useInView(0.05);
-
-  // Auto-advance flow steps
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setActiveStep((s) => (s + 1) % flowSteps.length);
-    }, 3200);
-    return () => clearInterval(timer);
-  }, []);
 
   // Auto-advance testimonials
   useEffect(() => {
@@ -270,7 +187,7 @@ const Welcome = () => {
       <div
         style={{
           background: 'linear-gradient(90deg, hsl(25,90%,42%), var(--brand-amber), hsl(35,100%,55%))',
-          padding: '10px 24px',
+          padding: '10px 16px',
           textAlign: 'center',
           fontSize: '0.8rem',
           fontWeight: 600,
@@ -279,6 +196,11 @@ const Welcome = () => {
           alignItems: 'center',
           justifyContent: 'center',
           gap: '12px',
+          /* A flex row with a long sentence and a button cannot shrink below
+             its min-content width, so on a phone it pushed the page a few
+             pixels wider than the screen. Wrapping costs nothing on desktop
+             (there is room for one line) and stops the sideways scroll. */
+          flexWrap: 'wrap',
         }}
       >
         <span>🚀 Maks Ops Beta is Live — The operations platform for growing SMEs</span>
@@ -506,8 +428,15 @@ const Welcome = () => {
                   gap: '24px',
                 }}
               >
-                {/* KPI Row */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+                {/* KPI Row.
+                    Was repeat(4, 1fr). `1fr` is minmax(auto, 1fr), and `auto`
+                    will not shrink below min-content — so "Inventory SKUs"
+                    held the column open, the grid burst its container, and the
+                    whole homepage scrolled sideways on a phone. minmax(0, 1fr)
+                    lets the columns actually shrink; the class drops it to two
+                    rows of two below 560px, where four would be unreadable. */}
+                <div className="hero-kpi-row"
+                  style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '16px' }}>
                   {[
                     { label: 'Active Vendors', val: '6', color: 'var(--accent-blue)' },
                     { label: 'Active POs', val: '3', color: 'hsl(259,90%,70%)' },
@@ -549,7 +478,7 @@ const Welcome = () => {
       {/* ── STATS STRIP ── */}
       <section ref={statsRef} className="section-sm" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)' }}>
         <div className="container">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1px', background: 'var(--border-subtle)', borderRadius: '16px', overflow: 'hidden' }}>
+          <div className="mk-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '1px', background: 'var(--border-subtle)', borderRadius: '16px', overflow: 'hidden' }}>
             {[
               { val: 5, suffix: '×', label: 'Faster Order-to-Bill', icon: '⚡' },
               { val: 20, suffix: '+', label: 'Integrated Modules', icon: '📋' },
@@ -688,24 +617,18 @@ const Welcome = () => {
                   lineHeight: 1.8,
                 }}
               >
-                One connected flow — customer order → vendor quotations → purchase → goods
-                receipt → production → GST bills. Sales, procurement, fabrication and billing in one place.
+                Twelve capabilities, and what each one actually produces. The unusual
+                ones are called out plainly rather than left for you to find.
               </p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-              <FeatureCard delay={0}   icon={<ShoppingBag size={22} />}  title="Customer Orders"          desc="Log the PO your customer places, break it into parts/SKUs, and drive the whole procurement flow from it." />
-              <FeatureCard delay={80}  icon={<Files size={22} />}        title="Vendor Quotations"        desc="Capture up to 3 vendor quotes per part (Q1/Q2/Q3), compare price & lead time, pick the best — one click raises the Vendor PO." />
-              <FeatureCard delay={160} icon={<ShoppingCart size={22} />} title="Purchase Orders"          desc="Raise POs with your own GST rate, track Pending → Approved → Dispatched → Delivered, and print a clean B&W PO invoice." />
-              <FeatureCard delay={240} icon={<Truck size={22} />}        title="GRN & Inventory"          desc="Record goods receipt against a PO with vehicle & batch; inventory auto-updates on every delivery." />
-              <FeatureCard delay={320} icon={<ReceiptText size={22} />}  title="Customizable GST Bills"   desc="Turn a GRN into an editable bill — adjust lines/rates, add freight/charges/discount, choose GST — as a professional document." />
-              <FeatureCard delay={400} icon={<Factory size={22} />}      title="Production & Yield"       desc="For fabricators: consume raw material, record finished output & scrap, and see live yield %, material balance and cost per piece." />
-              <FeatureCard delay={480} icon={<FolderGit2 size={22} />}   title="Projects & BOQ"           desc="Run multiple projects with itemized BOQ rates that drive every downstream billing calculation — contractors welcome." />
-              <FeatureCard delay={560} icon={<Receipt size={22} />}      title="RA Bills Engine"          desc="Running-account bills with automatic GST, TDS, retention and other deductions — a proper Indian tax invoice, print-ready." />
-              <FeatureCard delay={640} icon={<Users size={22} />}        title="Customers & Vendors"      desc="Full masters for who you sell to and buy from — GSTIN, contacts, bank & compliance — reused across the whole flow." />
-              <FeatureCard delay={720} icon={<Brain size={22} />}        title="Ask AI"                   desc="A read-only assistant on every screen — answers about your own data ('what's overdue?', 'what needs approval?') and how to use any feature, grounded and on-topic." />
-              <FeatureCard delay={800} icon={<BookOpen size={22} />}     title="Smart Knowledge"          desc="A searchable library of guides and how-tos for the whole platform, with a one-click 'Ask AI a follow-up' from any article." />
-            </div>
+            {/* Was eleven identical cards: icon, title, paragraph. Every
+                capability read the same, so the genuinely unusual ones —
+                reading a vendor's PDF, yield including scrap, place of supply
+                taken from the ship-to — were indistinguishable from the
+                ordinary ones. FeatureGrid gives each one a small animated
+                diagram of its actual mechanism. */}
+            <FeatureGrid />
           </div>
         </div>
       </section>
@@ -717,91 +640,50 @@ const Welcome = () => {
             <span className="pill pill-amber" style={{ marginBottom: '16px' }}>
               <TrendingUp size={12} /> End-to-End Flow
             </span>
-            <h2 style={{ maxWidth: '560px', margin: '16px auto 0' }}>
-              From Site to Statement,{' '}
-              <span className="gradient-text-amber">In 7 Steps</span>
+            <h2 style={{ maxWidth: '620px', margin: '16px auto 0' }}>
+              One Engine,{' '}
+              <span className="gradient-text-amber">End to End</span>
             </h2>
           </div>
 
-          {/* Step indicators */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0',
-              marginBottom: '40px',
-              overflowX: 'auto',
-              padding: '8px 0',
-            }}
-            className="scrollbar-hide"
-          >
-            {flowSteps.map((step, i) => (
-              <React.Fragment key={step.label}>
-                <FlowStep
-                  number={i + 1}
-                  label={step.label}
-                  icon={step.icon}
-                  active={activeStep === i}
-                  onClick={() => setActiveStep(i)}
-                />
-                {i < flowSteps.length - 1 && (
-                  <div
-                    style={{
-                      width: '40px',
-                      height: '2px',
-                      background: activeStep > i ? 'var(--brand-amber)' : 'var(--border-default)',
-                      transition: 'background 400ms ease',
-                      flexShrink: 0,
-                    }}
-                  />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-
-          {/* Active step detail */}
-          <div
-            key={activeStep}
-            className="glass animate-fade"
-            style={{
-              maxWidth: '600px',
-              margin: '0 auto',
-              borderRadius: '16px',
-              padding: '32px',
-              textAlign: 'center',
-            }}
-          >
-            <div
-              style={{
-                width: '56px',
-                height: '56px',
-                borderRadius: '50%',
-                background: 'var(--brand-amber)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 16px',
-                color: '#fff',
-                boxShadow: 'var(--shadow-amber)',
-              }}
-            >
-              {flowSteps[activeStep].icon}
-            </div>
-            <div className="pill pill-amber" style={{ marginBottom: '12px', display: 'inline-flex' }}>
-              Step {activeStep + 1} of {flowSteps.length}
-            </div>
-            <h3 style={{ marginBottom: '12px' }}>{flowSteps[activeStep].label}</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.8 }}>
-              {flowSteps[activeStep].desc}
-            </p>
-          </div>
+          {/* The old version of this section showed the CONTRACTOR flow — BOQ,
+              Indent, Measurement Book, RA Bill — while every feature paragraph
+              on the page described FABRICATION. A prospect reading both was
+              being shown two different products. ProcessEngine leads with the
+              fabrication track and offers contracting as a second lane. */}
+          <ProcessEngine />
 
           <div style={{ textAlign: 'center', marginTop: '40px' }}>
             <Link to="/how-it-works" className="btn-ghost">
               See Full Walkthrough <ArrowRight size={16} />
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* ── THE CATALOGUE ──────────────────────────────────────────────
+             The catalogue was missing from the features list entirely, which
+             made the one capability a stranger can use WITHOUT an account the
+             one the sales page never mentioned. It gets its own section. */}
+      <section className="section">
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+            <span className="pill pill-amber" style={{ marginBottom: '16px' }}>
+              <Store size={12} /> Your Public Catalogue
+            </span>
+            <h2 style={{ maxWidth: '640px', margin: '16px auto 0' }}>
+              A shopfront that turns strangers into{' '}
+              <span className="gradient-text-amber">numbered quotations</span>
+            </h2>
+            <p style={{
+              maxWidth: '580px', margin: '16px auto 0',
+              color: 'var(--text-muted)', lineHeight: 1.8,
+            }}>
+              Publish your products once. Share one link. Enquiries come back attached to
+              the exact product someone was looking at.
+            </p>
+          </div>
+          <CatalogueShowcase />
         </div>
       </section>
 
@@ -818,7 +700,7 @@ const Welcome = () => {
             </h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+          <div className="mk-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '20px' }}>
             <RoleCard
               emoji="👑"
               role="Admin"
@@ -867,7 +749,7 @@ const Welcome = () => {
               contractors — with GST-accurate rules and a flow that connects end to end.
             </p>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+          <div className="mk-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '20px' }}>
             <DiffCard delay={0}   icon={<IndianRupee size={22} />} color="var(--brand-amber)"   title="GST-Native Calculations" desc="SGST/CGST/IGST auto-computed from GSTIN state codes. All 37 Indian states, TDS sections 194C, 194I, 194J." />
             <DiffCard delay={80}  icon={<Workflow size={22} />}    color="var(--accent-blue)"    title="One Connected Flow"      desc="Customer order → quotation → PO → GRN → bill, all linked and traceable. No re-typing, no islands — the data flows through." />
             <DiffCard delay={160} icon={<BarChart3 size={22} />}   color="var(--accent-emerald)" title="Real Billing Math"        desc="RA bills and GRN bills compute GST, TDS, retention, freight and discounts exactly — proper print-ready tax invoices." />

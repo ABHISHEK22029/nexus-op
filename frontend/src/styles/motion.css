@@ -1,0 +1,250 @@
+/* ══════════════════════════════════════════════════════════════════════
+   motion.css — the animation vocabulary for the marketing pages.
+
+   One stylesheet rather than <style> tags scattered through components:
+   Welcome.jsx was injecting its marquee keyframe from inside the render,
+   which re-declares the same rule on every mount and puts animation timing
+   somewhere nobody thinks to look for it.
+
+   Everything here is CSS and SVG. No motion library — the bundle for a
+   shopfront page should not carry 50KB of orchestration to move a dot along
+   a line, and the app already had a keyframe vocabulary to extend.
+
+   ── Synchronisation ───────────────────────────────────────────────────
+   The process engine needs a pulse travelling a pipe and seven chambers
+   igniting as it passes. That is kept in step WITHOUT JavaScript by giving
+   every animation the same duration (--engine-cycle) and offsetting each
+   chamber by its own delay. One clock, so nothing can drift; no timers to
+   leak; and it keeps running while the main thread is busy.
+
+   ── Reduced motion ────────────────────────────────────────────────────
+   Every looping or sweeping animation is switched off under
+   prefers-reduced-motion at the bottom of this file. The diagrams are
+   explanatory, so they must still READ correctly when still: the reduced
+   rules leave things in their lit, final state rather than hiding them.
+   ══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --engine-cycle: 15.4s;   /* 7 stages x 2.2s */
+  --engine-stages: 7;
+}
+
+/* ── reveals ────────────────────────────────────────────────────────── */
+@keyframes mk-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes mk-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes mk-scale-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: none; }
+}
+
+.mk-rise     { animation: mk-rise .62s cubic-bezier(.22,.8,.3,1) both; }
+.mk-fade     { animation: mk-fade .5s ease both; }
+.mk-scale-in { animation: mk-scale-in .5s cubic-bezier(.22,.8,.3,1) both; }
+
+/* ── the process engine ─────────────────────────────────────────────────
+   A chamber is lit for its own slice of the cycle, then hands over. The
+   percentages below are one slice of seven (14.28%): up fast, hold, down.  */
+@keyframes mk-chamber {
+   0%,  100% { border-color: var(--border-subtle);
+               background: var(--bg-surface);
+               box-shadow: none; }
+   2%        { border-color: var(--brand-amber);
+               background: var(--brand-amber-muted);
+               box-shadow: var(--shadow-amber); }
+  12%        { border-color: var(--brand-amber);
+               background: var(--brand-amber-muted);
+               box-shadow: var(--shadow-amber); }
+  16%        { border-color: var(--border-subtle);
+               background: var(--bg-surface);
+               box-shadow: none; }
+}
+
+/* The icon lifts and brightens while its chamber is firing. */
+@keyframes mk-chamber-icon {
+   0%, 100% { color: var(--text-muted);   transform: none; }
+   2%       { color: var(--brand-amber);  transform: translateY(-3px) scale(1.12); }
+  12%       { color: var(--brand-amber);  transform: translateY(-3px) scale(1.12); }
+  16%       { color: var(--text-muted);   transform: none; }
+}
+
+/* The artefact each stage produces — a document chip that pops out, holds,
+   then settles. This is the part that explains the product: a reader sees
+   that "Quotation" is not a screen, it emits a numbered document. */
+@keyframes mk-artifact {
+   0%, 100% { opacity: 0; transform: translateY(6px) scale(.9); }
+   3%       { opacity: 1; transform: translateY(-2px) scale(1); }
+  12%       { opacity: 1; transform: translateY(-2px) scale(1); }
+  15%       { opacity: 0; transform: translateY(-8px) scale(.96); }
+}
+
+/* The pulse that travels the pipe. translateX on a straight track rather
+   than offset-path: it is bulletproof in every browser these customers
+   use, and the track IS straight. */
+@keyframes mk-pulse-travel {
+  from { left: 0; opacity: 0; }
+  4%   { opacity: 1; }
+  96%  { opacity: 1; }
+  to   { left: 100%; opacity: 0; }
+}
+
+/* The pipe fills behind the pulse, so the path already travelled reads as
+   complete rather than the pulse being a dot wandering a dead line. */
+@keyframes mk-pipe-fill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes mk-gear      { to { transform: rotate(360deg); } }
+@keyframes mk-gear-back  { to { transform: rotate(-360deg); } }
+
+/* The engine scrolls sideways inside its own casing on narrow screens.
+   A thin styled scrollbar rather than the browser default, which on Windows
+   is a 17px grey slab that would dominate a 52px-tall row. */
+.mk-engine-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-emphasis) transparent;
+  /* Stops a sideways drag inside the diagram from also rubber-banding the
+     page on touch devices. */
+  overscroll-behavior-x: contain;
+  padding-bottom: 4px;
+}
+.mk-engine-scroll::-webkit-scrollbar { height: 6px; }
+.mk-engine-scroll::-webkit-scrollbar-track { background: transparent; }
+.mk-engine-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-emphasis);
+  border-radius: 3px;
+}
+
+/* ── fixed-column grids on the marketing pages ──────────────────────────
+   These carried `repeat(N, 1fr)`, which is minmax(auto, 1fr) — and `auto`
+   will not shrink below min-content, so the longest unbreakable word in a
+   cell held its column open and the grid burst its container. The page then
+   scrolled sideways on a phone, which is the single cheapest way to look
+   unfinished. minmax(0, 1fr) is set inline; the breakpoints are here. */
+@media (max-width: 900px) {
+  .mk-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .mk-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 560px) {
+  .mk-grid-4, .mk-grid-3 { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+/* ── hero KPI row ───────────────────────────────────────────────────────
+   Four stat tiles side by side need roughly 560px before the labels start
+   wrapping to one word per line. */
+@media (max-width: 560px) {
+  .hero-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+}
+
+/* ── the feature grid ───────────────────────────────────────────────────
+   auto-fit rather than a fixed three columns: the cards carry a diagram and
+   two paragraphs, and at 1024px three of them squeeze the text into a
+   ladder. This lets the browser drop to two, then one, on its own. */
+.mk-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 18px;
+}
+@media (max-width: 640px) {
+  .mk-feature-grid { grid-template-columns: 1fr; gap: 14px; }
+}
+
+/* ── catalogue showcase ─────────────────────────────────────────────────
+   Two columns on a wide screen, stacked below 900px. The mock shopfront has
+   a three-up product grid inside it, which needs roughly half of a desktop
+   container before the tiles stop being legible. */
+.mk-cat-layout { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+@media (max-width: 900px) {
+  .mk-cat-layout { grid-template-columns: minmax(0, 1fr) !important; }
+}
+@media (max-width: 420px) {
+  .mk-cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+
+/* ── small feature diagrams ─────────────────────────────────────────── */
+
+/* A row sliding in, used for "lines arriving from a parsed file". */
+@keyframes mk-row-in {
+   0%,  8%  { opacity: 0; transform: translateX(-10px); }
+  16%, 86%  { opacity: 1; transform: none; }
+  96%, 100% { opacity: 0; transform: translateX(6px); }
+}
+
+/* A bar growing to its value — comparison, yield, stock level. */
+@keyframes mk-bar-grow {
+   0%,  6%  { transform: scaleX(0); }
+  22%, 88%  { transform: scaleX(1); }
+ 100%       { transform: scaleX(0); }
+}
+
+/* The winning option in a comparison: ticks on after the bars settle. */
+@keyframes mk-best-mark {
+   0%, 30%  { opacity: 0; transform: scale(.7); }
+  38%, 88%  { opacity: 1; transform: none; }
+ 100%       { opacity: 0; transform: scale(.9); }
+}
+
+/* An SVG stroke drawing itself. Pair with pathLength="1" so the dash
+   numbers are independent of the real path length. */
+@keyframes mk-draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* Slow drift for background glows. Deliberately long and low-contrast —
+   decoration that competes with the content is a bug. */
+@keyframes mk-drift {
+   0%, 100% { transform: translate(0, 0) scale(1); }
+  50%       { transform: translate(14px, -10px) scale(1.06); }
+}
+
+@keyframes mk-shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+
+/* A caret for the "typing" search demo in the catalogue showcase. */
+@keyframes mk-caret { 50% { opacity: 0; } }
+
+.mk-gear      { animation: mk-gear 14s linear infinite; transform-origin: 50% 50%; }
+.mk-gear-back { animation: mk-gear-back 11s linear infinite; transform-origin: 50% 50%; }
+.mk-drift     { animation: mk-drift 18s ease-in-out infinite; }
+
+/* ── reduced motion ─────────────────────────────────────────────────────
+   Nothing loops, nothing sweeps. The diagrams must still be readable, so
+   anything whose keyframes start at opacity 0 is pinned visible and lit
+   instead of being left invisible. */
+@media (prefers-reduced-motion: reduce) {
+  .mk-rise, .mk-fade, .mk-scale-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .mk-gear, .mk-gear-back, .mk-drift { animation: none !important; }
+
+  .mk-chamber, .mk-chamber-icon, .mk-artifact,
+  .mk-pulse, .mk-pipe-fill, .mk-row, .mk-bar, .mk-best, .mk-draw-path {
+    animation: none !important;
+  }
+  /* Show every stage as lit: the point of the diagram is the sequence of
+     stages, and that still reads when they are all on at once. */
+  .mk-chamber      { border-color: var(--brand-amber) !important;
+                     background: var(--brand-amber-muted) !important; }
+  .mk-chamber-icon { color: var(--brand-amber) !important; }
+  .mk-artifact     { opacity: 1 !important; transform: none !important; }
+  .mk-row          { opacity: 1 !important; transform: none !important; }
+  .mk-bar          { transform: scaleX(1) !important; }
+  /* Vertical bars scale on Y; scaleX would leave them flat. */
+  .mk-bar-v        { transform: scaleY(1) !important; }
+  .mk-best         { opacity: 1 !important; transform: none !important; }
+  .mk-pipe-fill    { transform: scaleX(1) !important; }
+  .mk-pulse        { display: none !important; }
+  .mk-draw-path    { stroke-dashoffset: 0 !important; }
+  .mk-caret        { animation: none !important; }
+}
