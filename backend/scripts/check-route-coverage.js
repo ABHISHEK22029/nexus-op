@@ -32,6 +32,41 @@ const UNGATED = new Set([
    doesn't flag them. */
 const ADMIN_ONLY = new Set(['admin']);
 
+/* Segments the guard REMAPS to another resource before checking permission.
+   index.js does this so a new route can reuse permissions that already
+   exist, instead of adding a resource name — which is not merely a code
+   change, because role_permissions lives in a database overlay that
+   REPLACES the built-in table, so a new name is a migration for every
+   installation.
+
+   This set has to mirror those remaps, and it did not: /vendor-quotations
+   has been reported as an orphan — and `npm run check` red — ever since
+   that feature landed, because the checker had no idea the alias existed.
+   A route-coverage check that cries wolf is worse than none, since the
+   next genuinely unmapped route looks like the same known noise.
+
+   The assertion below verifies each alias really is remapped in index.js,
+   so this cannot drift into hiding a real orphan. */
+const ALIASES = new Map([
+  ['vendor-quotations', 'quotations'],
+]);
+
+for (const [from, to] of ALIASES) {
+  const remapped = new RegExp(
+    `segment\\s*===\\s*['"\`]${from}['"\`]\\s*\\)\\s*segment\\s*=\\s*['"\`]${to}['"\`]`,
+  ).test(src);
+  if (!remapped) {
+    console.error(`\n❌ ALIAS DRIFT: this script claims /${from} is checked as "${to}",`);
+    console.error(`   but index.js has no such remap. Either the remap was removed —`);
+    console.error(`   in which case /${from} is now Administrator-only — or it changed shape.\n`);
+    process.exit(1);
+  }
+  if (!Object.keys(RESOURCES).includes(to)) {
+    console.error(`\n❌ /${from} is remapped to "${to}", which is not in RESOURCES.\n`);
+    process.exit(1);
+  }
+}
+
 /* Pull every mounted route: app.get('/foo/:id' ...) -> foo */
 const segments = new Map();   // segment -> Set(methods)
 const ROUTE_RE = /app\.(get|post|put|patch|delete)\(\s*['"`]\/([a-zA-Z0-9_-]*)/g;
@@ -44,7 +79,7 @@ for (const m of src.matchAll(ROUTE_RE)) {
 
 const known = new Set(Object.keys(RESOURCES));
 const all = [...segments.keys()].sort();
-const orphans = all.filter(s => !known.has(s) && !UNGATED.has(s) && !ADMIN_ONLY.has(s));
+const orphans = all.filter(s => !known.has(s) && !UNGATED.has(s) && !ADMIN_ONLY.has(s) && !ALIASES.has(s));
 
 console.log(`mounted route segments : ${all.length}`);
 console.log(`  mapped to a resource : ${all.filter(s => known.has(s)).length}`);
@@ -68,9 +103,15 @@ if (orphans.length) {
 
 /* The migration promise: nobody who works today stops working tomorrow.
    Legacy "User" accounts become Owner, which must keep full access. */
+/* A remapped segment must be asked about under the resource it is actually
+   checked as. Asking can('User', 'vendor-quotations', …) answers about a
+   resource that does not exist, which reads as "every role loses access" —
+   the second half of the false alarm this script was raising. */
+const resourceOf = (s) => ALIASES.get(s) || s;
+
 const gated = all.filter(s => !UNGATED.has(s) && !ADMIN_ONLY.has(s));
-const lostRead = gated.filter(s => !can('User', s, 'read'));
-const lostWrite = gated.filter(s => !can('User', s, 'write'));
+const lostRead = gated.filter(s => !can('User', resourceOf(s), 'read'));
+const lostWrite = gated.filter(s => !can('User', resourceOf(s), 'write'));
 
 console.log(`legacy "User" -> ${normaliseRole('User')}`);
 if (lostRead.length) {

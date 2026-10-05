@@ -35,6 +35,18 @@ const DEFINES = [
   /(?:const|let|var|function|class)\s+([A-Z][A-Za-z0-9_]*)/g,
   /const\s*\{([^}]+)\}\s*=/g,                              // destructured const
 
+  /* A DEFAULT-EXPORTED HOOK. The patterns above require an uppercase first
+     letter, because a default import is nearly always a component. A hook is
+     camelCase, so
+         import useInView from '../../hooks/useInView';
+     was invisible to them while the useInView() call below was still counted
+     as a use — reporting three undefined hooks in files that import them
+     correctly. That is the expensive kind of false positive: it trains you to
+     ignore the checker, and then a genuinely missing hook import looks
+     exactly like the noise. */
+  /import\s+(use[A-Z][A-Za-z0-9_]*)\s*(?:,|from)/g,
+  /(?:const|let|var|function)\s+(use[A-Z][A-Za-z0-9_]*)/g,
+
   /* Named imports, INCLUDING the `import Default, { A, B } from` form and
      multi-line lists. The first version required `{` immediately after
      `import`, so ProcessFlow's
