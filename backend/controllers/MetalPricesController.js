@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════
    MetalPricesController — public metal rates for the Kirashi site.
-   The static Kirashi homepage can't self-update, so the Nexus backend
+   The static Kirashi homepage can't self-update, so the Maks Ops backend
    owns the data: it fetches the live USD→INR rate from MetalpriceAPI,
    converts maintained USD/kg base rates to INR/kg, and serves the result
    from a single-row DB cache. Refresh is LAZY (only when the cache is

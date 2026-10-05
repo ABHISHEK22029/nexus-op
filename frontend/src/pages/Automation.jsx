@@ -119,7 +119,7 @@ export default function Automation() {
           </div>
         </div>
         <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: showForm || profiles.length ? 16 : 4 }}>
-          Auto-create the bills you raise or pay on a cadence — monthly retainers/AMC invoices, rent, subscriptions. Nexus generates them on the schedule and notifies you. Use <b>Run now</b> to process anything due today immediately.
+          Auto-create the bills you raise or pay on a cadence — monthly retainers/AMC invoices, rent, subscriptions. Maks Ops generates them on the schedule and notifies you. Use <b>Run now</b> to process anything due today immediately.
         </p>
 
         {showForm && (
@@ -216,7 +216,7 @@ export default function Automation() {
           <AlarmClock size={18} style={{ color: 'var(--brand-amber)' }} /> Reminders <span style={{ fontSize: '0.68rem', fontWeight: 700, background: 'hsl(152,60%,45%,0.15)', color: 'var(--accent-emerald)', padding: '2px 8px', borderRadius: 20 }}>ON</span>
         </div>
         <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-          Nexus watches your money and nudges you automatically:
+          Maks Ops watches your money and nudges you automatically:
         </p>
         <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: 'var(--text-secondary)', fontSize: '0.86rem', lineHeight: 1.9 }}>
           <li><b>Overdue invoices</b> — when a customer invoice passes its due date and isn't fully paid, your admins get a notification with the outstanding amount and days overdue.</li>

@@ -90,7 +90,7 @@ export default function BomModal({ sku, onClose }) {
 
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '10px 0 16px', lineHeight: 1.5 }}>
           What raw materials go into <b>one unit</b> of this product. When you click <b>Make</b> on a customer order,
-          Nexus multiplies these by the ordered quantity so the production order already knows what to consume.
+          Maks Ops multiplies these by the ordered quantity so the production order already knows what to consume.
         </p>
 
         {loading ? (

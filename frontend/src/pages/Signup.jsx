@@ -59,7 +59,7 @@ export default function Signup() {
             <Building2 size={28} style={{ color: 'var(--brand-amber)' }}/>
           </div>
           <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', margin: 0 }}>
-            Nexus<span style={{ color: 'var(--brand-amber)' }}>OP</span>
+            Maks<span style={{ color: 'var(--brand-amber)' }}>Ops</span>
           </h1>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 6 }}>Create your own workspace in minutes</p>
         </div>

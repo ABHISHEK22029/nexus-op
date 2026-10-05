@@ -96,10 +96,15 @@ export default function Login() {
             <Building2 size={28} style={{ color: 'var(--brand-amber)' }}/>
           </div>
           <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', margin: 0 }}>
-            Nexus<span style={{ color: 'var(--brand-amber)' }}>OP</span>
+            Maks<span style={{ color: 'var(--brand-amber)' }}>Ops</span>
           </h1>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 6 }}>
-            Construction Operations Intelligence Platform
+            {/* Was "Construction Operations Intelligence Platform", which this
+                product is not — it is an ERP for fabrication and manufacturing
+                SMEs, and maksops.co.in already titles itself "Infrastructure
+                Intelligence Platform". The sign-in screen was the one surface
+                still describing a different product. */}
+            Infrastructure Intelligence Platform
           </p>
         </div>
 
