@@ -96,7 +96,7 @@ const Tile = ({ item, dim }) => (
 
 const CatalogueShowcase = () => {
   const [filter, setFilter] = useState('all');
-  const [ref, inView] = useInView(0.1);
+  const [ref, inView] = useInView(0.1, { once: true });
 
   /* Tiles are DIMMED rather than removed. Removing them reflows the grid and
      the reader loses their place; dimming shows the catalogue is being

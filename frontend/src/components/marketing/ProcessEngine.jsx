@@ -175,7 +175,9 @@ const Gear = ({ size = 44, teeth = 9, className = '', style, opacity = 0.16 }) =
 const ProcessEngine = () => {
   const [trackKey, setTrackKey] = useState('fabrication');
   const [pinned, setPinned] = useState(null);
-  const [ref, inView] = useInView(0.08);
+  /* seen for the entrance, inView for the running engine — it should not
+     keep cycling while the reader is three sections further down. */
+  const [ref, , inView] = useInView(0.08);
 
   const track = TRACKS[trackKey];
   const stages = track.stages;
@@ -259,20 +261,46 @@ const ProcessEngine = () => {
               <div aria-hidden="true" style={{
                 position: 'absolute', left: 26, right: 26,
                 top: ARTIFACT_H + 10 + 26 - 1, height: 3,
-                background: 'var(--border-subtle)', borderRadius: 2,
+                /* An inset groove rather than a flat grey bar: a hairline of
+                   light along the top edge is what makes a track read as
+                   machined instead of drawn. */
+                background: 'linear-gradient(180deg, var(--border-default), var(--border-subtle))',
+                borderRadius: 3,
+                boxShadow: 'inset 0 1px 1px rgba(0,0,0,.14), 0 1px 0 rgba(255,255,255,.04)',
               }}>
                 <div className="mk-pipe-fill" style={{
-                  position: 'absolute', inset: 0, borderRadius: 2, transformOrigin: 'left center',
+                  position: 'absolute', inset: 0, borderRadius: 3, transformOrigin: 'left center',
                   background: 'linear-gradient(90deg, var(--brand-amber-dark), var(--brand-amber))',
-                  animation: inView ? 'mk-pipe-fill var(--engine-cycle) linear infinite' : 'none',
+                  boxShadow: '0 0 10px hsl(28,100%,54%,.5)',
+                  animationName: inView ? 'mk-pipe-fill' : 'none',
+                  animationDuration: 'var(--engine-cycle)',
+                  animationTimingFunction: 'linear',
+                  animationIterationCount: 'infinite',
                   transform: 'scaleX(0)',
                 }} />
-                <div className="mk-pulse" style={{
-                  position: 'absolute', top: -4, width: 11, height: 11, borderRadius: '50%',
-                  background: 'var(--brand-amber)', boxShadow: '0 0 14px 4px var(--brand-amber)',
-                  animation: inView ? 'mk-pulse-travel var(--engine-cycle) linear infinite' : 'none',
-                  opacity: 0, marginLeft: -5,
-                }} />
+                {/* A full-width RAIL carries the dot. translateX(100%) on the
+                    rail therefore means "the width of the track", which is
+                    what lets the pulse move on a transform instead of `left`
+                    — the property that was forcing a layout pass per frame. */}
+                <div className="mk-engine-pulse" style={{
+                  position: 'absolute', left: 0, top: 0, width: '100%', height: 0,
+                  animationName: inView ? 'mk-pulse-travel' : 'none',
+                  animationDuration: 'var(--engine-cycle)',
+                  animationTimingFunction: 'linear',
+                  animationIterationCount: 'infinite',
+                  opacity: 0, willChange: 'transform, opacity',
+                }}>
+                  <div className="mk-pulse-dot" style={{
+                    position: 'absolute', left: -6, top: -5.5, width: 12, height: 12,
+                    borderRadius: '50%',
+                    background: 'radial-gradient(circle at 35% 30%, #fff 0%, var(--brand-amber) 48%, var(--brand-amber-dark) 100%)',
+                    boxShadow: '0 0 10px 2px hsl(28,100%,54%,.85), 0 0 26px 8px hsl(28,100%,54%,.3)',
+                    animationName: inView ? 'mk-pulse-breathe' : 'none',
+                    animationDuration: '2.2s',
+                    animationTimingFunction: 'ease-in-out',
+                    animationIterationCount: 'infinite',
+                  }} />
+                </div>
               </div>
 
               {/* chambers */}
@@ -322,6 +350,15 @@ const ProcessEngine = () => {
                     {s.emits}
                   </div>
 
+                  {/* The chamber is three stacked layers, so that igniting it
+                      costs nothing but opacity:
+                        · the resting shell (never animates)
+                        · a glow overlay carrying the lit border, fill and
+                          shadow — only its opacity and scale animate
+                        · a halo that blooms outward and dissipates
+                      The previous version animated background-color,
+                      border-color and box-shadow on the button itself: four
+                      paint properties, on seven elements, forever. */}
                   <button type="button"
                     aria-label={`${s.title}: ${s.short}`}
                     aria-pressed={isPinned}
@@ -330,19 +367,41 @@ const ProcessEngine = () => {
                     onClick={() => setPinned(isPinned ? null : s.key)}
                     className="mk-chamber"
                     style={{
-                      ...anim('mk-chamber'),
-                      width: 52, height: 52, borderRadius: 14, cursor: 'pointer',
-                      display: 'grid', placeItems: 'center', padding: 0,
+                      position: 'relative', width: 54, height: 54, borderRadius: 16,
+                      cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 0,
                       border: '1px solid var(--border-subtle)',
-                      background: 'var(--bg-surface)',
+                      /* A top-lit face rather than a flat fill: the chamber
+                         should look like a machined part catching light. */
+                      background: 'linear-gradient(160deg, var(--bg-elevated), var(--bg-surface) 62%)',
+                      boxShadow: '0 1px 0 rgba(255,255,255,.05) inset, 0 2px 6px rgba(0,0,0,.18)',
                       outline: isPinned ? '2px solid var(--brand-amber)' : 'none',
-                      outlineOffset: 2,
+                      outlineOffset: 3,
+                      transition: 'transform .28s var(--mk-ease-settle)',
+                      transform: isPinned ? 'translateY(-2px)' : 'none',
                     }}>
+                    <span aria-hidden="true" className="mk-chamber-glow" style={{
+                      ...anim('mk-chamber-glow'),
+                      position: 'absolute', inset: -1, borderRadius: 16,
+                      border: '1px solid var(--brand-amber)',
+                      background: 'linear-gradient(160deg, hsl(28,100%,54%,.22), hsl(28,100%,54%,.07))',
+                      boxShadow: 'var(--shadow-amber)',
+                      opacity: 0, pointerEvents: 'none', willChange: 'transform, opacity',
+                    }} />
+                    {/* Two icons cross-fading, because animating `color`
+                        repaints every frame while opacity composites. */}
                     <span className="mk-chamber-icon" style={{
                       ...anim('mk-chamber-icon'),
-                      color: 'var(--text-muted)', display: 'grid', placeItems: 'center',
+                      position: 'relative', display: 'grid', placeItems: 'center',
                     }}>
-                      {s.icon}
+                      <span className="mk-icon-off" style={{
+                        ...anim('mk-icon-off'),
+                        color: 'var(--text-muted)', display: 'grid', placeItems: 'center',
+                      }}>{s.icon}</span>
+                      <span className="mk-icon-on" style={{
+                        ...anim('mk-icon-on'),
+                        position: 'absolute', inset: 0, opacity: 0,
+                        color: 'var(--brand-amber)', display: 'grid', placeItems: 'center',
+                      }}>{s.icon}</span>
                     </span>
                   </button>
 

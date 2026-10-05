@@ -102,8 +102,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       labels: chambers.map(c => c.getAttribute('aria-label')?.split(':')[0]),
       artifacts: arts.map(a => a.textContent.trim()).filter(Boolean),
       tabs: [...document.querySelectorAll('[role="tab"]')].map(t => t.textContent.trim()),
-      pulseAnimating: !!document.querySelector('.mk-pulse') &&
-        getComputedStyle(document.querySelector('.mk-pulse')).animationName !== 'none',
+      /* .mk-engine-pulse, not .mk-pulse: the DocMorph diagrams in the
+         feature cards use .mk-pulse too and appear EARLIER in the DOM, so
+         querySelector was reading an off-screen feature card. */
+      pulseAnimating: !!document.querySelector('.mk-engine-pulse') &&
+        getComputedStyle(document.querySelector('.mk-engine-pulse')).animationName !== 'none',
     };
   });
   ok(eng.chambers === 7, `seven stages render (${eng.chambers})`);
@@ -244,12 +247,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const arts = [...document.querySelectorAll('.mk-artifact')];
     const chambers = [...document.querySelectorAll('.mk-chamber')];
     return {
-      chamberAnim: anim('.mk-chamber'),
+      /* The chamber BUTTON no longer animates — its lit state is a separate
+         composited overlay, so that is what has to stop. */
+      chamberAnim: anim('.mk-chamber-glow'),
       artifactAnim: anim('.mk-artifact'),
       /* the content must still be READABLE: these start at opacity 0 */
       artifactsVisible: arts.filter(a => Number(getComputedStyle(a).opacity) > 0.9).length,
       artifactsTotal: arts.length,
-      chambersLit: chambers.filter(c => getComputedStyle(c).borderColor !== 'rgba(0, 0, 0, 0)').length,
+      chambersLit: [...document.querySelectorAll('.mk-chamber-glow')].filter(g => Number(getComputedStyle(g).opacity) > 0.9).length,
     };
   });
   ok(rm.chamberAnim === 'none', `the chamber sequence stops (${rm.chamberAnim})`);
@@ -334,6 +339,56 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   ok(!light.transparentTitle, `feature titles have a real colour in light mode (${light.titleColor})`);
   ok(light.bodyBg !== light.titleColor, 'and are not the same colour as the background');
+
+  /* ── 8. the motion has to be smooth, not just present ───────────────────
+     "Premium" is measurable here and was measured wrong twice. Animating
+     paint properties (background, border-color, box-shadow) and layout ones
+     (`left`) held a perfect 60fps on this desktop while dropping 13 frames in
+     five seconds on a throttled low-end phone — so a desktop check would have
+     passed the version that stuttered on the hardware these customers own.
+
+     Two things are asserted:
+       · animations are compositor-only (transform/opacity), with a small
+         allowance for the SVG yield ring, which can only be drawn by
+         animating stroke-dashoffset.
+       · nothing loops off-screen. Every diagram used to start when first seen
+         and run forever, so a reader at the footer still had twelve of them
+         going. */
+  console.log('\n  ── motion cost');
+  await go('/', 1440, 1000);
+  await page.evaluate(() => {
+    const h = [...document.querySelectorAll('h2')].find(x => /One Engine/i.test(x.textContent));
+    h?.scrollIntoView({ block: 'center' });
+  });
+  await sleep(1400);
+
+  const cost = await page.evaluate(() => {
+    const COMPOSITED = new Set(['opacity', 'transform', 'filter']);
+    let composited = 0; const expensive = {};
+    document.getAnimations().forEach((a) => {
+      const names = new Set();
+      (a.effect?.getKeyframes?.() || []).forEach(f =>
+        Object.keys(f).forEach(k => {
+          if (!['offset', 'computedOffset', 'easing', 'composite'].includes(k)) names.add(k);
+        }));
+      names.forEach(n => {
+        if (COMPOSITED.has(n)) composited++;
+        else expensive[n] = (expensive[n] || 0) + 1;
+      });
+    });
+    return { composited, expensive, running: document.getAnimations().filter(a => a.playState === 'running').length };
+  });
+  const expensiveNames = Object.keys(cost.expensive).filter(n => n !== 'strokeDashoffset');
+  ok(expensiveNames.length === 0,
+    `animations are compositor-only${expensiveNames.length ? ` — still painting: ${expensiveNames.join(', ')}` : ` (${cost.composited} transform/opacity)`}`);
+
+  const runningAtEngine = cost.running;
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await sleep(1600);
+  const atFooter = await page.evaluate(() =>
+    document.getAnimations().filter(a => a.playState === 'running').length);
+  ok(atFooter < runningAtEngine,
+    `motion follows the viewport — ${runningAtEngine} running at the engine, ${atFooter} at the footer`);
 
   console.log('');
   ok(errs.length === 0, `no JavaScript or console errors${errs.length ? ': ' + errs[0].slice(0, 110) : ''}`);

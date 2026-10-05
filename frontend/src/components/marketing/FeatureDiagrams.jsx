@@ -396,15 +396,17 @@ const FEATURES = [
 ];
 
 const FeatureCard = ({ f, i }) => {
-  const [ref, inView] = useInView(0.18);
+  /* seen drives the one-time entrance; visible gates the looping diagram,
+     so twelve of them are not animating while the reader is at the footer. */
+  const [ref, seen, visible] = useInView(0.18);
   const Diagram = f.diagram;
   return (
     <div
       ref={ref}
-      className={inView ? 'mk-rise' : undefined}
+      className={seen ? 'mk-rise' : undefined}
       style={{
         animationDelay: `${Math.min(i, 5) * 70}ms`,
-        opacity: inView ? undefined : 0,
+        opacity: seen ? undefined : 0,
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-subtle)',
         borderRadius: 16, padding: 18,
@@ -420,7 +422,7 @@ const FeatureCard = ({ f, i }) => {
         e.currentTarget.style.transform = 'none';
       }}
     >
-      <Diagram on={inView} />
+      <Diagram on={visible} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ color: 'var(--brand-amber)', display: 'grid', placeItems: 'center' }}>{f.icon}</span>
         <h3 style={{

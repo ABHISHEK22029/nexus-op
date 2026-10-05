@@ -24,9 +24,36 @@
    rules leave things in their lit, final state rather than hiding them.
    ══════════════════════════════════════════════════════════════════════ */
 
+/* ── What makes it feel expensive ─────────────────────────────────────────
+   Two rules, both measurable rather than matters of taste.
+
+   1. COMPOSITOR ONLY. An animation of transform or opacity is handed to the
+      compositor and runs off the main thread. Anything else — background,
+      border-color, box-shadow, color, left — forces paint or layout on every
+      frame. The first version of this file animated `left` for the travelling
+      pulse and background + border + shadow + colour on seven chambers at
+      once. On desktop it still held 60fps, which is exactly why it survived;
+      throttled to a low-end phone it dropped 13 frames in five seconds with a
+      67ms worst frame. Visible stutter is the opposite of premium, so the lit
+      state is now an OVERLAY whose opacity animates, and the pulse moves on a
+      transform.
+
+   2. NOTHING MOVES AT A CONSTANT SPEED. Linear motion reads as mechanical —
+      it is the default, and it looks like the default. The pulse now dwells
+      at each chamber and glides to the next on an ease-in-out, so the eye is
+      led from stage to stage rather than dragged past them.
+   ───────────────────────────────────────────────────────────────────────── */
+
 :root {
   --engine-cycle: 15.4s;   /* 7 stages x 2.2s */
   --engine-stages: 7;
+
+  /* One stage is 1/7 of the cycle = 14.2857%. Within it the pulse dwells for
+     the first ~40% and travels the rest. The chamber ignition below is tuned
+     to that dwell, so light and motion agree. */
+  --mk-ease-glide: cubic-bezier(.76, 0, .24, 1);   /* travel between stages */
+  --mk-ease-settle: cubic-bezier(.16, 1, .3, 1);   /* arrivals, reveals */
+  --mk-ease-soft: cubic-bezier(.4, 0, .2, 1);
 }
 
 /* ── reveals ────────────────────────────────────────────────────────── */
@@ -50,54 +77,132 @@
 /* ── the process engine ─────────────────────────────────────────────────
    A chamber is lit for its own slice of the cycle, then hands over. The
    percentages below are one slice of seven (14.28%): up fast, hold, down.  */
-@keyframes mk-chamber {
-   0%,  100% { border-color: var(--border-subtle);
-               background: var(--bg-surface);
-               box-shadow: none; }
-   2%        { border-color: var(--brand-amber);
-               background: var(--brand-amber-muted);
-               box-shadow: var(--shadow-amber); }
-  12%        { border-color: var(--brand-amber);
-               background: var(--brand-amber-muted);
-               box-shadow: var(--shadow-amber); }
-  16%        { border-color: var(--border-subtle);
-               background: var(--bg-surface);
-               box-shadow: none; }
+/* The lit state of a chamber is a separate layer stacked over the resting
+   one, and only its OPACITY animates — so the whole ignition is composited
+   and never repaints the chamber. The previous version animated background,
+   border-color and box-shadow directly, which is four paint properties on
+   seven elements, forever.
+
+   Timed to the pulse's dwell: lit as it arrives (1.2%), held through the
+   dwell (6%), faded before it leaves (9%). */
+@keyframes mk-chamber-glow {
+   0%        { opacity: 0; transform: scale(.94); }
+   1.2%      { opacity: 1; transform: scale(1); }
+   6%        { opacity: 1; transform: scale(1); }
+   9.5%      { opacity: 0; transform: scale(1.04); }
+ 100%        { opacity: 0; transform: scale(.94); }
 }
 
-/* The icon lifts and brightens while its chamber is firing. */
+/* A halo that blooms outward as the stage fires and dissipates. Pure
+   transform + opacity; it is what gives the ignition weight. */
+@keyframes mk-chamber-halo {
+   0%        { opacity: 0; transform: scale(.7); }
+   1.2%      { opacity: .55; transform: scale(1); }
+   7%        { opacity: 0; transform: scale(1.5); }
+ 100%        { opacity: 0; transform: scale(.7); }
+}
+
+/* The icon lifts while its chamber fires. Transform only — the colour change
+   is a cross-fade between two stacked icons (see mk-icon-on/off), because
+   animating `color` is a paint on every frame. */
 @keyframes mk-chamber-icon {
-   0%, 100% { color: var(--text-muted);   transform: none; }
-   2%       { color: var(--brand-amber);  transform: translateY(-3px) scale(1.12); }
-  12%       { color: var(--brand-amber);  transform: translateY(-3px) scale(1.12); }
-  16%       { color: var(--text-muted);   transform: none; }
+   0%        { transform: none; }
+   1.2%      { transform: translateY(-3px) scale(1.1); }
+   6%        { transform: translateY(-3px) scale(1.1); }
+   9.5%      { transform: none; }
+ 100%        { transform: none; }
+}
+@keyframes mk-icon-on {
+   0%   { opacity: 0; }
+   1.2% { opacity: 1; }
+   6%   { opacity: 1; }
+   9.5% { opacity: 0; }
+ 100%   { opacity: 0; }
+}
+@keyframes mk-icon-off {
+   0%   { opacity: 1; }
+   1.2% { opacity: 0; }
+   6%   { opacity: 0; }
+   9.5% { opacity: 1; }
+ 100%   { opacity: 1; }
 }
 
 /* The artefact each stage produces — a document chip that pops out, holds,
    then settles. This is the part that explains the product: a reader sees
    that "Quotation" is not a screen, it emits a numbered document. */
+/* Retimed to the pulse's dwell — the document should appear WHILE the stage
+   is lit, not drift on after the pulse has moved away. Rises on a settle
+   curve and leaves upward, so it reads as being handed off rather than
+   blinking. */
 @keyframes mk-artifact {
-   0%, 100% { opacity: 0; transform: translateY(6px) scale(.9); }
-   3%       { opacity: 1; transform: translateY(-2px) scale(1); }
-  12%       { opacity: 1; transform: translateY(-2px) scale(1); }
-  15%       { opacity: 0; transform: translateY(-8px) scale(.96); }
+   0%     { opacity: 0; transform: translateY(7px) scale(.92); }
+   1.4%   { opacity: 0; transform: translateY(7px) scale(.92);
+            animation-timing-function: var(--mk-ease-settle); }
+   3.2%   { opacity: 1; transform: translateY(-2px) scale(1); }
+   6%     { opacity: 1; transform: translateY(-2px) scale(1); }
+   9.5%   { opacity: 0; transform: translateY(-9px) scale(.97); }
+ 100%     { opacity: 0; transform: translateY(7px) scale(.92); }
 }
 
-/* The pulse that travels the pipe. translateX on a straight track rather
-   than offset-path: it is bulletproof in every browser these customers
-   use, and the track IS straight. */
+/* The pulse travelling the pipe.
+   TRANSFORM, not `left`. Animating `left` forces a layout pass on every
+   single frame, which is what put a 67ms frame into the low-end phone trace.
+   The element is a full-width rail; translateX(100%) therefore moves it by
+   the track's width, and the dot rides its leading edge.
+
+   It DWELLS at each of the seven chambers and glides to the next, instead of
+   sliding at a constant rate. Seven stops at 0 / 16.667 / 33.333 / 50 /
+   66.667 / 83.333 / 100 percent; each stage holds for the first ~40% of its
+   slice, then eases across. The per-keyframe timing function is what gives
+   the glide its weight — a linear sweep reads as a loading bar, not a
+   machine doing work. */
 @keyframes mk-pulse-travel {
-  from { left: 0; opacity: 0; }
-  4%   { opacity: 1; }
-  96%  { opacity: 1; }
-  to   { left: 100%; opacity: 0; }
+   0%     { transform: translateX(0);       opacity: 0; }
+   1.5%   { transform: translateX(0);       opacity: 1; }
+   5.71%  { transform: translateX(0);       opacity: 1; animation-timing-function: var(--mk-ease-glide); }
+  14.29%  { transform: translateX(16.667%); opacity: 1; }
+  20%     { transform: translateX(16.667%); opacity: 1; animation-timing-function: var(--mk-ease-glide); }
+  28.57%  { transform: translateX(33.333%); opacity: 1; }
+  34.29%  { transform: translateX(33.333%); opacity: 1; animation-timing-function: var(--mk-ease-glide); }
+  42.86%  { transform: translateX(50%);     opacity: 1; }
+  48.57%  { transform: translateX(50%);     opacity: 1; animation-timing-function: var(--mk-ease-glide); }
+  57.14%  { transform: translateX(66.667%); opacity: 1; }
+  62.86%  { transform: translateX(66.667%); opacity: 1; animation-timing-function: var(--mk-ease-glide); }
+  71.43%  { transform: translateX(83.333%); opacity: 1; }
+  77.14%  { transform: translateX(83.333%); opacity: 1; animation-timing-function: var(--mk-ease-glide); }
+  85.71%  { transform: translateX(100%);    opacity: 1; }
+  94%     { transform: translateX(100%);    opacity: 0; }
+ 100%     { transform: translateX(100%);    opacity: 0; }
+}
+
+/* The dot's own glow breathes as it dwells, so a stopped pulse still reads
+   as alive rather than parked. */
+@keyframes mk-pulse-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.18); }
 }
 
 /* The pipe fills behind the pulse, so the path already travelled reads as
-   complete rather than the pulse being a dot wandering a dead line. */
+   complete rather than the pulse being a dot wandering a dead line.
+   Follows the SAME dwell-and-glide stops, so the fill and the dot stay
+   locked together instead of the fill creeping ahead on a linear ramp. */
 @keyframes mk-pipe-fill {
-  from { transform: scaleX(0); }
-  to   { transform: scaleX(1); }
+   0%     { transform: scaleX(0); }
+   5.71%  { transform: scaleX(0); animation-timing-function: var(--mk-ease-glide); }
+  14.29%  { transform: scaleX(0.16667); }
+  20%     { transform: scaleX(0.16667); animation-timing-function: var(--mk-ease-glide); }
+  28.57%  { transform: scaleX(0.33333); }
+  34.29%  { transform: scaleX(0.33333); animation-timing-function: var(--mk-ease-glide); }
+  42.86%  { transform: scaleX(0.5); }
+  48.57%  { transform: scaleX(0.5); animation-timing-function: var(--mk-ease-glide); }
+  57.14%  { transform: scaleX(0.66667); }
+  62.86%  { transform: scaleX(0.66667); animation-timing-function: var(--mk-ease-glide); }
+  71.43%  { transform: scaleX(0.83333); }
+  77.14%  { transform: scaleX(0.83333); animation-timing-function: var(--mk-ease-glide); }
+  85.71%  { transform: scaleX(1); }
+  94%     { transform: scaleX(1); }
+  94.01%  { transform: scaleX(0); }
+ 100%     { transform: scaleX(0); }
 }
 
 @keyframes mk-gear      { to { transform: rotate(360deg); } }
@@ -228,15 +333,20 @@
   }
   .mk-gear, .mk-gear-back, .mk-drift { animation: none !important; }
 
-  .mk-chamber, .mk-chamber-icon, .mk-artifact,
-  .mk-pulse, .mk-pipe-fill, .mk-row, .mk-bar, .mk-best, .mk-draw-path {
+  .mk-chamber, .mk-chamber-icon, .mk-chamber-glow, .mk-chamber-halo,
+  .mk-icon-on, .mk-icon-off, .mk-artifact,
+  .mk-pulse, .mk-engine-pulse, .mk-pulse-dot, .mk-pipe-fill, .mk-row, .mk-bar, .mk-best, .mk-draw-path {
     animation: none !important;
   }
   /* Show every stage as lit: the point of the diagram is the sequence of
-     stages, and that still reads when they are all on at once. */
-  .mk-chamber      { border-color: var(--brand-amber) !important;
-                     background: var(--brand-amber-muted) !important; }
-  .mk-chamber-icon { color: var(--brand-amber) !important; }
+     stages, and that still reads when they are all on at once. The lit state
+     is now an overlay, so it is shown by revealing that layer rather than by
+     restating its colours here — one definition of "lit", not two. */
+  .mk-chamber-glow { opacity: 1 !important; transform: none !important; }
+  .mk-chamber-halo { opacity: 0 !important; }
+  .mk-icon-on      { opacity: 1 !important; }
+  .mk-icon-off     { opacity: 0 !important; }
+  .mk-chamber-icon { transform: none !important; }
   .mk-artifact     { opacity: 1 !important; transform: none !important; }
   .mk-row          { opacity: 1 !important; transform: none !important; }
   .mk-bar          { transform: scaleX(1) !important; }
@@ -244,7 +354,7 @@
   .mk-bar-v        { transform: scaleY(1) !important; }
   .mk-best         { opacity: 1 !important; transform: none !important; }
   .mk-pipe-fill    { transform: scaleX(1) !important; }
-  .mk-pulse        { display: none !important; }
+  .mk-pulse, .mk-engine-pulse { display: none !important; }
   .mk-draw-path    { stroke-dashoffset: 0 !important; }
   .mk-caret        { animation: none !important; }
 }

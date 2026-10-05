@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
+import useInView from '../hooks/useInView';
 import ProcessEngine from '../components/marketing/ProcessEngine';
 import CatalogueShowcase from '../components/marketing/CatalogueShowcase';
 import { FeatureGrid } from '../components/marketing/FeatureDiagrams';
@@ -43,25 +44,20 @@ const TESTIMONIALS = [
 /* ── Logo marquee data ── */
 const LOGOS = ['Fabrication', 'Steel & Metals', 'Manufacturing', 'EPC Contractors', 'Trading & Distribution', 'Solar & Power', 'Machinery', 'Infrastructure'];
 
-/* ── Intersection Observer hook for scroll-triggered animations ── */
-const useInView = (threshold = 0.1) => {
-  const ref = useRef(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setInView(true); },
-      { threshold }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [threshold]);
-  return [ref, inView];
-};
+/* The local copy of useInView that lived here has been replaced by the
+   shared hook (hooks/useInView). Two copies of the same observer was exactly
+   the drift extracting it was meant to prevent — and this one never
+   disconnected after firing, so every reveal on the page kept an observer
+   attached for the life of the session.
+
+   Everything here wants a ONE-TIME reveal, so these call sites take `seen`
+   (the second value) and pass once:true. Looping animations take the third
+   value instead, so they only run while actually on screen. */
 
 /* ── Animated counter ── */
 const Counter = ({ target, suffix = '', duration = 1500 }) => {
   const [count, setCount] = useState(0);
-  const [ref, inView] = useInView();
+  const [ref, inView] = useInView(0.1, { once: true });
   useEffect(() => {
     if (!inView) return;
     let start = 0;
@@ -126,7 +122,7 @@ const RoleCard = ({ emoji, role, tagline, modules, color }) => (
 
 /* ── Differentiator card (Why Maks Ops) ── */
 const DiffCard = ({ icon, color, title, desc, delay = 0 }) => {
-  const [ref, inView] = useInView(0.1);
+  const [ref, inView] = useInView(0.1, { once: true });
   return (
     <div
       ref={ref}
@@ -164,9 +160,9 @@ const DiffCard = ({ icon, color, title, desc, delay = 0 }) => {
 const Welcome = () => {
   const navigate = useNavigate();
   const [activeTestimonial, setActiveTestimonial] = useState(0);
-  const [heroRef, heroInView] = useInView(0.01);
-  const [statsRef, statsInView] = useInView(0.1);
-  const [featRef, featInView] = useInView(0.05);
+  const [heroRef, heroInView] = useInView(0.01, { once: true });
+  const [statsRef, statsInView] = useInView(0.1, { once: true });
+  const [featRef, featInView] = useInView(0.05, { once: true });
 
   // Auto-advance testimonials
   useEffect(() => {
@@ -403,8 +399,12 @@ const Welcome = () => {
               {['#ef4444', '#f59e0b', '#22c55e'].map((c) => (
                 <div key={c} style={{ width: '12px', height: '12px', borderRadius: '50%', background: c, opacity: 0.8 }} />
               ))}
+              {/* Read "localhost:5173/dashboard" — a developer's machine, in
+                  the hero screenshot, live on the public site. The mock is
+                  meant to show a prospect what their own workspace looks
+                  like. */}
               <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '8px', fontFamily: 'var(--font-mono)' }}>
-                localhost:5173/dashboard
+                app.maksops.co.in/dashboard
               </span>
             </div>
             <div style={{ paddingTop: '32px', background: 'var(--bg-base)' }}>

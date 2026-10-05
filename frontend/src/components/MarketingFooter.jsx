@@ -162,29 +162,19 @@ const MarketingFooter = () => {
             <span style={{ color: 'var(--brand-amber)' }}>Abhishek Gupta</span>
             {' '}for growing SMEs.
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.8rem',
-                color: 'var(--text-muted)',
-              }}
-            >
-              <span
-                style={{
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '50%',
-                  background: 'var(--accent-emerald)',
-                  display: 'inline-block',
-                  animation: 'pulse-amber 2s infinite',
-                }}
-              />
-              Backend: Port 5000 · Frontend: Port 5173
-            </span>
-          </div>
+          {/* This read "Backend: Port 5000 · Frontend: Port 5173", beside a
+              pulsing green dot — localhost port numbers, live on
+              maksops.co.in, in the footer of the product being sold. The dot
+              was not a status indicator either: it pulsed green regardless of
+              whether anything was actually up, which is worse than no
+              indicator at all.
+
+              Replaced with something true. A real status light would have to
+              be wired to a health check, and on a free tier that sleeps after
+              15 minutes it would spend much of its day reporting "down". */}
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+            Hyderabad, India
+          </p>
         </div>
       </div>
 
