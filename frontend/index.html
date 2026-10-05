@@ -10,15 +10,25 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <!-- Google Maps JavaScript API — Replace YOUR_API_KEY with your key from console.cloud.google.com -->
-    <script>
-      window.GOOGLE_MAPS_LOADED = false;
-      function onGoogleMapsLoaded() { window.GOOGLE_MAPS_LOADED = true; window.dispatchEvent(new Event('google-maps-ready')); }
-    </script>
-    <script async defer
-      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY&libraries=places&callback=onGoogleMapsLoaded"
-      onerror="console.warn('Google Maps API failed to load. Using Leaflet fallback.')">
-    </script>
+    <!-- The Google Maps JavaScript API used to load here, with the Places
+         library, on EVERY page of the site and the app.
+
+         Nothing used it. Searched the whole of src/ for `google.maps`, the
+         `google-maps-ready` event it dispatched, the `GOOGLE_MAPS_LOADED`
+         flag it set, Autocomplete and PlacesService: zero references. The
+         "Leaflet fallback" its onerror mentioned does not exist either —
+         leaflet is in package.json but is not imported anywhere.
+
+         So every visitor to maksops.co.in fetched and executed a
+         third-party script for nothing, and the Maps JS API is billed per
+         load against a live key.
+
+         If Places autocomplete is wanted later, load it from the component
+         that needs it rather than from here, so it costs nothing on the
+         pages that do not. The key was AIzaSyD-9tSr… — it is in this file's
+         git history; rotate it in console.cloud.google.com and restrict the
+         new one by HTTP referrer before using it again. -->
+
   </head>
   <body>
     <div id="root"></div>

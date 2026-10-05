@@ -88,7 +88,7 @@ const MarketingNav = () => {
         </div>
 
         {/* CTA Row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
@@ -116,6 +116,12 @@ const MarketingNav = () => {
             </div>
           </button>
 
+          {/* These hide below 768px. Only .desktop-nav (the links) was being
+              hidden, so on a phone the row was theme toggle + Sign In + Test
+              Beta + hamburger — about 430px of controls in a 360px viewport,
+              which is what made the whole homepage scroll sideways. Nothing
+              is lost: the mobile menu already offers Sign In / Dashboard. */}
+          <div className="nav-cta" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {token ? (
             <button
               onClick={() => navigate('/dashboard')}
@@ -144,6 +150,7 @@ const MarketingNav = () => {
               </button>
             </>
           )}
+          </div>
 
           {/* Mobile hamburger */}
           <button
@@ -194,6 +201,7 @@ const MarketingNav = () => {
       <style>{`
         @media (max-width: 768px) {
           .desktop-nav { display: none !important; }
+          .nav-cta { display: none !important; }
           .mobile-menu-btn { display: flex !important; }
         }
       `}</style>
