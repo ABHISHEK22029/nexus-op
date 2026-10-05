@@ -2,122 +2,121 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   FolderGit2, FileText, Users, ShoppingCart, Truck, BookOpen,
-  Receipt, CheckCircle2, ArrowRight, Zap, Play, ChevronRight
+  Receipt, CheckCircle2, ArrowRight, Zap, Play, ChevronRight,
+  MessageSquareQuote, ClipboardCheck, Factory
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
+import useInView from '../hooks/useInView';
+import ProcessEngine from '../components/marketing/ProcessEngine';
 
-const useInView = (threshold = 0.15) => {
-  const ref = useRef(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) setInView(true); },
-      { threshold }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [threshold]);
-  return [ref, inView];
-};
+/* The fourth and last local copy of useInView, deleted. All four had drifted
+   — different thresholds, none of them disconnecting after they fired — and
+   each one kept an observer attached for the life of the session. */
 
+/* Rewritten to the fabrication track, so this page tells the SAME story as
+   the engine on the home page. It previously walked through Create a Project,
+   Define BOQ, Raise Indent, Measurement Book, RA Bill — the contracting flow —
+   while the home page described a workshop taking an order and making a part.
+   A prospect who clicked "See the full walkthrough" landed on a different
+   product. Contracting is still in the product and still on the platform
+   page; it is no longer the only way this is explained. */
 const steps = [
   {
     number: 1,
-    icon: <FolderGit2 size={28} />,
-    title: 'Create a Project',
-    description: 'Start by creating a project context — the master record all data flows from.',
-    color: '#3B82F6',
+    icon: <MessageSquareQuote size={28} />,
+    title: "An enquiry arrives",
+    description: "Someone asks whether you can make a part. That question stops being a WhatsApp message and becomes a record.",
+    color: "#FF7A00",
     details: [
-      'Set project name, client, and type (Civil / Generic)',
-      'Define start date and expected end date',
-      'All modules — vendors, POs, bills — are scoped to this project',
-      'Switch context anytime from the top bar',
+      "Capture it before the customer exists as a record",
+      "Drawings and specifications attach to the enquiry itself",
+      "Enquiries from your public catalogue arrive already attached to a product",
+      "Whoever quotes it is not working from memory",
     ],
   },
   {
     number: 2,
-    icon: <Users size={28} />,
-    title: 'Onboard Vendors',
-    description: 'Register contractor firms with financial and compliance details.',
-    color: '#A78BFA',
+    icon: <FileText size={28} />,
+    title: "You quote it",
+    description: "Priced on your letterhead, with HSN codes and the GST treatment the ship-to address calls for.",
+    color: "#3B82F6",
     details: [
-      'Enter vendor name, PAN, GSTIN, and bank details',
-      'Assign specialty (Earthwork, Concrete, Bitumen, etc.)',
-      'Set performance rating (1–5 stars)',
-      'Vendor is now selectable in Work Order and PO creation',
+      "Your logo, address and bank details come from your company profile",
+      "Edit the number, date or validity in place",
+      "Print or share a PDF that holds its alignment on paper",
+      "A draft can change freely; a sent quotation locks to what may lawfully change",
     ],
   },
   {
     number: 3,
-    icon: <FileText size={28} />,
-    title: 'Define BOQ Items',
-    description: 'Set the Bill of Quantities — your pricing bible for the project.',
-    color: '#EC4899',
+    icon: <ClipboardCheck size={28} />,
+    title: "They accept",
+    description: "Converting the quotation creates the customer order with its lines intact. No retyping.",
+    color: "#22C55E",
     details: [
-      'Create items: EW-01 (Earthwork Excavation), BT-03 (Bituminous Concrete), etc.',
-      'Specify unit (Cum, MT, Sqm, RM) and estimated quantity',
-      'Enter the unit rate (₹/unit) — this drives all billing math',
-      'BOQ items link to Indents, MBs, and RA Bills',
+      "Lines carry across exactly as quoted",
+      "The quotation locks, because a signed document should not keep changing",
+      "Committed demand you can now buy against",
+      "The order references the quotation it came from",
     ],
   },
   {
     number: 4,
     icon: <ShoppingCart size={28} />,
-    title: 'Raise Indents & Issue Purchase Orders',
-    description: 'Site needs material? Raise an indent. Procurement converts it to a PO.',
-    color: '#FF7A00',
+    title: "You buy the material",
+    description: "Upload what vendors emailed — Excel, PDF or Word — and the lines are read out of the file rather than retyped.",
+    color: "#A78BFA",
     details: [
-      'Indent: "I need 50 Cum of sand" — linked to work order + BOQ item',
-      'Procurement reviews and raises a Purchase Order against a vendor',
-      'PO status: Pending → Finance Approved → Dispatched',
-      'Full audit trail in Activity Log',
+      "Deterministic parsing; no model guessing at your prices",
+      "Compare on a like-for-like total, not the headline",
+      "See who did not quote a given line at all",
+      "The original file stays openable, so any number can be checked",
     ],
   },
   {
     number: 5,
     icon: <Truck size={28} />,
-    title: 'Record GRN at Site',
-    description: 'When material arrives on-site, record the Goods Receipt Note.',
-    color: '#22C55E',
+    title: "Material lands",
+    description: "Record the receipt against the purchase order with vehicle and batch. Stock moves on the receipt itself.",
+    color: "#0EA5E9",
     details: [
-      'Select the Purchase Order and record actual received quantity',
-      'Inventory auto-updates with new stock',
-      'Partial deliveries supported — GRN per delivery batch',
-      'PO status automatically moves to Delivered',
+      "Inventory and payables update together",
+      "Short and over deliveries recorded as they happened",
+      "Stock on the screen is stock on the floor",
+      "Every movement traceable to the document that caused it",
     ],
   },
   {
     number: 6,
-    icon: <BookOpen size={28} />,
-    title: 'Log Measurements in MB',
-    description: 'Site engineers enter certified field measurements into the Measurement Book.',
-    color: '#F59E0B',
+    icon: <Factory size={28} />,
+    title: "You make the part",
+    description: "Consume against the bill of materials, record finished output and scrap, and read live yield and true cost per piece.",
+    color: "#EC4899",
     details: [
-      'Specify chainage: CH 10+500 to CH 10+600 (100m stretch)',
-      'Enter dimensions: Length × Width × Depth',
-      'System computes yield automatically',
-      'MB entries are the certified basis for RA Bill generation',
+      "The bill of materials drives what is consumed",
+      "Finished output and scrap are both recorded",
+      "Live yield, material balance and cost per piece",
+      "Scrap is where the margin goes, so it is not an optional field",
     ],
   },
   {
     number: 7,
     icon: <Receipt size={28} />,
-    title: 'Generate the RA Bill',
-    description: 'Bills are computed automatically from certified MB quantities and BOQ rates.',
-    color: '#EF4444',
+    title: "You invoice, and get paid",
+    description: "CGST and SGST within the state, IGST across it — chosen from the ship-to address, numbered sequentially as the rules require.",
+    color: "#EF4444",
     details: [
-      'Select BOQ item → system aggregates all MB entries',
-      'Net Qty = Cumulative MB Qty − Previously Billed Qty',
-      'Gross Amount = Net Qty × BOQ Unit Rate',
-      'Deductions: −2% TDS (Income Tax) + −5% Retention',
-      'Net Payable = Gross − TDS − Retention',
+      "Place of supply decides the tax split, automatically",
+      "Sequential numbering per Rule 46(b)",
+      "Corrections go through a credit or debit note, which is the lawful route",
+      "The receivable ties back to the order it came from",
     ],
   },
 ];
 
 const StepCard = ({ step, index, isLeft }) => {
-  const [ref, inView] = useInView(0.1);
+  const [ref, inView] = useInView(0.1, { once: true });
   return (
     <div
       ref={ref}
@@ -248,7 +247,7 @@ const StepCard = ({ step, index, isLeft }) => {
 
 const HowItWorks = () => {
   const navigate = useNavigate();
-  const [heroRef, heroInView] = useInView(0.01);
+  const [heroRef, heroInView] = useInView(0.01, { once: true });
 
   return (
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
@@ -331,9 +330,43 @@ const HowItWorks = () => {
         </div>
       </section>
 
+      {/* ── THE WHOLE THING AT A GLANCE ──────────────────────────────────
+             The same engine as the home page, deliberately. A visitor who
+             clicked through from there should recognise what they are looking
+             at, and this page is where they came for the detail — so the
+             overview sits above the seven steps rather than being described
+             twice in two different shapes. */}
+      <section className="section" style={{ paddingBottom: 0 }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: 36 }}>
+            <span className="pill pill-amber" style={{ marginBottom: 14 }}>
+              <Zap size={12} /> The whole flow
+            </span>
+            <h2 style={{ maxWidth: 620, margin: '14px auto 0' }}>
+              Seven stages,{' '}
+              <span className="gradient-text-amber">one continuous record</span>
+            </h2>
+            <p style={{
+              maxWidth: 560, margin: '14px auto 0',
+              color: 'var(--text-muted)', lineHeight: 1.8,
+            }}>
+              Each stage produces a numbered document and moves a number. Nothing is
+              retyped from the stage before it.
+            </p>
+          </div>
+          <ProcessEngine />
+        </div>
+      </section>
+
       {/* Timeline Steps */}
       <section className="section">
         <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 24px' }}>
+          <div style={{ textAlign: 'center', marginBottom: 44 }}>
+            <h2 style={{ maxWidth: 560, margin: '0 auto' }}>
+              And the same seven,{' '}
+              <span className="gradient-text-amber">in detail</span>
+            </h2>
+          </div>
           {steps.map((step, i) => (
             <StepCard key={step.number} step={step} index={i} isLeft={i % 2 === 0} />
           ))}

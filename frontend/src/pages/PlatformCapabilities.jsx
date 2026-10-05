@@ -8,131 +8,246 @@ import {
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
+import useInView from '../hooks/useInView';
+import {
+  ParseLines, CompareBars, YieldRing, TaxSplit, DocMorph,
+  StockLevel, SearchGrid, localKeyframes,
+} from '../components/marketing/FeatureDiagrams';
 
-const useInView = (threshold = 0.1) => {
-  const ref = useRef(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setInView(true); },
-      { threshold }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [threshold]);
-  return [ref, inView];
-};
+/* The third copy of useInView has been deleted in favour of the shared hook.
+   None of them disconnected after firing, and they had already drifted apart
+   in threshold and options.
 
+   Every reveal here is one-time, so these call sites pass once:true; the
+   module diagrams take the third value (live visibility) so they stop when
+   scrolled away from. */
+
+/* Rewritten. The previous version described a different product to a
+   different buyer: seven construction modules (BOQ, Indent, Measurement Book,
+   RA Bills), written in implementation language — "ReactFlow + Dagre-powered
+   automatic graph layout", "PO status distribution via Recharts" — and naming
+   a specific real infrastructure project in what was meant to be generic
+   copy. A fabricator evaluating this was reading about somebody else's
+   highway job, in the vocabulary of the people who built the software.
+
+   Now: what the product does, in the order a job actually moves through a
+   workshop, with the contracting modules kept as the last two rather than
+   the whole story. Each one carries a live diagram of its mechanism instead
+   of the 420px empty placeholder that used to sit beside it. */
 const modules = [
   {
-    id: 'projects',
-    icon: <FolderGit2 size={20} />,
-    label: 'Projects',
-    title: 'Project Command Center',
-    color: '#3B82F6',
-    description: 'Create and manage top-level enterprise project contexts. Each project houses its own vendors, work orders, BOQ, procurement, and billing data.',
-    bullets: [
-      'Civil Construction & Generic project types',
-      'Context-switching — all modules filter by active project',
-      'Client, timeline, and status tracking',
-      'Project-scoped vendor and work order registry',
-    ],
-  },
-  {
-    id: 'boq',
+    id: "quotations",
     icon: <FileText size={20} />,
-    label: 'BOQ',
-    title: 'Bill of Quantities',
-    color: '#A78BFA',
-    description: 'Define itemized BOQ line items with item codes, descriptions, unit types, estimated quantities, and unit rates. These rates are the backbone of all billing.',
+    label: "Quotations",
+    title: "From enquiry to a numbered quotation",
+    color: "#FF7A00",
+    diagram: (p) => <DocMorph {...p} from="ENQ" to="QT" />,
+    description:
+      "Capture what a customer asked for before they exist as a record, then price it on your letterhead with HSN codes and the right GST treatment. Edit the number, date or validity in place.",
     bullets: [
-      'Item codes like EW-01, BT-03 with units (Cum, MT, Sqm)',
-      'Estimated vs actual quantity tracking',
-      'Rate-based billing computation engine',
-      'Linked to Indent, MB, and RA Bill modules',
+      "Drawings and specifications attach to the enquiry",
+      "Your logo, address and bank details on every document",
+      "Edit a draft freely; a sent quotation locks down to what may lawfully change",
+      "One click turns an accepted quotation into a customer order",
     ],
   },
   {
-    id: 'procurement',
+    id: "vendor-quotes",
     icon: <ShoppingCart size={20} />,
-    label: 'Procurement',
-    title: 'Indent → PO → GRN Pipeline',
-    color: '#FF7A00',
-    description: 'Full procurement lifecycle from site-level material requests to vendor delivery and inventory receipt.',
+    label: "Vendor quotes",
+    title: "Compare what vendors actually sent",
+    color: "#22C55E",
+    diagram: ParseLines,
+    description:
+      "Vendors quote in Excel, PDF and Word. Upload the file they emailed and the line items are read out of it — description, HSN, quantity, rate — instead of being retyped into a spreadsheet, which is where the comparison usually goes wrong.",
     bullets: [
-      'Indent: Site engineer raises material request against BOQ',
-      'Purchase Order: Raised against vendor, tracks Pending → Approved → Dispatched',
-      'GRN: Records physical delivery, auto-updates inventory',
-      'Full audit trail via Activity Log',
+      "Excel, PDF and Word read deterministically — no model guessing at your prices",
+      "The original file stays attached and openable, so any number can be checked",
+      "Every parse reports how much of the file it understood",
+      "Raise the purchase order on the winning quote",
     ],
   },
   {
-    id: 'mb',
-    icon: <BookOpen size={20} />,
-    label: 'Measurement Book',
-    title: 'Field Measurement Recording',
-    color: '#EC4899',
-    description: 'Site engineers log precise chainage-based measurements (L×W×D) that form the certified evidence for billing.',
-    bullets: [
-      'Chainage-based entries (e.g., CH 10+500 to CH 10+600)',
-      'Auto-computed yield: Length × Width × Depth = Volume',
-      'Linked to Work Order and BOQ item',
-      'Drives cumulative billed quantity in RA Bills',
-    ],
-  },
-  {
-    id: 'billing',
-    icon: <Receipt size={20} />,
-    label: 'RA Bills',
-    title: 'Running Account Bills Engine',
-    color: '#EF4444',
-    description: 'Deterministic, math-driven bill generation from certified MB quantities. No manual calculation errors.',
-    bullets: [
-      'Cumulative MB Qty minus previously billed quantity',
-      'Gross = Net Quantity × BOQ Rate',
-      '2% TDS deduction (Income Tax)',
-      '5% Retention deduction (Performance guarantee)',
-    ],
-  },
-  {
-    id: 'analytics',
+    id: "comparison",
     icon: <BarChart3 size={20} />,
-    label: 'Dashboard & Analytics',
-    title: 'Executive Analytics Suite',
-    color: '#22C55E',
-    description: 'High-level KPI overview with S-Curve progress tracking and live ORR map visualization.',
+    label: "Comparison",
+    title: "Like-for-like, not headline totals",
+    color: "#3B82F6",
+    diagram: CompareBars,
+    description:
+      "Line several quotations up side by side, see the best price on every row, and see who did not quote a row at all. The total compared is the comparable one.",
     bullets: [
-      'KPI cards: Vendors, POs, Delivered, Inventory SKUs',
-      'S-Curve: Planned vs Actual progress over 18-month timeline',
-      'Live Leaflet map of ORR corridor packages',
-      'PO status distribution via Recharts',
+      "Best price marked per line, not just per quotation",
+      "Missing lines named explicitly",
+      "A comparable total, plus a caveat when coverage differs",
+      "Comparing eight lines against five is how you buy the dearer option",
     ],
   },
   {
-    id: 'flow',
-    icon: <Workflow size={20} />,
-    label: 'Process Flow',
-    title: 'Dynamic Process Graph',
-    color: '#6366F1',
-    description: 'ReactFlow + Dagre-powered automatic graph layout showing the full procurement chain from vendor to bill.',
+    id: "inventory",
+    icon: <Truck size={20} />,
+    label: "Goods receipt",
+    title: "Stock that matches the floor",
+    color: "#A78BFA",
+    diagram: StockLevel,
+    description:
+      "Record receipt against the purchase order with vehicle and batch. Inventory moves on the receipt itself, not on somebody remembering to adjust it afterwards.",
     bullets: [
-      'Vendor nodes → PO nodes → RA Bill nodes',
-      'Animated edges for active deliveries',
-      'Click any node for detailed panel',
-      'Auto-layout via Dagre graph engine',
+      "Receipt against the PO, with vehicle and batch",
+      "Inventory and payables update together",
+      "Short and over deliveries recorded as they happened",
+      "Every movement traceable to the document that caused it",
+    ],
+  },
+  {
+    id: "production",
+    icon: <Package size={20} />,
+    label: "Production",
+    title: "Yield, including the scrap",
+    color: "#EC4899",
+    diagram: YieldRing,
+    description:
+      "Consume against the bill of materials, record finished output and scrap, and read live yield, material balance and true cost per piece.",
+    bullets: [
+      "Bill of materials drives what is consumed",
+      "Finished output and scrap both recorded",
+      "Live yield percentage and material balance",
+      "Scrap is the line most systems drop, and it is where the margin goes",
+    ],
+  },
+  {
+    id: "gst",
+    icon: <Receipt size={20} />,
+    label: "GST invoicing",
+    title: "Tax that follows place of supply",
+    color: "#EF4444",
+    diagram: TaxSplit,
+    description:
+      "CGST and SGST within the state, IGST across it — chosen from the ship-to address rather than typed and hoped for. Invoice numbers run sequentially per supplier, as Rule 46(b) requires.",
+    bullets: [
+      "Place of supply decides the split, automatically",
+      "Sequential numbering per Rule 46(b)",
+      "Credit and debit notes as the lawful correction to an issued invoice",
+      "Print-ready documents that hold their alignment on paper",
+    ],
+  },
+  {
+    id: "catalogue",
+    icon: <Workflow size={20} />,
+    label: "Catalogue",
+    title: "A shopfront with no login",
+    color: "#6366F1",
+    diagram: SearchGrid,
+    description:
+      "Publish your products with photographs, specifications and categories, and share one link. Enquiries arrive against a specific product rather than as a general question.",
+    bullets: [
+      "Photographs, specifications, HSN and categories",
+      "One shareable link; nobody browsing needs an account",
+      "Enquiries land attached to the product they came from",
+      "The shortest route from a stranger to a quotation",
+    ],
+  },
+  {
+    id: "projects",
+    icon: <FolderGit2 size={20} />,
+    label: "Projects & BOQ",
+    title: "For work billed against measurement",
+    color: "#0EA5E9",
+    diagram: (p) => <DocMorph {...p} from="BOQ" to="RA" tone="#0EA5E9" />,
+    description:
+      "If you run jobs against a bill of quantities, measurements recorded on site drive the running-account bill — quantity times agreed rate, with GST, TDS and retention applied as deductions.",
+    bullets: [
+      "Itemised BOQ with units and agreed rates",
+      "Site measurements recorded against BOQ lines",
+      "Bills computed from cumulative certified quantity",
+      "Deductions shown, so the arithmetic can be checked",
     ],
   },
 ];
 
+/* The panel beside each module's description. It shows the module's own
+   diagram, scaled up, on a surface that reads as a device rather than a card
+   — a thin top rail and a tinted glow in the module's colour, so switching
+   modules changes the light in the panel as well as its contents.
+
+   The diagram animates only while the panel is on screen (the third value
+   from useInView), so eight of them are not looping in the background. */
+const ModulePanel = ({ module }) => {
+  const [ref, , visible] = useInView(0.15);
+  const Diagram = module.diagram;
+  return (
+    <div
+      ref={ref}
+      key={module.id}
+      className="mk-scale-in"
+      style={{
+        position: 'relative',
+        background: 'var(--bg-surface)',
+        borderRadius: 22,
+        border: `1px solid ${module.color}33`,
+        minHeight: 318,
+        padding: '24px 22px 20px',
+        display: 'flex', flexDirection: 'column', gap: 18,
+        boxShadow: `0 24px 60px -36px ${module.color}66, 0 1px 0 rgba(255,255,255,.04) inset`,
+        overflow: 'hidden',
+      }}
+    >
+      {/* a wash of the module's colour, so the panel changes temperature
+          when you switch modules */}
+      <div aria-hidden="true" style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: `radial-gradient(120% 70% at 50% -10%, ${module.color}1f, transparent 62%)`,
+      }} />
+      <div aria-hidden="true" style={{
+        position: 'absolute', top: 0, left: '12%', right: '12%', height: 1,
+        background: `linear-gradient(90deg, transparent, ${module.color}, transparent)`,
+        opacity: .75,
+      }} />
+
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{
+          width: 34, height: 34, borderRadius: 11, display: 'grid', placeItems: 'center',
+          color: module.color, background: `${module.color}18`,
+          border: `1px solid ${module.color}3a`,
+        }}>{module.icon}</span>
+        <span style={{
+          fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em',
+          textTransform: 'uppercase', color: 'var(--text-muted)',
+        }}>{module.label}</span>
+      </div>
+
+      {/* The diagram, enlarged. transform rather than re-authoring each one
+          at a second size: they are vector and composited, so it costs
+          nothing and there is one definition of each drawing. */}
+      <div style={{ position: 'relative', flex: 1, display: 'grid', placeItems: 'center' }}>
+        {/* Scaled up rather than re-drawn at a second size: the diagrams are
+             vector and composited, so this costs nothing and there stays one
+             definition of each drawing. */}
+        <div style={{ width: '100%', maxWidth: 300, transform: 'scale(1.5)', transformOrigin: 'center' }}>
+          <Diagram on={visible} />
+        </div>
+      </div>
+
+      <p style={{
+        position: 'relative', margin: 0, textAlign: 'center',
+        fontSize: '0.74rem', color: 'var(--text-muted)',
+      }}>
+        An illustration of the mechanism, not a screenshot.
+      </p>
+    </div>
+  );
+};
+
 const PlatformCapabilities = () => {
   const [activeTab, setActiveTab] = useState('projects');
   const navigate = useNavigate();
-  const [headerRef, headerInView] = useInView(0.1);
+  const [headerRef, headerInView] = useInView(0.1, { once: true });
 
   const activeModule = modules.find(m => m.id === activeTab);
 
   return (
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
+      <style>{localKeyframes}</style>
       <MarketingNav />
 
       {/* Hero */}
@@ -288,88 +403,13 @@ const PlatformCapabilities = () => {
                 </button>
               </div>
 
-              {/* Right: Visual placeholder */}
-              <div
-                style={{
-                  background: 'var(--bg-surface)',
-                  borderRadius: '20px',
-                  border: `1px solid ${activeModule.color}22`,
-                  height: '420px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '16px',
-                  boxShadow: `0 0 60px ${activeModule.color}08`,
-                }}
-              >
-                <div
-                  style={{
-                    width: '80px',
-                    height: '80px',
-                    borderRadius: '20px',
-                    background: `${activeModule.color}12`,
-                    border: `2px solid ${activeModule.color}30`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: activeModule.color,
-                    fontSize: '36px',
-                  }}
-                >
-                  {activeModule.icon}
-                </div>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center', maxWidth: '200px' }}>
-                  {activeModule.label} module live in the beta platform
-                </p>
-                <button
-                  onClick={() => navigate('/dashboard')}
-                  style={{
-                    marginTop: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 20px',
-                    borderRadius: '9999px',
-                    border: `1px solid ${activeModule.color}40`,
-                    background: `${activeModule.color}10`,
-                    color: activeModule.color,
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 200ms',
-                  }}
-                >
-                  <Play size={13} />
-                  Open Live Demo
-                </button>
-              </div>
+              {/* Was a 420px placeholder holding the module's icon a second
+                  time and the line "<label> module live in the beta platform".
+                  A panel that promises the feature exists, where the feature
+                  itself should be. Each module now draws its own mechanism. */}
+              <ModulePanel module={activeModule} />
             </div>
           )}
-        </div>
-      </section>
-
-      {/* Technology Strip */}
-      <section className="section-sm" style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-subtle)' }}>
-        <div className="container">
-          <p style={{ textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '32px' }}>
-            Built with modern open-source technologies
-          </p>
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '40px', flexWrap: 'wrap' }}>
-            {['React 19', 'Node.js', 'SQLite', 'Leaflet', 'ReactFlow', 'Recharts', 'Vite', 'TailwindCSS'].map((tech) => (
-              <span
-                key={tech}
-                style={{
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {tech}
-              </span>
-            ))}
-          </div>
         </div>
       </section>
 

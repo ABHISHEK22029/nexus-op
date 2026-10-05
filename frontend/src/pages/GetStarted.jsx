@@ -24,23 +24,33 @@ const SAMPLE_ORG = {
   industry: 'Fabrication / Manufacturing',
 };
 
+/* Generic sample jobs for a fabrication workshop.
+
+   These previously read "ORR Package NW-04" for client NHAI and a Bowrampeta
+   phase for HMDA — a specific real highway package and two named government
+   authorities, in data labelled SAMPLE. On a public page that either implies
+   a customer relationship or discloses someone else's job; neither belongs in
+   a demo. The sample organisation was already "Demo Fabrication Works", so
+   the jobs now match the business they are supposed to belong to.
+
+   Codes are MO-, not NX- — the last of the Nexus branding, hiding in data. */
 const SAMPLE_PROJECTS = [
   {
     id: 1,
-    name: 'Workshop — Bowrampeta Phase 1',
-    code: 'NX-2026-001',
-    client: 'HMDA',
+    name: "Solar mounting structures — batch 1",
+    code: "MO-2026-001",
+    client: "Demo Energy Pvt Ltd",
     value: 25000000,
-    status: 'active',
+    status: "active",
     progress: 42,
   },
   {
     id: 2,
-    name: 'ORR Package NW-04',
-    code: 'NX-2026-002',
-    client: 'NHAI',
-    value: 180000000,
-    status: 'active',
+    name: "Transmission cross arms — annual contract",
+    code: "MO-2026-002",
+    client: "Demo Power Infra",
+    value: 18000000,
+    status: "active",
     progress: 18,
   },
 ];
@@ -484,7 +494,9 @@ const GetStarted = () => {
               { icon: <Shield size={14} />, text: 'PostgreSQL Powered' },
               { icon: <Zap size={14} />, text: '15 Core Modules' },
               { icon: <Star size={14} />, text: 'Indian GST Compliant' },
-              { icon: <CheckCircle size={14} />, text: 'HMDA ORR Ready' },
+              /* Was "HMDA ORR Ready" — a readiness claim about a specific government
+                 authority's highway project, used as a trust badge. */
+              { icon: <CheckCircle size={14} />, text: "Built for Indian SMEs" },
             ].map(({ icon, text }) => (
               <div
                 key={text}

@@ -37,7 +37,7 @@ const CYCLE = '6s';
    cascading. It looks like a design choice rather than a bug, which is why it
    survived a screenshot review and only showed up when opacity was sampled
    across a whole cycle. */
-const anim = (name, on, delay = 0, easing = 'ease-in-out') => (on ? {
+export const anim = (name, on, delay = 0, easing = 'ease-in-out') => (on ? {
   animationName: name,
   animationDuration: CYCLE,
   animationTimingFunction: easing,
@@ -47,7 +47,7 @@ const anim = (name, on, delay = 0, easing = 'ease-in-out') => (on ? {
 
 /* Shared chrome for a diagram: a fixed-height stage so cards in a row line
    up regardless of how tall their drawing is. */
-const Stage = ({ children, label }) => (
+export const Stage = ({ children, label }) => (
   <div style={{
     height: 92, borderRadius: 10, marginBottom: 14, padding: 10,
     background: 'var(--bg-base)', border: '1px solid var(--border-subtle)',
@@ -68,7 +68,7 @@ const Stage = ({ children, label }) => (
 /* ── 1. lines read out of a file ──────────────────────────────────────
    For vendor quotation upload: the point is that the rows come OUT of the
    file, so a file icon sits on the left and rows arrive on the right. */
-const ParseLines = ({ on }) => (
+export const ParseLines = ({ on }) => (
   <Stage label="parsed">
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '0 4px' }}>
       <FileSpreadsheet size={26} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} />
@@ -98,7 +98,7 @@ const ParseLines = ({ on }) => (
    Three bars, the cheapest marked. The mark arrives AFTER the bars settle,
    because the claim is that the system picks the winner, not that it draws
    bars. */
-const CompareBars = ({ on }) => {
+export const CompareBars = ({ on }) => {
   const bars = [
     { w: '86%', c: 'var(--border-emphasis)', best: false },
     { w: '58%', c: 'var(--accent-emerald)', best: true },
@@ -139,7 +139,7 @@ const CompareBars = ({ on }) => {
    A ring that fills to 94.2% with the scrap slice shown in red. The scrap
    is the whole reason this diagram exists: it is the number most systems
    drop, and it is where the margin goes. */
-const YieldRing = ({ on }) => {
+export const YieldRing = ({ on }) => {
   const R = 26, C = 2 * Math.PI * R;
   const good = 0.942;
   return (
@@ -183,7 +183,7 @@ const YieldRing = ({ on }) => {
 /* ── 4. place of supply decides the tax ───────────────────────────────
    The single most misunderstood thing in Indian GST, and a genuine
    differentiator: the split is chosen from the ship-to state, not typed. */
-const TaxSplit = ({ on }) => (
+export const TaxSplit = ({ on }) => (
   <Stage label="GST">
     <div style={{ display: 'grid', gap: 7, width: '100%', padding: '0 6px' }}>
       {[
@@ -216,7 +216,7 @@ const TaxSplit = ({ on }) => (
 
 /* ── 5. one document becoming the next ────────────────────────────────
    Quotation → order, GRN → bill. The arrow is the product. */
-const DocMorph = ({ on, from = 'QT', to = 'SO', tone = 'var(--brand-amber)' }) => (
+export const DocMorph = ({ on, from = 'QT', to = 'SO', tone = 'var(--brand-amber)' }) => (
   <Stage label="one click">
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       {[from, null, to].map((t, i) =>
@@ -243,7 +243,7 @@ const DocMorph = ({ on, from = 'QT', to = 'SO', tone = 'var(--brand-amber)' }) =
 );
 
 /* ── 6. stock responding to a receipt ─────────────────────────────────── */
-const StockLevel = ({ on }) => (
+export const StockLevel = ({ on }) => (
   <Stage label="live stock">
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 56 }}>
       {[30, 38, 34, 46, 42, 58, 54, 70].map((h, i) => (
@@ -268,7 +268,7 @@ const StockLevel = ({ on }) => (
    Both are switched off under prefers-reduced-motion by the rules on
    .mk-bar / .mk-draw-path in motion.css, which pin them to their finished
    state — so the ring still reads 94.2% and the bars still stand up. */
-const localKeyframes = `
+export const localKeyframes = `
 @keyframes mk-bar-rise {
   0%, 6%   { transform: scaleY(0); }
   26%, 88% { transform: scaleY(1); }
@@ -281,7 +281,7 @@ const localKeyframes = `
 }`;
 
 /* ── the catalogue, searched ──────────────────────────────────────────── */
-const SearchGrid = ({ on }) => (
+export const SearchGrid = ({ on }) => (
   <Stage label="catalogue">
     <div style={{ width: '100%', padding: '0 6px', display: 'grid', gap: 7 }}>
       <div style={{

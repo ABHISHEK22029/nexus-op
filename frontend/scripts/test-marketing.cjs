@@ -340,6 +340,66 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(!light.transparentTitle, `feature titles have a real colour in light mode (${light.titleColor})`);
   ok(light.bodyBg !== light.titleColor, 'and are not the same colour as the background');
 
+  /* ── 7b. the other three marketing pages ──────────────────────────────
+     The home page was rebuilt first and the other three left on the old
+     treatment, so a visitor clicking "See the full walkthrough" landed on a
+     page describing a different product. These assertions are what stops the
+     four drifting apart again. */
+  console.log('\n  ── /platform, /how-it-works, /get-started');
+
+  await go('/platform');
+  const plat = await page.evaluate(() => ({
+    stack: /ReactFlow|Recharts|Dagre|SQLite|TailwindCSS/i.test(document.body.innerText),
+    placeholder: /module live in the beta platform/i.test(document.body.innerText),
+    fabrication: /vendor quote|yield|place of supply|catalogue/i.test(document.body.innerText),
+    diagrams: document.querySelectorAll('.mk-row, .mk-bar, .mk-bar-v, .mk-best, .mk-draw-path, .mk-pulse').length,
+    panelAnims: document.getAnimations().filter(a => a.playState === 'running').length,
+  }));
+  ok(!plat.stack, 'the technology strip is gone — it named the wrong database and the wrong audience');
+  ok(!plat.placeholder, 'and the empty "module live in the beta platform" panel is gone');
+  ok(plat.fabrication, 'the platform page describes the fabrication product');
+  ok(plat.diagrams > 0 || plat.panelAnims > 0,
+    `the default module draws a live diagram (${plat.panelAnims} animations running)`);
+  /* Switching module must swap the drawing, not just the text — that was the
+     whole failing of the placeholder it replaced. */
+  const swapped = await page.evaluate(async () => {
+    const before = document.querySelector('.mk-scale-in')?.innerHTML.length || 0;
+    const b = [...document.querySelectorAll('button')].find(x => /Vendor quotes/i.test(x.textContent));
+    b?.click();
+    await new Promise(r => setTimeout(r, 900));
+    return {
+      rows: document.querySelectorAll('.mk-row').length,
+      changed: (document.querySelector('.mk-scale-in')?.innerHTML.length || 0) !== before,
+    };
+  });
+  ok(swapped.rows > 0 && swapped.changed,
+    `and switching module swaps the drawing (${swapped.rows} parsed rows appear)`);
+
+  await go('/how-it-works');
+  const hiw = await page.evaluate(() => ({
+    engine: document.querySelectorAll('.mk-chamber').length,
+    text: document.body.innerText,
+  }));
+  ok(hiw.engine === 7, `the walkthrough shows the same seven-stage engine (${hiw.engine})`);
+  ok(/enquiry/i.test(hiw.text) && /scrap|yield/i.test(hiw.text),
+    'and its steps are the fabrication flow, matching the home page');
+
+  await go('/get-started');
+  const gs = await page.evaluate(() => document.body.innerText);
+  ok(!/NX-20/.test(gs), 'no NX- codes left in the sample data');
+
+  /* A real customer project named in data labelled "sample" either implies a
+     relationship or discloses someone else's job. Checked on all four pages,
+     along with developer leakage. */
+  for (const pth of ['/', '/platform', '/how-it-works', '/get-started']) {
+    await go(pth);
+    const leak = await page.evaluate(() => {
+      const m = (document.body.innerText || '').match(/\bORR\b|NHAI|HMDA|localhost:\d+|Port \d{4}|SQLite/);
+      return m ? m[0] : null;
+    });
+    ok(!leak, `${pth} — ${leak ? `leaks "${leak}"` : 'no customer or developer leakage'}`);
+  }
+
   /* ── 8. the motion has to be smooth, not just present ───────────────────
      "Premium" is measurable here and was measured wrong twice. Animating
      paint properties (background, border-color, box-shadow) and layout ones
