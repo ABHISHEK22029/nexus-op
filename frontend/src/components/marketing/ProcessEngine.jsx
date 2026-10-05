@@ -36,6 +36,10 @@ import useInView from '../../hooks/useInView';
    drag the pipe off the chamber centre line. */
 const ARTIFACT_H = 22;
 
+/* The chambers' grid gap. Named because the pipe's end-points are computed
+   from it — if the two drift apart the track stops landing on the chambers. */
+const GRID_GAP = 6;
+
 const TRACKS = {
   fabrication: {
     label: 'Fabrication & manufacturing',
@@ -233,18 +237,28 @@ const ProcessEngine = () => {
           {track.blurb}
         </p>
 
-        {/* ── the engine ── */}
+        {/* ── the engine ──
+            The casing was a flat --bg-base rectangle with a hairline border,
+            which on the light theme is near-white on near-white: the diagram
+            had no ground to sit on and read as floating bits. It now has a
+            soft vertical gradient, a warmer border and a real shadow, so the
+            chambers sit ON something. */}
         <div style={{
-          position: 'relative', background: 'var(--bg-base)',
-          border: '1px solid var(--border-subtle)', borderRadius: 20,
-          padding: '34px 22px 26px', overflow: 'hidden',
+          position: 'relative',
+          background: 'linear-gradient(180deg, var(--bg-surface), var(--bg-base) 70%)',
+          border: '1px solid var(--border-default)', borderRadius: 22,
+          padding: '38px 26px 30px', overflow: 'hidden',
+          boxShadow: '0 24px 60px -34px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.05) inset',
         }}>
-          {/* gears, bedded into the casing behind the chambers */}
-          <div aria-hidden="true" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-            <div className="mk-gear"      style={{ position: 'absolute', left: 18,  bottom: 10 }}><Gear size={66} /></div>
-            <div className="mk-gear-back" style={{ position: 'absolute', left: 68,  bottom: 34 }}><Gear size={40} teeth={7} opacity={0.12} /></div>
-            <div className="mk-gear-back" style={{ position: 'absolute', right: 22, top: 12 }}><Gear size={52} teeth={8} opacity={0.11} /></div>
-          </div>
+          {/* The gears are gone.
+
+              They sat at the casing's corners, which has overflow:hidden — so
+              each one was sliced in half and read as a rendering fault rather
+              than decoration, and the bottom-left one landed directly on the
+              "Enquiry" label. A mechanical flourish that collides with the
+              text it decorates and gets clipped by its own container is worse
+              than no flourish: the engine metaphor is already carried by the
+              pipe, the travelling pulse and the chambers igniting in turn. */}
 
           {/* Seven 52px chambers plus labels cannot fit a phone, and wrapping
               them would break the pipe into pieces and with it the whole
@@ -258,15 +272,45 @@ const ProcessEngine = () => {
                   ARTIFACT_H and the 10px gap below are fixed so this offset is
                   arithmetic rather than a guess: artefact row + gap + half a
                   52px chamber = the chamber centre line. */}
+              {/* The pipe spans the FIRST chamber's centre to the LAST one's,
+                  not edge to edge.
+
+                  With n equal columns, column i's centre is at (i + 0.5)/n of
+                  the width — so the first is at 1/(2n) and the last at
+                  1 - 1/(2n). Previously this was a flat 26px inset, which
+                  meant two things were wrong at once: the track overshot the
+                  end chambers with a stub hanging off each side, and the
+                  pulse's seven stops (0, 1/6, 2/6 … 6/6 of the pipe) did not
+                  land on the chambers they were supposed to be arriving at.
+                  Now they do, exactly. */}
               <div aria-hidden="true" style={{
-                position: 'absolute', left: 26, right: 26,
-                top: ARTIFACT_H + 10 + 26 - 1, height: 3,
+                position: 'absolute',
+                /* The gap has to come out of the span before dividing. With n
+                   columns and gap g, a column is (W - (n-1)g)/n wide, so the
+                   first centre is at half of that — not W/2n, which ignores
+                   the gaps entirely and left the track 3px short at each end. */
+                left: `calc((100% - ${(n - 1) * GRID_GAP}px) / ${n * 2})`,
+                right: `calc((100% - ${(n - 1) * GRID_GAP}px) / ${n * 2})`,
+                top: ARTIFACT_H + 10 + 29 - 1, height: 3,
                 /* An inset groove rather than a flat grey bar: a hairline of
                    light along the top edge is what makes a track read as
                    machined instead of drawn. */
-                background: 'linear-gradient(180deg, var(--border-default), var(--border-subtle))',
+                background: 'linear-gradient(180deg, var(--border-emphasis), var(--border-default))',
                 borderRadius: 3,
                 boxShadow: 'inset 0 1px 1px rgba(0,0,0,.14), 0 1px 0 rgba(255,255,255,.04)',
+                /* The pulse rides a full-width rail that translates 100%, so
+                   at the end of each cycle the rail's box extends a whole
+                   track-width past the right edge. That was 134px of phantom
+                   overflow, and it put a horizontal SCROLLBAR across the
+                   middle of the diagram at 1440px — where nothing should
+                   scroll at all.
+
+                   clip on X, visible on Y: the rail is cut off at the track's
+                   end, while the 12px dot is still free to bleed above and
+                   below a 3px pipe. `hidden` cannot do this — it forces both
+                   axes — which is why this is `clip`. */
+                overflowX: 'clip',
+                overflowY: 'visible',
               }}>
                 <div className="mk-pipe-fill" style={{
                   position: 'absolute', inset: 0, borderRadius: 3, transformOrigin: 'left center',
@@ -308,7 +352,7 @@ const ProcessEngine = () => {
                 position: 'relative',
                 display: 'grid',
                 gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`,
-                gap: 6,
+                gap: GRID_GAP,
               }}>
             {stages.map((s, i) => {
               /* Every chamber runs the same keyframes for the same duration,
@@ -367,13 +411,13 @@ const ProcessEngine = () => {
                     onClick={() => setPinned(isPinned ? null : s.key)}
                     className="mk-chamber"
                     style={{
-                      position: 'relative', width: 54, height: 54, borderRadius: 16,
+                      position: 'relative', width: 58, height: 58, borderRadius: 18,
                       cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 0,
-                      border: '1px solid var(--border-subtle)',
+                      border: '1px solid var(--border-default)',
                       /* A top-lit face rather than a flat fill: the chamber
                          should look like a machined part catching light. */
                       background: 'linear-gradient(160deg, var(--bg-elevated), var(--bg-surface) 62%)',
-                      boxShadow: '0 1px 0 rgba(255,255,255,.05) inset, 0 2px 6px rgba(0,0,0,.18)',
+                      boxShadow: '0 1px 0 rgba(255,255,255,.6) inset, 0 2px 4px rgba(0,0,0,.06), 0 8px 18px -10px rgba(0,0,0,.25)',
                       outline: isPinned ? '2px solid var(--brand-amber)' : 'none',
                       outlineOffset: 3,
                       transition: 'transform .28s var(--mk-ease-settle)',

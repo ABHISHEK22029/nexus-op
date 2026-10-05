@@ -373,62 +373,24 @@ const Welcome = () => {
             ))}
           </div>
 
-          {/* Dashboard preview image */}
+          {/* The engine used to sit inside a fake browser window — traffic
+              lights and an address bar reading app.maksops.co.in/dashboard.
+              That told a prospect "this diagram IS the product's screen",
+              which it is not; it is an explanatory drawing. Dressing it as a
+              screenshot made it both misleading and worse-looking, because a
+              diagram framed as a UI gets judged as a UI.
+
+              It stands on its own now, full width, with no chrome. */}
           <div
             className="animate-in stagger-5"
             style={{
-              marginTop: '24px',
+              marginTop: '34px',
               width: '100%',
-              maxWidth: '1000px',
-              borderRadius: '16px',
-              border: '1px solid var(--border-default)',
-              overflow: 'hidden',
-              boxShadow: '0 32px 80px hsl(0,0%,0%,0.5), 0 0 0 1px var(--border-subtle)',
+              maxWidth: '1060px',
               opacity: heroInView ? 1 : 0,
-              position: 'relative',
             }}
           >
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: '32px',
-                background: 'var(--bg-surface)',
-                borderBottom: '1px solid var(--border-subtle)',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '0 16px',
-                gap: '8px',
-                zIndex: 1,
-              }}
-            >
-              {['#ef4444', '#f59e0b', '#22c55e'].map((c) => (
-                <div key={c} style={{ width: '12px', height: '12px', borderRadius: '50%', background: c, opacity: 0.8 }} />
-              ))}
-              {/* Read "localhost:5173/dashboard" — a developer's machine, in
-                  the hero screenshot, live on the public site. The mock is
-                  meant to show a prospect what their own workspace looks
-                  like. */}
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '8px', fontFamily: 'var(--font-mono)' }}>
-                app.maksops.co.in/dashboard
-              </span>
-            </div>
-            <div style={{ paddingTop: '32px', background: 'var(--bg-base)', padding: '18px 20px 22px' }}>
-              {/* Was <img src="/nexus-preview.png"> with a fallback mock behind
-                  it. The file was never deployed; Vercel answers that path with
-                  index.html and a 200, so the image never decoded and the
-                  FALLBACK is what shipped — four tiles reading 6, 3, 1 and 2,
-                  beside a grey box captioned "Live KPIs · Yield & Cost". The
-                  first screen of the site was a placeholder for a screenshot
-                  that did not exist, advertising a product with one delivered
-                  purchase order in it.
-
-                  The engine replaces it: the piece that actually explains what
-                  this does, which was 5.4 screens below the fold. */}
-              <ProcessEngine />
-            </div>
+            <ProcessEngine />
           </div>
         </div>
       </section>
