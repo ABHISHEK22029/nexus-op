@@ -5,7 +5,7 @@ import {
   Truck, ShoppingCart, BookOpen, Receipt, Workflow, Users,
   FolderGit2, CheckCircle, TrendingUp, Package, Shield,
   Play, Star, Building2, HardHat, IndianRupee, Calculator,
-  Activity, Brain, Factory, ShoppingBag, Files, ReceiptText, Store
+  Activity, Brain, Factory, ShoppingBag, Files, ReceiptText, Store, LayoutGrid
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
@@ -13,6 +13,7 @@ import useInView from '../hooks/useInView';
 import ProcessEngine from '../components/marketing/ProcessEngine';
 import CatalogueShowcase from '../components/marketing/CatalogueShowcase';
 import { FeatureGrid } from '../components/marketing/FeatureDiagrams';
+import EverythingInside from '../components/marketing/EverythingInside';
 
 /* ── Warm SVG wave dividers (CSOD-inspired organic shapes) ── */
 const WaveDivider = ({ flip = false, color1 = 'hsl(28,80%,90%)', color2 = 'hsl(22,70%,85%)' }) => (
@@ -553,6 +554,40 @@ const Welcome = () => {
                 diagram of its actual mechanism. */}
             <FeatureGrid />
           </div>
+        </div>
+      </section>
+
+      {/* ── EVERYTHING IN THE BOX ───────────────────────────────────────
+             The twelve cards above are the things worth a diagram. They are
+             not the product: the application has nine modules and about
+             forty screens, and the marketing described roughly a third of
+             them. Stock with reorder levels, requirements planning, delivery
+             challans with e-way bill tracking, credit and debit notes,
+             payables ageing, expenses, reports, milestones, work orders,
+             recurring automation, roles and permissions, data import and the
+             activity log were all absent — so anyone comparing this with a
+             competitor's feature list was reading a third of what they would
+             actually get. */}
+      <section className="section" style={{ background: 'var(--bg-deep)' }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: '34px' }}>
+            <span className="pill pill-amber" style={{ marginBottom: '14px' }}>
+              <LayoutGrid size={12} /> Everything in the box
+            </span>
+            <h2 style={{ maxWidth: '660px', margin: '14px auto 0' }}>
+              The whole product,{' '}
+              <span className="gradient-text-amber">not the highlights</span>
+            </h2>
+            <p style={{
+              maxWidth: '600px', margin: '14px auto 0',
+              color: 'var(--text-muted)', lineHeight: 1.8,
+            }}>
+              Every screen that ships, taken from the application's own menu. The
+              contracting-only ones are marked, because a fabricator should be able to
+              skip them rather than wonder whether the list is padded.
+            </p>
+          </div>
+          <EverythingInside />
         </div>
       </section>
 

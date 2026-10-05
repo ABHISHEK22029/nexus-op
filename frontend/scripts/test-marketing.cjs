@@ -340,6 +340,44 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(!light.transparentTitle, `feature titles have a real colour in light mode (${light.titleColor})`);
   ok(light.bodyBg !== light.titleColor, 'and are not the same colour as the background');
 
+  /* ── 7a. the marketing must not undersell the product ─────────────────
+     The pages described about twelve capabilities. The application has nine
+     modules and roughly forty screens — stock with reorder levels,
+     requirements planning, delivery challans with e-way bill tracking,
+     credit and debit notes, payables ageing, expenses, reports, milestones,
+     work orders, recurring automation, roles and permissions, data import
+     and the activity log were all missing. Someone comparing this against a
+     competitor was reading a third of what they would get.
+
+     This asserts the named things are actually on the page. It is a cheap
+     guard against the same drift: a capability added to the product and
+     never mentioned to anyone buying it. */
+  console.log('\n  ── the full product is described, not a third of it');
+  await go('/');
+  const covered = await page.evaluate(() => {
+    const t = (document.body.innerText || '').toLowerCase();
+    const want = [
+      'catalogue', 'enquiries', 'delivery challan', 'e-way bill',
+      'credit', 'payables', 'reorder', 'requirements',
+      'expenses', 'reports', 'milestones', 'work orders',
+      'automation', 'roles', 'import', 'activity',
+      'ask ai', 'knowledge',
+    ];
+    return { missing: want.filter(w => !t.includes(w)), total: want.length };
+  });
+  ok(covered.missing.length === 0,
+    covered.missing.length
+      ? `${covered.missing.length} of ${covered.total} capabilities still unmentioned: ${covered.missing.join(', ')}`
+      : `all ${covered.total} named capabilities appear on the home page`);
+
+  const counts = await page.evaluate(() => ({
+    moduleCards: document.querySelectorAll('.mk-inside-grid > div').length,
+    watches: [...document.querySelectorAll('span')].filter(s => /e-way bill|behind plan|awaiting approval/i.test(s.textContent)).length,
+  }));
+  ok(counts.moduleCards >= 8, `every module has a card (${counts.moduleCards})`);
+  ok(counts.watches >= 3,
+    `and the attention badges the app raises are sold as a feature (${counts.watches} shown)`);
+
   /* ── 7b. the other three marketing pages ──────────────────────────────
      The home page was rebuilt first and the other three left on the old
      treatment, so a visitor clicking "See the full walkthrough" landed on a

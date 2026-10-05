@@ -369,3 +369,17 @@
   .mk-draw-path    { stroke-dashoffset: 0 !important; }
   .mk-caret        { animation: none !important; }
 }
+
+/* ── the full contents grid ─────────────────────────────────────────────
+   Nine module cards, each a short list. Three across on a wide screen is
+   the most that keeps the item descriptions above a ladder of one word per
+   line; auto-fit lets the browser drop to two and then one. */
+.mk-inside-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 640px) {
+  .mk-inside-grid { grid-template-columns: 1fr; gap: 12px; }
+}
