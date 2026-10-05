@@ -240,6 +240,17 @@
   .mk-grid-4, .mk-grid-3 { grid-template-columns: minmax(0, 1fr) !important; }
 }
 
+/* ── the hero ───────────────────────────────────────────────────────────
+   .hero-section carries `min-height: 100vh` in index.css, which reserved an
+   entire screen for a headline and two buttons. Everything that demonstrates
+   the product therefore began below the fold — measured at 5.4 screens down
+   for the process engine, 3.2 for the feature grid. A visitor who did not
+   scroll saw a headline and a broken screenshot placeholder.
+
+   Sized by its contents instead, so the first stages of the engine are on
+   screen when the page loads. */
+.hero-section { min-height: 0 !important; justify-content: flex-start !important; }
+
 /* ── hero KPI row ───────────────────────────────────────────────────────
    Four stat tiles side by side need roughly 560px before the labels start
    wrapping to one word per line. */

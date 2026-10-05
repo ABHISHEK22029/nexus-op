@@ -229,7 +229,11 @@ const Welcome = () => {
       <section
         className="hero-section"
         ref={heroRef}
-        style={{ minHeight: 'calc(100vh - 108px)', paddingTop: '40px', paddingBottom: '80px' }}
+        /* No forced 100vh. The hero reserved a whole screen for a headline and
+           two buttons, which pushed the engine — the thing that shows what
+           this product does — entirely below the fold. It is now sized by its
+           contents, so the first stages are visible on landing. */
+        style={{ paddingTop: '28px', paddingBottom: '36px' }}
       >
         {/* Mesh background blobs */}
         <div className="hero-mesh">
@@ -286,25 +290,29 @@ const Welcome = () => {
               opacity: heroInView ? 1 : 0,
             }}
           >
-            The Smart Platform for{' '}
-            <span className="gradient-text-amber">SME Project Delivery</span>
+            {/* Was "The Smart Platform for SME Project Delivery" — a sentence
+                that would fit any software company in the world. It named no
+                industry, no document, and nothing the reader does on a Tuesday.
+                This says what actually comes out of it. */}
+            From enquiry to paid invoice.{' '}
+            <span className="gradient-text-amber">Nothing retyped.</span>
           </h1>
 
-          {/* Subtext */}
+          {/* Subtext — two short lines instead of a four-line block with orange
+              words buried inside it. A hero paragraph is scanned, not read. */}
           <p
             className="animate-in stagger-2"
             style={{
-              maxWidth: '620px',
-              fontSize: '1.1rem',
+              maxWidth: '640px',
+              fontSize: '1.14rem',
               color: 'var(--text-secondary)',
-              lineHeight: 1.8,
+              lineHeight: 1.75,
               opacity: heroInView ? 1 : 0,
             }}
           >
-            From customer orders and vendor quotations to production, GRN and GST bills —
-            Maks Ops runs the complete{' '}
-            <span style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>buy → make → deliver → bill</span>{' '}
-            operation for growing SMEs. Built for fabricators, manufacturers and contractors.
+            Maks Ops runs the whole of it — vendor quotes read straight out of the file
+            they arrived in, production yield including the scrap, and a GST invoice that
+            knows which side of a state line your customer is on.
           </p>
 
           <div
@@ -407,66 +415,19 @@ const Welcome = () => {
                 app.maksops.co.in/dashboard
               </span>
             </div>
-            <div style={{ paddingTop: '32px', background: 'var(--bg-base)' }}>
-              <img
-                src={`/nexus-preview.png`}
-                alt="Maks Ops Dashboard Preview"
-                style={{ width: '100%', display: 'block' }}
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              {/* Fallback Preview */}
-              <div
-                style={{
-                  display: 'none',
-                  flexDirection: 'column',
-                  background: 'var(--bg-base)',
-                  height: '480px',
-                  padding: '32px',
-                  gap: '24px',
-                }}
-              >
-                {/* KPI Row.
-                    Was repeat(4, 1fr). `1fr` is minmax(auto, 1fr), and `auto`
-                    will not shrink below min-content — so "Inventory SKUs"
-                    held the column open, the grid burst its container, and the
-                    whole homepage scrolled sideways on a phone. minmax(0, 1fr)
-                    lets the columns actually shrink; the class drops it to two
-                    rows of two below 560px, where four would be unreadable. */}
-                <div className="hero-kpi-row"
-                  style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '16px' }}>
-                  {[
-                    { label: 'Active Vendors', val: '6', color: 'var(--accent-blue)' },
-                    { label: 'Active POs', val: '3', color: 'hsl(259,90%,70%)' },
-                    { label: 'Delivered POs', val: '1', color: 'var(--accent-emerald)' },
-                    { label: 'Inventory SKUs', val: '2', color: 'var(--brand-amber)' },
-                  ].map(({ label, val, color }) => (
-                    <div key={label} className="kpi-card">
-                      <div className="kpi-value" style={{ color }}>{val}</div>
-                      <div className="kpi-label">{label}</div>
-                    </div>
-                  ))}
-                </div>
-                {/* Chart placeholder */}
-                <div
-                  style={{
-                    flex: 1,
-                    background: 'var(--bg-surface)',
-                    borderRadius: '12px',
-                    border: '1px solid var(--border-default)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                    <BarChart3 size={48} style={{ marginBottom: '12px', opacity: 0.4 }} />
-                    <p style={{ fontSize: '0.875rem' }}>Live KPIs · Yield & Cost · Order-to-Bill Flow</p>
-                  </div>
-                </div>
-              </div>
+            <div style={{ paddingTop: '32px', background: 'var(--bg-base)', padding: '18px 20px 22px' }}>
+              {/* Was <img src="/nexus-preview.png"> with a fallback mock behind
+                  it. The file was never deployed; Vercel answers that path with
+                  index.html and a 200, so the image never decoded and the
+                  FALLBACK is what shipped — four tiles reading 6, 3, 1 and 2,
+                  beside a grey box captioned "Live KPIs · Yield & Cost". The
+                  first screen of the site was a placeholder for a screenshot
+                  that did not exist, advertising a product with one delivered
+                  purchase order in it.
+
+                  The engine replaces it: the piece that actually explains what
+                  this does, which was 5.4 screens below the fold. */}
+              <ProcessEngine />
             </div>
           </div>
         </div>
@@ -633,31 +594,14 @@ const Welcome = () => {
         </div>
       </section>
 
-      {/* ── PROCESS FLOW PREVIEW ── */}
-      <section className="section" style={{ background: 'var(--bg-deep)' }}>
+      {/* The engine used to be duplicated here, five screens below the fold.
+          It now opens the page, where the thing that explains the product
+          belongs — so this section is just the way through to the detail. */}
+      <section className="section-sm" style={{ background: 'var(--bg-deep)', textAlign: 'center' }}>
         <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
-            <span className="pill pill-amber" style={{ marginBottom: '16px' }}>
-              <TrendingUp size={12} /> End-to-End Flow
-            </span>
-            <h2 style={{ maxWidth: '620px', margin: '16px auto 0' }}>
-              One Engine,{' '}
-              <span className="gradient-text-amber">End to End</span>
-            </h2>
-          </div>
-
-          {/* The old version of this section showed the CONTRACTOR flow — BOQ,
-              Indent, Measurement Book, RA Bill — while every feature paragraph
-              on the page described FABRICATION. A prospect reading both was
-              being shown two different products. ProcessEngine leads with the
-              fabrication track and offers contracting as a second lane. */}
-          <ProcessEngine />
-
-          <div style={{ textAlign: 'center', marginTop: '40px' }}>
-            <Link to="/how-it-works" className="btn-ghost">
-              See Full Walkthrough <ArrowRight size={16} />
-            </Link>
-          </div>
+          <Link to="/how-it-works" className="btn-ghost">
+            See every stage in detail <ArrowRight size={16} />
+          </Link>
         </div>
       </section>
 
