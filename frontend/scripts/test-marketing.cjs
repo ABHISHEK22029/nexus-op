@@ -85,97 +85,141 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(await page.evaluate(() => /Maks\s*Ops/i.test(document.body.innerText)),
     'and the login screen names the product');
 
-  /* ── 2. the process engine ────────────────────────────────────────── */
-  console.log('\n  ── the process engine');
+  /* ── 2. the live product walkthrough ─────────────────────────────────
+     The hero is no longer a diagram: it is the product running a whole
+     transaction for about a minute. These checks are the brief, turned into
+     assertions — it starts by itself, it has no player, it walks every stage
+     in order, and above all it is ONE transaction: the same customer, the
+     same numbers, seven linked records.
+
+     The clock is held at 0 while the page loads (window.__MK_FLOW_SPEED__,
+     read on every tick), then runs 12x fast so a minute of story takes about
+     five seconds. Nothing else about the component changes. */
+  console.log('\n  ── the live product walkthrough');
+  const freeze = await page.evaluateOnNewDocument(() => { window.__MK_FLOW_SPEED__ = 0; });
   await go('/');
-  await page.evaluate(() => {
-    const h = [...document.querySelectorAll('h2')].find(x => /One Engine/i.test(x.textContent));
-    h?.scrollIntoView({ block: 'center' });
-  });
-  await sleep(1200);
+  await page.removeScriptToEvaluateOnNewDocument(freeze.identifier);
+  const speed = (x) => page.evaluate((v) => { window.__MK_FLOW_SPEED__ = v; }, x);
+  const current = () => page.evaluate(() => document.querySelector('.fl-card[aria-current="step"] .fl-card-title')?.textContent);
+  /* waits for the stage to move off `from`, and says where it went */
+  const nextStage = async (from, ms) => {
+    const t0 = Date.now();
+    let cur = await current();
+    while (cur === from && Date.now() - t0 < ms) { await sleep(40); cur = await current(); }
+    return cur;
+  };
 
-  const eng = await page.evaluate(() => {
-    const chambers = [...document.querySelectorAll('.mk-chamber')];
-    const arts = [...document.querySelectorAll('.mk-artifact')];
-    return {
-      chambers: chambers.length,
-      labels: chambers.map(c => c.getAttribute('aria-label')?.split(':')[0]),
-      artifacts: arts.map(a => a.textContent.trim()).filter(Boolean),
-      tabs: [...document.querySelectorAll('[role="tab"]')].map(t => t.textContent.trim()),
-      /* .mk-engine-pulse, not .mk-pulse: the DocMorph diagrams in the
-         feature cards use .mk-pulse too and appear EARLIER in the DOM, so
-         querySelector was reading an off-screen feature card. */
-      pulseAnimating: !!document.querySelector('.mk-engine-pulse') &&
-        getComputedStyle(document.querySelector('.mk-engine-pulse')).animationName !== 'none',
-    };
-  });
-  ok(eng.chambers === 7, `seven stages render (${eng.chambers})`);
-  ok(eng.labels.includes('Enquiry') && eng.labels.includes('Tax invoice'),
-    `and they are the fabrication track (${eng.labels.slice(0, 3).join(', ')}…)`);
-  ok(eng.artifacts.some(a => /QT-|INV-|GRN-/.test(a)),
-    `each stage names the document it emits (${eng.artifacts.slice(0, 3).join(', ')}…)`);
-  ok(eng.pulseAnimating, 'the pulse is animating');
-  ok(eng.tabs.length === 2, `two tracks are offered (${eng.tabs.join(' | ')})`);
+  const first = await page.evaluate(() => ({
+    headline: (document.querySelector('h1')?.innerText || '').replace(/\s+/g, ' '),
+    cards: document.querySelectorAll('.fl-card').length,
+    videos: document.querySelectorAll('video, iframe').length,
+    playButton: [...document.querySelectorAll('button')].some((b) => {
+      const l = `${b.textContent} ${b.getAttribute('aria-label') || ''}`;
+      return /\bplay\b/i.test(l) && !/pause|resume/i.test(l);
+    }),
+    notes: document.querySelectorAll('.fl-note').length,
+  }));
+  ok(/catalogue to cash/i.test(first.headline), `the hero says it ("${first.headline}")`);
+  ok(first.cards === 7, `seven stage cards act as the controller (${first.cards})`);
+  ok(first.videos === 0 && !first.playButton, 'no video, no player, no play button — it simply runs');
+  ok(first.notes === 2, 'the handwritten margin notes are there');
 
-  /* hovering a stage must change the detail panel */
-  const before = await page.evaluate(() => document.querySelector('.mk-chamber')?.closest('div')?.parentElement?.parentElement?.parentElement?.parentElement?.innerText || '');
-  await page.evaluate(() => {
-    const c = [...document.querySelectorAll('.mk-chamber')];
-    c[4]?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-  });
-  await sleep(500);
-  const detail = await page.evaluate(() => {
-    const t = document.body.innerText;
-    return { hasReceipt: /Goods receipt/i.test(t), hasMoves: /What moves:/i.test(t) };
-  });
-  ok(detail.hasMoves, 'the detail panel states what moves at each stage');
-  ok(detail.hasReceipt, 'and hovering a stage shows that stage');
-
-  /* ── the engine must SEQUENCE, not flash ──────────────────────────────
-     This is the assertion that earns its keep. The stages are staggered by
-     animation-delay, and the `animation` shorthand resets animation-delay to
-     0s — so when React patched the shorthand alone as the engine scrolled
-     into view, every delay was wiped and all seven stages fired in unison,
-     once per cycle. The diagram still looked alive, a screenshot looked
-     correct, and the sequence that explains the product was gone.
-
-     Caught only by sampling opacity across a whole 15.4s cycle, so that is
-     what this does. */
-  const seq = await page.evaluate(async () => {
-    const arts = [...document.querySelectorAll('.mk-artifact')];
-    const delays = arts.map(a => getComputedStyle(a).animationDelay);
-    const samples = [];
+  const run = await page.evaluate(async () => {
+    const order = [], ids = new Set(), text = {}, acme = new Set();
+    let customerScreen = false, maxTrail = 0, flew = false;
+    window.__MK_FLOW_SPEED__ = 12;
     const t0 = performance.now();
-    while (performance.now() - t0 < 17000) {
-      samples.push(arts.map(a => (+getComputedStyle(a).opacity > 0.5 ? 1 : 0)));
-      await new Promise(r => setTimeout(r, 200));
+    while (performance.now() - t0 < 9000) {
+      const cur = document.querySelector('.fl-card[aria-current="step"] .fl-card-title')?.textContent;
+      if (cur && order[order.length - 1] !== cur) order.push(cur);
+      const id = document.querySelector('.fl-id .fl-morph-item.is-in')?.textContent.trim();
+      if (id) ids.add(id);
+      if (document.querySelector('.fl-url')?.textContent.includes('/c/')) customerScreen = true;
+      maxTrail = Math.max(maxTrail, document.querySelectorAll('.fl-chain-id').length);
+      if (document.getAnimations().some((a) => a.effect?.target?.classList?.contains('fl-flight'))) flew = true;
+      const win = document.querySelector('.fl-window')?.innerText || '';
+      if (cur) { text[cur] = win; if (/Acme Engineering/.test(win)) acme.add(cur); }
+      if (document.querySelector('.fl-closing')) { order.push('CLOSING'); break; }
+      await new Promise((r) => setTimeout(r, 50));
     }
-    const everLit = new Set();
-    let maxAtOnce = 0;
-    samples.forEach((row) => {
-      const n = row.reduce((a, b) => a + b, 0);
-      if (n > maxAtOnce) maxAtOnce = n;
-      row.forEach((v, i) => { if (v) everLit.add(i); });
-    });
-    return { delays, distinctDelays: new Set(delays).size, everLit: everLit.size, maxAtOnce, total: arts.length };
+    return { order, ids: [...ids], text, acme: [...acme], customerScreen, maxTrail, flew };
   });
-  ok(seq.distinctDelays === seq.total,
-    `each stage has its own delay (${seq.distinctDelays}/${seq.total} distinct: ${seq.delays.join(' ')})`);
-  ok(seq.maxAtOnce <= 2,
-    `stages fire in sequence, not together (most lit at once: ${seq.maxAtOnce})`);
-  ok(seq.everLit === seq.total,
-    `and every stage takes its turn within a cycle (${seq.everLit}/${seq.total})`);
+  const STAGES = ['Enquiry', 'Quotation', 'Order', 'Purchase', 'Goods receipt', 'Production', 'Tax invoice'];
+  ok(run.customerScreen, 'it opens on the CUSTOMER\'s screen — your public catalogue at maksops.co.in/c/…');
+  ok(JSON.stringify(run.order) === JSON.stringify([...STAGES, 'CLOSING']),
+    `it plays every stage in order, then closes (${run.order.join(' → ')})`);
+  const prefixes = ['ENQ-', 'QT-', 'SO-', 'PO-', 'GRN-', 'PROD-', 'INV-'];
+  ok(prefixes.every((pfx) => run.ids.some((i) => i.startsWith(pfx))),
+    `each stage produces its own numbered record (${run.ids.join(', ')})`);
+  ok(run.maxTrail === 7, `and the window's trail links all seven (${run.maxTrail})`);
+  ok(run.acme.length === 7, `the SAME customer is on screen in every stage (${run.acme.length}/7)`);
+  ok(run.flew, 'between stages the new record flies up to the next card');
 
-  /* switching track must replace the stages */
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll('[role="tab"]')].find(x => /Projects/i.test(x.textContent));
-    t?.click();
-  });
-  await sleep(700);
-  const track2 = await page.evaluate(() =>
-    [...document.querySelectorAll('.mk-chamber')].map(c => c.getAttribute('aria-label')?.split(':')[0]));
-  ok(track2.includes('Measurement book') || track2.includes('BOQ'),
-    `switching track swaps the stages (${track2.slice(0, 3).join(', ')}…)`);
+  /* the numbers are one transaction's numbers, not seven demos' */
+  const T = run.text;
+  ok(/₹3,28,500/.test(T.Quotation || '') && /CGST/.test(T.Quotation || ''), 'quotation: ₹3,28,500 with CGST + SGST');
+  ok(/323/.test(T.Order || '') && /180 kg/.test(T.Order || ''), 'order: needs 323 kg across open orders, short 180 kg');
+  ok(/₹46,800/.test(T.Purchase || '') && /Lowest/.test(T.Purchase || ''), 'purchase: lowest vendor, ₹46,800');
+  ok(/143 kg/.test(T['Goods receipt'] || '') && /\+180 kg/.test(T['Goods receipt'] || '') && /323/.test(T['Goods receipt'] || ''),
+    'goods receipt: 143 + 180 = 323 kg');
+  ok(/94\.2%/.test(T.Production || ''), 'production: 94.2% yield, scrap counted');
+  ok(/₹3,28,500/.test(T['Tax invoice'] || '') && /E-way bill/i.test(T['Tax invoice'] || ''),
+    'invoice: the same ₹3,28,500, with the e-way bill');
+
+  /* choosing a stage plays it, and the story carries on from there.
+     4x from here: fast enough to be quick, slow enough that a fixed wait
+     cannot sail past a whole stage. */
+  await speed(4);
+  await page.evaluate(() => document.querySelectorAll('.fl-card')[4].click());
+  await page.mouse.move(2, 2);
+  await sleep(250);
+  const picked = await page.evaluate(() => ({
+    cur: document.querySelector('.fl-card[aria-current="step"] .fl-card-title')?.textContent,
+    id: document.querySelector('.fl-id .fl-morph-item.is-in')?.textContent,
+    done: document.querySelectorAll('.fl-card.is-done').length,
+  }));
+  ok(picked.cur === 'Goods receipt' && /^GRN-/.test(picked.id || ''), `selecting a card plays that stage (${picked.cur}, ${picked.id})`);
+  ok(picked.done === 4, `and the stages before it show as done (${picked.done})`);
+  const after = await nextStage('Goods receipt', 4000);
+  ok(after === 'Production', `then continues by itself to the next one (${after})`);
+
+  /* hovering holds the hand-off, not the story: Production is 7.5s of story,
+     under 2s at 4x, so 3.5s of hovering is well past its end */
+  const box = await page.evaluate(() => { const r = document.querySelector('.fl-window').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + 60 }; });
+  await page.mouse.move(box.x, box.y);
+  await sleep(3500);
+  const held = await page.evaluate(() => ({
+    cur: document.querySelector('.fl-card[aria-current="step"] .fl-card-title')?.textContent,
+    yield: /94\.2%/.test(document.querySelector('.fl-window')?.innerText || ''),
+  }));
+  ok(held.cur === 'Production' && held.yield, `hovering lets the stage finish and then holds it, instead of moving on (${held.cur})`);
+  await page.mouse.move(2, 2);
+  const released = await nextStage('Production', 3000);
+  ok(released === 'Tax invoice', `moving away releases it (${released})`);
+
+  /* WCAG 2.2.2: anything that moves by itself for >5s must be pausable.
+     The whole window is compared, so ANY progress — a typed character, a
+     count, a status — shows up as a difference. */
+  await page.evaluate(() => document.querySelectorAll('.fl-card')[1].click());
+  await page.mouse.move(2, 2);
+  await sleep(150);
+  await page.click('.fl-live');
+  await page.mouse.move(2, 2);
+  await sleep(600); // let the cross-fades already under way finish
+  const snap = () => page.evaluate(() => ({
+    pressed: document.querySelector('.fl-live').getAttribute('aria-pressed'),
+    win: document.querySelector('.fl-app')?.innerText,
+    cur: document.querySelector('.fl-card[aria-current="step"] .fl-card-title')?.textContent,
+  }));
+  const p1 = await snap();
+  await sleep(1800);
+  const p2 = await snap();
+  ok(p1.pressed === 'true' && p1.win === p2.win && p2.cur === 'Quotation', 'the "Live" chip pauses it — a pause control, not a play button');
+  await page.click('.fl-live');
+  await page.mouse.move(2, 2);
+  await sleep(1200);
+  const p3 = await snap();
+  ok(p3.pressed === 'false' && p3.win !== p2.win, 'and resumes it');
 
   /* ── 3. feature grid ──────────────────────────────────────────────── */
   console.log('\n  ── feature grid');
@@ -234,33 +278,22 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   console.log('\n  ── prefers-reduced-motion');
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
   await go('/');
-  await page.evaluate(() => {
-    const h = [...document.querySelectorAll('h2')].find(x => /One Engine/i.test(x.textContent));
-    h?.scrollIntoView({ block: 'center' });
-  });
-  await sleep(900);
-  const rm = await page.evaluate(() => {
-    const anim = (sel) => {
-      const el = document.querySelector(sel);
-      return el ? getComputedStyle(el).animationName : 'MISSING';
-    };
-    const arts = [...document.querySelectorAll('.mk-artifact')];
-    const chambers = [...document.querySelectorAll('.mk-chamber')];
-    return {
-      /* The chamber BUTTON no longer animates — its lit state is a separate
-         composited overlay, so that is what has to stop. */
-      chamberAnim: anim('.mk-chamber-glow'),
-      artifactAnim: anim('.mk-artifact'),
-      /* the content must still be READABLE: these start at opacity 0 */
-      artifactsVisible: arts.filter(a => Number(getComputedStyle(a).opacity) > 0.9).length,
-      artifactsTotal: arts.length,
-      chambersLit: [...document.querySelectorAll('.mk-chamber-glow')].filter(g => Number(getComputedStyle(g).opacity) > 0.9).length,
-    };
-  });
-  ok(rm.chamberAnim === 'none', `the chamber sequence stops (${rm.chamberAnim})`);
-  ok(rm.artifactAnim === 'none', `the artefact pops stop (${rm.artifactAnim})`);
-  ok(rm.artifactsVisible === rm.artifactsTotal && rm.artifactsTotal > 0,
-    `and every document label is still readable (${rm.artifactsVisible}/${rm.artifactsTotal}) — they start at opacity 0, so this is the one that matters`);
+  /* Nothing advances on its own, every scene is drawn at its finished state,
+     and the cards still switch between them. */
+  const rm1 = await page.evaluate(() => ({
+    cur: document.querySelector('.fl-card[aria-current="step"] .fl-card-title')?.textContent,
+    live: !!document.querySelector('.fl-live'),
+    doc: document.querySelector('.fl-docpane')?.innerText || '',
+  }));
+  await sleep(2500);
+  const rm2 = await page.evaluate(() => document.querySelector('.fl-card[aria-current="step"] .fl-card-title')?.textContent);
+  ok(rm1.cur === 'Enquiry' && rm2 === 'Enquiry', 'the walkthrough does not advance by itself');
+  ok(!rm1.live, 'and offers no live/pause chip, because nothing is moving');
+  ok(/Acme Engineering/.test(rm1.doc), 'each scene is shown finished — the enquiry is already filled in');
+  await page.evaluate(() => document.querySelectorAll('.fl-card')[2].click());
+  await sleep(300);
+  ok(await page.evaluate(() => /Short/.test(document.querySelector('.fl-window').innerText)),
+    'choosing a stage still shows it, complete');
 
   const rmFeat = await page.evaluate(async () => {
     document.querySelector('.mk-feature-grid')?.scrollIntoView({ block: 'start' });
@@ -292,7 +325,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     scroll: document.documentElement.scrollWidth,
     client: document.documentElement.clientWidth,
     engineScrolls: (() => {
-      const e = document.querySelector('.mk-engine-scroll');
+      const e = document.querySelector('.fl-strip');
       return e ? e.scrollWidth > e.clientWidth : null;
     })(),
     featCols: getComputedStyle(document.querySelector('.mk-feature-grid')).gridTemplateColumns.split(' ').length,
@@ -315,7 +348,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     `the page does not scroll meaningfully sideways (${narrow.scroll}px in ${narrow.client}px, `
     + `was 648px; ${narrow.scroll - narrow.client}px residual within the ${OVERFLOW_TOLERANCE}px tolerance)`);
   ok(narrow.engineScrolls === true,
-    'the engine scrolls inside its own casing instead, so the machine stays one row');
+    'the seven stage cards scroll inside their own strip instead of the page');
   ok(narrow.featCols === 1, `feature cards stack to one column (${narrow.featCols})`);
 
   /* ── 7. light theme ───────────────────────────────────────────────── */
@@ -324,7 +357,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
   await sleep(600);
   const light = await page.evaluate(() => {
-    const el = document.querySelector('.mk-chamber');
+    const el = document.querySelector('.fl-card');
     const cs = el ? getComputedStyle(el) : null;
     const body = getComputedStyle(document.body);
     const txt = getComputedStyle(document.querySelector('.mk-feature-grid h3'));
@@ -352,8 +385,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
      This asserts the named things are actually on the page. It is a cheap
      guard against the same drift: a capability added to the product and
      never mentioned to anyone buying it. */
-  console.log('\n  ── the full product is described, not a third of it');
-  await go('/');
+  console.log('\n  ── the full product is described, not a third of it (on /platform)');
+  /* moved off the homepage, which now sells one idea; the platform page is
+     where someone goes for the detail */
+  await go('/platform');
   const covered = await page.evaluate(() => {
     const t = (document.body.innerText || '').toLowerCase();
     const want = [
@@ -415,10 +450,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   await go('/how-it-works');
   const hiw = await page.evaluate(() => ({
-    engine: document.querySelectorAll('.mk-chamber').length,
+    engine: document.querySelectorAll('.fl-card').length,
     text: document.body.innerText,
   }));
-  ok(hiw.engine === 7, `the walkthrough shows the same seven-stage engine (${hiw.engine})`);
+  ok(hiw.engine === 7, `the walkthrough shows the same live product walkthrough (${hiw.engine} stages)`);
   ok(/enquiry/i.test(hiw.text) && /scrap|yield/i.test(hiw.text),
     'and its steps are the fabrication flow, matching the home page');
 
@@ -454,16 +489,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
          going. */
   console.log('\n  ── motion cost');
   await go('/', 1440, 1000);
-  await page.evaluate(() => {
-    const h = [...document.querySelectorAll('h2')].find(x => /One Engine/i.test(x.textContent));
-    h?.scrollIntoView({ block: 'center' });
-  });
+  await page.evaluate(() => document.querySelector('.fl-window')?.scrollIntoView({ block: 'center' }));
   await sleep(1400);
 
   const cost = await page.evaluate(() => {
     const COMPOSITED = new Set(['opacity', 'transform', 'filter']);
     let composited = 0; const expensive = {};
     document.getAnimations().forEach((a) => {
+      if (a.effect?.getTiming?.().iterations !== Infinity) return;
       const names = new Set();
       (a.effect?.getKeyframes?.() || []).forEach(f =>
         Object.keys(f).forEach(k => {
