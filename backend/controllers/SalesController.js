@@ -7,7 +7,7 @@
 const db = require('../db');
 const { profileFor } = require('../shared/companyProfile');
 const { computeOrder } = require('../shared/orderTotals');
-const { docNumber, loadProfile, nextSeq } = require('../shared/docNumber');
+const { allocatePoNumber } = require('../shared/docNumber');
 const { allocate } = require('../shared/docSeries');
 const { isInterstate } = require('../shared/gstStates');
 const { amountInWords } = require('../shared/amountInWords');
@@ -314,11 +314,7 @@ exports.generatePO = async (req, res) => {
        organisation's profile to everybody — which is how owner 5's purchase
        orders came to be prefixed "Kirashi". */
     const ownerId = req.user?.orgId || null;
-    const profile = await loadProfile(db, ownerId);
-    const poNumber = docNumber({
-      profile,
-      seq: await nextSeq(db, { ownerId, docType: 'purchase_order', fyStart: profile.fyStart }),
-    });
+    const poNumber = await allocatePoNumber(db, ownerId);
     const { rows } = await db.query(
       `INSERT INTO purchase_orders ("projectId","vendorId","itemName",quantity,"unitPrice","poNumber",customer_order_id,quotation_id,status,owner_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending',$9) RETURNING id`,

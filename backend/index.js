@@ -44,7 +44,7 @@ const { ACTION_FOR_METHOD, allow } = require('./middleware/permissions');
 const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
 const { andOwner } = require('./shared/ownerScope');
-const { docNumber, loadProfile, nextSeq } = require('./shared/docNumber');
+const { docNumber, loadProfile, nextSeq, allocatePoNumber } = require('./shared/docNumber');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -647,35 +647,66 @@ app.get('/po/:id/items', async (req, res) => {
   }
 });
 
+/* A purchase order's lines, written inside the caller's transaction, and
+   the approval gate that depends on their value. One function for both
+   ways in — the lines arriving with the PO, or replaced afterwards. */
+async function writePoLines(client, poId, items, orgId) {
+  await client.query('DELETE FROM po_line_items WHERE "poId" = $1', [poId]);
+  let subtotal = 0;
+  for (const item of items) {
+    subtotal += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+    await client.query(
+      `INSERT INTO po_line_items ("poId", sno, description, uom, hsn, quantity, "unitPrice")
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [poId, item.sno, item.description, item.uom || "No's", item.hsn || null, item.quantity, item.unitPrice]
+    );
+  }
+  // Approval gate: if the PO value exceeds the owner's threshold, hold it for sign-off.
+  const thr = (await client.query('SELECT po_approval_threshold FROM automation_settings WHERE owner_id = $1', [orgId || 0])).rows[0]?.po_approval_threshold || 0;
+  const needsApproval = thr > 0 && subtotal > thr;
+  await client.query(`UPDATE purchase_orders SET approval_status = $1 WHERE id = $2`, [needsApproval ? 'Pending Approval' : 'Not Required', poId]);
+  return { needsApproval, subtotal, thr };
+}
+
+/* Said before the database is touched, so a bad line is a clear 400 and
+   not a half-written PO or a raw SQL error. */
+function poLinesProblem(items) {
+  for (const [i, it] of (items || []).entries()) {
+    if (!String(it?.description || '').trim()) return `Line ${i + 1} needs a description.`;
+    const q = Number(it.quantity), p = Number(it.unitPrice);
+    if (!Number.isFinite(q) || q <= 0) return `Line ${i + 1}: the quantity must be a number above 0.`;
+    if (!Number.isFinite(p) || p < 0) return `Line ${i + 1}: the unit price must be a number, 0 or more.`;
+  }
+  return null;
+}
+
+function notifyApproval(poId, poNumber, gate) {
+  if (!gate || !gate.needsApproval) return;
+  notify('admins', { type: 'APPROVAL_NEEDED', title: `Approval needed · ${poNumber}`, message: `PO value ₹${gate.subtotal.toLocaleString('en-IN')} exceeds the ₹${Number(gate.thr).toLocaleString('en-IN')} limit`, entityType: 'po', entityId: Number(poId), link: `/po/${poId}` });
+}
+
 app.post('/po', async (req, res) => {
-  const { projectId, vendorId, workOrderId, itemName, quantity, unitPrice, quoteRef, paymentTerms, priceBasis, pnfInsurance, loadingScope, warranty, amountInWords, indentId, gstRate } = req.body;
+  const { projectId, vendorId, workOrderId, itemName, quantity, unitPrice, quoteRef, paymentTerms, priceBasis, pnfInsurance, loadingScope, warranty, amountInWords, indentId, gstRate, items } = req.body;
 
   if (!projectId || !vendorId || !itemName || !quantity)
     return res.status(400).json({ error: 'projectId, vendorId, itemName, quantity required' });
-  
-  try {
-    /* The series belongs to whoever is running this, not to us. This read
-       `Kirashi/FY2026-27/007` from a string literal, so every organisation
-       issued purchase orders carrying another company's name — to their own
-       vendors — under a financial year that would never roll over. */
-    /* And it still read the profile with no owner — `LIMIT 1` over every
-       organisation — and counted POs per project, so two projects both
-       issued /001 and every business's numbers carried whichever company's
-       profile happened to come back first. Now: this organisation's own
-       profile, the locked counter every other document uses, and never a
-       number this business has already issued. */
-    const poOwner = req.user?.orgId ?? req.user?.id ?? null;
-    const profile = await loadProfile(db, poOwner);
-    let poNumber = null;
-    for (let i = 0; i < 50 && !poNumber; i++) {
-      const seq = await nextSeq(db, { ownerId: poOwner, docType: 'purchase_order', fyStart: profile.fyStart });
-      const candidate = docNumber({ profile, seq });
-      const clash = await db.query('SELECT 1 FROM purchase_orders WHERE owner_id = $1 AND "poNumber" = $2 LIMIT 1', [poOwner, candidate]);
-      if (!clash.rowCount) poNumber = candidate;
-    }
-    if (!poNumber) return res.status(409).json({ error: 'Could not find a free purchase order number.' });
+  if (items !== undefined && (!Array.isArray(items) || !items.length))
+    return res.status(400).json({ error: 'items, when sent, must be a list of at least one line' });
+  const lineProblem = items ? poLinesProblem(items) : null;
+  if (lineProblem) return res.status(400).json({ error: lineProblem });
 
-    const { rows } = await db.query(
+  /* The PO and its lines in ONE transaction. They used to be two requests
+     — create the PO, then post its lines — so a dropped connection or a
+     bad line between them left a purchase order with no lines on it. */
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const poOwner = req.user?.orgId ?? req.user?.id ?? null;
+    /* This organisation's own prefix and financial year, the locked
+       counter, never a number already issued — shared/docNumber. */
+    const poNumber = await allocatePoNumber(client, poOwner);
+
+    const { rows } = await client.query(
       `INSERT INTO purchase_orders (
         "projectId", "vendorId", "workOrderId", "itemName", quantity, "unitPrice",
         "poNumber", "quoteRef", "paymentTerms", "priceBasis", "pnfInsurance",
@@ -687,51 +718,46 @@ app.post('/po', async (req, res) => {
         poNumber, quoteRef || null, paymentTerms || null, priceBasis || 'Ex Works',
         pnfInsurance || 'Vendor Scope', loadingScope || 'Buyer Scope', warranty || '12 months',
         amountInWords || null, indentId || null, (gstRate === undefined || gstRate === '' ? 18 : Number(gstRate)),
-        req.user?.orgId ?? req.user?.id ?? null
+        poOwner
       ]
     );
-    await logActivity(projectId, 'PO_CREATED', `${poNumber} created for "${itemName}"`, req.user?.orgId ?? req.user?.id ?? null);
-    const poValue = (Number(quantity) || 0) * (Number(unitPrice) || 0);
-    notify('admins', { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${itemName} · ₹${poValue.toLocaleString('en-IN')}`, entityType: 'po', entityId: rows[0].id, link: `/po/${rows[0].id}` });
-    res.json({ id: rows[0].id, poNumber });
+    const poId = rows[0].id;
+    const gate = items ? await writePoLines(client, poId, items, req.user?.orgId) : null;
+    await client.query('COMMIT');
+
+    await logActivity(projectId, 'PO_CREATED', `${poNumber} created for "${itemName}"`, poOwner);
+    const poValue = gate ? gate.subtotal : (Number(quantity) || 0) * (Number(unitPrice) || 0);
+    notify('admins', { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${itemName} · ₹${poValue.toLocaleString('en-IN')}`, entityType: 'po', entityId: poId, link: `/po/${poId}` });
+    notifyApproval(poId, poNumber, gate);
+    res.json({ id: poId, poNumber, linesSaved: !!gate, approvalStatus: gate ? (gate.needsApproval ? 'Pending Approval' : 'Not Required') : undefined });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
 app.post('/po/:id/items', async (req, res) => {
   const poId = req.params.id;
   const items = req.body; // Array of items
-  
+
   if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'Items required' });
+  const lineProblem = poLinesProblem(items);
+  if (lineProblem) return res.status(400).json({ error: lineProblem });
 
   try {
     if (!(await ownsPo(req, poId))) return res.status(404).json({ error: 'PO not found' });
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
-      // Delete existing to allow pure replacement on edit
-      await client.query('DELETE FROM po_line_items WHERE "poId" = $1', [poId]);
-      
-      let subtotal = 0;
-      for (const item of items) {
-        subtotal += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
-        await client.query(
-          `INSERT INTO po_line_items ("poId", sno, description, uom, hsn, quantity, "unitPrice")
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [poId, item.sno, item.description, item.uom || "No's", item.hsn || null, item.quantity, item.unitPrice]
-        );
-      }
-      // Approval gate: if the PO value exceeds the owner's threshold, hold it for sign-off.
-      const thr = (await client.query('SELECT po_approval_threshold FROM automation_settings WHERE owner_id = $1', [req.user?.orgId || 0])).rows[0]?.po_approval_threshold || 0;
-      const needsApproval = thr > 0 && subtotal > thr;
-      await client.query(`UPDATE purchase_orders SET approval_status = $1 WHERE id = $2`, [needsApproval ? 'Pending Approval' : 'Not Required', poId]);
+      const gate = await writePoLines(client, poId, items, req.user?.orgId);
       await client.query('COMMIT');
-      if (needsApproval) {
+      if (gate.needsApproval) {
         const po = (await db.query('SELECT "poNumber" FROM purchase_orders WHERE id = $1', [poId])).rows[0];
-        notify('admins', { type: 'APPROVAL_NEEDED', title: `Approval needed · ${po?.poNumber}`, message: `PO value ₹${subtotal.toLocaleString('en-IN')} exceeds the ₹${Number(thr).toLocaleString('en-IN')} limit`, entityType: 'po', entityId: Number(poId), link: `/po/${poId}` });
+        notifyApproval(poId, po?.poNumber, gate);
       }
-      res.json({ success: true, approvalStatus: needsApproval ? 'Pending Approval' : 'Not Required' });
+      res.json({ success: true, approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required' });
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;

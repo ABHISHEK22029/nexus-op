@@ -18,7 +18,7 @@
    rejected or silently rounded at the other end.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
-const { nextSeq } = require('../shared/docNumber');
+const { allocatePoNumber } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
 const { computeRequirements } = require('./MaterialRequirementsController');
 
@@ -87,9 +87,7 @@ exports.create = async (req, res) => {
          given them all the same number. A sequence advances on each call,
          so the offset is no longer needed — and no longer wrong the moment
          somebody else raises one at the same time. */
-      const poNumber = `PO-${String(await nextSeq(client, {
-        ownerId: req.user?.orgId, docType: 'purchase_order',
-      })).padStart(4, '0')}`;
+      const poNumber = await allocatePoNumber(client, req.user?.orgId);
 
       /* purchase_orders has no totalValue column — the header value is
          quantity x unitPrice. For a multi-line order the header is a

@@ -131,17 +131,20 @@ const PurchaseOrders = () => {
       const totalQty = items.reduce((sum, i) => sum + Number(i.quantity), 0);
       const amountInWords = numberToWords(totalValue);
 
-      // Create PO
+      /* The PO and its lines in one request, saved in one transaction — a
+         failure between two separate calls used to leave a PO with no
+         lines. The second call stays only for a server that did not take
+         the lines (linesSaved absent), so the screen never depends on
+         which of the two deploys landed first. */
       const poRes = await axios.post(`${API}/po`, {
         ...formData,
         projectId: activeProject?.id ?? null,
         itemName: formData.itemName || items[0].description, // fallback to first item
         quantity: totalQty,
-        amountInWords
+        amountInWords,
+        items,
       });
-
-      // Insert Line Items
-      await axios.post(`${API}/po/${poRes.data.id}/items`, items);
+      if (!poRes.data.linesSaved) await axios.post(`${API}/po/${poRes.data.id}/items`, items);
 
       setFormData(initialForm);
       setItems([{ sno: 1, description: '', uom: "No's", hsn: '', quantity: 1, unitPrice: 0 }]);

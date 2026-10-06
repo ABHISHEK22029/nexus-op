@@ -146,4 +146,29 @@ async function nextSeq(client, { ownerId, docType, date = new Date(), fyStart = 
   return rows[0].last_seq;
 }
 
-module.exports = { docNumber, financialYear, orgPrefix, loadProfile, nextSeq, FY_SCOPED };
+/**
+ * The next purchase order number for this business: its own prefix and
+ * financial year, the locked counter, and never a number it has already
+ * issued.
+ *
+ * Purchase orders are raised from three places — the PO screen, a
+ * customer order's vendor quote, and the material-shortfall planner — and
+ * each built the number itself. The planner wrote PO-0004 while the other
+ * two wrote PFW/FY2026-27/003, off the SAME counter, so one business's
+ * series ran 003, PO-0004, 005. One function now, one format.
+ *
+ * @param exec  pool or an open client (inside the caller's transaction)
+ */
+async function allocatePoNumber(exec, ownerId, date = new Date()) {
+  const profile = await loadProfile(exec, ownerId);
+  for (let i = 0; i < 50; i++) {
+    const seq = await nextSeq(exec, { ownerId, docType: 'purchase_order', date, fyStart: profile.fyStart });
+    const number = docNumber({ profile, seq, date });
+    const { rows } = await exec.query(
+      'SELECT 1 FROM purchase_orders WHERE owner_id IS NOT DISTINCT FROM $1 AND "poNumber" = $2 LIMIT 1', [ownerId, number]);
+    if (!rows.length) return number;
+  }
+  throw new Error('Could not find a free purchase order number.');
+}
+
+module.exports = { docNumber, financialYear, orgPrefix, loadProfile, nextSeq, allocatePoNumber, FY_SCOPED };
