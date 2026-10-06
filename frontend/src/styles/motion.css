@@ -10,12 +10,10 @@
    shopfront page should not carry 50KB of orchestration to move a dot along
    a line, and the app already had a keyframe vocabulary to extend.
 
-   ── Synchronisation ───────────────────────────────────────────────────
-   The process engine needs a pulse travelling a pipe and seven chambers
-   igniting as it passes. That is kept in step WITHOUT JavaScript by giving
-   every animation the same duration (--engine-cycle) and offsetting each
-   chamber by its own delay. One clock, so nothing can drift; no timers to
-   leak; and it keeps running while the main thread is busy.
+   The live product walkthrough has its own stylesheet beside it
+   (components/marketing/flow/flow.css). This file holds what the rest of
+   the marketing pages share: reveals, the small feature diagrams, and the
+   layout fixes for the hero and grids.
 
    ── Reduced motion ────────────────────────────────────────────────────
    Every looping or sweeping animation is switched off under
@@ -45,8 +43,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  --engine-cycle: 15.4s;   /* 7 stages x 2.2s */
-  --engine-stages: 7;
 
   /* One stage is 1/7 of the cycle = 14.2857%. Within it the pulse dwells for
      the first ~40% and travels the rest. The chamber ignition below is tuned
@@ -74,157 +70,17 @@
 .mk-fade     { animation: mk-fade .5s ease both; }
 .mk-scale-in { animation: mk-scale-in .5s cubic-bezier(.22,.8,.3,1) both; }
 
-/* ── the process engine ─────────────────────────────────────────────────
-   A chamber is lit for its own slice of the cycle, then hands over. The
-   percentages below are one slice of seven (14.28%): up fast, hold, down.  */
-/* The lit state of a chamber is a separate layer stacked over the resting
-   one, and only its OPACITY animates — so the whole ignition is composited
-   and never repaints the chamber. The previous version animated background,
-   border-color and box-shadow directly, which is four paint properties on
-   seven elements, forever.
 
-   Timed to the pulse's dwell: lit as it arrives (1.2%), held through the
-   dwell (6%), faded before it leaves (9%). */
-@keyframes mk-chamber-glow {
-   0%        { opacity: 0; transform: scale(.94); }
-   1.2%      { opacity: 1; transform: scale(1); }
-   6%        { opacity: 1; transform: scale(1); }
-   9.5%      { opacity: 0; transform: scale(1.04); }
- 100%        { opacity: 0; transform: scale(.94); }
-}
-
-/* A halo that blooms outward as the stage fires and dissipates. Pure
-   transform + opacity; it is what gives the ignition weight. */
-@keyframes mk-chamber-halo {
-   0%        { opacity: 0; transform: scale(.7); }
-   1.2%      { opacity: .55; transform: scale(1); }
-   7%        { opacity: 0; transform: scale(1.5); }
- 100%        { opacity: 0; transform: scale(.7); }
-}
-
-/* The icon lifts while its chamber fires. Transform only — the colour change
-   is a cross-fade between two stacked icons (see mk-icon-on/off), because
-   animating `color` is a paint on every frame. */
-@keyframes mk-chamber-icon {
-   0%        { transform: none; }
-   1.2%      { transform: translateY(-3px) scale(1.1); }
-   6%        { transform: translateY(-3px) scale(1.1); }
-   9.5%      { transform: none; }
- 100%        { transform: none; }
-}
-@keyframes mk-icon-on {
-   0%   { opacity: 0; }
-   1.2% { opacity: 1; }
-   6%   { opacity: 1; }
-   9.5% { opacity: 0; }
- 100%   { opacity: 0; }
-}
-@keyframes mk-icon-off {
-   0%   { opacity: 1; }
-   1.2% { opacity: 0; }
-   6%   { opacity: 0; }
-   9.5% { opacity: 1; }
- 100%   { opacity: 1; }
-}
 
 /* The artefact each stage produces — a document chip that pops out, holds,
    then settles. This is the part that explains the product: a reader sees
    that "Quotation" is not a screen, it emits a numbered document. */
-/* Retimed to the pulse's dwell — the document should appear WHILE the stage
-   is lit, not drift on after the pulse has moved away. Rises on a settle
-   curve and leaves upward, so it reads as being handed off rather than
-   blinking. */
-@keyframes mk-artifact {
-   0%     { opacity: 0; transform: translateY(7px) scale(.92); }
-   1.4%   { opacity: 0; transform: translateY(7px) scale(.92);
-            animation-timing-function: var(--mk-ease-settle); }
-   3.2%   { opacity: 1; transform: translateY(-2px) scale(1); }
-   6%     { opacity: 1; transform: translateY(-2px) scale(1); }
-   9.5%   { opacity: 0; transform: translateY(-9px) scale(.97); }
- 100%     { opacity: 0; transform: translateY(7px) scale(.92); }
-}
 
-/* The pulse travelling the pipe.
-   TRANSFORM, not `left`. Animating `left` forces a layout pass on every
-   single frame, which is what put a 67ms frame into the low-end phone trace.
-   The element is a full-width rail; translateX(100%) therefore moves it by
-   the track's width, and the dot rides its leading edge.
 
-   It DWELLS at each of the seven chambers and glides to the next, instead of
-   sliding at a constant rate. Seven stops at 0 / 16.667 / 33.333 / 50 /
-   66.667 / 83.333 / 100 percent; each stage holds for the first ~40% of its
-   slice, then eases across. The per-keyframe timing function is what gives
-   the glide its weight — a linear sweep reads as a loading bar, not a
-   machine doing work. */
-@keyframes mk-pulse-travel {
-   0%     { transform: translateX(0);       opacity: 0; }
-   1.5%   { transform: translateX(0);       opacity: 1; }
-   5.71%  { transform: translateX(0);       opacity: 1; animation-timing-function: var(--mk-ease-glide); }
-  14.29%  { transform: translateX(16.667%); opacity: 1; }
-  20%     { transform: translateX(16.667%); opacity: 1; animation-timing-function: var(--mk-ease-glide); }
-  28.57%  { transform: translateX(33.333%); opacity: 1; }
-  34.29%  { transform: translateX(33.333%); opacity: 1; animation-timing-function: var(--mk-ease-glide); }
-  42.86%  { transform: translateX(50%);     opacity: 1; }
-  48.57%  { transform: translateX(50%);     opacity: 1; animation-timing-function: var(--mk-ease-glide); }
-  57.14%  { transform: translateX(66.667%); opacity: 1; }
-  62.86%  { transform: translateX(66.667%); opacity: 1; animation-timing-function: var(--mk-ease-glide); }
-  71.43%  { transform: translateX(83.333%); opacity: 1; }
-  77.14%  { transform: translateX(83.333%); opacity: 1; animation-timing-function: var(--mk-ease-glide); }
-  85.71%  { transform: translateX(100%);    opacity: 1; }
-  94%     { transform: translateX(100%);    opacity: 0; }
- 100%     { transform: translateX(100%);    opacity: 0; }
-}
 
-/* The dot's own glow breathes as it dwells, so a stopped pulse still reads
-   as alive rather than parked. */
-@keyframes mk-pulse-breathe {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.18); }
-}
 
-/* The pipe fills behind the pulse, so the path already travelled reads as
-   complete rather than the pulse being a dot wandering a dead line.
-   Follows the SAME dwell-and-glide stops, so the fill and the dot stay
-   locked together instead of the fill creeping ahead on a linear ramp. */
-@keyframes mk-pipe-fill {
-   0%     { transform: scaleX(0); }
-   5.71%  { transform: scaleX(0); animation-timing-function: var(--mk-ease-glide); }
-  14.29%  { transform: scaleX(0.16667); }
-  20%     { transform: scaleX(0.16667); animation-timing-function: var(--mk-ease-glide); }
-  28.57%  { transform: scaleX(0.33333); }
-  34.29%  { transform: scaleX(0.33333); animation-timing-function: var(--mk-ease-glide); }
-  42.86%  { transform: scaleX(0.5); }
-  48.57%  { transform: scaleX(0.5); animation-timing-function: var(--mk-ease-glide); }
-  57.14%  { transform: scaleX(0.66667); }
-  62.86%  { transform: scaleX(0.66667); animation-timing-function: var(--mk-ease-glide); }
-  71.43%  { transform: scaleX(0.83333); }
-  77.14%  { transform: scaleX(0.83333); animation-timing-function: var(--mk-ease-glide); }
-  85.71%  { transform: scaleX(1); }
-  94%     { transform: scaleX(1); }
-  94.01%  { transform: scaleX(0); }
- 100%     { transform: scaleX(0); }
-}
 
-@keyframes mk-gear      { to { transform: rotate(360deg); } }
-@keyframes mk-gear-back  { to { transform: rotate(-360deg); } }
 
-/* The engine scrolls sideways inside its own casing on narrow screens.
-   A thin styled scrollbar rather than the browser default, which on Windows
-   is a 17px grey slab that would dominate a 52px-tall row. */
-.mk-engine-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-emphasis) transparent;
-  /* Stops a sideways drag inside the diagram from also rubber-banding the
-     page on touch devices. */
-  overscroll-behavior-x: contain;
-  padding-bottom: 4px;
-}
-.mk-engine-scroll::-webkit-scrollbar { height: 6px; }
-.mk-engine-scroll::-webkit-scrollbar-track { background: transparent; }
-.mk-engine-scroll::-webkit-scrollbar-thumb {
-  background: var(--border-emphasis);
-  border-radius: 3px;
-}
 
 /* ── fixed-column grids on the marketing pages ──────────────────────────
    These carried `repeat(N, 1fr)`, which is minmax(auto, 1fr) — and `auto`
@@ -283,6 +139,15 @@
   .mk-cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 
+/* A dot riding a full-width rail: translateX(100%) on the rail is the width
+   of the line it sits on, so the dot crosses the whole line, on a transform. */
+@keyframes mk-rail-travel {
+    0% { transform: translateX(0);    opacity: 0; }
+   12% { opacity: 1; }
+   82% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
+}
+
 /* ── small feature diagrams ─────────────────────────────────────────── */
 
 /* A row sliding in, used for "lines arriving from a parsed file". */
@@ -306,12 +171,6 @@
  100%       { opacity: 0; transform: scale(.9); }
 }
 
-/* An SVG stroke drawing itself. Pair with pathLength="1" so the dash
-   numbers are independent of the real path length. */
-@keyframes mk-draw {
-  from { stroke-dashoffset: 1; }
-  to   { stroke-dashoffset: 0; }
-}
 
 /* Slow drift for background glows. Deliberately long and low-contrast —
    decoration that competes with the content is a bug. */
@@ -320,16 +179,12 @@
   50%       { transform: translate(14px, -10px) scale(1.06); }
 }
 
-@keyframes mk-shimmer {
-  from { background-position: -200% 0; }
-  to   { background-position: 200% 0; }
-}
 
 /* A caret for the "typing" search demo in the catalogue showcase. */
 @keyframes mk-caret { 50% { opacity: 0; } }
 
-.mk-gear      { animation: mk-gear 14s linear infinite; transform-origin: 50% 50%; }
-.mk-gear-back { animation: mk-gear-back 11s linear infinite; transform-origin: 50% 50%; }
+
+
 .mk-drift     { animation: mk-drift 18s ease-in-out infinite; }
 
 /* ── reduced motion ─────────────────────────────────────────────────────
@@ -342,32 +197,22 @@
     opacity: 1 !important;
     transform: none !important;
   }
-  .mk-gear, .mk-gear-back, .mk-drift { animation: none !important; }
+  .mk-drift { animation: none !important; }
 
-  .mk-chamber, .mk-chamber-icon, .mk-chamber-glow, .mk-chamber-halo,
-  .mk-icon-on, .mk-icon-off, .mk-artifact,
-  .mk-pulse, .mk-engine-pulse, .mk-pulse-dot, .mk-pipe-fill, .mk-row, .mk-bar, .mk-best, .mk-draw-path {
+  .mk-pulse, .mk-row, .mk-bar, .mk-bar-v, .mk-best, .mk-draw-path, .mk-caret {
     animation: none !important;
   }
-  /* Show every stage as lit: the point of the diagram is the sequence of
-     stages, and that still reads when they are all on at once. The lit state
-     is now an overlay, so it is shown by revealing that layer rather than by
-     restating its colours here — one definition of "lit", not two. */
-  .mk-chamber-glow { opacity: 1 !important; transform: none !important; }
-  .mk-chamber-halo { opacity: 0 !important; }
-  .mk-icon-on      { opacity: 1 !important; }
-  .mk-icon-off     { opacity: 0 !important; }
-  .mk-chamber-icon { transform: none !important; }
-  .mk-artifact     { opacity: 1 !important; transform: none !important; }
+  /* Settle every diagram in its finished, readable state: these all start at
+     opacity 0 or zero scale, so switching the animation off naively would
+     leave blank boxes. (The live walkthrough handles reduced motion itself —
+     see flow.css and FlowShowcase.) */
   .mk-row          { opacity: 1 !important; transform: none !important; }
   .mk-bar          { transform: scaleX(1) !important; }
   /* Vertical bars scale on Y; scaleX would leave them flat. */
   .mk-bar-v        { transform: scaleY(1) !important; }
   .mk-best         { opacity: 1 !important; transform: none !important; }
-  .mk-pipe-fill    { transform: scaleX(1) !important; }
-  .mk-pulse, .mk-engine-pulse { display: none !important; }
+  .mk-pulse        { display: none !important; }
   .mk-draw-path    { stroke-dashoffset: 0 !important; }
-  .mk-caret        { animation: none !important; }
 }
 
 /* ── the full contents grid ─────────────────────────────────────────────
@@ -383,3 +228,47 @@
 @media (max-width: 640px) {
   .mk-inside-grid { grid-template-columns: 1fr; gap: 12px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   THE HERO — "From catalogue to cash."
+   Sized so the headline, the stages and the top of the product window all
+   land on the first screen of a 1440x900 laptop. The global h1 runs to 4rem;
+   here that would push the product below the fold, and the product is the
+   argument.
+   ══════════════════════════════════════════════════════════════════════ */
+.mk-hero-h1 {
+  font-size: clamp(2.2rem, 4.6vw, 3.6rem) !important;
+  line-height: 1.02 !important;
+  letter-spacing: -0.035em;
+  margin: 0;
+  max-width: 900px;
+}
+.mk-hero-accent { color: var(--brand-amber); }
+.mk-hero-lede {
+  max-width: 720px; margin: -4px auto 0;
+  font-size: var(--t-md); line-height: 1.65; color: var(--text-secondary);
+  text-wrap: balance;
+}
+.mk-hero-lede strong { color: var(--text-primary); font-weight: 700; }
+/* the walkthrough needs room for the margin notes above its stage strip */
+.mk-hero-flow { width: 100%; max-width: 1240px; margin-top: 46px; }
+
+.mk-proof {
+  list-style: none; margin: 4px 0 0; padding: 0; width: 100%; max-width: 1240px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;
+  text-align: left;
+}
+.mk-proof li { display: flex; align-items: center; gap: 12px; }
+.mk-proof-ico {
+  flex: none; width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center;
+  color: var(--brand-amber); background: hsl(28 100% 54% / 0.1);
+}
+.mk-proof li:nth-child(2) .mk-proof-ico { color: var(--accent-blue); background: hsl(213 90% 60% / 0.12); }
+.mk-proof li:nth-child(3) .mk-proof-ico { color: var(--accent-emerald); background: hsl(158 64% 45% / 0.12); }
+.mk-proof li:nth-child(4) .mk-proof-ico { color: var(--accent-red); background: hsl(0 85% 60% / 0.1); }
+.mk-proof b { display: block; font-size: var(--t-sm); color: var(--text-primary); }
+.mk-proof small { display: block; font-size: var(--t-xs); color: var(--text-muted); line-height: 1.45; }
+@media (max-width: 1180px) { .mk-hero-flow { margin-top: 8px; } }
+@media (max-width: 900px)  { .mk-proof { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px)  { .mk-proof { grid-template-columns: minmax(0, 1fr); } }

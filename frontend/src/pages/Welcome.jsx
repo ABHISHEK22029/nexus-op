@@ -5,15 +5,16 @@ import {
   Truck, ShoppingCart, BookOpen, Receipt, Workflow, Users,
   FolderGit2, CheckCircle, TrendingUp, Package, Shield,
   Play, Star, Building2, HardHat, IndianRupee, Calculator,
-  Activity, Brain, Factory, ShoppingBag, Files, ReceiptText, Store, LayoutGrid
+  Activity, Brain, Factory, ShoppingBag, Files, ReceiptText, Store,
+  Link2, ShieldCheck,
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
 import useInView from '../hooks/useInView';
-import ProcessEngine from '../components/marketing/ProcessEngine';
+import FlowShowcase from '../components/marketing/flow/FlowShowcase';
 import CatalogueShowcase from '../components/marketing/CatalogueShowcase';
 import { FeatureGrid } from '../components/marketing/FeatureDiagrams';
-import EverythingInside from '../components/marketing/EverythingInside';
+import PromiseCheck from '../components/marketing/PromiseCheck';
 
 /* ── Warm SVG wave dividers (CSOD-inspired organic shapes) ── */
 const WaveDivider = ({ flip = false, color1 = 'hsl(28,80%,90%)', color2 = 'hsl(22,70%,85%)' }) => (
@@ -180,50 +181,9 @@ const Welcome = () => {
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
       <style>{marqueeStyle}</style>
 
-      {/* Announcement Banner */}
-      <div
-        style={{
-          background: 'linear-gradient(90deg, hsl(25,90%,42%), var(--brand-amber), hsl(35,100%,55%))',
-          padding: '10px 16px',
-          textAlign: 'center',
-          fontSize: 'var(--t-sm)',
-          fontWeight: 600,
-          color: '#fff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '12px',
-          /* A flex row with a long sentence and a button cannot shrink below
-             its min-content width, so on a phone it pushed the page a few
-             pixels wider than the screen. Wrapping costs nothing on desktop
-             (there is room for one line) and stops the sideways scroll. */
-          flexWrap: 'wrap',
-        }}
-      >
-        <span>🚀 Maks Ops Beta is Live — The operations platform for growing SMEs</span>
-        <button
-          onClick={() => navigate('/login')}
-          style={{
-            background: 'rgba(255,255,255,0.2)',
-            border: '1px solid rgba(255,255,255,0.4)',
-            borderRadius: 'var(--r-xs)',
-            color: '#fff',
-            padding: '2px 10px',
-            fontSize: 'var(--t-xs)',
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            transition: 'background 200ms',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.3)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.2)')}
-        >
-          Explore Beta <ChevronRight size={12} />
-        </button>
-      </div>
-
+      {/* The announcement banner ("Maks Ops Beta is Live — Explore Beta") is
+          gone: 46px above the headline restating what the nav's Test Beta
+          button already says. */}
       <MarketingNav />
 
       {/* ── HERO (PRESERVED EXACTLY AS ORIGINAL) ── */}
@@ -234,7 +194,7 @@ const Welcome = () => {
            two buttons, which pushed the engine — the thing that shows what
            this product does — entirely below the fold. It is now sized by its
            contents, so the first stages are visible on landing. */
-        style={{ paddingTop: '28px', paddingBottom: '36px' }}
+        style={{ paddingTop: '18px', paddingBottom: '40px' }}
       >
         {/* Mesh background blobs */}
         <div className="hero-mesh">
@@ -271,105 +231,48 @@ const Welcome = () => {
             flexDirection: 'column',
             alignItems: 'center',
             textAlign: 'center',
-            gap: '32px',
+            gap: '22px',
           }}
         >
-          {/* Badge */}
-          <div
-            className={`pill pill-amber animate-in`}
-            style={{ opacity: heroInView ? 1 : 0 }}
-          >
-            <Zap size={12} />
-            SME Operations Intelligence Platform
+          {/* ── THE HERO IS THE PRODUCT ─────────────────────────────────────
+                 Everything a visitor needs is in the first screen: what this
+                 is for, in one line, and then the product doing it — a
+                 customer's enquiry from your catalogue carried as one record
+                 through quotation, order, purchase, receipt, production and
+                 invoice. Not a video: the stage cards are the controller and
+                 the window below is the application, running. */}
+          <div className="pill pill-amber animate-in" style={{ opacity: heroInView ? 1 : 0 }}>
+            <Zap size={12} /> Operations flow
           </div>
 
-          {/* Headline */}
-          <h1
-            className="animate-in stagger-1"
-            style={{
-              maxWidth: '820px',
-              opacity: heroInView ? 1 : 0,
-            }}
-          >
-            {/* Was "The Smart Platform for SME Project Delivery" — a sentence
-                that would fit any software company in the world. It named no
-                industry, no document, and nothing the reader does on a Tuesday.
-                This says what actually comes out of it. */}
-            From enquiry to paid invoice.{' '}
-            <span className="gradient-text-amber">Nothing retyped.</span>
+          <h1 className="animate-in stagger-1 mk-hero-h1" style={{ opacity: heroInView ? 1 : 0 }}>
+            From catalogue <span className="mk-hero-accent">to cash.</span>
           </h1>
 
-          {/* Subtext — two short lines instead of a four-line block with orange
-              words buried inside it. A hero paragraph is scanned, not read. */}
-          <p
-            className="animate-in stagger-2"
-            style={{
-              maxWidth: '640px',
-              fontSize: 'var(--t-lg)',
-              color: 'var(--text-secondary)',
-              lineHeight: 1.75,
-              opacity: heroInView ? 1 : 0,
-            }}
-          >
-            Maks Ops runs the whole of it — vendor quotes read straight out of the file
-            they arrived in, production yield including the scrap, and a GST invoice that
-            knows which side of a state line your customer is on.
+          <p className="animate-in stagger-2 mk-hero-lede" style={{ opacity: heroInView ? 1 : 0 }}>
+            <strong>Maks Ops connects every step in between.</strong>{' '}
+            Create your catalogue, capture enquiries, send quotations, compare vendor
+            quotes, buy smarter, track inventory, run production and raise invoices —
+            all in one connected operation.
           </p>
 
-          <div
-            className="animate-in stagger-3"
-            style={{
-              display: 'flex',
-              gap: '16px',
-              flexWrap: 'wrap',
-              justifyContent: 'center',
-              opacity: heroInView ? 1 : 0,
-            }}
-          >
-            <button
-              onClick={() => navigate('/login')}
-              className="btn-primary"
-              style={{ fontSize: 'var(--t-md)', padding: '16px 32px', gap: '10px' }}
-            >
-              <Play size={16} fill="#fff" />
-              Test Out the Beta
-            </button>
-            <Link to="/how-it-works" className="btn-ghost" style={{ fontSize: 'var(--t-md)', padding: '16px 32px' }}>
-              How It Works
-              <ChevronRight size={16} />
-            </Link>
+          <div className="animate-in stagger-3 mk-hero-flow" style={{ opacity: heroInView ? 1 : 0 }}>
+            <FlowShowcase />
           </div>
 
-          {/* The trust strip is gone.
-
-              It read: GST-Compliant Billing · 20+ Modules · Fabrication ·
-              Trading · Projects · Beta Access Live. Six claims in small grey
-              text, none of which a buyer can check and none of which says
-              anything a competitor could not also write. "20+ Modules" is a
-              fact about the software, not a benefit to the reader.
-
-              It also sat between the call to action and the engine — so the
-              proof was pushed further down by a row of assertions. The
-              engine demonstrates all six of those things by running. */}
-          {/* The engine used to sit inside a fake browser window — traffic
-              lights and an address bar reading app.maksops.co.in/dashboard.
-              That told a prospect "this diagram IS the product's screen",
-              which it is not; it is an explanatory drawing. Dressing it as a
-              screenshot made it both misleading and worse-looking, because a
-              diagram framed as a UI gets judged as a UI.
-
-              It stands on its own now, full width, with no chrome. */}
-          <div
-            className="animate-in stagger-5"
-            style={{
-              marginTop: '34px',
-              width: '100%',
-              maxWidth: '1060px',
-              opacity: heroInView ? 1 : 0,
-            }}
-          >
-            <ProcessEngine />
-          </div>
+          <ul className="mk-proof" aria-label="Why it holds together">
+            {[
+              [<FileText size={17} />, 'Every step creates a document', 'Numbered and printable, on your letterhead'],
+              [<Link2 size={17} />, 'Everything stays connected', 'One record, start to finish — no spreadsheets'],
+              [<Users size={17} />, 'Built for SMEs', 'GST, e-way bills and lakhs, out of the box'],
+              [<ShieldCheck size={17} />, 'Full traceability', 'Know what happened, when, and who did it'],
+            ].map(([icon, title, sub]) => (
+              <li key={title}>
+                <span className="mk-proof-ico">{icon}</span>
+                <span><b>{title}</b><small>{sub}</small></span>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
@@ -534,37 +437,20 @@ const Welcome = () => {
         </div>
       </section>
 
-      {/* ── EVERYTHING IN THE BOX ───────────────────────────────────────
-             The twelve cards above are the things worth a diagram. They are
-             not the product: the application has nine modules and about
-             forty screens, and the marketing described roughly a third of
-             them. Stock with reorder levels, requirements planning, delivery
-             challans with e-way bill tracking, credit and debit notes,
-             payables ageing, expenses, reports, milestones, work orders,
-             recurring automation, roles and permissions, data import and the
-             activity log were all absent — so anyone comparing this with a
-             competitor's feature list was reading a third of what they would
-             actually get. */}
+      {/* ── KNOW WHAT YOU CAN PROMISE ──────────────────────────────────
+             The full list of 39 screens that lived here has moved to the
+             platform page. The homepage has one job — show that Maks Ops
+             connects the operation — and a catalogue of every screen works
+             against it; it reads as a spec sheet and buries the two or three
+             ideas that make someone want to look further.
+
+             This is one of those ideas. "We have inventory management" is
+             something every competitor says. What the deficiency engine
+             actually answers is the question a fabricator asks before quoting
+             a date: can we fulfil this? */}
       <section className="section" style={{ background: 'var(--bg-deep)' }}>
         <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: '34px' }}>
-            <span className="pill pill-amber" style={{ marginBottom: '14px' }}>
-              <LayoutGrid size={12} /> Everything in the box
-            </span>
-            <h2 style={{ maxWidth: '660px', margin: '14px auto 0' }}>
-              The whole product,{' '}
-              <span className="gradient-text-amber">not the highlights</span>
-            </h2>
-            <p style={{
-              maxWidth: '600px', margin: '14px auto 0',
-              color: 'var(--text-muted)', lineHeight: 1.8,
-            }}>
-              Every screen that ships, taken from the application's own menu. The
-              contracting-only ones are marked, because a fabricator should be able to
-              skip them rather than wonder whether the list is padded.
-            </p>
-          </div>
-          <EverythingInside />
+          <PromiseCheck />
         </div>
       </section>
 

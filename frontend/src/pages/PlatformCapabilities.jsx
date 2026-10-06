@@ -9,6 +9,7 @@ import {
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
 import useInView from '../hooks/useInView';
+import EverythingInside from '../components/marketing/EverythingInside';
 import {
   ParseLines, CompareBars, YieldRing, TaxSplit, DocMorph,
   StockLevel, SearchGrid, localKeyframes,
@@ -410,6 +411,27 @@ const PlatformCapabilities = () => {
               <ModulePanel module={activeModule} />
             </div>
           )}
+        </div>
+      </section>
+
+      {/* ── EVERYTHING IN THE BOX ───────────────────────────────────────
+             Moved here from the homepage. The homepage sells one idea — that
+             Maks Ops connects the operation — and a list of thirty-nine
+             screens works against it there. Here, on the page someone opens
+             because they want the detail, it is exactly what they came for. */}
+      <section className="section" style={{ background: 'var(--bg-deep)' }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: '34px' }}>
+            <span className="pill pill-amber" style={{ marginBottom: '14px' }}>Everything in the box</span>
+            <h2 style={{ maxWidth: '660px', margin: '14px auto 0' }}>
+              The whole product, <span className="gradient-text-amber">not the highlights</span>
+            </h2>
+            <p style={{ maxWidth: '600px', margin: '14px auto 0', color: 'var(--text-muted)', lineHeight: 1.8 }}>
+              Every screen that ships, taken from the application's own menu. The
+              contracting-only ones are marked, so a fabricator can skip them.
+            </p>
+          </div>
+          <EverythingInside />
         </div>
       </section>
 

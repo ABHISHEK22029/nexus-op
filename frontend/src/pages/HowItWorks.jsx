@@ -8,7 +8,7 @@ import {
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
 import useInView from '../hooks/useInView';
-import ProcessEngine from '../components/marketing/ProcessEngine';
+import FlowShowcase from '../components/marketing/flow/FlowShowcase';
 
 /* The fourth and last local copy of useInView, deleted. All four had drifted
    — different thresholds, none of them disconnecting after they fired — and
@@ -354,7 +354,10 @@ const HowItWorks = () => {
               retyped from the stage before it.
             </p>
           </div>
-          <ProcessEngine />
+          {/* The same live walkthrough as the home page, without the margin
+              notes — a visitor arriving from there should recognise it, and
+              this page is where the seven stages are then explained in detail. */}
+          <FlowShowcase notes={false} />
         </div>
       </section>
 
