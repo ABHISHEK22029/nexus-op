@@ -180,6 +180,16 @@ async function runPass(ownerId = null) {
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
+      /* Claim this schedule before generating from it. The list above is
+         read without a lock, so two passes at once — two server instances,
+         or "Run now" pressed during the hourly pass — both saw it due and
+         both generated: the same invoice twice. SKIP LOCKED lets the other
+         pass move on; the next_run test catches one that already ran. */
+      const claim = await client.query(
+        `SELECT id FROM recurring_profiles
+          WHERE id = $1 AND active = TRUE AND next_run <= CURRENT_DATE
+          FOR UPDATE SKIP LOCKED`, [p.id]);
+      if (!claim.rowCount) { await client.query('ROLLBACK'); continue; }
       const g = p.doc_type === 'expense' ? await generateExpense(client, p) : await generateInvoice(client, p);
       await client.query(
         `INSERT INTO recurring_runs (profile_id, result_type, result_id, result_ref) VALUES ($1,$2,$3,$4)`,
