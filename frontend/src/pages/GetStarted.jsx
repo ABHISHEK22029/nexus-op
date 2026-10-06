@@ -136,7 +136,7 @@ const GetStarted = () => {
               padding: '8px 16px',
               background: isDark ? 'rgba(255,255,255,0.04)' : 'hsl(0,0%,100%,0.7)',
               border: '1px solid var(--border-default)',
-              borderRadius: '10px',
+              borderRadius: 'var(--r-sm)',
               marginBottom: '28px',
               backdropFilter: 'blur(12px)',
             }}
@@ -146,7 +146,7 @@ const GetStarted = () => {
                 width: '32px',
                 height: '32px',
                 background: 'var(--brand-amber)',
-                borderRadius: '8px',
+                borderRadius: 'var(--r-sm)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -195,7 +195,7 @@ const GetStarted = () => {
 
           <p
             style={{
-              fontSize: '1.05rem',
+              fontSize: 'var(--t-lg)',
               color: 'var(--text-secondary)',
               maxWidth: '520px',
               margin: '0 auto 48px',
@@ -223,7 +223,7 @@ const GetStarted = () => {
               style={{
                 background: 'var(--bg-surface)',
                 border: `2px solid ${hoveredCard === 'fresh' ? 'var(--brand-amber)' : 'var(--border-default)'}`,
-                borderRadius: '20px',
+                borderRadius: 'var(--r-lg)',
                 padding: '36px 28px',
                 cursor: loading ? 'wait' : 'pointer',
                 transition: 'all 300ms ease',
@@ -255,7 +255,7 @@ const GetStarted = () => {
                 style={{
                   width: '56px',
                   height: '56px',
-                  borderRadius: '14px',
+                  borderRadius: 'var(--r-md)',
                   background: 'hsl(28,100%,54%,0.12)',
                   border: '1px solid hsl(28,100%,54%,0.25)',
                   display: 'flex',
@@ -276,7 +276,7 @@ const GetStarted = () => {
               <h3
                 style={{
                   fontFamily: 'var(--font-display)',
-                  fontSize: '1.3rem',
+                  fontSize: 'var(--t-xl)',
                   fontWeight: 700,
                   color: 'var(--text-primary)',
                   marginBottom: '8px',
@@ -284,7 +284,7 @@ const GetStarted = () => {
               >
                 Start Fresh
               </h3>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: '20px' }}>
+              <p style={{ fontSize: 'var(--t-base)', color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: '20px' }}>
                 Set up your organization, GSTIN, team roles, and create your first project from scratch.
               </p>
 
@@ -301,7 +301,7 @@ const GetStarted = () => {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '10px',
-                      fontSize: '0.82rem',
+                      fontSize: 'var(--t-sm)',
                       color: 'var(--text-secondary)',
                     }}
                   >
@@ -319,7 +319,7 @@ const GetStarted = () => {
                   gap: '8px',
                   color: 'var(--brand-amber)',
                   fontWeight: 600,
-                  fontSize: '0.9rem',
+                  fontSize: 'var(--t-base)',
                   fontFamily: 'var(--font-body)',
                 }}
               >
@@ -336,8 +336,8 @@ const GetStarted = () => {
                   padding: '3px 10px',
                   background: 'hsl(28,100%,54%,0.1)',
                   border: '1px solid hsl(28,100%,54%,0.25)',
-                  borderRadius: '99px',
-                  fontSize: '0.7rem',
+                  borderRadius: 'var(--r-full)',
+                  fontSize: 'var(--t-xs)',
                   fontWeight: 600,
                   color: 'var(--brand-amber)',
                   letterSpacing: '0.03em',
@@ -355,7 +355,7 @@ const GetStarted = () => {
               style={{
                 background: 'var(--bg-surface)',
                 border: `2px solid ${hoveredCard === 'demo' ? 'var(--accent-emerald)' : 'var(--border-default)'}`,
-                borderRadius: '20px',
+                borderRadius: 'var(--r-lg)',
                 padding: '36px 28px',
                 cursor: loading ? 'wait' : 'pointer',
                 transition: 'all 300ms ease',
@@ -387,7 +387,7 @@ const GetStarted = () => {
                 style={{
                   width: '56px',
                   height: '56px',
-                  borderRadius: '14px',
+                  borderRadius: 'var(--r-md)',
                   background: 'hsl(158,68%,38%,0.12)',
                   border: '1px solid hsl(158,68%,38%,0.25)',
                   display: 'flex',
@@ -407,7 +407,7 @@ const GetStarted = () => {
               <h3
                 style={{
                   fontFamily: 'var(--font-display)',
-                  fontSize: '1.3rem',
+                  fontSize: 'var(--t-xl)',
                   fontWeight: 700,
                   color: 'var(--text-primary)',
                   marginBottom: '8px',
@@ -415,7 +415,7 @@ const GetStarted = () => {
               >
                 Explore with Sample Data
               </h3>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: '20px' }}>
+              <p style={{ fontSize: 'var(--t-base)', color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: '20px' }}>
                 Jump right in with pre-loaded sample data — projects, vendors, POs, and bills.
               </p>
 
@@ -432,7 +432,7 @@ const GetStarted = () => {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '10px',
-                      fontSize: '0.82rem',
+                      fontSize: 'var(--t-sm)',
                       color: 'var(--text-secondary)',
                     }}
                   >
@@ -450,7 +450,7 @@ const GetStarted = () => {
                   gap: '8px',
                   color: 'var(--accent-emerald)',
                   fontWeight: 600,
-                  fontSize: '0.9rem',
+                  fontSize: 'var(--t-base)',
                   fontFamily: 'var(--font-body)',
                 }}
               >
@@ -467,8 +467,8 @@ const GetStarted = () => {
                   padding: '3px 10px',
                   background: 'hsl(158,68%,38%,0.1)',
                   border: '1px solid hsl(158,68%,38%,0.25)',
-                  borderRadius: '99px',
-                  fontSize: '0.7rem',
+                  borderRadius: 'var(--r-full)',
+                  fontSize: 'var(--t-xs)',
                   fontWeight: 600,
                   color: 'var(--accent-emerald)',
                   letterSpacing: '0.03em',
@@ -504,7 +504,7 @@ const GetStarted = () => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  fontSize: '0.8rem',
+                  fontSize: 'var(--t-sm)',
                   color: 'var(--text-muted)',
                 }}
               >
@@ -517,7 +517,7 @@ const GetStarted = () => {
           {/* Footer note */}
           <p
             style={{
-              fontSize: '0.78rem',
+              fontSize: 'var(--t-sm)',
               color: 'var(--text-disabled)',
               marginTop: '24px',
             }}

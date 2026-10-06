@@ -96,7 +96,7 @@ const RoleCard = ({ emoji, role, tagline, modules, color }) => (
       style={{
         width: '48px',
         height: '48px',
-        borderRadius: '12px',
+        borderRadius: 'var(--r-md)',
         background: `${color}15`,
         border: `1px solid ${color}30`,
         display: 'flex',
@@ -109,10 +109,10 @@ const RoleCard = ({ emoji, role, tagline, modules, color }) => (
       {emoji}
     </div>
     <h4 style={{ marginBottom: '6px', color: 'var(--text-primary)' }}>{role}</h4>
-    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '14px' }}>{tagline}</p>
+    <p style={{ fontSize: 'var(--t-sm)', color: 'var(--text-muted)', marginBottom: '14px' }}>{tagline}</p>
     <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '6px' }}>
       {modules.map((m) => (
-        <li key={m} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+        <li key={m} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--t-sm)', color: 'var(--text-secondary)' }}>
           <CheckCircle size={12} color={color} />
           {m}
         </li>
@@ -144,14 +144,14 @@ const DiffCard = ({ icon, color, title, desc, delay = 0 }) => {
       }}
     >
       <div style={{
-        width: '48px', height: '48px', borderRadius: '14px',
+        width: '48px', height: '48px', borderRadius: 'var(--r-md)',
         background: `${color}15`, border: `1px solid ${color}30`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: color,
       }}>{icon}</div>
       <div>
         <h4 style={{ marginBottom: '8px', color: 'var(--text-primary)' }}>{title}</h4>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>{desc}</p>
+        <p style={{ fontSize: 'var(--t-base)', color: 'var(--text-muted)', lineHeight: 1.7 }}>{desc}</p>
       </div>
     </div>
   );
@@ -186,7 +186,7 @@ const Welcome = () => {
           background: 'linear-gradient(90deg, hsl(25,90%,42%), var(--brand-amber), hsl(35,100%,55%))',
           padding: '10px 16px',
           textAlign: 'center',
-          fontSize: '0.8rem',
+          fontSize: 'var(--t-sm)',
           fontWeight: 600,
           color: '#fff',
           display: 'flex',
@@ -206,10 +206,10 @@ const Welcome = () => {
           style={{
             background: 'rgba(255,255,255,0.2)',
             border: '1px solid rgba(255,255,255,0.4)',
-            borderRadius: '4px',
+            borderRadius: 'var(--r-xs)',
             color: '#fff',
             padding: '2px 10px',
-            fontSize: '0.75rem',
+            fontSize: 'var(--t-xs)',
             fontWeight: 700,
             cursor: 'pointer',
             display: 'flex',
@@ -305,7 +305,7 @@ const Welcome = () => {
             className="animate-in stagger-2"
             style={{
               maxWidth: '640px',
-              fontSize: '1.14rem',
+              fontSize: 'var(--t-lg)',
               color: 'var(--text-secondary)',
               lineHeight: 1.75,
               opacity: heroInView ? 1 : 0,
@@ -329,51 +329,28 @@ const Welcome = () => {
             <button
               onClick={() => navigate('/login')}
               className="btn-primary"
-              style={{ fontSize: '1rem', padding: '16px 32px', gap: '10px' }}
+              style={{ fontSize: 'var(--t-md)', padding: '16px 32px', gap: '10px' }}
             >
               <Play size={16} fill="#fff" />
               Test Out the Beta
             </button>
-            <Link to="/how-it-works" className="btn-ghost" style={{ fontSize: '1rem', padding: '16px 32px' }}>
+            <Link to="/how-it-works" className="btn-ghost" style={{ fontSize: 'var(--t-md)', padding: '16px 32px' }}>
               How It Works
               <ChevronRight size={16} />
             </Link>
           </div>
 
-          {/* Trust badges */}
-          <div
-            className="animate-in stagger-4"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '24px',
-              flexWrap: 'wrap',
-              justifyContent: 'center',
-              opacity: heroInView ? 1 : 0,
-            }}
-          >
-            {[
-              { icon: <Shield size={14} />, text: 'GST-Compliant Billing' },
-              { icon: <TrendingUp size={14} />, text: '20+ Modules' },
-              { icon: <Building2 size={14} />, text: 'Fabrication · Trading · Projects' },
-              { icon: <Star size={14} />, text: 'Beta Access Live' },
-            ].map(({ icon, text }) => (
-              <div
-                key={text}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '0.8rem',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                <span style={{ color: 'var(--brand-amber)' }}>{icon}</span>
-                {text}
-              </div>
-            ))}
-          </div>
+          {/* The trust strip is gone.
 
+              It read: GST-Compliant Billing · 20+ Modules · Fabrication ·
+              Trading · Projects · Beta Access Live. Six claims in small grey
+              text, none of which a buyer can check and none of which says
+              anything a competitor could not also write. "20+ Modules" is a
+              fact about the software, not a benefit to the reader.
+
+              It also sat between the call to action and the engine — so the
+              proof was pushed further down by a row of assertions. The
+              engine demonstrates all six of those things by running. */}
           {/* The engine used to sit inside a fake browser window — traffic
               lights and an address bar reading app.maksops.co.in/dashboard.
               That told a prospect "this diagram IS the product's screen",
@@ -402,7 +379,7 @@ const Welcome = () => {
       {/* ── STATS STRIP ── */}
       <section ref={statsRef} className="section-sm" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)' }}>
         <div className="container">
-          <div className="mk-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '1px', background: 'var(--border-subtle)', borderRadius: '16px', overflow: 'hidden' }}>
+          <div className="mk-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '1px', background: 'var(--border-subtle)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
             {[
               { val: 5, suffix: '×', label: 'Faster Order-to-Bill', icon: '⚡' },
               { val: 20, suffix: '+', label: 'Integrated Modules', icon: '📋' },
@@ -419,7 +396,7 @@ const Welcome = () => {
                   transition: 'opacity 0.6s ease',
                 }}
               >
-                <div style={{ fontSize: '1.5rem', marginBottom: '10px' }}>{icon}</div>
+                <div style={{ fontSize: 'var(--t-2xl)', marginBottom: '10px' }}>{icon}</div>
                 <div
                   style={{
                     fontFamily: 'var(--font-display)',
@@ -433,7 +410,7 @@ const Welcome = () => {
                 >
                   {statsInView ? <Counter target={val} suffix={suffix} /> : `0${suffix}`}
                 </div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</div>
+                <div style={{ fontSize: 'var(--t-sm)', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</div>
               </div>
             ))}
           </div>
@@ -460,11 +437,11 @@ const Welcome = () => {
               { icon: <BookOpen size={24} />, title: 'Smart Knowledge', to: '/knowledge', cta: 'Browse guides',
                 desc: 'A searchable library of guides and how-tos for every part of the platform — orders, procurement, production, GST billing and more. One click to "Ask AI a follow-up" from any article.' },
             ].map((c) => (
-              <div key={c.title} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '20px', padding: '28px', boxShadow: '0 8px 40px hsl(28,40%,50%,0.06)' }}>
-                <div style={{ width: '48px', height: '48px', borderRadius: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))', marginBottom: '16px' }}>{c.icon}</div>
-                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', fontWeight: 800, margin: '0 0 8px' }}>{c.title}</h3>
-                <p style={{ color: 'var(--text-muted)', lineHeight: 1.7, margin: '0 0 18px', fontSize: '0.92rem' }}>{c.desc}</p>
-                <Link to={c.to} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--brand-amber)', fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none' }}>
+              <div key={c.title} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--r-lg)', padding: '28px', boxShadow: '0 8px 40px hsl(28,40%,50%,0.06)' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: 'var(--r-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))', marginBottom: '16px' }}>{c.icon}</div>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--t-xl)', fontWeight: 800, margin: '0 0 8px' }}>{c.title}</h3>
+                <p style={{ color: 'var(--text-muted)', lineHeight: 1.7, margin: '0 0 18px', fontSize: 'var(--t-base)' }}>{c.desc}</p>
+                <Link to={c.to} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--brand-amber)', fontWeight: 700, fontSize: 'var(--t-base)', textDecoration: 'none' }}>
                   {c.cta} <ArrowRight size={15} />
                 </Link>
               </div>
@@ -480,7 +457,7 @@ const Welcome = () => {
       }}>
         <div style={{ textAlign: 'center', marginBottom: '14px' }}>
           <span style={{
-            fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-disabled)',
+            fontSize: 'var(--t-xs)', fontWeight: 700, color: 'var(--text-disabled)',
             letterSpacing: '0.12em', textTransform: 'uppercase',
           }}>Built for India's growing SMEs</span>
         </div>
@@ -489,7 +466,7 @@ const Welcome = () => {
             {[...LOGOS, ...LOGOS].map((name, i) => (
               <div key={i} style={{
                 padding: '8px 40px', borderRight: '1px solid var(--border-subtle)',
-                fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-disabled)',
+                fontSize: 'var(--t-base)', fontWeight: 700, color: 'var(--text-disabled)',
                 letterSpacing: '0.02em', whiteSpace: 'nowrap',
               }}>{name}</div>
             ))}
@@ -503,7 +480,7 @@ const Welcome = () => {
           {/* Floating card container (CSOD-inspired rounded elevated section) */}
           <div style={{
             background: 'var(--bg-surface)',
-            borderRadius: '28px',
+            borderRadius: 'var(--r-lg)',
             border: '1px solid var(--border-subtle)',
             padding: 'clamp(32px, 5vw, 64px)',
             boxShadow: '0 8px 60px hsl(28,40%,50%,0.08)',
@@ -719,7 +696,7 @@ const Welcome = () => {
               className="glass"
               style={{
                 display: activeTestimonial === i ? 'block' : 'none',
-                borderRadius: '20px',
+                borderRadius: 'var(--r-lg)',
                 padding: '40px 48px',
                 maxWidth: '700px',
                 margin: '0 auto',
@@ -731,7 +708,7 @@ const Welcome = () => {
                 marginBottom: '8px', fontFamily: 'Georgia, serif', opacity: 0.7,
               }}>"</div>
               <p style={{
-                fontSize: '1.1rem', color: 'var(--text-primary)',
+                fontSize: 'var(--t-lg)', color: 'var(--text-primary)',
                 lineHeight: 1.8, fontStyle: 'italic',
                 marginBottom: '28px',
               }}>{t.quote}</p>
@@ -743,8 +720,8 @@ const Welcome = () => {
                   fontSize: '20px',
                 }}>{t.avatar}</div>
                 <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{t.name}</div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{t.role}</div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 'var(--t-base)' }}>{t.name}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 'var(--t-sm)' }}>{t.role}</div>
                 </div>
               </div>
             </div>
@@ -758,7 +735,7 @@ const Welcome = () => {
                 onClick={() => setActiveTestimonial(i)}
                 style={{
                   width: activeTestimonial === i ? 24 : 8, height: 8,
-                  borderRadius: '999px',
+                  borderRadius: 'var(--r-full)',
                   background: activeTestimonial === i ? 'var(--brand-amber)' : 'var(--border-emphasis)',
                   border: 'none', cursor: 'pointer',
                   transition: 'all 300ms ease',
@@ -796,9 +773,9 @@ const Welcome = () => {
               style={{
                 background: 'rgba(255,255,255,0.2)',
                 border: '1px solid rgba(255,255,255,0.3)',
-                borderRadius: '9999px',
+                borderRadius: 'var(--r-full)',
                 padding: '4px 16px',
-                fontSize: '0.75rem',
+                fontSize: 'var(--t-xs)',
                 fontWeight: 700,
                 color: '#fff',
                 letterSpacing: '0.06em',
@@ -823,7 +800,7 @@ const Welcome = () => {
           <p
             style={{
               color: 'rgba(255,255,255,0.85)',
-              fontSize: '1.05rem',
+              fontSize: 'var(--t-lg)',
               lineHeight: 1.8,
               marginBottom: '40px',
             }}
@@ -838,10 +815,10 @@ const Welcome = () => {
                 background: '#fff',
                 color: 'hsl(25,90%,38%)',
                 border: 'none',
-                borderRadius: '9999px',
+                borderRadius: 'var(--r-full)',
                 padding: '16px 36px',
                 fontWeight: 700,
-                fontSize: '1rem',
+                fontSize: 'var(--t-md)',
                 cursor: 'pointer',
                 transition: 'all 200ms ease',
                 display: 'flex',
@@ -868,10 +845,10 @@ const Welcome = () => {
                 background: 'rgba(255,255,255,0.15)',
                 color: '#fff',
                 border: '1px solid rgba(255,255,255,0.4)',
-                borderRadius: '9999px',
+                borderRadius: 'var(--r-full)',
                 padding: '15px 32px',
                 fontWeight: 600,
-                fontSize: '1rem',
+                fontSize: 'var(--t-md)',
                 textDecoration: 'none',
                 display: 'flex',
                 alignItems: 'center',
@@ -891,7 +868,7 @@ const Welcome = () => {
               { icon: <CheckCircle size={13} />, text: 'All modules included' },
               { icon: <Users size={13} />, text: 'Multi-role access' },
             ].map(({ icon, text }) => (
-              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem' }}>
+              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.7)', fontSize: 'var(--t-sm)' }}>
                 {icon} {text}
               </div>
             ))}

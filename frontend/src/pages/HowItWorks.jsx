@@ -138,7 +138,7 @@ const StepCard = ({ step, index, isLeft }) => {
             style={{
               background: 'var(--bg-surface)',
               border: `1px solid ${step.color}22`,
-              borderRadius: '16px',
+              borderRadius: 'var(--r-md)',
               padding: '28px',
               transition: 'all 250ms ease',
             }}
@@ -154,12 +154,12 @@ const StepCard = ({ step, index, isLeft }) => {
             }}
           >
             <h3 style={{ marginBottom: '10px', color: 'var(--text-primary)' }}>{step.title}</h3>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.7 }}>
+            <p style={{ fontSize: 'var(--t-base)', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.7 }}>
               {step.description}
             </p>
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
               {step.details.map((d) => (
-                <li key={d} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.82rem', color: 'var(--text-secondary)', flexDirection: 'row-reverse' }}>
+                <li key={d} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: 'var(--t-sm)', color: 'var(--text-secondary)', flexDirection: 'row-reverse' }}>
                   <CheckCircle2 size={14} color={step.color} style={{ flexShrink: 0, marginTop: '2px' }} />
                   {d}
                 </li>
@@ -209,7 +209,7 @@ const StepCard = ({ step, index, isLeft }) => {
             style={{
               background: 'var(--bg-surface)',
               border: `1px solid ${step.color}22`,
-              borderRadius: '16px',
+              borderRadius: 'var(--r-md)',
               padding: '28px',
               transition: 'all 250ms ease',
             }}
@@ -225,12 +225,12 @@ const StepCard = ({ step, index, isLeft }) => {
             }}
           >
             <h3 style={{ marginBottom: '10px', color: 'var(--text-primary)' }}>{step.title}</h3>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.7 }}>
+            <p style={{ fontSize: 'var(--t-base)', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.7 }}>
               {step.description}
             </p>
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {step.details.map((d) => (
-                <li key={d} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                <li key={d} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: 'var(--t-sm)', color: 'var(--text-secondary)' }}>
                   <CheckCircle2 size={14} color={step.color} style={{ flexShrink: 0, marginTop: '2px' }} />
                   {d}
                 </li>
@@ -293,7 +293,7 @@ const HowItWorks = () => {
               maxWidth: '560px',
               margin: '0 auto 40px',
               color: 'var(--text-muted)',
-              fontSize: '1.05rem',
+              fontSize: 'var(--t-lg)',
               lineHeight: 1.8,
               opacity: heroInView ? 1 : 0,
               transition: 'opacity 0.6s ease 0.2s',
@@ -387,10 +387,10 @@ const HowItWorks = () => {
             style={{
               background: 'hsl(225, 40%, 6%, 0.6)',
               border: '1px solid var(--border-default)',
-              borderRadius: '16px',
+              borderRadius: 'var(--r-md)',
               padding: '32px',
               fontFamily: 'var(--font-mono)',
-              fontSize: '0.9rem',
+              fontSize: 'var(--t-base)',
               lineHeight: 2,
               textAlign: 'left',
               color: 'var(--text-secondary)',
@@ -414,7 +414,7 @@ const HowItWorks = () => {
             Ready to{' '}
             <span className="gradient-text-amber">experience the flow?</span>
           </h2>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '36px', fontSize: '1rem', lineHeight: 1.8 }}>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '36px', fontSize: 'var(--t-md)', lineHeight: 1.8 }}>
             Open the beta platform and follow these exact steps. All data is pre-seeded so you
             can explore the full cycle without any setup.
           </p>
@@ -422,12 +422,12 @@ const HowItWorks = () => {
             <button
               onClick={() => navigate('/dashboard')}
               className="btn-primary"
-              style={{ fontSize: '1rem', padding: '16px 32px' }}
+              style={{ fontSize: 'var(--t-md)', padding: '16px 32px' }}
             >
               <Play size={16} fill="#fff" />
               Open the Beta Platform
             </button>
-            <Link to="/platform" className="btn-ghost" style={{ fontSize: '1rem', padding: '16px 32px' }}>
+            <Link to="/platform" className="btn-ghost" style={{ fontSize: 'var(--t-md)', padding: '16px 32px' }}>
               Explore Capabilities
               <ChevronRight size={16} />
             </Link>

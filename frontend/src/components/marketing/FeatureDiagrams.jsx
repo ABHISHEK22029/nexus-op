@@ -49,7 +49,7 @@ export const anim = (name, on, delay = 0, easing = 'ease-in-out') => (on ? {
    up regardless of how tall their drawing is. */
 export const Stage = ({ children, label }) => (
   <div style={{
-    height: 92, borderRadius: 10, marginBottom: 14, padding: 10,
+    height: 92, borderRadius: 'var(--r-sm)', marginBottom: 14, padding: 10,
     background: 'var(--bg-base)', border: '1px solid var(--border-subtle)',
     position: 'relative', overflow: 'hidden',
     display: 'grid', placeItems: 'center',
@@ -57,7 +57,7 @@ export const Stage = ({ children, label }) => (
     {children}
     {label && (
       <span style={{
-        position: 'absolute', top: 6, right: 8, fontSize: '0.56rem',
+        position: 'absolute', top: 6, right: 8, fontSize: 'var(--t-3xs)',
         fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
         color: 'var(--text-disabled)',
       }}>{label}</span>
@@ -80,11 +80,11 @@ export const ParseLines = ({ on }) => (
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
             <div style={{
-              height: 6, flex: 1, borderRadius: 3,
+              height: 6, flex: 1, borderRadius: 'var(--r-xs)',
               background: 'var(--border-emphasis)',
             }} />
             <div style={{
-              height: 6, width: 26, borderRadius: 3,
+              height: 6, width: 26, borderRadius: 'var(--r-xs)',
               background: 'var(--brand-amber)',
             }} />
           </div>
@@ -110,20 +110,20 @@ export const CompareBars = ({ on }) => {
         {bars.map((b, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             <span style={{
-              fontSize: '0.56rem', fontWeight: 800, width: 16,
+              fontSize: 'var(--t-3xs)', fontWeight: 800, width: 16,
               color: 'var(--text-disabled)',
             }}>Q{i + 1}</span>
-            <div style={{ flex: 1, height: 8, borderRadius: 4, background: 'var(--bg-overlay)' }}>
+            <div style={{ flex: 1, height: 8, borderRadius: 'var(--r-xs)', background: 'var(--bg-overlay)' }}>
               <div className="mk-bar" style={{
                 ...anim('mk-bar-grow', on, `${i * 0.16}s`, 'ease-in-out'),
                 
-                width: b.w, height: '100%', borderRadius: 4,
+                width: b.w, height: '100%', borderRadius: 'var(--r-xs)',
                 background: b.c, transformOrigin: 'left center', transform: 'scaleX(0)',
               }} />
             </div>
             <span className="mk-best" style={{
               animation: on && b.best ? `mk-best-mark ${CYCLE} ease-in-out infinite` : 'none',
-              opacity: 0, fontSize: '0.56rem', fontWeight: 800, width: 30,
+              opacity: 0, fontSize: 'var(--t-3xs)', fontWeight: 800, width: 30,
               color: 'var(--accent-emerald)',
             }}>
               {b.best ? 'BEST' : ''}
@@ -166,12 +166,12 @@ export const YieldRing = ({ on }) => {
         </svg>
         <div style={{ display: 'grid', gap: 3 }}>
           <span style={{
-            fontSize: '0.95rem', fontWeight: 800, color: 'var(--accent-emerald)',
+            fontSize: 'var(--t-md)', fontWeight: 800, color: 'var(--accent-emerald)',
             fontVariantNumeric: 'tabular-nums', lineHeight: 1,
           }}>94.2%</span>
-          <span style={{ fontSize: '0.56rem', fontWeight: 700, color: 'var(--text-disabled)' }}>FINISHED</span>
+          <span style={{ fontSize: 'var(--t-3xs)', fontWeight: 700, color: 'var(--text-disabled)' }}>FINISHED</span>
           <span style={{
-            fontSize: '0.62rem', fontWeight: 700, color: 'var(--accent-red)',
+            fontSize: 'var(--t-2xs)', fontWeight: 700, color: 'var(--accent-red)',
             fontVariantNumeric: 'tabular-nums', marginTop: 2,
           }}>5.8% scrap</span>
         </div>
@@ -195,14 +195,14 @@ export const TaxSplit = ({ on }) => (
            opacity: 0,
         }}>
           <div style={{
-            fontSize: '0.54rem', fontWeight: 800, color: 'var(--text-disabled)',
+            fontSize: 'var(--t-3xs)', fontWeight: 800, color: 'var(--text-disabled)',
             textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3,
           }}>{r.k}</div>
           <div style={{ display: 'flex', gap: 5 }}>
             {[r.a, r.b].filter(Boolean).map((t) => (
               <span key={t} style={{
-                flex: 1, textAlign: 'center', padding: '3px 0', borderRadius: 5,
-                fontSize: '0.6rem', fontWeight: 800, color: r.c,
+                flex: 1, textAlign: 'center', padding: '3px 0', borderRadius: 'var(--r-sm)',
+                fontSize: 'var(--t-3xs)', fontWeight: 800, color: r.c,
                 border: `1px solid ${r.c}`, background: 'var(--bg-surface)',
                 fontVariantNumeric: 'tabular-nums',
               }}>{t}</span>
@@ -230,11 +230,11 @@ export const DocMorph = ({ on, from = 'QT', to = 'SO', tone = 'var(--brand-amber
           </div>
         ) : (
           <div key={t} style={{
-            width: 42, height: 52, borderRadius: 6, display: 'grid', placeItems: 'center',
+            width: 42, height: 52, borderRadius: 'var(--r-sm)', display: 'grid', placeItems: 'center',
             border: `1px solid ${i === 2 ? tone : 'var(--border-emphasis)'}`,
             background: 'var(--bg-surface)',
             color: i === 2 ? tone : 'var(--text-muted)',
-            fontSize: '0.64rem', fontWeight: 800,
+            fontSize: 'var(--t-2xs)', fontWeight: 800,
           }}>{t}</div>
         ),
       )}
@@ -286,8 +286,8 @@ export const SearchGrid = ({ on }) => (
     <div style={{ width: '100%', padding: '0 6px', display: 'grid', gap: 7 }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 5, padding: '3px 7px',
-        borderRadius: 5, border: '1px solid var(--border-emphasis)',
-        background: 'var(--bg-surface)', fontSize: '0.6rem', color: 'var(--text-secondary)',
+        borderRadius: 'var(--r-sm)', border: '1px solid var(--border-emphasis)',
+        background: 'var(--bg-surface)', fontSize: 'var(--t-3xs)', color: 'var(--text-secondary)',
       }}>
         <Store size={10} style={{ color: 'var(--brand-amber)' }} />
         <span>cross arm</span>
@@ -301,7 +301,7 @@ export const SearchGrid = ({ on }) => (
           <div key={i} className="mk-row" style={{
             ...anim('mk-row-in', on, `${i * 0.12}s`, 'ease-in-out'),
              opacity: 0,
-            height: 26, borderRadius: 5,
+            height: 26, borderRadius: 'var(--r-sm)',
             background: 'var(--bg-overlay)',
             border: '1px solid var(--border-subtle)',
           }} />
@@ -409,7 +409,7 @@ const FeatureCard = ({ f, i }) => {
         opacity: seen ? undefined : 0,
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-subtle)',
-        borderRadius: 16, padding: 18,
+        borderRadius: 'var(--r-md)', padding: 18,
         display: 'flex', flexDirection: 'column',
         transition: 'border-color .25s, transform .25s',
       }}
@@ -426,17 +426,17 @@ const FeatureCard = ({ f, i }) => {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ color: 'var(--brand-amber)', display: 'grid', placeItems: 'center' }}>{f.icon}</span>
         <h3 style={{
-          fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 800,
+          fontFamily: 'var(--font-display)', fontSize: 'var(--t-md)', fontWeight: 800,
           margin: 0, color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: 1.3,
         }}>{f.title}</h3>
       </div>
       <p style={{
-        margin: 0, color: 'var(--text-secondary)', fontSize: '0.86rem', lineHeight: 1.7,
+        margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--t-base)', lineHeight: 1.7,
       }}>{f.desc}</p>
       {f.note && (
         <p style={{
           margin: '10px 0 0', paddingTop: 10, borderTop: '1px dashed var(--border-subtle)',
-          color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: 1.6,
+          color: 'var(--text-muted)', fontSize: 'var(--t-sm)', lineHeight: 1.6,
         }}>{f.note}</p>
       )}
     </div>

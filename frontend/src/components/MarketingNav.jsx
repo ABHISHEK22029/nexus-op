@@ -52,7 +52,7 @@ const MarketingNav = () => {
             <Zap size={18} color="#fff" fill="#fff" />
           </div>
           <span style={{
-            fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.2rem',
+            fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'var(--t-xl)',
             letterSpacing: '-0.03em',
             background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--brand-amber) 100%)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
@@ -69,7 +69,7 @@ const MarketingNav = () => {
               to={link.to}
               style={({ isActive }) => ({
                 padding: '8px 16px', borderRadius: '8px',
-                fontSize: '0.9rem', fontWeight: 500,
+                fontSize: 'var(--t-base)', fontWeight: 500,
                 color: isActive ? 'var(--brand-amber)' : 'var(--text-secondary)',
                 textDecoration: 'none', transition: 'all 200ms ease',
               })}
@@ -94,7 +94,7 @@ const MarketingNav = () => {
             onClick={toggleTheme}
             title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             style={{
-              width: '54px', height: '28px', borderRadius: '99px',
+              width: '54px', height: '28px', borderRadius: 'var(--r-full)',
               border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'hsl(30,18%,78%)'}`,
               background: isDark ? 'hsl(222, 38%, 14%)' : 'hsl(36, 55%, 91%)',
               cursor: 'pointer', position: 'relative',
@@ -180,7 +180,7 @@ const MarketingNav = () => {
               onClick={() => setIsMobileOpen(false)}
               style={({ isActive }) => ({
                 display: 'block', padding: '12px 16px', borderRadius: '8px',
-                fontSize: '0.95rem', fontWeight: 500,
+                fontSize: 'var(--t-md)', fontWeight: 500,
                 color: isActive ? 'var(--brand-amber)' : 'var(--text-secondary)',
                 textDecoration: 'none', marginBottom: '4px',
               })}

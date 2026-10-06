@@ -218,8 +218,8 @@ const ProcessEngine = () => {
               <button key={k} role="tab" aria-selected={on} type="button"
                 onClick={() => switchTrack(k)}
                 style={{
-                  padding: '7px 16px', borderRadius: 999, cursor: 'pointer',
-                  fontSize: '0.8rem', fontWeight: 700, fontFamily: 'inherit',
+                  padding: '7px 16px', borderRadius: 'var(--r-full)', cursor: 'pointer',
+                  fontSize: 'var(--t-sm)', fontWeight: 700, fontFamily: 'inherit',
                   border: `1px solid ${on ? 'var(--brand-amber)' : 'var(--border-default)'}`,
                   background: on ? 'var(--brand-amber-muted)' : 'transparent',
                   color: on ? 'var(--brand-amber)' : 'var(--text-secondary)',
@@ -231,7 +231,7 @@ const ProcessEngine = () => {
           })}
         </div>
         <p style={{
-          textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.88rem',
+          textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--t-base)',
           maxWidth: 560, margin: '0 auto 30px', lineHeight: 1.7,
         }}>
           {track.blurb}
@@ -246,7 +246,7 @@ const ProcessEngine = () => {
         <div style={{
           position: 'relative',
           background: 'linear-gradient(180deg, var(--bg-surface), var(--bg-base) 70%)',
-          border: '1px solid var(--border-default)', borderRadius: 22,
+          border: '1px solid var(--border-default)', borderRadius: 'var(--r-lg)',
           padding: '38px 26px 30px', overflow: 'hidden',
           boxShadow: '0 24px 60px -34px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.05) inset',
         }}>
@@ -296,7 +296,7 @@ const ProcessEngine = () => {
                    light along the top edge is what makes a track read as
                    machined instead of drawn. */
                 background: 'linear-gradient(180deg, var(--border-emphasis), var(--border-default))',
-                borderRadius: 3,
+                borderRadius: 'var(--r-xs)',
                 boxShadow: 'inset 0 1px 1px rgba(0,0,0,.14), 0 1px 0 rgba(255,255,255,.04)',
                 /* The pulse rides a full-width rail that translates 100%, so
                    at the end of each cycle the rail's box extends a whole
@@ -313,7 +313,7 @@ const ProcessEngine = () => {
                 overflowY: 'visible',
               }}>
                 <div className="mk-pipe-fill" style={{
-                  position: 'absolute', inset: 0, borderRadius: 3, transformOrigin: 'left center',
+                  position: 'absolute', inset: 0, borderRadius: 'var(--r-xs)', transformOrigin: 'left center',
                   background: 'linear-gradient(90deg, var(--brand-amber-dark), var(--brand-amber))',
                   boxShadow: '0 0 10px hsl(28,100%,54%,.5)',
                   animationName: inView ? 'mk-pipe-fill' : 'none',
@@ -385,10 +385,10 @@ const ProcessEngine = () => {
                     ...anim('mk-artifact'),
                     opacity: 0, marginBottom: 10, padding: '0 8px',
                     height: ARTIFACT_H, display: 'grid', placeItems: 'center',
-                    borderRadius: 6, whiteSpace: 'nowrap',
+                    borderRadius: 'var(--r-sm)', whiteSpace: 'nowrap',
                     border: '1px solid var(--brand-amber)',
                     background: 'var(--bg-surface)', color: 'var(--brand-amber)',
-                    fontSize: '0.64rem', fontWeight: 800, letterSpacing: '0.02em',
+                    fontSize: 'var(--t-2xs)', fontWeight: 800, letterSpacing: '0.02em',
                     fontVariantNumeric: 'tabular-nums',
                   }}>
                     {s.emits}
@@ -411,7 +411,7 @@ const ProcessEngine = () => {
                     onClick={() => setPinned(isPinned ? null : s.key)}
                     className="mk-chamber"
                     style={{
-                      position: 'relative', width: 58, height: 58, borderRadius: 18,
+                      position: 'relative', width: 58, height: 58, borderRadius: 'var(--r-lg)',
                       cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 0,
                       border: '1px solid var(--border-default)',
                       /* A top-lit face rather than a flat fill: the chamber
@@ -425,7 +425,7 @@ const ProcessEngine = () => {
                     }}>
                     <span aria-hidden="true" className="mk-chamber-glow" style={{
                       ...anim('mk-chamber-glow'),
-                      position: 'absolute', inset: -1, borderRadius: 16,
+                      position: 'absolute', inset: -1, borderRadius: 'var(--r-md)',
                       border: '1px solid var(--brand-amber)',
                       background: 'linear-gradient(160deg, hsl(28,100%,54%,.22), hsl(28,100%,54%,.07))',
                       boxShadow: 'var(--shadow-amber)',
@@ -450,7 +450,7 @@ const ProcessEngine = () => {
                   </button>
 
                   <div style={{
-                    marginTop: 10, textAlign: 'center', fontSize: '0.72rem',
+                    marginTop: 10, textAlign: 'center', fontSize: 'var(--t-xs)',
                     fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.3,
                   }}>
                     {s.title}
@@ -470,31 +470,31 @@ const ProcessEngine = () => {
           key={`${trackKey}-${shown.key}`}
           className="mk-fade"
           style={{
-            marginTop: 18, padding: '20px 22px', borderRadius: 16,
+            marginTop: 18, padding: '20px 22px', borderRadius: 'var(--r-md)',
             background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
             display: 'grid', gap: 10,
           }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ color: 'var(--brand-amber)', display: 'grid', placeItems: 'center' }}>{shown.icon}</span>
             <strong style={{
-              fontFamily: 'var(--font-display)', fontSize: '1.08rem',
+              fontFamily: 'var(--font-display)', fontSize: 'var(--t-lg)',
               color: 'var(--text-primary)', letterSpacing: '-0.01em',
             }}>{shown.title}</strong>
             <span style={{
               marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
-              fontSize: '0.7rem', fontWeight: 800, color: 'var(--brand-amber)',
+              fontSize: 'var(--t-xs)', fontWeight: 800, color: 'var(--brand-amber)',
               border: '1px solid var(--brand-amber)', background: 'var(--brand-amber-muted)',
-              borderRadius: 999, padding: '3px 10px', fontVariantNumeric: 'tabular-nums',
+              borderRadius: 'var(--r-full)', padding: '3px 10px', fontVariantNumeric: 'tabular-nums',
             }}>
               <ChevronRight size={12} /> {shown.emits}
             </span>
           </div>
-          <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.75, fontSize: '0.92rem' }}>
+          <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.75, fontSize: 'var(--t-base)' }}>
             {shown.detail}
           </p>
           <p style={{
             margin: 0, paddingTop: 10, borderTop: '1px dashed var(--border-subtle)',
-            color: 'var(--text-muted)', fontSize: '0.82rem',
+            color: 'var(--text-muted)', fontSize: 'var(--t-sm)',
           }}>
             <strong style={{ color: 'var(--text-secondary)' }}>What moves:</strong> {shown.moves}
           </p>
@@ -502,7 +502,7 @@ const ProcessEngine = () => {
 
         <p style={{
           marginTop: 12, textAlign: 'center', color: 'var(--text-muted)',
-          fontSize: '0.76rem',
+          fontSize: 'var(--t-xs)',
         }}>
           Hover or tap any stage to read it. Every document above is produced by the system, numbered and printable.
         </p>

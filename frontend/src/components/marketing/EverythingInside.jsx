@@ -153,22 +153,22 @@ const ModuleCard = ({ m, i }) => {
         opacity: seen ? undefined : 0,
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-subtle)',
-        borderRadius: 16,
+        borderRadius: 'var(--r-md)',
         padding: '18px 18px 16px',
         display: 'flex', flexDirection: 'column', gap: 12,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{
-          width: 32, height: 32, borderRadius: 10, display: 'grid', placeItems: 'center',
+          width: 32, height: 32, borderRadius: 'var(--r-sm)', display: 'grid', placeItems: 'center',
           color: m.tone, background: `${m.tone}16`, border: `1px solid ${m.tone}38`,
         }}>{m.icon}</span>
         <div style={{ minWidth: 0 }}>
           <div style={{
-            fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 800,
+            fontFamily: 'var(--font-display)', fontSize: 'var(--t-md)', fontWeight: 800,
             color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: 1.2,
           }}>{m.label}</div>
-          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{m.line}</div>
+          <div style={{ fontSize: 'var(--t-xs)', color: 'var(--text-muted)' }}>{m.line}</div>
         </div>
       </div>
 
@@ -178,21 +178,21 @@ const ModuleCard = ({ m, i }) => {
             <Check size={13} style={{ color: m.tone, marginTop: 3 }} />
             <div>
               <span style={{
-                fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)',
+                fontSize: 'var(--t-sm)', fontWeight: 700, color: 'var(--text-primary)',
               }}>{name}</span>
               {/* Marked, not hidden. These screens are real but belong to
                   contracting; a fabricator should be able to skip them
                   rather than wonder whether they are being sold padding. */}
               {only === 'contracting' && (
                 <span style={{
-                  marginLeft: 7, fontSize: '0.58rem', fontWeight: 800, letterSpacing: '.04em',
+                  marginLeft: 7, fontSize: 'var(--t-3xs)', fontWeight: 800, letterSpacing: '.04em',
                   color: 'var(--text-muted)', border: '1px solid var(--border-default)',
-                  borderRadius: 999, padding: '1px 6px', textTransform: 'uppercase',
+                  borderRadius: 'var(--r-full)', padding: '1px 6px', textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
                 }}>contracting</span>
               )}
               <div style={{
-                fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: 2,
+                fontSize: 'var(--t-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: 2,
               }}>{desc}</div>
             </div>
           </li>
@@ -210,7 +210,7 @@ const EverythingInside = () => {
     <div ref={ref}>
       <div style={{ textAlign: 'center', marginBottom: 34 }}>
         <p style={{
-          margin: 0, color: 'var(--text-muted)', fontSize: '0.86rem',
+          margin: 0, color: 'var(--text-muted)', fontSize: 'var(--t-base)',
         }}>
           <strong style={{ color: 'var(--text-primary)' }}>{total} screens</strong> across{' '}
           <strong style={{ color: 'var(--text-primary)' }}>{MODULES.length} modules</strong>.
@@ -227,14 +227,14 @@ const EverythingInside = () => {
         className={seen ? 'mk-rise' : undefined}
         style={{
           opacity: seen ? undefined : 0,
-          marginTop: 24, padding: '22px 24px', borderRadius: 18,
+          marginTop: 24, padding: '22px 24px', borderRadius: 'var(--r-lg)',
           background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
           <AlertTriangle size={17} style={{ color: 'var(--brand-amber)' }} />
           <h3 style={{
-            margin: 0, fontFamily: 'var(--font-display)', fontSize: '1.05rem',
+            margin: 0, fontFamily: 'var(--font-display)', fontSize: 'var(--t-lg)',
             fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em',
           }}>
             And it watches these for you
@@ -242,7 +242,7 @@ const EverythingInside = () => {
         </div>
         <p style={{
           margin: '0 0 16px', color: 'var(--text-secondary)',
-          fontSize: '0.86rem', lineHeight: 1.7, maxWidth: 680,
+          fontSize: 'var(--t-base)', lineHeight: 1.7, maxWidth: 680,
         }}>
           Not a report you remember to run — a count on the menu itself, so the thing
           that needs attention is visible before you go looking for it.
@@ -251,10 +251,10 @@ const EverythingInside = () => {
           {WATCHES.map(([text, tone]) => (
             <span key={text} style={{
               display: 'inline-flex', alignItems: 'center', gap: 7,
-              padding: '5px 11px', borderRadius: 999,
+              padding: '5px 11px', borderRadius: 'var(--r-full)',
               border: `1px solid ${TONES[tone]}44`,
               background: `${TONES[tone]}0f`,
-              fontSize: '0.76rem', color: 'var(--text-secondary)',
+              fontSize: 'var(--t-xs)', color: 'var(--text-secondary)',
             }}>
               <span style={{
                 width: 6, height: 6, borderRadius: '50%', background: TONES[tone], flexShrink: 0,

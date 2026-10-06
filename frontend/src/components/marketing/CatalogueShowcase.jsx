@@ -69,7 +69,7 @@ const STEPS = [
    for a real product shot. */
 const Tile = ({ item, dim }) => (
   <div style={{
-    borderRadius: 10, overflow: 'hidden', background: 'var(--bg-surface)',
+    borderRadius: 'var(--r-sm)', overflow: 'hidden', background: 'var(--bg-surface)',
     border: '1px solid var(--border-subtle)',
     opacity: dim ? 0.24 : 1,
     transform: dim ? 'scale(0.985)' : 'none',
@@ -84,10 +84,10 @@ const Tile = ({ item, dim }) => (
     </div>
     <div style={{ padding: '8px 9px' }}>
       <div style={{
-        fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-primary)',
+        fontSize: 'var(--t-xs)', fontWeight: 800, color: 'var(--text-primary)',
         lineHeight: 1.3, marginBottom: 3,
       }}>{item.name}</div>
-      <div style={{ fontSize: '0.58rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+      <div style={{ fontSize: 'var(--t-3xs)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
         {item.spec}
       </div>
     </div>
@@ -124,7 +124,7 @@ const CatalogueShowcase = () => {
           style={{
             opacity: inView ? undefined : 0,
             background: 'var(--bg-base)', border: '1px solid var(--border-subtle)',
-            borderRadius: 18, padding: 16, minWidth: 0,
+            borderRadius: 'var(--r-lg)', padding: 16, minWidth: 0,
           }}>
           {/* browser chrome, so it reads as a public page rather than a screen
               inside the app — which is the whole distinction being sold */}
@@ -139,9 +139,9 @@ const CatalogueShowcase = () => {
             </div>
             <div style={{
               flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
-              padding: '4px 9px', borderRadius: 999,
+              padding: '4px 9px', borderRadius: 'var(--r-full)',
               background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
-              fontSize: '0.62rem', color: 'var(--text-muted)',
+              fontSize: 'var(--t-2xs)', color: 'var(--text-muted)',
               overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
             }}>
               <Store size={10} style={{ color: 'var(--brand-amber)', flexShrink: 0 }} />
@@ -150,9 +150,9 @@ const CatalogueShowcase = () => {
               </span>
             </div>
             <span style={{
-              fontSize: '0.54rem', fontWeight: 800, letterSpacing: '0.05em',
+              fontSize: 'var(--t-3xs)', fontWeight: 800, letterSpacing: '0.05em',
               color: 'var(--accent-emerald)', border: '1px solid var(--accent-emerald)',
-              borderRadius: 999, padding: '2px 7px', flexShrink: 0,
+              borderRadius: 'var(--r-full)', padding: '2px 7px', flexShrink: 0,
             }}>NO LOGIN</span>
           </div>
 
@@ -164,8 +164,8 @@ const CatalogueShowcase = () => {
                 <button key={f.key} type="button" onClick={() => setFilter(f.key)}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 4,
-                    padding: '3px 9px', borderRadius: 999, cursor: 'pointer',
-                    fontSize: '0.6rem', fontWeight: 700, fontFamily: 'inherit',
+                    padding: '3px 9px', borderRadius: 'var(--r-full)', cursor: 'pointer',
+                    fontSize: 'var(--t-3xs)', fontWeight: 700, fontFamily: 'inherit',
                     border: `1px solid ${on ? 'var(--brand-amber)' : 'var(--border-default)'}`,
                     background: on ? 'var(--brand-amber-muted)' : 'transparent',
                     color: on ? 'var(--brand-amber)' : 'var(--text-secondary)',
@@ -187,7 +187,7 @@ const CatalogueShowcase = () => {
           <div style={{
             marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border-subtle)',
             display: 'flex', alignItems: 'center', gap: 6,
-            fontSize: '0.62rem', color: 'var(--text-muted)',
+            fontSize: 'var(--t-2xs)', color: 'var(--text-muted)',
           }}>
             <Search size={10} />
             <span style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -214,7 +214,7 @@ const CatalogueShowcase = () => {
                   {/* the rail: a node and the line down to the next step */}
                   <div style={{ display: 'grid', justifyItems: 'center', gridTemplateRows: 'auto 1fr' }}>
                     <span style={{
-                      width: 28, height: 28, borderRadius: 9, display: 'grid', placeItems: 'center',
+                      width: 28, height: 28, borderRadius: 'var(--r-sm)', display: 'grid', placeItems: 'center',
                       border: '1px solid var(--brand-amber)', background: 'var(--brand-amber-muted)',
                       color: 'var(--brand-amber)',
                     }}>{s.icon}</span>
@@ -222,12 +222,12 @@ const CatalogueShowcase = () => {
                   </div>
                   <div style={{ paddingBottom: last ? 0 : 18 }}>
                     <div style={{
-                      fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 800,
+                      fontFamily: 'var(--font-display)', fontSize: 'var(--t-md)', fontWeight: 800,
                       color: 'var(--text-primary)', marginBottom: 4, letterSpacing: '-0.01em',
                     }}>{s.title}</div>
                     <p style={{
                       margin: 0, color: 'var(--text-secondary)',
-                      fontSize: '0.85rem', lineHeight: 1.7,
+                      fontSize: 'var(--t-base)', lineHeight: 1.7,
                     }}>{s.desc}</p>
                   </div>
                 </div>
@@ -236,10 +236,10 @@ const CatalogueShowcase = () => {
           </div>
 
           <div style={{
-            marginTop: 18, padding: '14px 16px', borderRadius: 12,
+            marginTop: 18, padding: '14px 16px', borderRadius: 'var(--r-md)',
             background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
           }}>
-            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.7 }}>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--t-base)', lineHeight: 1.7 }}>
               <strong style={{ color: 'var(--text-primary)' }}>Why it matters:</strong>{' '}
               it is the only part of Maks Ops someone can use without an account — so it is
               the shortest distance between a stranger finding you and a numbered quotation

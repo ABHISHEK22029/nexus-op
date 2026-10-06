@@ -183,7 +183,7 @@ const ModulePanel = ({ module }) => {
       style={{
         position: 'relative',
         background: 'var(--bg-surface)',
-        borderRadius: 22,
+        borderRadius: 'var(--r-lg)',
         border: `1px solid ${module.color}33`,
         minHeight: 318,
         padding: '24px 22px 20px',
@@ -206,12 +206,12 @@ const ModulePanel = ({ module }) => {
 
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{
-          width: 34, height: 34, borderRadius: 11, display: 'grid', placeItems: 'center',
+          width: 34, height: 34, borderRadius: 'var(--r-sm)', display: 'grid', placeItems: 'center',
           color: module.color, background: `${module.color}18`,
           border: `1px solid ${module.color}3a`,
         }}>{module.icon}</span>
         <span style={{
-          fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em',
+          fontSize: 'var(--t-xs)', fontWeight: 800, letterSpacing: '0.08em',
           textTransform: 'uppercase', color: 'var(--text-muted)',
         }}>{module.label}</span>
       </div>
@@ -230,7 +230,7 @@ const ModulePanel = ({ module }) => {
 
       <p style={{
         position: 'relative', margin: 0, textAlign: 'center',
-        fontSize: '0.74rem', color: 'var(--text-muted)',
+        fontSize: 'var(--t-xs)', color: 'var(--text-muted)',
       }}>
         An illustration of the mechanism, not a screenshot.
       </p>
@@ -287,7 +287,7 @@ const PlatformCapabilities = () => {
               maxWidth: '560px',
               margin: '0 auto 36px',
               color: 'var(--text-muted)',
-              fontSize: '1.05rem',
+              fontSize: 'var(--t-lg)',
               lineHeight: 1.8,
               opacity: headerInView ? 1 : 0,
               transition: 'opacity 0.6s ease 0.2s',
@@ -325,11 +325,11 @@ const PlatformCapabilities = () => {
                 alignItems: 'center',
                 gap: '7px',
                 padding: '8px 16px',
-                borderRadius: '8px',
+                borderRadius: 'var(--r-sm)',
                 border: activeTab === mod.id ? `1px solid ${mod.color}44` : '1px solid transparent',
                 background: activeTab === mod.id ? `${mod.color}12` : 'transparent',
                 color: activeTab === mod.id ? mod.color : 'var(--text-muted)',
-                fontSize: '0.85rem',
+                fontSize: 'var(--t-base)',
                 fontWeight: 600,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
@@ -371,7 +371,7 @@ const PlatformCapabilities = () => {
                   style={{
                     width: '60px',
                     height: '60px',
-                    borderRadius: '16px',
+                    borderRadius: 'var(--r-md)',
                     background: `${activeModule.color}15`,
                     border: `1px solid ${activeModule.color}30`,
                     display: 'flex',
@@ -384,12 +384,12 @@ const PlatformCapabilities = () => {
                   {activeModule.icon}
                 </div>
                 <h2 style={{ marginBottom: '16px' }}>{activeModule.title}</h2>
-                <p style={{ color: 'var(--text-muted)', lineHeight: 1.8, marginBottom: '32px', fontSize: '1rem' }}>
+                <p style={{ color: 'var(--text-muted)', lineHeight: 1.8, marginBottom: '32px', fontSize: 'var(--t-md)' }}>
                   {activeModule.description}
                 </p>
                 <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '40px' }}>
                   {activeModule.bullets.map((b) => (
-                    <li key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                    <li key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', fontSize: 'var(--t-base)', color: 'var(--text-secondary)' }}>
                       <CheckCircle2 size={16} color={activeModule.color} style={{ flexShrink: 0, marginTop: '2px' }} />
                       {b}
                     </li>
@@ -420,10 +420,10 @@ const PlatformCapabilities = () => {
             See it all in the{' '}
             <span className="gradient-text-amber">Live Beta</span>
           </h2>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '32px', fontSize: '1rem' }}>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '32px', fontSize: 'var(--t-md)' }}>
             All 7 capability areas are live and fully functional in the beta platform.
           </p>
-          <button onClick={() => navigate('/dashboard')} className="btn-primary" style={{ fontSize: '1rem', padding: '16px 32px' }}>
+          <button onClick={() => navigate('/dashboard')} className="btn-primary" style={{ fontSize: 'var(--t-md)', padding: '16px 32px' }}>
             <Play size={16} fill="#fff" /> Open the Beta Platform
           </button>
         </div>

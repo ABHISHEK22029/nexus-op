@@ -98,12 +98,57 @@
   --font-body:    'Inter', system-ui, sans-serif;
   --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
 
+  /* ── TYPE SCALE ───────────────────────────────────────────────────────
+     Nine steps. The marketing surface had THIRTY-THREE distinct font sizes
+     — 0.54, 0.56, 0.58, 0.6, 0.62, 0.64, 0.68, 0.7, 0.72, 0.74, 0.75, 0.76,
+     0.78, 0.8, 0.82, 0.84, 0.85, 0.86, 0.875, 0.88, 0.9, 0.92, 0.95 and on.
+     Nobody can tell 0.84rem from 0.86rem; they are not decisions, they are
+     accumulated guesses, and a page built from them reads as assembled
+     rather than designed however good its contents are.
+
+     Steps are far enough apart to be legible as different (roughly a 1.125
+     ratio at the small end, widening above body size), so hierarchy is
+     something a reader perceives instead of something only the stylesheet
+     knows about. */
+  --t-3xs:  0.625rem;    /* 10px — micro labels inside diagrams */
+  --t-2xs:  0.6875rem;   /* 11px — badges, eyebrows */
+  --t-xs:   0.75rem;     /* 12px — captions, meta, chips */
+  --t-sm:   0.8125rem;   /* 13px — dense secondary text */
+  --t-base: 0.875rem;    /* 14px — body inside cards */
+  --t-md:   1rem;        /* 16px — body, lead-in */
+  --t-lg:   1.125rem;    /* 18px — hero subtext */
+  --t-xl:   1.25rem;     /* 20px — card titles */
+  --t-2xl:  1.5rem;      /* 24px — section sub-heads */
+
+  /* ── RADII ────────────────────────────────────────────────────────────
+     Four, plus a pill. There were ten: 3, 4, 5, 6, 9, 10, 12, 16, 18, 22.
+     A 5px and a 6px corner on the same screen is not a distinction anyone
+     sees — it just means nothing was decided. */
+  --r-xs:   4px;         /* inline chips, tiny marks */
+  --r-sm:   8px;         /* nested elements inside a card */
+  --r-md:   14px;        /* cards, tiles */
+  --r-lg:   20px;        /* panels, the engine casing */
+  --r-full: 999px;
+
+  /* Display text wants negative tracking; uppercase micro-labels want the
+     opposite, or they set as a solid block. */
+  --track-display: -0.025em;
+  --track-label:    0.08em;
+
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
   --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px;
   --space-16: 64px; --space-20: 80px; --space-24: 96px;
 
-  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px;
-  --radius-xl: 24px; --radius-full: 9999px;
+  /* The older radius names, kept so the 13 places still using them do not
+     have to change, but POINTED AT THE SCALE above rather than carrying
+     their own values. Two sets of radii with different numbers is not a
+     design system, it is two — and whichever a given component reached for
+     was down to when it was written. */
+  --radius-sm:   var(--r-sm);
+  --radius-md:   var(--r-sm);
+  --radius-lg:   var(--r-md);
+  --radius-xl:   var(--r-lg);
+  --radius-full: var(--r-full);
 
   --transition-fast:   150ms ease;
   --transition-base:   200ms ease;
@@ -135,12 +180,25 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
   color: var(--text-primary);
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--track-display);
+  /* Headings wrap at a sensible place rather than leaving one orphaned word
+     on the last line, which is the single most common thing that makes a
+     headline look untended. */
+  text-wrap: balance;
 }
-h1 { font-size: clamp(2.2rem, 5vw, 4rem); font-weight: 800; }
-h2 { font-size: clamp(1.6rem, 3.5vw, 2.8rem); font-weight: 700; }
-h3 { font-size: clamp(1.2rem, 2.5vw, 1.8rem); font-weight: 700; }
+/* Line height tightens as type grows: 1.15 on a 14px h4 is cramped, and 1.3
+   on a 64px h1 is a gap. One value for all six was doing both at once. */
+h1 { font-size: clamp(2.2rem, 5vw, 4rem);     font-weight: 800; line-height: 1.04; }
+h2 { font-size: clamp(1.6rem, 3.5vw, 2.6rem); font-weight: 700; line-height: 1.12; }
+h3 { font-size: clamp(1.2rem, 2.5vw, 1.6rem); font-weight: 700; line-height: 1.2;  }
+h4, h5, h6 { line-height: 1.3; letter-spacing: -0.012em; }
+
+/* Uppercase micro-labels — the eyebrows above section headings and the
+   labels inside diagrams. Set solid at 10-11px they read as a block; the
+   tracking is what turns them back into words. */
+.pill, .eyebrow, [data-label] {
+  letter-spacing: var(--track-label);
+}
 h4 { font-size: clamp(1rem, 2vw, 1.35rem); font-weight: 600; }
 p { line-height: 1.7; }
 code, pre, .mono { font-family: var(--font-mono); font-size: 0.875em; }
@@ -256,7 +314,7 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
   display: inline-flex; align-items: center; gap: 8px;
   padding: 14px 28px;
   background: var(--brand-amber);
-  color: #fff; font-family: var(--font-body); font-weight: 600; font-size: 0.95rem;
+  color: #fff; font-family: var(--font-body); font-weight: 600; font-size: var(--t-md);
   border-radius: var(--radius-full); border: none; cursor: pointer;
   transition: all var(--transition-base); text-decoration: none; white-space: nowrap;
 }
@@ -267,12 +325,12 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
   display: inline-flex; align-items: center; gap: 8px;
   padding: 13px 27px;
   background: transparent; color: var(--text-primary);
-  font-family: var(--font-body); font-weight: 600; font-size: 0.95rem;
+  font-family: var(--font-body); font-weight: 600; font-size: var(--t-md);
   border-radius: var(--radius-full); border: 1px solid var(--border-emphasis);
   cursor: pointer; transition: all var(--transition-base); text-decoration: none; white-space: nowrap;
 }
 .btn-ghost:hover { background: var(--bg-elevated); border-color: var(--text-muted); transform: translateY(-1px); }
-.btn-sm { padding: 8px 18px; font-size: 0.85rem; }
+.btn-sm { padding: 8px 18px; font-size: var(--t-base); }
 
 /* Secondary button — was undefined; rendered invisible. Theme-aware outline. */
 .btn-secondary {
@@ -289,7 +347,7 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
   display: inline-flex; align-items: center; gap: 8px;
   padding: 9px 16px; border-radius: 8px;
   background: var(--bg-elevated); border: 1px solid var(--border-default);
-  color: var(--text-secondary); font-size: 0.85rem; font-weight: 600;
+  color: var(--text-secondary); font-size: var(--t-base); font-weight: 600;
   cursor: pointer; transition: all 150ms ease;
 }
 .inv-act-btn:hover { background: var(--bg-surface); border-color: var(--brand-amber); color: var(--brand-amber); }
@@ -309,7 +367,7 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
   color: var(--text-muted);
   cursor: pointer;
   transition: all 200ms ease;
-  font-size: 1rem;
+  font-size: var(--t-md);
   flex-shrink: 0;
 }
 .theme-toggle:hover {
@@ -327,7 +385,7 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
 .pill {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 14px; border-radius: var(--radius-full);
-  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  font-size: var(--t-sm); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
 }
 .pill-amber  { background: hsl(28, 100%, 54%, 0.12); border: 1px solid hsl(28, 100%, 54%, 0.3); color: var(--brand-amber); }
 .pill-emerald{ background: hsl(158, 64%, 52%, 0.12); border: 1px solid hsl(158, 64%, 52%, 0.3); color: var(--accent-emerald); }
@@ -460,7 +518,7 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
 .sidebar-link {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 16px; border-radius: var(--radius-md);
-  font-size: 0.875rem; font-weight: 500;
+  font-size: var(--t-base); font-weight: 500;
   color: var(--text-muted); border: 1px solid transparent;
   transition: all var(--transition-base); text-decoration: none;
 }
@@ -481,16 +539,16 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
 }
 
 /* ── Status badges ── */
-.status-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: var(--radius-full); font-size: 0.75rem; font-weight: 600; }
+.status-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: var(--radius-full); font-size: var(--t-xs); font-weight: 600; }
 .status-active  { background: hsl(158,64%,52%,0.12); color: var(--accent-emerald); border: 1px solid hsl(158,64%,52%,0.3); }
 .status-pending { background: hsl(43,96%,56%,0.12);  color: var(--accent-yellow);  border: 1px solid hsl(43,96%,56%,0.3); }
 .status-draft   { background: hsl(215,18%,70%,0.12); color: var(--text-secondary); border: 1px solid var(--border-default); }
 .status-error   { background: hsl(0,90%,65%,0.12);   color: var(--accent-red);     border: 1px solid hsl(0,90%,65%,0.3); }
 
 /* ── Data tables ── */
-.data-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.data-table { width: 100%; border-collapse: collapse; font-size: var(--t-base); }
 .data-table thead tr { background: var(--bg-deep); }
-.data-table th { padding: 14px 20px; text-align: left; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.data-table th { padding: 14px 20px; text-align: left; font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
 .data-table td { padding: 14px 20px; color: var(--text-secondary); border-top: 1px solid var(--border-subtle); }
 .data-table tbody tr { transition: background var(--transition-fast); }
 .data-table tbody tr:hover { background: var(--bg-elevated); }
@@ -506,7 +564,7 @@ input[type="email"], select, textarea {
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: 0.9rem;
+  font-size: var(--t-base);
   padding: 10px 14px;
   outline: none;
   transition: border-color var(--transition-base), background 250ms ease;
@@ -537,7 +595,7 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 }
 .kpi-card:hover { border-color: hsl(28, 100%, 54%, 0.3); box-shadow: 0 4px 20px hsl(28, 100%, 54%, 0.06); }
 .kpi-value { font-family: var(--font-display); font-size: 2rem; font-weight: 800; color: var(--text-primary); letter-spacing: -0.04em; line-height: 1; }
-.kpi-label { font-size: 0.8rem; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+.kpi-label { font-size: var(--t-sm); font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
 
 [data-theme="light"] .kpi-card { box-shadow: 0 2px 12px hsl(30,30%,60%,0.1); }
 [data-theme="light"] .kpi-card:hover { box-shadow: 0 6px 24px hsl(28,92%,50%,0.12); }
@@ -786,7 +844,7 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 [data-theme="light"] .nav-rail-item { color: hsl(220, 15%, 72%); }
 
 .nav-rail-item span {
-  font-size: 0.62rem; font-weight: 600; letter-spacing: 0.01em;
+  font-size: var(--t-2xs); font-weight: 600; letter-spacing: 0.01em;
   line-height: 1.1; text-align: center;
 }
 .nav-rail-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
@@ -825,7 +883,7 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 .nav-panel-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 14px 10px;
-  font-size: 0.92rem; font-weight: 800; color: var(--text-primary);
+  font-size: var(--t-base); font-weight: 800; color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 .nav-panel-head button {
@@ -846,11 +904,11 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
   background: hsl(28,100%,54%,0.12);
   color: var(--brand-amber);
 }
-.nav-panel-label { display: block; font-size: 0.845rem; font-weight: 600; }
+.nav-panel-label { display: block; font-size: var(--t-sm); font-weight: 600; }
 /* Says what a consolidated screen absorbed, so someone hunting for a menu
    entry that no longer exists can see where it went. */
 .nav-panel-hint {
-  display: block; font-size: 0.68rem; color: var(--text-muted);
+  display: block; font-size: var(--t-xs); color: var(--text-muted);
   margin-top: 1px; font-weight: 400; line-height: 1.25;
 }
 .nav-panel-item.is-active .nav-panel-hint { color: hsl(28,60%,52%); }
@@ -871,14 +929,14 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 }
 .page-tab {
   display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
-  padding: 9px 14px; font-size: 0.86rem; font-weight: 600;
+  padding: 9px 14px; font-size: var(--t-base); font-weight: 600;
   background: none; border: none; cursor: pointer;
   color: var(--text-muted); border-bottom: 2px solid transparent;
 }
 .page-tab:hover { color: var(--text-primary); }
 .page-tab.is-active { color: var(--text-primary); border-bottom-color: var(--brand-amber); }
 .page-tab-count {
-  font-size: 0.7rem; font-weight: 700; padding: 1px 7px; border-radius: 99px;
+  font-size: var(--t-xs); font-weight: 700; padding: 1px 7px; border-radius: var(--r-full);
   background: var(--bg-elevated); color: var(--text-muted);
 }
 .page-tab.is-active .page-tab-count {
@@ -894,7 +952,7 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 
 /* Panel group heading — the flow, not just a list */
 .nav-panel-group {
-  font-size: 0.63rem; font-weight: 800; text-transform: uppercase;
+  font-size: var(--t-2xs); font-weight: 800; text-transform: uppercase;
   letter-spacing: 0.07em; color: var(--text-muted);
   padding: 12px 10px 4px; opacity: 0.75;
 }
@@ -905,8 +963,8 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 /* Where work is waiting. Zero is never rendered — a badge reading "0" is
    noise pretending to be signal. */
 .nav-badge {
-  font-size: 0.65rem; font-weight: 800; line-height: 1;
-  padding: 3px 6px; border-radius: 99px; min-width: 18px; text-align: center;
+  font-size: var(--t-2xs); font-weight: 800; line-height: 1;
+  padding: 3px 6px; border-radius: var(--r-full); min-width: 18px; text-align: center;
 }
 .nav-badge-info   { background: rgba(59,130,246,0.15);  color: #3b82f6; }
 .nav-badge-warn   { background: rgba(245,158,11,0.18);  color: #b45309; }
@@ -926,7 +984,7 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 }
 .nav-scope-org {
   display: flex; align-items: center; gap: 7px;
-  font-size: 0.86rem; font-weight: 800; color: var(--text-primary);
+  font-size: var(--t-base); font-weight: 800; color: var(--text-primary);
   letter-spacing: -0.01em;
   overflow: hidden;
 }
@@ -939,7 +997,7 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
   display: flex; align-items: center; gap: 6px; width: 100%;
   padding: 5px 9px; border-radius: 7px; cursor: pointer;
   background: var(--bg-elevated); border: 1px solid var(--border-default);
-  color: var(--text-secondary); font-size: 0.76rem; font-weight: 600;
+  color: var(--text-secondary); font-size: var(--t-xs); font-weight: 600;
 }
 .nav-scope-picker span {
   flex: 1; text-align: left;
@@ -955,14 +1013,14 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 }
 .nav-scope-menu-head {
   padding: 7px 9px 4px;
-  font-size: 0.64rem; font-weight: 800; color: var(--text-muted);
+  font-size: var(--t-2xs); font-weight: 800; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: .06em;
 }
 .nav-scope-menu button {
   display: flex; align-items: center; gap: 8px; width: 100%;
   background: none; border: none; border-radius: 7px; padding: 7px 9px;
   cursor: pointer; text-align: left;
-  color: var(--text-primary); font-size: 0.8rem; font-weight: 500;
+  color: var(--text-primary); font-size: var(--t-sm); font-weight: 500;
 }
 .nav-scope-menu button span {
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -991,8 +1049,8 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
    ═══════════════════════════════════════════════════════════ */
 .pill {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 10px; border-radius: 999px;
-  font-size: 0.72rem; font-weight: 700; white-space: nowrap;
+  padding: 3px 10px; border-radius: var(--r-full);
+  font-size: var(--t-xs); font-weight: 700; white-space: nowrap;
   border: 1px solid transparent;
 }
 .pill-neutral { color: #94a3b8; background: rgba(148,163,184,0.14); border-color: rgba(148,163,184,0.24); }

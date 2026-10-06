@@ -76,7 +76,7 @@ const MarketingFooter = () => {
                 style={{
                   fontFamily: 'var(--font-display)',
                   fontWeight: 800,
-                  fontSize: '1.2rem',
+                  fontSize: 'var(--t-xl)',
                   letterSpacing: '-0.03em',
                   background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--brand-amber) 100%)',
                   WebkitBackgroundClip: 'text',
@@ -88,7 +88,7 @@ const MarketingFooter = () => {
             </Link>
             <p
               style={{
-                fontSize: '0.875rem',
+                fontSize: 'var(--t-base)',
                 color: 'var(--text-muted)',
                 lineHeight: 1.7,
                 marginBottom: '24px',
@@ -108,7 +108,7 @@ const MarketingFooter = () => {
               <h4
                 style={{
                   fontFamily: 'var(--font-display)',
-                  fontSize: '0.8rem',
+                  fontSize: 'var(--t-sm)',
                   fontWeight: 700,
                   letterSpacing: '0.1em',
                   textTransform: 'uppercase',
@@ -124,7 +124,7 @@ const MarketingFooter = () => {
                     <Link
                       to={link.to}
                       style={{
-                        fontSize: '0.875rem',
+                        fontSize: 'var(--t-base)',
                         color: 'var(--text-muted)',
                         textDecoration: 'none',
                         transition: 'color 200ms ease',
@@ -157,7 +157,7 @@ const MarketingFooter = () => {
             gap: '16px',
           }}
         >
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--text-muted)' }}>
             © 2026 Maks Ops. Built by{' '}
             <span style={{ color: 'var(--brand-amber)' }}>Abhishek Gupta</span>
             {' '}for growing SMEs.
@@ -172,7 +172,7 @@ const MarketingFooter = () => {
               Replaced with something true. A real status light would have to
               be wired to a health check, and on a free tier that sleeps after
               15 minutes it would spend much of its day reporting "down". */}
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--text-muted)', margin: 0 }}>
             Hyderabad, India
           </p>
         </div>
