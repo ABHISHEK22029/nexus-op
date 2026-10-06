@@ -187,6 +187,11 @@ async function scopeProjectAccess(req, res, next) {
   if (isCrossTenant(req.user?.role)) return next();
   const pid = req.query.projectId || (req.body && req.body.projectId);
   if (!pid) return next(); // not a project-scoped request
+  /* 0 is how a screen with no project selected asks for "nothing" (so
+     the list cannot quietly widen to every project). It owns nothing and
+     matches nothing — an empty list, not a 404 that every project screen
+     reported as a failed request. */
+  if (String(pid) === '0' && req.method === 'GET') return next();
   try {
     const { rows } = await db.query('SELECT owner_id FROM projects WHERE id = $1', [pid]);
     if (!rows[0]) return res.status(404).json({ error: 'Project not found' });
@@ -1875,5 +1880,10 @@ app.listen(PORT, () => {
     'PATCH /bills/:id/(submit|approve|pay)', 'GET /activities', 'GET /dashboard'
   ].join(' · ')}`);
   // Recurring transactions + overdue-invoice reminders run on an in-process schedule.
-  try { recurringController.startScheduler(); } catch (e) { console.error('scheduler start failed:', e.message); }
+  /* SCHEDULER=off for a local copy pointed at the shared database — a test
+     run should never be the thing that generates real customers' documents. */
+  if (process.env.SCHEDULER === 'off') console.log('[scheduler] off (SCHEDULER=off)');
+  else {
+    try { recurringController.startScheduler(); } catch (e) { console.error('scheduler start failed:', e.message); }
+  }
 });

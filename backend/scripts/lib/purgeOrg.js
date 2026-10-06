@@ -69,6 +69,23 @@ async function purgeOrg(db, ownerIds) {
     }
   }
 
+  /* Rows that point at the USER by some other column — notifications.user_id
+     is the one today. They are not owned rows, so nothing above reaches
+     them, and they hold the account in place: the test passes, then its
+     cleanup fails on the last DELETE. Read from the foreign keys, again,
+     so the next such column is covered without anyone remembering it. */
+  const { rows: userRefs } = await db.query(
+    `SELECT tc.table_name AS t, kcu.column_name AS col
+       FROM information_schema.table_constraints tc
+       JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name
+       JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name
+      WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+        AND ccu.table_name = 'users' AND kcu.column_name <> 'owner_id'`
+  );
+  for (const r of userRefs) {
+    await db.query(`DELETE FROM ${r.t} WHERE "${r.col}" = ANY($1)`, [ids]).catch(() => {});
+  }
+
   /* At most one pass per table: each round must clear at least one or
      there is a cycle, and looping further would not help. */
   for (let round = 0; round < pending.length + 1 && pending.length; round++) {
