@@ -221,12 +221,25 @@ export const DocMorph = ({ on, from = 'QT', to = 'SO', tone = 'var(--brand-amber
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       {[from, null, to].map((t, i) =>
         t === null ? (
-          <div key="arrow" style={{ position: 'relative', width: 38, height: 2, background: 'var(--border-emphasis)' }}>
+          /* The dot rides a full-width RAIL that translates 100% — i.e. the
+             line's own width. It used to animate the 8px dot directly with the
+             engine's seven-stop keyframes, so translateX(100%) meant eight
+             pixels: across a 38px line it shuffled a fifth of the way in seven
+             jerks. clip on X keeps the rail inside the line; visible on Y lets
+             the dot sit above and below a 2px stroke. */
+          <div key="arrow" style={{
+            position: 'relative', width: 38, height: 2, background: 'var(--border-emphasis)',
+            overflowX: 'clip', overflowY: 'visible',
+          }}>
             <div className="mk-pulse" style={{
-              ...anim('mk-pulse-travel', on, 0, 'linear'),
-              position: 'absolute', top: -3, width: 8, height: 8, borderRadius: '50%',
-              background: tone, boxShadow: `0 0 8px 2px ${tone}`, opacity: 0, marginLeft: -4,
-            }} />
+              ...anim('mk-rail-travel', on, 0, 'cubic-bezier(.65,0,.35,1)'),
+              position: 'absolute', left: 0, top: 0, width: '100%', height: 0, opacity: 0,
+            }}>
+              <span style={{
+                position: 'absolute', left: -4, top: -3, width: 8, height: 8, borderRadius: '50%',
+                background: tone, boxShadow: `0 0 8px 2px ${tone}`,
+              }} />
+            </div>
           </div>
         ) : (
           <div key={t} style={{

@@ -146,7 +146,7 @@ const CatalogueShowcase = () => {
             }}>
               <Store size={10} style={{ color: 'var(--brand-amber)', flexShrink: 0 }} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                your-company.maksops.co.in/catalogue
+                maksops.co.in/c/your-company
               </span>
             </div>
             <span style={{
