@@ -14,6 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
+import Attachments from '../components/Attachments';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, ComplianceWarning, fmtDate,
 } from '../components/DocumentKit';
@@ -62,7 +63,7 @@ export default function CreditDebitNoteDoc() {
 
       <div className="no-print"><ComplianceWarning gaps={gaps} /></div>
 
-      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 32 }}>
+      <div className="doc-sheet" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 32 }}>
         <CompanyHeader
           company={co}
           title={title}
@@ -81,10 +82,11 @@ export default function CreditDebitNoteDoc() {
           </div>
           <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap', fontSize: '0.85rem' }}>
             <span>Number: <strong style={{ fontFamily: 'var(--font-mono)' }}>
-              {n.ref_number || <em style={{ color: '#dc2626', fontFamily: 'inherit' }}>not referenced</em>}
+              {/* Red is for the person preparing it; on paper it is a blank. */}
+              {n.ref_number || <><em className="print:hidden" style={{ color: '#dc2626', fontFamily: 'inherit' }}>not referenced</em><span className="print-only">—</span></>}
             </strong></span>
             <span>Dated: <strong>
-              {n.ref_date ? fmtDate(n.ref_date) : <em style={{ color: '#dc2626', fontWeight: 400 }}>not recorded</em>}
+              {n.ref_date ? fmtDate(n.ref_date) : <><em className="print:hidden" style={{ color: '#dc2626', fontWeight: 400 }}>not recorded</em><span className="print-only">—</span></>}
             </strong></span>
             {n.ref_type && <span style={{ color: 'var(--text-muted)' }}>({String(n.ref_type).replace(/_/g, ' ')})</span>}
           </div>
@@ -151,6 +153,12 @@ export default function CreditDebitNoteDoc() {
 
         <SignatureBlock company={co} />
         <DocFooter company={co} right={n.note_number} />
+      </div>
+
+      {/* Files that belong with this note — the debit note or letter from
+          the customer, the return challan. Never printed. */}
+      <div className="print:hidden no-print" style={{ marginTop: 16 }}>
+        <Attachments entityType="credit_debit_note" entityId={id} label="Documents" compact />
       </div>
     </div>
   );

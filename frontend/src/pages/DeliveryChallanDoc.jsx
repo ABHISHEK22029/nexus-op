@@ -17,6 +17,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Truck, AlertTriangle, Mail } from 'lucide-react';
 import EmailDocumentModal from '../components/EmailDocumentModal';
+import Attachments from '../components/Attachments';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate,
 } from '../components/DocumentKit';
@@ -82,7 +83,7 @@ export default function DeliveryChallanDoc() {
         </div>
       )}
 
-      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 32 }}>
+      <div className="doc-sheet" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 32 }}>
         <CompanyHeader
           company={co}
           title="DELIVERY CHALLAN"
@@ -166,6 +167,11 @@ export default function DeliveryChallanDoc() {
         <SignatureBlock company={co} receiver="Received the goods in good condition (name, sign & date)" />
         <DocFooter company={co} right={dc.challan_number} note="Goods once dispatched are transported at the consignee's risk unless otherwise agreed." />
       </div>
+      {/* Files that belong with this document — the signed delivery receipt, the e-way bill. Never printed. */}
+      <div className="print:hidden no-print" style={{ marginTop: 16 }}>
+        <Attachments entityType="delivery_challan" entityId={id} label="Documents" compact />
+      </div>
+
       {emailing && (
         <EmailDocumentModal
           kind="challan"
@@ -183,11 +189,15 @@ export default function DeliveryChallanDoc() {
   );
 }
 
+/* `warn` is a note to the person preparing the challan, not to the
+   customer: on screen the box goes red and says "required"; on paper it is
+   an ordinary empty field, because a red "required" printed on a document
+   that has already left the yard helps nobody. */
 const Meta = ({ box, label, value, mono, warn }) => (
-  <div style={{ ...box, ...(warn ? { borderColor: '#dc2626' } : null) }}>
+  <div className={warn ? 'doc-warn' : undefined} style={{ ...box, ...(warn ? { borderColor: '#dc2626' } : null) }}>
     <div style={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>{label}</div>
     <div style={{ fontWeight: 600, fontFamily: mono ? 'var(--font-mono)' : undefined, color: warn ? '#dc2626' : undefined }}>
-      {value || (warn ? 'required' : '—')}
+      {value || (warn ? <><span className="print:hidden">required</span><span className="print-only">—</span></> : '—')}
     </div>
   </div>
 );

@@ -121,3 +121,102 @@
   }
   .inv-sheet, .doc-sheet { border: 0 !important; border-radius: 0 !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Paper sizes.
+
+   Everything above got the right things onto the sheet. What it did not
+   do is change their SIZE, so every document printed at screen size: 11–12
+   point item text inside 20px of padding, rows two and a half centimetres
+   tall, and a 40-line quotation running to five pages — eight lines a page.
+   That is the "it does not print in the correct manner" complaint, and the
+   "shrink" it asks for: an Indian quotation or tax invoice is a compact,
+   9-point document with 25–30 lines to a page, and that is what goes out.
+
+   Two families of document share these rules: the black-and-white
+   `.invoice-mock` (invoice, PO, purchase bill) and the DocumentKit
+   `.doc-sheet` (quotation, challan, credit/debit note). Inline styles on
+   the screen layout are the reason for the !important — a stylesheet rule
+   only beats an inline style that way.
+
+   Measured, not guessed: scripts/test-print-layout.cjs prints every
+   document type and counts lines per page.
+   ══════════════════════════════════════════════════════════════════════ */
+.print-only { display: none; }
+
+@media print {
+  .print-only { display: inline !important; }
+
+  /* The light theme draws a 3px orange accent bar with position:fixed —
+     and a fixed element is repeated on EVERY printed sheet. */
+  body::before { display: none !important; content: none !important; }
+
+  /* The sheet IS the page: no screen card, no padding, no shadow. */
+  .doc-sheet {
+    padding: 0 !important; background: #fff !important; box-shadow: none !important;
+    border: 0 !important; border-radius: 0 !important;
+  }
+  /* The invoice keeps its black frame — it is part of that design — but
+     drawn whole on every sheet rather than left open where the page breaks. */
+  .invoice-mock {
+    max-width: none !important; box-shadow: none !important; border-radius: 0 !important;
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  }
+
+  .doc-sheet, .invoice-mock { font-size: 9pt !important; line-height: 1.35 !important; }
+
+  /* Item tables: 8.5pt text, 3–5pt padding. */
+  .doc-sheet table th, .doc-sheet table td,
+  .invoice-mock table th, .invoice-mock table td {
+    padding: 3.5pt 5pt !important; line-height: 1.3 !important;
+  }
+  .doc-sheet table td, .invoice-mock table td { font-size: 8.5pt !important; }
+  .doc-sheet table th, .invoice-mock table th { font-size: 7pt !important; letter-spacing: .04em !important; }
+
+  /* Letterhead and title */
+  .inv-header { padding: 0 0 8pt !important; margin-bottom: 8pt !important; }
+  .invoice-mock .inv-header { padding: 8pt 10pt !important; margin-bottom: 0 !important; }
+  .inv-company-name { font-size: 13pt !important; margin-bottom: 2pt !important; }
+  .inv-company-detail { font-size: 7.5pt !important; line-height: 1.45 !important; }
+  .inv-po-title { font-size: 12pt !important; letter-spacing: .06em !important; white-space: nowrap !important; margin-bottom: 4pt !important; }
+  .inv-meta-row { font-size: 8pt !important; margin-bottom: 1.5pt !important; }
+
+  /* Parties */
+  .inv-party { padding: 5pt 8pt !important; }
+  .inv-party-title { margin: -5pt -8pt 4pt !important; padding: 2.5pt 8pt !important; font-size: 6.5pt !important; }
+  .inv-party-name { font-size: 9pt !important; margin-bottom: 1pt !important; }
+  .inv-party-detail { font-size: 7.5pt !important; line-height: 1.4 !important; }
+
+  /* Totals, words, terms, signature, footer */
+  .inv-totals-section { padding: 6pt 10pt 0 !important; }
+  .doc-sheet .inv-totals-section { padding: 6pt 0 0 !important; }
+  .inv-notes { font-size: 7.5pt !important; line-height: 1.45 !important; }
+  .inv-totals-table td { padding: 2.5pt 6pt !important; font-size: 8.5pt !important; }
+  .inv-totals-table .tv { font-size: 8.5pt !important; }
+  .inv-totals-table .tf td { font-size: 9.5pt !important; }
+  .inv-amount-words { margin: 6pt 10pt !important; padding: 4pt 8pt !important; font-size: 8pt !important; }
+  .doc-sheet .inv-amount-words { margin: 6pt 0 !important; }
+  .inv-terms-grid { margin: 6pt 10pt 0 !important; }
+  .inv-term-cell { padding: 4pt 7pt !important; }
+  .inv-term-header { font-size: 6.5pt !important; }
+  .inv-term-value { font-size: 8pt !important; }
+  .inv-sig { padding: 6pt 10pt !important; }
+  .inv-sig-line { margin: 16pt auto 3pt !important; }
+  .inv-sig-label, .inv-sig-company { font-size: 8pt !important; }
+  .inv-footer { padding: 4pt 10pt !important; }
+  .inv-footer-left, .inv-footer-right { font-size: 7pt !important; }
+
+  /* DocumentKit's boxed fields (dispatch, vehicle, e-way bill …) */
+  .doc-sheet [style*="border-radius"] { border-radius: 3pt !important; }
+  .doc-warn { border-color: #d1d5db !important; }
+  .doc-warn * { color: #000 !important; }
+
+  /* Anything set in rem for the screen: bring it to paper scale. */
+  .doc-sheet h1, .doc-sheet h2, .doc-sheet h3 { font-size: 11pt !important; }
+}
+
+@media print {
+  /* The Rule 46 facts line on the invoice: place of supply, reverse
+     charge, e-way bill, order and PO references. */
+  .inv-facts { padding: 4pt 10pt !important; font-size: 8pt !important; gap: 14pt !important; }
+}

@@ -16,6 +16,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, ArrowRightLeft, Clock , Mail} from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import EmailDocumentModal from '../components/EmailDocumentModal';
+import Attachments from '../components/Attachments';
 import {
   CompanyHeader, Party, BankBox, TermsBox, SignatureBlock, DocFooter,
   NotATaxInvoice, ComplianceWarning, complianceGaps, rup, fmtDate,
@@ -130,7 +131,7 @@ export default function SalesQuotationDoc() {
         </div>
       )}
 
-      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 32 }}>
+      <div className="doc-sheet" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 32 }}>
         <CompanyHeader
           company={co}
           title="QUOTATION"
@@ -257,6 +258,11 @@ export default function SalesQuotationDoc() {
         <SignatureBlock company={co} />
         <DocFooter company={co} right={q.quote_number} />
       </div>
+      {/* Files that belong with this document — the customer's enquiry or drawing, a signed acceptance. Never printed. */}
+      <div className="print:hidden no-print" style={{ marginTop: 16 }}>
+        <Attachments entityType="sales_quotation" entityId={id} label="Documents" compact />
+      </div>
+
       {emailing && (
         <EmailDocumentModal
           kind="quotation"

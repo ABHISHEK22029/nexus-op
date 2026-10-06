@@ -61,6 +61,18 @@ for (const file of SCREENS) {
     const t = norm(m[1] || m[2] || '');
     if (UNIT.test(t) || QTY.test(t) || RATE.test(t) || TOTAL.test(t)) cols.push(t);
   }
+  /* A screen that draws its item table from DOCUMENT_LAYOUTS has no
+     headings in its own source — they are the layout's column labels, in
+     the layout's order. Read them there, or every such screen reads as
+     "no line-item columns found". */
+  if (!cols.length && /DOCUMENT_LAYOUTS/.test(src)) {
+    const layout = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'documentLayout.js'), 'utf8');
+    const block = (layout.match(/const ITEM_COLUMNS = \[([\s\S]*?)\];/) || [])[1] || '';
+    for (const m of block.matchAll(/label:\s*'([^']+)'/g)) {
+      const t = norm(m[1]);
+      if (UNIT.test(t) || QTY.test(t) || RATE.test(t) || TOTAL.test(t)) cols.push(t);
+    }
+  }
   if (!cols.length) { problems.push({ file, why: 'no line-item columns found' }); continue; }
 
   const at = re => cols.findIndex(c => re.test(c));

@@ -44,7 +44,7 @@ const { ACTION_FOR_METHOD, allow } = require('./middleware/permissions');
 const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
 const { andOwner } = require('./shared/ownerScope');
-const { docNumber, loadProfile } = require('./shared/docNumber');
+const { docNumber, loadProfile, nextSeq } = require('./shared/docNumber');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -609,14 +609,30 @@ app.get('/po/:id', async (req, res) => {
         && String(rows[0].owner_id ?? '') !== String(req.user?.orgId ?? req.user?.id ?? '')) {
       return res.status(404).json({ error: 'PO not found' });
     }
-    res.json(rows[0]);
+    /* The letterhead travels with the document, as it does for invoices.
+       The PO screen read /company-profile for it, which Sales and
+       Procurement are not granted — so for the people who raise purchase
+       orders, opening one said "Purchase Order not found". */
+    let company = null;
+    try { company = await profileFor(db, rows[0].owner_id); } catch { /* optional */ }
+    res.json({ ...rows[0], company });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+/* The PO itself is owner-checked (above); its lines were not, so any
+   signed-in company could read another's prices by counting ids — and the
+   POST below could REPLACE them. Same check, same 404, for both. */
+async function ownsPo(req, poId) {
+  if (isCrossTenant(req.user?.role)) return true;
+  const { rows } = await db.query('SELECT owner_id FROM purchase_orders WHERE id = $1', [poId]);
+  return !!rows[0] && String(rows[0].owner_id ?? '') === String(req.user?.orgId ?? req.user?.id ?? '');
+}
+
 app.get('/po/:id/items', async (req, res) => {
   try {
+    if (!(await ownsPo(req, req.params.id))) return res.status(404).json({ error: 'PO not found' });
     const { rows } = await db.query(
       `SELECT * FROM po_line_items WHERE "poId" = $1 ORDER BY sno ASC`, [req.params.id]
     );
@@ -637,9 +653,22 @@ app.post('/po', async (req, res) => {
        `Kirashi/FY2026-27/007` from a string literal, so every organisation
        issued purchase orders carrying another company's name — to their own
        vendors — under a financial year that would never roll over. */
-    const countRes = await db.query('SELECT COUNT(*) FROM purchase_orders WHERE "projectId" = $1', [projectId]);
-    const nextSeq = parseInt(countRes.rows[0].count) + 1;
-    const poNumber = docNumber({ profile: await loadProfile(db), seq: nextSeq });
+    /* And it still read the profile with no owner — `LIMIT 1` over every
+       organisation — and counted POs per project, so two projects both
+       issued /001 and every business's numbers carried whichever company's
+       profile happened to come back first. Now: this organisation's own
+       profile, the locked counter every other document uses, and never a
+       number this business has already issued. */
+    const poOwner = req.user?.orgId ?? req.user?.id ?? null;
+    const profile = await loadProfile(db, poOwner);
+    let poNumber = null;
+    for (let i = 0; i < 50 && !poNumber; i++) {
+      const seq = await nextSeq(db, { ownerId: poOwner, docType: 'purchase_order', fyStart: profile.fyStart });
+      const candidate = docNumber({ profile, seq });
+      const clash = await db.query('SELECT 1 FROM purchase_orders WHERE owner_id = $1 AND "poNumber" = $2 LIMIT 1', [poOwner, candidate]);
+      if (!clash.rowCount) poNumber = candidate;
+    }
+    if (!poNumber) return res.status(409).json({ error: 'Could not find a free purchase order number.' });
 
     const { rows } = await db.query(
       `INSERT INTO purchase_orders (
@@ -672,6 +701,7 @@ app.post('/po/:id/items', async (req, res) => {
   if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'Items required' });
 
   try {
+    if (!(await ownsPo(req, poId))) return res.status(404).json({ error: 'PO not found' });
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
