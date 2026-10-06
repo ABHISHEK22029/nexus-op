@@ -7,12 +7,27 @@ const db = require('../db');
 const { assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 
+/* The records a file can be attached to, and the table each lives in.
+   An upload used to accept any type and any id, so a file could be hung on
+   another company's invoice by guessing its number. Nothing leaked — the
+   list is owner-scoped, so they never saw it — but the record has to be
+   yours to attach to it. */
+const ENTITY_TABLES = {
+  customer: 'customers', expense: 'expenses', raw_material: 'raw_materials', sku: 'skus',
+  sales_quotation: 'sales_quotations', sales_invoice: 'sales_invoices', purchase_order: 'purchase_orders',
+  delivery_challan: 'delivery_challans', credit_debit_note: 'credit_debit_notes', grn_bill: 'grn_bills',
+};
+
 // POST /attachments  (multipart: file + entityType + entityId)
 exports.create = async (req, res) => {
   const { entityType, entityId } = req.body;
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   if (!entityType || !entityId) return res.status(400).json({ error: 'entityType and entityId are required' });
+  const table = ENTITY_TABLES[entityType];
+  if (!table) return res.status(400).json({ error: `Files cannot be attached to "${entityType}".` });
+  if (!/^\d+$/.test(String(entityId))) return res.status(400).json({ error: 'entityId must be a record id' });
   try {
+    if (!await assertOwned(db, req, res, table, entityId, { columns: 'id' })) return;
     const { rows } = await db.query(
       `INSERT INTO attachments (owner_id, entity_type, entity_id, filename, mime, size_bytes, data)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
