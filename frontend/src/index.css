@@ -782,7 +782,10 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 [data-theme="light"] thead tr { background-color: hsl(36, 22%, 93%) !important; }
 [data-theme="light"] thead th { color: hsl(218, 20%, 40%) !important; }
 [data-theme="light"] tbody tr:hover { background-color: hsl(36, 20%, 97%) !important; }
-[data-theme="light"] tbody td { color: hsl(220, 20%, 28%) !important; border-color: hsl(32, 20%, 89%) !important; }
+/* Default cell text, but not !important: a cell that sets its own colour
+   (green for the best price, amber for a warning, grey for "not quoted")
+   is saying something, and the theme was painting over it. */
+[data-theme="light"] tbody td { color: hsl(220, 20%, 28%); border-color: hsl(32, 20%, 89%) !important; }
 [data-theme="light"] input[type="text"], [data-theme="light"] input[type="number"], [data-theme="light"] input[type="date"], [data-theme="light"] input[type="email"], [data-theme="light"] select, [data-theme="light"] textarea { background-color: hsl(0, 0%, 100%) !important; border-color: hsl(30, 18%, 82%) !important; color: hsl(220, 35%, 15%) !important; }
 [data-theme="light"] input::placeholder, [data-theme="light"] textarea::placeholder { color: hsl(218, 12%, 58%) !important; }
 [data-theme="light"] select option { background-color: hsl(0, 0%, 100%); color: hsl(220, 35%, 15%); }
