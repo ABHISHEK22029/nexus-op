@@ -7,7 +7,7 @@
 const db = require('../db');
 const { isInterstate } = require('../shared/gstStates');
 const { profileFor } = require('../shared/companyProfile');
-const { nextSeq } = require('../shared/docNumber');
+const { allocate } = require('../shared/docSeries');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
@@ -124,16 +124,13 @@ exports.create = async (req, res) => {
     const sgst = interstate ? 0 : r2(gstTotal - cgst);
     const igst = interstate ? gstTotal : 0;
     const total = r2(subTotal + gstTotal);
-    const prefix = noteType === 'credit' ? 'CN' : 'DN';
-    /* Credit and debit notes run separate series, so the document type
-       carries the note type with it. */
-    const num = `${prefix}-${String(await nextSeq(client, {
-      ownerId: req.user?.orgId, docType: `note_${noteType}`,
-    })).padStart(4, '0')}`;
+    /* Credit and debit notes run separate series (CN-, DN- unless the
+       business set its own), so the document type carries the note type. */
+    const num = await allocate(client, { ownerId: req.user?.orgId, docType: `note_${noteType}` });
     const { rows } = await client.query(
       `INSERT INTO credit_debit_notes (owner_id, note_type, party_type, party_id, ref_type, ref_id, ref_number, note_number, note_date, reason,
          sub_total, gst_rate, interstate, cgst, sgst, igst, gst_total, total, amount_in_words, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::date, CURRENT_DATE),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
       [req.user?.orgId || null, noteType, partyType, partyId, refType || null, refId || null, refNumber || null, num, noteDate || null, reason || null,
        subTotal, gstRate || 0, interstate, cgst, sgst, igst, gstTotal, total, amountInWords(total), notes || null]);
     const nid = rows[0].id;

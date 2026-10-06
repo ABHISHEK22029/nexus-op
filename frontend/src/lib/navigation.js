@@ -190,6 +190,7 @@ export const MODULES = [
     items: [
       { group: 'Company' },
       { label: 'Company profile', path: '/company-profile', resource: 'company-profile' },
+      { label: 'Document numbering', path: '/document-numbering', resource: 'company-profile' },
       { label: 'Automation', path: '/automation', resource: 'automation-settings' },
       { group: 'People' },
       { label: 'Team', path: '/users', resource: 'users' },

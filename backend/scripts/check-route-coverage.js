@@ -49,6 +49,7 @@ const ADMIN_ONLY = new Set(['admin']);
    so this cannot drift into hiding a real orphan. */
 const ALIASES = new Map([
   ['vendor-quotations', 'quotations'],
+  ['document-series', 'company-profile'],
 ]);
 
 for (const [from, to] of ALIASES) {

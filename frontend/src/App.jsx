@@ -43,6 +43,7 @@ const Users = lazy(() => import('./pages/Users'));
 const ImportData = lazy(() => import('./pages/Import'));
 const Automation = lazy(() => import('./pages/Automation'));
 const CompanyProfile = lazy(() => import('./pages/CompanyProfile'));
+const DocumentNumbering = lazy(() => import('./pages/DocumentNumbering'));
 const Configurator = lazy(() => import('./pages/Configurator'));
 const MaterialRequirements = lazy(() => import('./pages/MaterialRequirements'));
 const VendorSupplies = lazy(() => import('./pages/VendorSupplies'));
@@ -251,6 +252,7 @@ const AppRoutes = () => {
       <Route path="/import"            element={<AppLayout><ImportData /></AppLayout>} />
       <Route path="/automation"        element={<AppLayout><Automation /></AppLayout>} />
       <Route path="/company-profile"   element={<AppLayout><CompanyProfile /></AppLayout>} />
+      <Route path="/document-numbering" element={<AppLayout><DocumentNumbering /></AppLayout>} />
       <Route path="/material-requirements" element={<AppLayout><MaterialRequirements /></AppLayout>} />
       <Route path="/items"           element={<AppLayout><Items /></AppLayout>} />
       {/* Vendor Supplies folded into the Vendors screen as a tab. Kept as a

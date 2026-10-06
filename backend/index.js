@@ -16,6 +16,7 @@ const productionController = require('./controllers/ProductionController');
 const salesController = require('./controllers/SalesController');
 const grnBillController = require('./controllers/GrnBillController');
 const salesInvoiceController = require('./controllers/SalesInvoiceController');
+const documentSeriesController = require('./controllers/DocumentSeriesController');
 const attachmentController = require('./controllers/AttachmentController');
 const recurringController = require('./controllers/RecurringController');
 const aiController = require('./controllers/AiController');
@@ -258,6 +259,11 @@ app.use((req, res, next) => {
      resource name is not just a code change; it is a migration for every
      installation.) */
   if (segment === 'vendor-quotations') segment = 'quotations';
+
+  /* How documents are numbered is part of the company's own set-up, so it
+     is held by whoever may edit the company profile — the same reasoning
+     as vendor-quotations above: no new resource name to migrate. */
+  if (segment === 'document-series') segment = 'company-profile';
 
   /* `/admin` is not one resource, and matching on the first segment alone
      treated it as one.
@@ -1509,6 +1515,10 @@ app.delete('/grn-bills/:id',           grnBillController.remove);
 
 /* ── Customer Sales Invoices + payments ── */
 app.get('/sales-invoices/prefill/:customerOrderId', salesInvoiceController.prefill);  // before :id
+app.get('/sales-invoices/next-number',  salesInvoiceController.nextNumber);         // before :id
+app.get('/sales-invoices/prefill-customer/:customerId', salesInvoiceController.prefillCustomer);  // before :id
+app.get('/document-series',             documentSeriesController.list);
+app.put('/document-series/:docType',    documentSeriesController.update);
 app.get('/sales-invoices',             salesInvoiceController.list);
 app.post('/sales-invoices',            salesInvoiceController.create);
 app.get('/sales-invoices/:id',         salesInvoiceController.getById);

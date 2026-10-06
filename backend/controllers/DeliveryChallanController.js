@@ -5,7 +5,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { profileFor } = require('../shared/companyProfile');
-const { nextSeq } = require('../shared/docNumber');
+const { allocate } = require('../shared/docSeries');
 const stock = require('../shared/stock');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
@@ -90,9 +90,7 @@ exports.create = async (req, res) => {
     const totalValue = r2(lines.reduce((s, l) => s + l.amount, 0));
     /* A challan number travels with the goods under Rule 55, so two loads
        carrying the same one is a real problem at a checkpoint. */
-    const num = `DC-${String(await nextSeq(client, {
-      ownerId: req.user?.orgId, docType: 'delivery_challan',
-    })).padStart(4, '0')}`;
+    const num = await allocate(client, { ownerId: req.user?.orgId, docType: 'delivery_challan' });
     const { rows } = await client.query(
       `INSERT INTO delivery_challans (owner_id, customer_id, customer_order_id, challan_number, challan_date,
          dispatch_through, vehicle_no, lr_no, place_of_supply, total_value, notes)

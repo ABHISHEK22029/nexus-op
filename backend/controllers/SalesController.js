@@ -8,6 +8,7 @@ const db = require('../db');
 const { profileFor } = require('../shared/companyProfile');
 const { computeOrder } = require('../shared/orderTotals');
 const { docNumber, loadProfile, nextSeq } = require('../shared/docNumber');
+const { allocate } = require('../shared/docSeries');
 const { isInterstate } = require('../shared/gstStates');
 const { amountInWords } = require('../shared/amountInWords');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
@@ -81,9 +82,7 @@ exports.createOrder = async (req, res) => {
     /* This one was already owner-scoped, which is why it looked safe — but a
        count still reissues a number after a delete, and two people creating
        at once both read it before either commits. */
-    const orderNumber = `CO-${String(await nextSeq(client, {
-      ownerId: req.user?.orgId, docType: 'customer_order',
-    })).padStart(4, '0')}`;
+    const orderNumber = await allocate(client, { ownerId: req.user?.orgId, docType: 'customer_order' });
 
     const { rows } = await client.query(
       `INSERT INTO customer_orders

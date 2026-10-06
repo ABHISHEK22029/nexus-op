@@ -10,7 +10,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { profileFor } = require('../shared/companyProfile');
-const { nextSeq } = require('../shared/docNumber');
+const { allocate } = require('../shared/docSeries');
 const { assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { notify } = require('../notify');
@@ -144,9 +144,7 @@ async function generateInvoice(client, p) {
      would be watching for: a recurring invoice generated at the same moment
      somebody raised one by hand would have taken the same number. The owner
      comes from the recurring profile, since there is no request behind this. */
-  const invNumber = `INV-${String(await nextSeq(client, {
-    ownerId: p.owner_id, docType: 'sales_invoice',
-  })).padStart(4, '0')}`;
+  const invNumber = await allocate(client, { ownerId: p.owner_id, docType: 'sales_invoice' });
   const { rows } = await client.query(
     `INSERT INTO sales_invoices (owner_id, customer_id, invoice_number, invoice_date, due_date,
        sub_total, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes, status)

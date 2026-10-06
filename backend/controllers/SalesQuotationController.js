@@ -7,7 +7,7 @@
 const db = require('../db');
 const { isInterstate } = require('../shared/gstStates');
 const { profileFor } = require('../shared/companyProfile');
-const { nextSeq } = require('../shared/docNumber');
+const { allocate, noteUsed } = require('../shared/docSeries');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
@@ -136,9 +136,7 @@ exports.create = async (req, res) => {
     const t = compute(items, { discount, gstRate, interstate, roundOff });
     /* From a sequence, not a count. COUNT(*) + 1 reissues a number after a
        delete and hands the same one to two people creating at once. */
-    const qnum = `QT-${String(await nextSeq(client, {
-      ownerId: req.user?.orgId, docType: 'quotation',
-    })).padStart(4, '0')}`;
+    const qnum = await allocate(client, { ownerId: req.user?.orgId, docType: 'quotation' });
     const { rows } = await client.query(
       `INSERT INTO sales_quotations (owner_id, customer_id, quote_number, quote_date, valid_until,
          sub_total, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes, terms)
@@ -242,6 +240,9 @@ exports.update = async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: `Quotation number ${req.body.quote_number} is already used.` });
       }
+      /* Same as invoices: a renamed number that fits the series moves the
+         counter on, so the next quotation follows it. */
+      await noteUsed(client, { ownerId: q.owner_id, docType: 'quotation', number: req.body.quote_number });
     }
 
     const set = {};
@@ -312,9 +313,7 @@ exports.convertToOrder = async (req, res) => {
     const items = (await client.query('SELECT * FROM sales_quotation_items WHERE sales_quotation_id = $1 ORDER BY sort_order', [q.id])).rows;
     if (!items.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Quotation has no line items' }); }
 
-    const onum = `CO-${String(await nextSeq(client, {
-      ownerId: req.user?.orgId, docType: 'customer_order',
-    })).padStart(4, '0')}`;
+    const onum = await allocate(client, { ownerId: req.user?.orgId, docType: 'customer_order' });
 
     /* Carry the money across, not just the lines.
 
