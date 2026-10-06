@@ -1527,6 +1527,7 @@ app.get('/vendor-quotations/compare',     vendorQuotationController.compare);
 app.get('/vendor-quotations',             vendorQuotationController.list);
 app.get('/vendor-quotations/:id/file',    vendorQuotationController.file);
 app.get('/vendor-quotations/:id',         vendorQuotationController.getById);
+app.put('/vendor-quotations/:id',         vendorQuotationController.update);
 app.delete('/vendor-quotations/:id',      vendorQuotationController.remove);
 
 app.get('/attachments/:id/download', attachmentController.download);
