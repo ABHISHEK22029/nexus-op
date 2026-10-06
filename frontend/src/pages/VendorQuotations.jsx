@@ -496,6 +496,11 @@ function Comparison({ cmp, onClose, onOpen }) {
                   return (
                     <td key={q.id} style={{ ...S.num, color: cell ? (best ? '#16a34a' : 'var(--text-primary)') : 'var(--text-disabled)', fontWeight: best ? 800 : 500 }}>
                       {cell ? rup(cell.rate ?? cell.amount) : 'not quoted'}
+                      {/* No rate in their file, only the line's total: say so, or
+                          ₹46,800 reads as a price per kg beside ₹283. */}
+                      {cell && cell.rate == null && cell.amount != null && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>line total, no rate given</div>
+                      )}
                       {cell && !TRUSTED.has(cell.confidence) && (
                         <span title="Read from text rather than a table cell — check the original" style={{ marginLeft: 4, color: '#b45309' }}>*</span>
                       )}

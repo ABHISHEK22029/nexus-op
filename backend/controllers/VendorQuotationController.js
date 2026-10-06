@@ -233,9 +233,13 @@ exports.compare = async (req, res) => {
       const units = new Set(cells.map(([, v]) => unitOf(v.uom)).filter(Boolean));
       const unitsDiffer = units.size > 1;
       for (const [, v] of cells) v.comparable = v.rate != null && qty != null ? r2(v.rate * qty) : v.amount;
+      /* Ranked on the like-for-like value — rate × the same quantity, or
+         the line's amount when a vendor gave no rate. Ranking a rate
+         (₹283/kg) against another vendor's line total (₹46,800) made the
+         vendor without a rate column lose every row it was cheapest on. */
       const priced = cells
-        .filter(([, v]) => v.rate != null || v.amount != null)
-        .map(([qid, v]) => ({ qid: Number(qid), value: v.rate ?? v.amount }));
+        .filter(([, v]) => v.comparable != null)
+        .map(([qid, v]) => ({ qid: Number(qid), value: v.comparable }));
       /* Rates in different units are not comparable — per kg against per
          tonne would crown the wrong vendor a thousand times over — so such
          a row names no winner, and the caveat says why. */
@@ -247,7 +251,13 @@ exports.compare = async (req, res) => {
         unitsDiffer,
         quotedBy: priced.length,
         missingFrom: quotes.filter(q => !row.by[q.id]).map(q => q.id),
-        bestValue: best,
+        /* the winner's own rate (its line total when it gave no rate) —
+           what a person reads as "the best price" */
+        bestValue: best == null ? null : (() => {
+          const w = priced.find(p => p.value === best);
+          const cell = w && row.by[w.qid];
+          return cell ? (cell.rate ?? cell.amount) : null;
+        })(),
         bestQuotationIds: best == null ? [] : priced.filter(p => p.value === best).map(p => p.qid),
         spreadPct: best && priced.length > 1
           ? r2((Math.max(...priced.map(p => p.value)) - best) / best * 100) : null,
