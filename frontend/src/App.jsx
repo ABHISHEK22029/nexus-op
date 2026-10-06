@@ -225,7 +225,9 @@ const AppRoutes = () => {
       <Route path="/customer-orders" element={<AppLayout><CustomerOrders /></AppLayout>} />
       <Route path="/customer-orders/:coId/invoice" element={<AppLayout><SalesInvoiceBuilder /></AppLayout>} />
       <Route path="/sales-invoices"  element={<AppLayout><SalesInvoices /></AppLayout>} />
+      <Route path="/sales-invoices/new" element={<AppLayout><SalesInvoiceBuilder /></AppLayout>} />
       <Route path="/sales-invoices/:id" element={<AppLayout><SalesInvoiceDoc /></AppLayout>} />
+      <Route path="/sales-invoices/:id/edit" element={<AppLayout><SalesInvoiceBuilder /></AppLayout>} />
       <Route path="/skus"            element={<AppLayout><SKUs /></AppLayout>} />
       <Route path="/raw-materials"   element={<AppLayout><RawMaterials /></AppLayout>} />
       <Route path="/quotations"      element={<AppLayout><Quotations /></AppLayout>} />

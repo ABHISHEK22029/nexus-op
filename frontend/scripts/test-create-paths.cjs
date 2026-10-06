@@ -49,11 +49,11 @@ const NAME = `MSTEST-${Date.now().toString(36).toUpperCase()}`;
   await sleep(1800);
 
   ok(await page.evaluate(() =>
-    [...document.querySelectorAll('button')].some(b => /raise invoice/i.test(b.innerText))),
-    'a "Raise invoice" button is on the page');
+    [...document.querySelectorAll("button")].some(b => /invoice an order/i.test(b.innerText))),
+    'an "Invoice an order" button is on the page');
 
   await page.evaluate(() => {
-    [...document.querySelectorAll('button')].find(b => /raise invoice/i.test(b.innerText))?.click();
+    [...document.querySelectorAll("button")].find(b => /invoice an order/i.test(b.innerText))?.click();
   });
   await sleep(1500);
 

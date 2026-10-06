@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import CompanyLogo from '../components/CompanyLogo';
 import InlineEdit from '../components/InlineEdit';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail } from 'lucide-react';
+import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail, Pencil } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import EmailDocumentModal from '../components/EmailDocumentModal';
+import Attachments from '../components/Attachments';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -50,6 +51,18 @@ export default function SalesInvoiceDoc() {
   };
 
   const isDraft = inv?.status === 'Draft';
+  /* An issued invoice with nothing received against it can still be taken
+     back to draft and corrected — the status menu always allowed it, but
+     nothing said so, and the padlock on the number read as "this cannot be
+     done at all". Once money has come in, the correction is a credit or
+     debit note, and the button says that instead. */
+  const canReopen = inv && !isDraft && !(Number(inv.amount_paid) > 0);
+  const reopen = async () => {
+    if (!window.confirm(`Reopen ${inv.invoice_number} as a draft?\n\nIf it has already gone to the customer, send them the corrected copy once you have changed it.`)) return;
+    const r = await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Draft' }) });
+    if (!r.ok) { toast.error('Could not reopen it'); return; }
+    navigate(`/sales-invoices/${id}/edit`);
+  };
 
   const recordPayment = async () => {
     if (!pay.amount || +pay.amount <= 0) { toast.error('Enter a payment amount'); return; }
@@ -101,10 +114,18 @@ export default function SalesInvoiceDoc() {
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', paddingBottom: 40 }}>
       {/* Toolbar */}
-      <div className="print:hidden" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div className="print:hidden" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         <button onClick={() => navigate('/sales-invoices')} className="inv-act-btn"><ArrowLeft size={15} /> All Invoices</button>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select value={inv.status} onChange={e => setStatus(e.target.value)} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', whiteSpace: 'nowrap' }}>
+          {isDraft && (
+            <button onClick={() => navigate(`/sales-invoices/${id}/edit`)} className="inv-act-btn primary"><Pencil size={15} /> Edit invoice</button>
+          )}
+          {canReopen && (
+            <button onClick={reopen} className="inv-act-btn" title="Take it back to draft to change the number, date, lines or anything else">
+              <Pencil size={15} /> Reopen as draft
+            </button>
+          )}
+          <select value={inv.status} onChange={e => setStatus(e.target.value)} aria-label="Invoice status" style={{ width: 'auto', flex: 'none', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }}>
             {['Draft', 'Sent', 'Partially Paid', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <button onClick={pdf} className="inv-act-btn"><Download size={15} /> PDF</button>
@@ -136,10 +157,12 @@ export default function SalesInvoiceDoc() {
       {due > 0 && (
         <div className="print:hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 14, marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)', marginRight: 6 }}><IndianRupee size={16} style={{ color: 'var(--brand-amber)' }} /> Record payment</div>
-          <input style={{ ...input, width: 110 }} type="number" placeholder="Amount" value={pay.amount} onChange={e => setPay({ ...pay, amount: e.target.value })} />
-          <select style={input} value={pay.mode} onChange={e => setPay({ ...pay, mode: e.target.value })}>{['Bank', 'Cash', 'UPI', 'Cheque'].map(m => <option key={m}>{m}</option>)}</select>
-          <input style={{ ...input, width: 130 }} placeholder="Reference" value={pay.reference} onChange={e => setPay({ ...pay, reference: e.target.value })} />
-          <input style={input} type="date" value={pay.paidDate} onChange={e => setPay({ ...pay, paidDate: e.target.value })} />
+          {/* Explicit widths: the global form styles make a bare select or
+              date input fill the row, which stacked this line into four. */}
+          <input style={{ ...input, width: 120, flex: 'none' }} type="number" placeholder="Amount" aria-label="Payment amount" value={pay.amount} onChange={e => setPay({ ...pay, amount: e.target.value })} />
+          <select style={{ ...input, width: 110, flex: 'none' }} aria-label="Payment mode" value={pay.mode} onChange={e => setPay({ ...pay, mode: e.target.value })}>{['Bank', 'Cash', 'UPI', 'Cheque'].map(m => <option key={m}>{m}</option>)}</select>
+          <input style={{ ...input, width: 160, flex: 'none' }} placeholder="Reference / UTR" aria-label="Payment reference" value={pay.reference} onChange={e => setPay({ ...pay, reference: e.target.value })} />
+          <input style={{ ...input, width: 150, flex: 'none' }} type="date" aria-label="Payment date" value={pay.paidDate} onChange={e => setPay({ ...pay, paidDate: e.target.value })} />
           <button onClick={recordPayment} className="btn-primary btn-sm"><Plus size={14} /> Add</button>
         </div>
       )}
@@ -180,12 +203,17 @@ export default function SalesInvoiceDoc() {
                 field the server will refuse. */}
             <div className="inv-meta-row">Invoice #: <InlineEdit
               value={inv.invoice_number} field="invoice_number" canEdit={isDraft} onSave={patch}
-              title="An issued invoice number cannot be changed — raise a credit or debit note" /></div>
+              title={canReopen ? 'Issued — use “Reopen as draft” above to change the number'
+                : 'Money has been received against this invoice — correct it with a credit or debit note'} /></div>
             <div className="inv-meta-row">Date: <InlineEdit
               value={inv.invoice_date?.slice(0, 10)} field="invoice_date" type="date"
               canEdit={isDraft} onSave={patch} format={fmt}
-              title="An issued invoice date cannot be changed" /></div>
-            {dueDate && <div className="inv-meta-row">Due: <strong style={{ color: overdue ? '#dc2626' : undefined }}>{dueDate}{overdue ? ' (overdue)' : ''}</strong></div>}
+              title={canReopen ? 'Issued — use “Reopen as draft” above to change the date' : 'An invoice with payments against it keeps its date'} /></div>
+            {/* The due date can move after issue — payment terms get agreed
+                late — so it stays editable whatever the status. */}
+            <div className="inv-meta-row">Due: <span style={{ color: overdue ? '#dc2626' : undefined }}><InlineEdit
+              value={inv.due_date?.slice(0, 10)} field="due_date" type="date" canEdit onSave={patch}
+              format={(d) => (d ? `${fmt(d)}${overdue ? ' (overdue)' : ''}` : null)} placeholder="not set" /></span></div>
             <div className="inv-meta-row">Status: <strong>{inv.status}</strong></div>
           </div>
         </div>
@@ -214,11 +242,13 @@ export default function SalesInvoiceDoc() {
         </div>
 
         {/* Rule 46 fields that must appear on the face of the invoice */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, padding: '8px 2px 12px', fontSize: '0.78rem', borderBottom: '1px solid #e5e7eb', marginBottom: 12 }}>
+        <div className="inv-facts" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, padding: '8px 22px', fontSize: '0.78rem', borderBottom: '1px solid #e5e7eb' }}>
           <span>Place of Supply: <strong>{inv.place_of_supply || <em style={{ color: '#dc2626' }}>not set</em>}</strong>{inv.place_of_supply_code ? ` (${inv.place_of_supply_code})` : ''}</span>
           <span>Reverse Charge: <strong>{inv.reverse_charge ? 'Yes' : 'No'}</strong></span>
-          {inv.eway_bill_no && <span>E-Way Bill: <strong>{inv.eway_bill_no}</strong></span>}
-          {inv.customer_order_id && <span>Order Ref: <strong>#{inv.customer_order_id}</strong></span>}
+          <span className={inv.eway_bill_no ? undefined : 'print:hidden'}>E-Way Bill: <InlineEdit
+            value={inv.eway_bill_no} field="eway_bill_no" canEdit onSave={patch} placeholder="add" /></span>
+          {inv.customer_order_id && <span>Order Ref: <strong>{inv.order?.order_number || `#${inv.customer_order_id}`}</strong></span>}
+          {inv.order?.customer_po_ref && <span>Your PO: <strong>{inv.order.customer_po_ref}</strong></span>}
         </div>
 
         <div className="inv-items-table">
@@ -246,7 +276,9 @@ export default function SalesInvoiceDoc() {
               {inv.discount ? <tr><td className="tl">DISCOUNT</td><td className="tv">-{rup(inv.discount)}</td></tr> : null}
               {inv.interstate
                 ? <tr><td className="tl">IGST @ {inv.gst_rate}%</td><td className="tv">{rup(inv.igst)}</td></tr>
-                : <><tr><td className="tl">CGST</td><td className="tv">{rup(inv.cgst)}</td></tr><tr><td className="tl">SGST</td><td className="tv">{rup(inv.sgst)}</td></tr></>}
+                /* Rule 46(i): the RATE of tax is a particular of the invoice,
+                   not just the amount. */
+                : <><tr><td className="tl">CGST @ {Number(inv.gst_rate) / 2}%</td><td className="tv">{rup(inv.cgst)}</td></tr><tr><td className="tl">SGST @ {Number(inv.gst_rate) / 2}%</td><td className="tv">{rup(inv.sgst)}</td></tr></>}
               {inv.round_off ? <tr><td className="tl">ROUND OFF</td><td className="tv">{rup(inv.round_off)}</td></tr> : null}
               <tr className="tf"><td className="tl" style={{ color: '#000' }}>INVOICE TOTAL</td><td className="tv" style={{ color: '#000' }}>{rup(inv.net_amount)}</td></tr>
             </tbody>
@@ -306,6 +338,12 @@ export default function SalesInvoiceDoc() {
           </div>
           <div className="inv-footer-right">{inv.invoice_number} &nbsp;|&nbsp; {date}</div>
         </div>
+      </div>
+
+      {/* Anything that belongs with this invoice — the customer's PO, a
+          signed copy, proof of delivery. Never printed. */}
+      <div className="print:hidden" style={{ marginTop: 16 }}>
+        <Attachments entityType="sales_invoice" entityId={id} label="Documents for this invoice" compact />
       </div>
 
       {emailing && (

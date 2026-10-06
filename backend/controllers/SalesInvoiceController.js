@@ -5,7 +5,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { profileFor } = require('../shared/companyProfile');
-const { nextSeq } = require('../shared/docNumber');
+const { allocate, peek, noteUsed, taken } = require('../shared/docSeries');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
@@ -104,13 +104,40 @@ exports.prefill = async (req, res) => {
     const s = scopedById(req, req.params.customerOrderId);
     const co = (await db.query(`SELECT * FROM customer_orders WHERE ${s.where}`, s.params)).rows[0];
     if (!co) return res.status(404).json({ error: 'Customer order not found' });
-    const items = (await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [co.id])).rows
-      .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0 }));
+    const orderLines = (await db.query(
+      'SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY sort_order, id', [co.id])).rows;
+    /* The invoice is the order, billed. It used to drop the HSN (a mandatory
+       particular under Rule 46), ignore each line's discount — so an order
+       with 10% off one line was invoiced at full price — and reset the GST
+       rate to 18 whatever the order said.
+
+       Invoice lines carry no discount of their own, so the rate stays the
+       rate the customer agreed and every discount is carried to the
+       invoice's discount. Same taxable value, to the paisa. */
+    let lineDiscounts = 0;
+    const items = orderLines.map(it => {
+      const qty = Number(it.quantity) || 0;
+      const rate = Number(it.rate ?? it.target_price) || 0;
+      const gross = r2(qty * rate);
+      const net = it.amount == null ? gross : Number(it.amount);
+      lineDiscounts += Math.max(0, gross - net);
+      return { description: it.description, hsn: it.hsn || '', uom: it.unit || 'nos', quantity: it.quantity, rate };
+    });
+    const sub = r2(items.reduce((s, l) => s + r2((Number(l.quantity) || 0) * l.rate), 0)) - r2(lineDiscounts);
+    const orderDiscount = co.discount_type === 'flat'
+      ? Math.min(Number(co.discount) || 0, sub)
+      : r2(sub * ((Number(co.discount) || 0) / 100));
     const t = await resolveTax(db, req.user?.orgId, co.customer_id);
     const c = t.customer || {};
-    const termsDays = c.payment_terms_days ?? t.company?.default_payment_terms_days ?? 30;
+    const termsDays = co.payment_terms_days ?? c.payment_terms_days ?? t.company?.default_payment_terms_days ?? 30;
     const due = new Date(); due.setDate(due.getDate() + Number(termsDays || 0));
+    const next = await peek(db, { ownerId: req.user?.orgId, docType: 'sales_invoice' });
     res.json({
+      nextNumber: next.number,
+      supplierStateCode: toStateCode(t.company?.stateCode || t.company?.gstin),
+      discount: r2(lineDiscounts + orderDiscount),
+      roundOff: Number(co.round_off) || 0,
+      notes: co.customer_po_ref ? `Against your PO ${co.customer_po_ref}` : '',
       customerOrder: co, customer: t.customer, customerId: co.customer_id,
       interstate: t.interstate, interstateKnown: t.interstateKnown,
       placeOfSupply: t.placeOfSupply, placeOfSupplyCode: t.placeOfSupplyCode,
@@ -125,21 +152,74 @@ exports.prefill = async (req, res) => {
       },
       dueDate: due.toISOString().slice(0, 10),
       paymentTermsDays: termsDays,
-      terms: t.company?.invoice_terms || null,
+      terms: co.terms || t.company?.invoice_terms || null,
       reverseCharge: false,
-      gstRate: 18, items,
+      gstRate: co.gst_rate == null ? 18 : Number(co.gst_rate), items,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
+
+/* GET /sales-invoices/prefill-customer/:customerId — an invoice with no
+   order behind it: a one-off job, a service charge, scrap sold. Raising an
+   invoice used to REQUIRE a customer order, so those were either faked as
+   orders first or done outside the product. Same shape as prefill, no lines. */
+exports.prefillCustomer = async (req, res) => {
+  try {
+    const s = scopedById(req, req.params.customerId);
+    const c = (await db.query(`SELECT * FROM customers WHERE ${s.where}`, s.params)).rows[0];
+    if (!c) return res.status(404).json({ error: 'Customer not found' });
+    const t = await resolveTax(db, req.user?.orgId, c.id);
+    const termsDays = c.payment_terms_days ?? t.company?.default_payment_terms_days ?? 30;
+    const due = new Date(); due.setDate(due.getDate() + Number(termsDays || 0));
+    const next = await peek(db, { ownerId: req.user?.orgId, docType: 'sales_invoice' });
+    res.json({
+      nextNumber: next.number, customer: c, customerId: c.id,
+      supplierStateCode: toStateCode(t.company?.stateCode || t.company?.gstin),
+      interstate: t.interstate, interstateKnown: t.interstateKnown,
+      placeOfSupply: t.placeOfSupply, placeOfSupplyCode: t.placeOfSupplyCode,
+      billTo: { name: c.name, address: c.billing_address, gstin: c.gstin, state: c.state },
+      shipTo: { name: c.name, address: c.shipping_address || c.billing_address, gstin: c.gstin, state: c.shipping_state || c.state },
+      dueDate: due.toISOString().slice(0, 10), paymentTermsDays: termsDays,
+      terms: t.company?.invoice_terms || null, reverseCharge: false,
+      gstRate: 18, discount: 0, roundOff: 0, notes: '', items: [],
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// GET /sales-invoices/next-number — what "Create" would number it
+exports.nextNumber = async (req, res) => {
+  try {
+    res.json(await peek(db, { ownerId: req.user?.orgId, docType: 'sales_invoice' }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* A number typed by hand: anything a printed invoice can carry, up to 16
+   characters for the number box on GSTR-1 (the portal's own limit). */
+function checkNumber(n) {
+  const s = String(n || '').trim();
+  if (!s) return { error: 'The invoice number cannot be blank.' };
+  if (s.length > 16) return { error: 'GST allows at most 16 characters in an invoice number.' };
+  if (!/^[A-Za-z0-9/-]+$/.test(s)) return { error: 'An invoice number may use letters, digits, / and - only (GST rule).' };
+  return { value: s };
+}
+exports.checkNumber = checkNumber;
+
+const isDuplicate = (e) => e && e.code === '23505';
 
 // POST /sales-invoices
 exports.create = async (req, res) => {
   const {
     customerId, customerOrderId, invoiceDate, items, discount, gstRate, interstate, roundOff, notes,
-    placeOfSupply, billTo, shipTo, dueDate, reverseCharge, terms, ewayBillNo,
+    placeOfSupply, billTo, shipTo, dueDate, reverseCharge, terms, ewayBillNo, invoiceNumber,
   } = req.body;
   if (!customerId) return res.status(400).json({ error: 'Pick a customer' });
   if (!items || !items.length) return res.status(400).json({ error: 'Add at least one line item' });
+  let typed = null;
+  if (invoiceNumber != null && String(invoiceNumber).trim() !== '') {
+    const chk = checkNumber(invoiceNumber);
+    if (chk.error) return res.status(400).json({ error: chk.error });
+    typed = chk.value;
+  }
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -153,10 +233,31 @@ exports.create = async (req, res) => {
        46. A count reissues one after any deletion, and a duplicate invoice
        number is a GSTR-1 filing error, so this is the call site that
        mattered most. */
-    const invNumber = `INV-${String(await nextSeq(client, {
-      ownerId: req.user?.orgId, docType: 'sales_invoice',
-    })).padStart(4, '0')}`;
+    /* The business's own series (Settings → Document numbering), or the
+       number they typed. A typed number that fits the series moves the
+       counter on, so the next invoice follows it rather than reusing it. */
+    let invNumber;
+    if (typed) {
+      if (await taken(client, req.user?.orgId, 'sales_invoice', typed)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `Invoice number ${typed} is already used.` });
+      }
+      invNumber = typed;
+      await noteUsed(client, { ownerId: req.user?.orgId, docType: 'sales_invoice', number: typed });
+    } else {
+      invNumber = await allocate(client, { ownerId: req.user?.orgId, docType: 'sales_invoice' });
+    }
     const c = tax.customer || {};
+    /* A due date was optional here and the builder never sent one, so new
+       invoices had none — and an invoice with no due date is never
+       overdue, so nobody was ever reminded about it. */
+    let due = dueDate || null;
+    if (!due) {
+      const days = c.payment_terms_days ?? tax.company?.default_payment_terms_days ?? 30;
+      const base = invoiceDate ? new Date(invoiceDate) : new Date();
+      base.setDate(base.getDate() + Number(days || 0));
+      due = base.toISOString().slice(0, 10);
+    }
     const bt = billTo || {};
     const st = shipTo || {};
     const { rows } = await client.query(
@@ -173,7 +274,7 @@ exports.create = async (req, res) => {
          that nothing in the product would have told anyone about. */
       [req.user?.orgId || null, customerId, customerOrderId || null, invNumber, invoiceDate || null,
        t.subTotal, discount || 0, gstRate ?? 18, isInter, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null,
-       tax.placeOfSupply || null, tax.placeOfSupplyCode || null, !!reverseCharge, dueDate || null, terms || null, ewayBillNo || null,
+       tax.placeOfSupply || null, tax.placeOfSupplyCode || null, !!reverseCharge, due, terms || null, ewayBillNo || null,
        bt.name || c.name || null, bt.address || c.billing_address || null, bt.gstin || c.gstin || null, bt.state || c.state || null,
        st.name || c.name || null, st.address || c.shipping_address || c.billing_address || null,
        st.gstin || c.gstin || null, st.state || c.shipping_state || c.state || null]
@@ -200,7 +301,11 @@ exports.create = async (req, res) => {
     if (customerOrderId) await syncOrderDelivery(client, customerOrderId);
     await client.query('COMMIT');
     res.json({ id: invId, invoiceNumber: invNumber, net: t.net });
-  } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (isDuplicate(e)) return res.status(409).json({ error: 'That invoice number is already used.' });
+    res.status(500).json({ error: e.message });
+  }
   finally { client.release(); }
 };
 
@@ -241,9 +346,15 @@ exports.getById = async (req, res) => {
     const items = (await db.query('SELECT * FROM sales_invoice_items WHERE sales_invoice_id = $1 ORDER BY sort_order', [req.params.id])).rows;
     const payments = (await db.query('SELECT * FROM sales_payments WHERE sales_invoice_id = $1 ORDER BY id', [req.params.id])).rows;
     const customer = inv.customer_id ? (await db.query('SELECT * FROM customers WHERE id = $1', [inv.customer_id])).rows[0] : null;
+    /* The order's own number and the customer's PO reference, for the
+       face of the invoice — it printed "Order Ref: #2845", a database id
+       that means nothing to the customer's accounts team. */
+    const order = inv.customer_order_id
+      ? (await db.query('SELECT order_number, customer_po_ref FROM customer_orders WHERE id = $1', [inv.customer_order_id])).rows[0] || null
+      : null;
     let company = null;
     try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
-    res.json({ ...inv, items, payments, customer, company });
+    res.json({ ...inv, items, payments, customer, company, order });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
@@ -361,7 +472,12 @@ exports.update = async (req, res) => {
       });
     }
 
-    /* Rule 46(b): unique per supplier. */
+    /* Rule 46(b): unique per supplier, at most 16 characters. */
+    if (draft && 'invoice_number' in (req.body || {})) {
+      const chk = checkNumber(req.body.invoice_number);
+      if (chk.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: chk.error }); }
+      req.body.invoice_number = chk.value;
+    }
     if (draft && req.body.invoice_number && req.body.invoice_number !== inv.invoice_number) {
       const clash = await client.query(
         'SELECT id FROM sales_invoices WHERE owner_id = $1 AND invoice_number = $2 AND id <> $3',
@@ -370,6 +486,10 @@ exports.update = async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: `Invoice number ${req.body.invoice_number} is already used.` });
       }
+      /* Renaming INV-0001 to KBS/26-27/147 used to leave the counter at 1,
+         so the next invoice came out as INV-0002. If the new number fits
+         the series, the series now carries on from it. */
+      await noteUsed(client, { ownerId: inv.owner_id, docType: 'sales_invoice', number: req.body.invoice_number });
     }
 
     const set = {};
@@ -427,6 +547,7 @@ exports.update = async (req, res) => {
     res.json(rows[0]);
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
+    if (isDuplicate(e)) return res.status(409).json({ error: 'That invoice number is already used.' });
     res.status(500).json({ error: e.message });
   } finally { client.release(); }
 };

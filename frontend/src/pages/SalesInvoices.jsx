@@ -55,18 +55,26 @@ export default function SalesInvoices() {
             <ReceiptIndianRupee size={24} style={{ color: 'var(--brand-amber)' }} /> Sales Invoices
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
-            Tax invoices to your customers — raise one from a customer order, then record payments.
+            Tax invoices to your customers — from a customer order, or on their own — then record payments.
           </p>
         </div>
         {/* The subtitle has told people to raise one from a customer order
             since this screen was written, and there was no way to get to a
             customer order from here. The builder exists at
-            /customer-orders/:id/invoice; this is the door to it. */}
+            /customer-orders/:id/invoice; this is the door to it. The second
+            door is for a bill with no order behind it — a one-off job, a
+            service charge, scrap sold — which used to need a fake order. */}
         {can('sales-invoices', 'write') && (
-          <button onClick={() => setPicking(true)} className="btn-primary btn-sm"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-            <Plus size={14} /> Raise invoice
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => navigate('/sales-invoices/new')} className="btn-secondary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+              <Plus size={14} /> Invoice without an order
+            </button>
+            <button onClick={() => setPicking(true)} className="btn-primary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+              <Plus size={14} /> Invoice an order
+            </button>
+          </div>
         )}
       </div>
 
