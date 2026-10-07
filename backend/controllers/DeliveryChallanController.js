@@ -217,3 +217,26 @@ exports.remove = async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
+
+/* PATCH /delivery-challans/:id   Body: { eway_bill_no }
+
+   The challan has always warned "E-way bill required — and not recorded …
+   record the number here before the vehicle leaves", and there was nowhere
+   to record it: the column existed, nothing wrote to it. An e-way bill
+   number is twelve digits (Rule 138); spaces are dropped, and an empty
+   value clears it. Yours only. */
+exports.updateDetails = async (req, res) => {
+  if (!('eway_bill_no' in (req.body || {}))) return res.status(400).json({ error: 'Nothing to update — send eway_bill_no' });
+  const raw = req.body.eway_bill_no;
+  const value = raw == null ? '' : String(raw).replace(/\s+/g, '');
+  if (value && !/^\d{12}$/.test(value)) {
+    return res.status(400).json({ error: 'An e-way bill number is 12 digits.' });
+  }
+  try {
+    if (!await assertOwned(db, req, res, 'delivery_challans', req.params.id, { columns: 'id' })) return;
+    const { rows } = await db.query(
+      'UPDATE delivery_challans SET eway_bill_no = $1 WHERE id = $2 RETURNING id, eway_bill_no',
+      [value || null, req.params.id]);
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};

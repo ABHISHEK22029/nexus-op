@@ -18,6 +18,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Truck, AlertTriangle, Mail } from 'lucide-react';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
+import InlineEdit from '../components/InlineEdit';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate,
 } from '../components/DocumentKit';
@@ -31,6 +32,19 @@ export default function DeliveryChallanDoc() {
   const [dc, setDc] = useState(null);
   const [emailing, setEmailing] = useState(false);
   const [err, setErr] = useState(false);
+
+  /* The e-way bill number, recorded on the challan itself — the warning
+     above always asked for it, and there was nowhere to put it. */
+  const saveEway = async (field, value) => {
+    const res = await fetch(`${API}/delivery-challans/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: value }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: d.error || 'Could not save' };
+    setDc(prev => ({ ...prev, eway_bill_no: d.eway_bill_no }));
+    return { ok: true };
+  };
 
   useEffect(() => {
     fetch(`${API}/delivery-challans/${id}`)
@@ -118,8 +132,12 @@ export default function DeliveryChallanDoc() {
           <Meta box={metaBox} label="Vehicle No." value={dc.vehicle_no} mono />
           <Meta box={metaBox} label="LR / Docket" value={dc.lr_no} />
           <Meta box={metaBox} label="Place of supply" value={dc.place_of_supply || shipState} />
-          <Meta box={metaBox} label="E-way Bill No." value={dc.eway_bill_no} mono
-            warn={ewayMissing} />
+          <Meta box={metaBox} label="E-way Bill No." mono warn={ewayMissing}
+            value={<>
+              <span className="print:hidden"><InlineEdit value={dc.eway_bill_no} field="eway_bill_no" canEdit onSave={saveEway}
+                placeholder={ewayMissing ? 'required — add' : 'add'} /></span>
+              <span className="print-only">{dc.eway_bill_no || '—'}</span>
+            </>} />
           {dc.eway_bill_date && <Meta box={metaBox} label="E-way Bill Date" value={fmtDate(dc.eway_bill_date)} />}
           {dc.driver_name && <Meta box={metaBox} label="Driver" value={`${dc.driver_name}${dc.driver_phone ? ' · ' + dc.driver_phone : ''}`} />}
           {dc.transporter_gstin && <Meta box={metaBox} label="Transporter GSTIN" value={dc.transporter_gstin} mono />}

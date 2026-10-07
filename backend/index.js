@@ -969,6 +969,7 @@ app.get('/delivery-challans/prefill/:orderId', deliveryChallanController.prefill
 app.get('/delivery-challans/:id', deliveryChallanController.getById);
 app.post('/delivery-challans', deliveryChallanController.create);
 app.patch('/delivery-challans/:id/status', deliveryChallanController.setStatus);
+app.patch('/delivery-challans/:id',        deliveryChallanController.updateDetails);
 app.delete('/delivery-challans/:id', deliveryChallanController.remove);
 
 // ── Credit / debit notes (Wave 1D) ──

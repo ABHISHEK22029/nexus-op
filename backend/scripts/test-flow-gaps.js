@@ -212,6 +212,20 @@ const QUOTE_CSV = 'Description,Qty,Unit,Rate,Amount\nSS304 sheet 2 mm,180,kg,260
     const [rev] = await q1(`SELECT owner_id FROM stock_movements WHERE inventory_id = $1 AND movement_type = 'adjustment' AND ref_type = 'production_consumption'`, [invId]);
     ok(del.status === 200 && Number(back.quantity) === 50 && rev?.owner_id === A.user.id, 'deleting the line puts it back, on the ledger, for the right company');
 
+    /* ── e-way bill on a challan ───────────────────────────────────── */
+    console.log('\n  ── the e-way bill number goes on the challan');
+    const custA = (await call(A, 'POST', '/customers', { name: `Gaps customer ${stamp}`, state: 'Telangana', billing_address: 'Hyderabad' })).body;
+    const dc = (await call(A, 'POST', '/delivery-challans', { customerId: custA.id, vehicleNo: 'TS09UB4521',
+      items: [{ description: 'SS304 Mounting Bracket', quantity: 120, unit: 'nos', rate: 2320 }] })).body;
+    const dcId = dc.id;
+    const bad = await call(A, 'PATCH', `/delivery-challans/${dcId}`, { eway_bill_no: '12345' });
+    ok(bad.status === 400 && /12 digits/.test(bad.body.error || ''), 'a number that is not 12 digits is refused, saying why');
+    const good = await call(A, 'PATCH', `/delivery-challans/${dcId}`, { eway_bill_no: '3510 1234 5678' });
+    ok(good.status === 200 && good.body.eway_bill_no === '351012345678', `a 12-digit number is recorded (${good.body.eway_bill_no})`);
+    const bEway = await call(B, 'PATCH', `/delivery-challans/${dcId}`, { eway_bill_no: '999999999999' });
+    const [stored] = await q1('SELECT eway_bill_no FROM delivery_challans WHERE id = $1', [dcId]);
+    ok(bEway.status === 404 && stored.eway_bill_no === '351012345678', `another company cannot touch it (${bEway.status})`);
+
     /* ── shortfall planner ─────────────────────────────────────────── */
     console.log('\n  ── the shortfall planner');
     const sfProd = await call(PROD, 'POST', '/material-requirements/to-po', {});
