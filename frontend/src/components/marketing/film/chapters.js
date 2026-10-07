@@ -30,9 +30,15 @@ import requirements from './chapters/requirements/script.js';
 import vendorQuotes from './chapters/vendor-quotes/script.js';
 import purchaseOrder from './chapters/purchase-order/script.js';
 import receipt from './chapters/receipt/script.js';
+import production from './chapters/production/script.js';
+import dispatch from './chapters/dispatch/script.js';
+import invoice from './chapters/invoice/script.js';
+import money from './chapters/money/script.js';
+import attention from './chapters/attention/script.js';
 import close from './chapters/close/script.js';
 
-const ORDER = [opening, workspace, team, catalogue, customer, enquiry, quotation, order, requirements, vendorQuotes, purchaseOrder, receipt, close];
+const ORDER = [opening, workspace, team, catalogue, customer, enquiry, quotation, order, requirements, vendorQuotes, purchaseOrder, receipt,
+  production, dispatch, invoice, money, attention, close];
 
 export const CHAPTERS = ORDER.map((c, i) => ({ ...c, n: String(i).padStart(2, '0') }));
 export const LAST_N = String(CHAPTERS.length - 1).padStart(2, '0');
