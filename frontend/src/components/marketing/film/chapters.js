@@ -26,9 +26,13 @@ import customer from './chapters/customer/script.js';
 import enquiry from './chapters/enquiry/script.js';
 import quotation from './chapters/quotation/script.js';
 import order from './chapters/order/script.js';
+import requirements from './chapters/requirements/script.js';
+import vendorQuotes from './chapters/vendor-quotes/script.js';
+import purchaseOrder from './chapters/purchase-order/script.js';
+import receipt from './chapters/receipt/script.js';
 import close from './chapters/close/script.js';
 
-const ORDER = [opening, workspace, team, catalogue, customer, enquiry, quotation, order, close];
+const ORDER = [opening, workspace, team, catalogue, customer, enquiry, quotation, order, requirements, vendorQuotes, purchaseOrder, receipt, close];
 
 export const CHAPTERS = ORDER.map((c, i) => ({ ...c, n: String(i).padStart(2, '0') }));
 export const LAST_N = String(CHAPTERS.length - 1).padStart(2, '0');
