@@ -27,12 +27,29 @@ let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log(`   ${c ? '✅' : '❌'} ${m}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/* count AudioContexts: none may exist before Sound is pressed */
+/* count AudioContexts (none may exist before Sound is pressed), and
+   splice a meter in front of the speakers to hear what actually comes out */
 const SPY = () => {
   window.__audioContexts = 0;
   const AC = window.AudioContext;
   if (AC) {
-    window.AudioContext = class extends AC { constructor(...a) { super(...a); window.__audioContexts++; } };
+    window.AudioContext = class extends AC { constructor(...a) { super(...a); window.__audioContexts++; window.__ac = this; } };
+    const connect = AudioNode.prototype.connect;
+    AudioNode.prototype.connect = function (dest, ...rest) {
+      if (dest instanceof AudioDestinationNode) {
+        const c = this.context;
+        if (!c.__meter) { c.__meter = c.createAnalyser(); c.__meter.fftSize = 2048; }
+        connect.call(this, c.__meter);
+      }
+      return connect.call(this, dest, ...rest);
+    };
+    window.__peak = () => {
+      const m = window.__ac?.__meter;
+      if (!m) return 0;
+      const b = new Float32Array(m.fftSize);
+      m.getFloatTimeDomainData(b);
+      return b.reduce((p, v) => Math.max(p, Math.abs(v)), 0);
+    };
   }
 };
 
@@ -107,7 +124,23 @@ const SPY = () => {
     await sleep(300);
     ok(await page.evaluate(() => window.__audioContexts === 1 && document.querySelector('.ad-controls button[aria-label="Sound"]').getAttribute('aria-pressed') === 'true'),
       'Sound makes the one audio context, and says it is on');
+    /* it must be heard: the loudest moment in two seconds of the groove
+       has to reach a normal level, not a whisper */
+    await page.evaluate(() => { window.__MK_AD_SPEED__ = 1; });
+    await seek(page, 20000, 100);
+    let loudest = 0;
+    for (let i = 0; i < 20; i++) { loudest = Math.max(loudest, await page.evaluate(() => window.__peak())); await sleep(100); }
+    const dbfs = loudest > 0 ? 20 * Math.log10(loudest) : -Infinity;
+    ok(dbfs > -10 && dbfs < 0, `with Sound on it plays at a normal level, without clipping (peak ${dbfs.toFixed(1)} dBFS)`);
+    await page.click('.ad-controls button[aria-label="Pause"]');
+    await sleep(400);
+    ok(await page.evaluate(() => window.__ac.state === 'suspended'), 'pausing the picture pauses the music');
+    await page.click('.ad-controls button[aria-label="Play"]');
+    await sleep(400);
+    ok(await page.evaluate(() => window.__ac.state === 'running'), 'and Play brings it back, in step');
     await page.click('.ad-controls button[aria-label="Sound"]');
+    await sleep(300);
+    ok(await page.evaluate(() => window.__ac.state === 'suspended'), 'Sound off silences it');
     await seek(page, 30000);
     await page.click('.ad-controls button[aria-label="Replay"]');
     await sleep(300);

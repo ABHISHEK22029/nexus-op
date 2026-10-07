@@ -114,7 +114,7 @@ export default function ProductAd({ className = '' }) {
   const { idx: actIdx, act, t: actT } = actAt(viewMs);
   const leaving = !reduced && actIdx > 0 && actT < FADE_MS ? ACTS[actIdx - 1] : null;
 
-  useAdSound(ms, { on: sound, playing: running && !ended });
+  useAdSound(ms, { on: sound, playing: running && !ended, ended });
 
   const toggleSound = () => {
     if (sound) { soundOff(); setSound(false); return; }
@@ -165,7 +165,7 @@ export default function ProductAd({ className = '' }) {
         )}
         {supportsSound() && (
           <button type="button" className={`ad-ctl${sound ? ' is-on' : ''}`} onClick={toggleSound} aria-pressed={sound} aria-label="Sound">
-            {sound ? <Volume2 size={14} /> : <VolumeX size={14} />}<span>Sound</span>
+            {sound ? <Volume2 size={14} /> : <VolumeX size={14} />}<span>{sound ? 'Sound on' : 'Play sound'}</span>
           </button>
         )}
         <button type="button" className={`ad-ctl${ended ? ' is-on' : ''}`} onClick={replay} aria-label="Replay">

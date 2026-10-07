@@ -78,39 +78,67 @@ export const SCENES = [
     sr: 'From catalogue to cash. Run your business, not your spreadsheets.' },
 ];
 
-/* The sound design: what plays when (see sound.js). Generated, not
-   recorded, so it is the same on every visit and costs no download. */
-const every = (from, to, step, name) => {
-  const out = [];
-  for (let at = from; at < to; at += step) out.push({ at, name });
-  return out;
-};
+/* ── The sound (played by sound.js) ──
+   Generated in the browser, not recorded: the same on every visit, and
+   nothing to download. Two layers:
+
+   SCORE — the music. 96 beats a minute; one chord a bar (2.5 s), cycling
+   through `chords`; `groove` is how hard the beat drives:
+     none     pads only                      (the mark, the finale)
+     tension  notification blips, a rising drone, no beat   (the chaos)
+     pulse    bass on the eighths, kick on 1 and 3, soft hats
+     drive    kick every beat, snare on 2 and 4, hats on the sixteenths
+     open     half-time and airy                (the chain, roles, overview)
+   It is quiet for the mark, drives through Smart Inventory, goes dark at
+   the shortage (E major, the chord that wants to go home), lifts when the
+   goods arrive, and resolves to C major for "From catalogue to cash".
+
+   CUES — the accents on the picture: clicks on buttons, a whoosh as a
+   window moves, a chime when something lands, the warning at the
+   shortage, the rise as stock refills, the brand chime at the end. */
+export const TEMPO = 96;
+export const SCORE = [
+  { from: 0, to: 2900, chords: [], groove: 'tension' },
+  { from: 3900, to: 7000, chords: ['Cmaj9'], groove: 'none' },
+  { from: 7000, to: 19000, chords: ['Am7', 'Fmaj7', 'C', 'G'], groove: 'pulse' },
+  { from: 19000, to: 25300, chords: ['Am7', 'Dm7', 'Am7'], groove: 'drive' },
+  { from: 25300, to: 28500, chords: ['E', 'Fmaj7'], groove: 'pulse' },
+  { from: 28500, to: 33000, chords: ['Fmaj7', 'G'], groove: 'drive' },
+  { from: 33000, to: 36500, chords: ['G', 'Cmaj7'], groove: 'pulse' },
+  { from: 36500, to: 41000, chords: ['C', 'G'], groove: 'drive' },
+  { from: 41000, to: 52500, chords: ['Fmaj7', 'G', 'Am7', 'Fmaj7', 'C'], groove: 'open' },
+  { from: 52500, to: 58000, chords: ['Cmaj9'], groove: 'none' },
+];
 export const CUES = [
-  ...[150, 520, 860, 1240, 1600, 1980, 2350].map((at) => ({ at, name: 'tick' })),
+  ...[150, 520, 860, 1240, 1450, 1600, 1980, 2150, 2350, 2600].map((at) => ({ at, name: 'blip' })),
   { at: 2900, name: 'hush' },
   { at: 3150, name: 'whoosh' },
   { at: 4050, name: 'brand' },
   { at: 6550, name: 'whoosh' },
-  ...every(7200, 19000, 600, 'pulse'),
+  { at: 7600, name: 'click' },
+  { at: 8400, name: 'click' },
   { at: 10450, name: 'click' },
   { at: 10650, name: 'whoosh' },
+  { at: 12050, name: 'land' },
   { at: 12650, name: 'chime' },
   { at: 14350, name: 'click' },
-  { at: 16450, name: 'click' },
+  { at: 16900, name: 'click' },
   { at: 17700, name: 'chime' },
-  ...every(19000, 28400, 400, 'pulse'),
-  ...every(19300, 28400, 200, 'tick'),
-  { at: 25300, name: 'warn' },
-  { at: 28600, name: 'whoosh' },
-  ...every(28600, 33000, 600, 'pulse'),
-  { at: 31200, name: 'click' },
+  { at: 18350, name: 'click' },
+  { at: 18600, name: 'land' },
+  { at: 25500, name: 'warn' },
+  { at: 28000, name: 'whoosh' },
+  { at: 28550, name: 'click' },
+  { at: 31150, name: 'click' },
   { at: 32200, name: 'chime' },
+  { at: 33000, name: 'whoosh' },
   { at: 33400, name: 'rise' },
-  { at: 35400, name: 'chime' },
+  { at: 35300, name: 'chime' },
   { at: 36600, name: 'whoosh' },
-  { at: 40200, name: 'chime' },
-  { at: 41900, name: 'click' },
-  { at: 42600, name: 'open' },
+  { at: 40000, name: 'chime' },
+  { at: 41700, name: 'click' },
+  { at: 41900, name: 'land' },
+  { at: 42400, name: 'whoosh' },
   { at: 45600, name: 'whoosh' },
   { at: 49600, name: 'whoosh' },
   { at: 52600, name: 'resolve' },
