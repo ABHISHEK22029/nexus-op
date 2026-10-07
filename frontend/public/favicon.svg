@@ -6,5 +6,8 @@
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="15" fill="url(#g)"/>
-  <path transform="translate(11 11) scale(1.75)" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
+  <g fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round">
+    <path d="M9 47V20l9 16 9-16v27"/>
+    <ellipse cx="46.5" cy="32" rx="8.5" ry="12"/>
+  </g>
 </svg>
