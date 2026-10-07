@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Pause, Send, FileText } from 'lucide-react';
+import { Check, Pause, Send, FileText, Volume2, VolumeX } from 'lucide-react';
 import useInView from '../../../hooks/useInView';
 import { Morph, Pill, Cursor } from './kit';
-import { SCENES, CHAIN, CATALOGUE_URL } from './story';
+import { SCENES, CHAIN, CATALOGUE_URL, CLOSING_VOICE } from './story';
+import useNarrator, { sayingTime, usePageShown } from './voice';
 import './flow.css';
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -43,6 +44,21 @@ import './flow.css';
    and its controls unfocusable, because a screen reader tabbing into fake
    buttons is worse than useless; a live region states what each scene
    shows instead.
+
+   Voice-over
+   ─────────────────────────────────────────────────────────────────────
+   Off until asked for — sound that starts by itself is the one thing a
+   visitor cannot forgive. The button on the window's top edge turns it on,
+   and from then each stage is narrated as it plays:
+
+     · turning it on starts the current stage again, so the words and the
+       picture begin together
+     · a stage does not hand over until its line has been said; the story
+       waits for the voice, never the other way round
+     · choosing a card cuts the line short and starts that stage's
+     · pausing, scrolling away, keyboard focus or a background tab silence
+       it; coming back starts the stage again, with its line
+     · the line being spoken is captioned under the window
    ══════════════════════════════════════════════════════════════════════ */
 
 const HANDOFF_MS = 640;     // the record's flight to the next card
@@ -92,18 +108,27 @@ export default function FlowShowcase({ notes = true }) {
   const [hold, setHold] = useState(false);
   const [kbFocus, setKbFocus] = useState(false);
   const [prev, setPrev] = useState(null);            // the scene leaving, for the cross-fade
+  const [take, setTake] = useState(0);               // bumped each time a stage is (re)started by hand
+  const [voiceOn, setVoiceOn] = useState(false);
+  const [caption, setCaption] = useState('');
+  const narrator = useNarrator();
+  const pageShown = usePageShown();
 
   const scene = SCENES[idx];
+  const closing = phase === 'closing';
   const shownT = reduced ? scene.duration : t;
   const mode = scene.mode ? scene.mode(shownT) : 'app';
 
   useScriptFont(notes);
 
   /* refs the animation loop reads, so it never has to restart */
-  const S = useRef({ idx: 0, phase: 'play', elapsed: 0, sub: 0, running: false, hold: false, last: null, lastCommit: 0, lastT: -1 });
+  const S = useRef({ idx: 0, phase: 'play', elapsed: 0, sub: 0, running: false, hold: false, last: null, lastCommit: 0, lastT: -1, speaking: false, speakUntil: 0 });
   const running = visible && !userPaused && !kbFocus && !reduced;
   S.current.running = running;
   S.current.hold = hold;
+  /* when the voice may be heard. Under reduced motion nothing plays by
+     itself, so the voice reads whichever stage is chosen. */
+  const voiceLive = voiceOn && visible && pageShown && (reduced || (!userPaused && !kbFocus));
 
   const cardRefs = useRef([]);
   const stripRef = useRef(null);
@@ -114,7 +139,7 @@ export default function FlowShowcase({ notes = true }) {
     const s = S.current;
     if (i !== s.idx) setPrev({ idx: s.idx, at: Date.now() });
     s.idx = i; s.phase = 'play'; s.elapsed = 0; s.sub = 0; s.lastT = 0;
-    setIdx(i); setPhase('play'); setT(0);
+    setIdx(i); setPhase('play'); setT(0); setTake((k) => k + 1);
     if (fromUser) setUserPaused(false);
   }, []);
 
@@ -168,11 +193,15 @@ export default function FlowShowcase({ notes = true }) {
       const dt = Math.min(now - s.last, 100) * speed;
       s.last = now;
 
+      /* a line still being said holds the hand-off, as hovering does —
+         up to a ceiling, in case a browser never reports the end */
+      const talking = s.speaking && now < s.speakUntil;
+
       if (s.running) {
         const sc = SCENES[s.idx];
         if (s.phase === 'play') {
           s.elapsed = Math.min(sc.duration, s.elapsed + dt);
-          if (s.elapsed >= sc.duration && !s.hold) {
+          if (s.elapsed >= sc.duration && !s.hold && !talking) {
             if (s.idx < SCENES.length - 1) {
               s.phase = 'handoff'; s.sub = 0; setPhase('handoff'); fly(s.idx + 1);
             } else {
@@ -189,7 +218,7 @@ export default function FlowShowcase({ notes = true }) {
           }
         } else if (s.phase === 'closing') {
           s.sub += dt;
-          if (s.sub >= CLOSING_MS && !s.hold) {
+          if (s.sub >= CLOSING_MS && !s.hold && !talking) {
             setPrev({ idx: s.idx, at: Date.now() });
             s.idx = 0; s.phase = 'play'; s.elapsed = 0; s.sub = 0;
             setIdx(0); setPhase('play');
@@ -212,6 +241,39 @@ export default function FlowShowcase({ notes = true }) {
     return () => clearTimeout(h);
   }, [prev]);
 
+  /* ── the voice ──
+     Runs when the voice comes on or goes quiet, when the stage changes
+     (by itself or by a card) and when the closing card arrives. A
+     hand-off between stages is not a change it hears: that is one stage
+     ending, and the next stage's arrival speaks for itself. */
+  useEffect(() => {
+    const s = S.current;
+    if (!voiceLive) {
+      s.speaking = false;
+      narrator.stop();
+      return;
+    }
+    if (!reduced) {
+      /* the words and the picture begin together */
+      if (s.phase === 'closing') s.sub = 0;
+      else if (s.phase !== 'play' || s.elapsed > 0) {
+        s.phase = 'play'; s.elapsed = 0; s.sub = 0; s.lastT = 0;
+        setPhase('play'); setT(0);
+      }
+    }
+    const line = s.phase === 'closing' ? CLOSING_VOICE : SCENES[s.idx].voice;
+    s.speaking = true;
+    s.speakUntil = performance.now() + sayingTime(line);
+    narrator.say(line, { onLine: setCaption, onDone: () => { s.speaking = false; } });
+  }, [voiceLive, idx, closing, take, reduced, narrator]);
+
+  const toggleVoice = () => {
+    if (voiceOn) { setVoiceOn(false); return; }
+    narrator.unlock();
+    setVoiceOn(true);
+    setUserPaused(false);   // asking to hear it is asking to see it
+  };
+
   /* narrow screens: keep the active card centred in its strip — by scrolling
      the strip, never the page */
   useEffect(() => {
@@ -221,8 +283,11 @@ export default function FlowShowcase({ notes = true }) {
   }, [idx, reduced]);
 
   /* keyboard focus pauses; a mouse click does not (or choosing a card would
-     stop the very scene it asked for) */
-  const onFocus = (e) => { if (e.target.matches?.(':focus-visible')) setKbFocus(true); };
+     stop the very scene it asked for). Nor does the voice button: a
+     keyboard user who turns the voice on wants to hear it play. */
+  const onFocus = (e) => {
+    if (e.target.matches?.(':focus-visible')) setKbFocus(!e.target.closest?.('.fl-voice'));
+  };
   const onBlur = (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setKbFocus(false); };
 
   const stateOf = (i) => {
@@ -240,8 +305,7 @@ export default function FlowShowcase({ notes = true }) {
   const [statusLabel, statusTone] = scene.status(shownT);
   const action = [...scene.actions].reverse().find((a) => shownT >= a.from) || scene.actions[0];
   const pressed = shownT >= action.click && shownT < action.click + 220;
-  const trail = CHAIN.slice(0, phase === 'closing' ? n : idx + 1);
-  const closing = phase === 'closing';
+  const trail = CHAIN.slice(0, closing ? n : idx + 1);
   const Body = scene.Body;
   const DocView = scene.Doc;
   const prevScene = prev ? SCENES[prev.idx] : null;
@@ -321,135 +385,160 @@ export default function FlowShowcase({ notes = true }) {
       </div>
 
       {/* ── the product ── */}
-      <div
-        className="fl-window"
-        onMouseEnter={() => setHold(true)}
-        onMouseLeave={() => setHold(false)}
-      >
-        <div className="fl-titlebar">
-          <span className="fl-lights" aria-hidden="true"><i /><i /><i /></span>
-          <div className="fl-trail" aria-hidden="true">
-            {mode === 'customer' ? (
-              <span className="fl-url">
-                <span className="fl-url-who">Customer’s view</span>
-                {CATALOGUE_URL}{shownT >= 1300 ? '/ss304-mounting-bracket' : ''}
-              </span>
-            ) : (
-              <span className="fl-chain">
-                {trail.map((id, i) => (
-                  <span key={id} className={`fl-chain-id${i === trail.length - 1 ? ' is-head' : ''}`}>
-                    {i > 0 && <em>›</em>}{id}
-                  </span>
-                ))}
-              </span>
+      <div className="fl-stage">
+        <button
+          type="button"
+          className={`fl-voice${voiceOn ? ' is-on' : ''}${voiceLive ? ' is-live' : ''}`}
+          aria-pressed={voiceOn}
+          aria-label={narrator.supported ? 'Voice-over' : 'Captions'}
+          onClick={toggleVoice}
+        >
+          {voiceOn
+            ? <span className="fl-eq" aria-hidden="true"><i /><i /><i /><i /></span>
+            : <VolumeX size={14} aria-hidden="true" />}
+          {narrator.supported ? 'Voice-over' : 'Captions'}
+          <b aria-hidden="true">{voiceOn ? 'On' : 'Off'}</b>
+        </button>
+
+        <div
+          className="fl-window"
+          onMouseEnter={() => setHold(true)}
+          onMouseLeave={() => setHold(false)}
+        >
+          <div className="fl-titlebar">
+            <span className="fl-lights" aria-hidden="true"><i /><i /><i /></span>
+            <div className="fl-trail" aria-hidden="true">
+              {mode === 'customer' ? (
+                <span className="fl-url">
+                  <span className="fl-url-who">Customer’s view</span>
+                  {CATALOGUE_URL}{shownT >= 1300 ? '/ss304-mounting-bracket' : ''}
+                </span>
+              ) : (
+                <span className="fl-chain">
+                  {trail.map((id, i) => (
+                    <span key={id} className={`fl-chain-id${i === trail.length - 1 ? ' is-head' : ''}`}>
+                      {i > 0 && <em>›</em>}{id}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </div>
+            <span className="fl-sample" aria-hidden="true">Sample data</span>
+            {!reduced && (
+              <button
+                type="button"
+                className={`fl-live${userPaused ? ' is-paused' : ''}`}
+                aria-pressed={userPaused}
+                aria-label={userPaused ? 'Resume the product walkthrough' : 'Pause the product walkthrough'}
+                onClick={() => setUserPaused((p) => !p)}
+              >
+                {userPaused ? <><Pause size={11} /> Paused</> : <><i /> Live product walkthrough</>}
+              </button>
             )}
           </div>
-          <span className="fl-sample" aria-hidden="true">Sample data</span>
-          {!reduced && (
-            <button
-              type="button"
-              className={`fl-live${userPaused ? ' is-paused' : ''}`}
-              aria-pressed={userPaused}
-              aria-label={userPaused ? 'Resume the product walkthrough' : 'Pause the product walkthrough'}
-              onClick={() => setUserPaused((p) => !p)}
-            >
-              {userPaused ? <><Pause size={11} /> Paused</> : <><i /> Live product walkthrough</>}
-            </button>
-          )}
+
+          <div className={`fl-app is-${mode}`} aria-hidden="true">
+            {/* the customer's own screen, for the first scene */}
+            {mode === 'customer' && scene.Customer && (
+              <div className="fl-cust-wrap fl-enter"><scene.Customer t={shownT} /></div>
+            )}
+
+            {mode === 'app' && (
+              <div className="fl-shell fl-enter-soft">
+                <aside className="fl-side">
+                  <span className="fl-side-hl" style={{ transform: `translateY(${idx * 36}px)` }} />
+                  {SCENES.map((s, i) => (
+                    <span key={s.key} className={`fl-side-item is-${stateOf(i)}`} onClick={() => goTo(i, { fromUser: true })}>
+                      <s.Icon size={15} />
+                      {s.title}
+                      {i === 0 && idx === 0 && shownT < 6500 && <b className="fl-side-badge">1</b>}
+                      {stateOf(i) === 'done' && <Check size={12} strokeWidth={3} className="fl-side-check" />}
+                    </span>
+                  ))}
+                </aside>
+
+                <section className="fl-main">
+                  <header className="fl-head">
+                    <span className="fl-head-icon"><Morph k={scene.key}><scene.Icon size={17} /></Morph></span>
+                    <h4><Morph k={scene.key}>{scene.title}</Morph></h4>
+                    <span className="fl-id"><Morph k={scene.id}>{scene.id}</Morph></span>
+                    <span className="fl-status">
+                      <Morph k={statusLabel}><Pill tone={statusTone} dot>{statusLabel}</Pill></Morph>
+                    </span>
+                  </header>
+                  <p className="fl-desc"><Morph k={scene.key}>{scene.desc}</Morph></p>
+
+                  <div className="fl-body">
+                    {prevScene && prevScene.key !== scene.key && (
+                      <div className="fl-pane is-out" key={`out-${prevScene.key}`}>
+                        <prevScene.Body t={prevScene.duration} />
+                      </div>
+                    )}
+                    <div className="fl-pane is-in" key={`in-${scene.key}`}>
+                      <Body t={shownT} />
+                    </div>
+                  </div>
+
+                  <div className="fl-actions">
+                    <span className="fl-cursor-host is-inline" ref={actionRef}>
+                      <button type="button" tabIndex={-1} className={`fl-btn primary${pressed ? ' is-pressed' : ''}`}>
+                        <Morph k={action.label}>{action.label}</Morph> <span aria-hidden="true">→</span>
+                      </button>
+                      {!reduced && <Cursor on={shownT >= action.cursor && shownT < action.click + 650} click={pressed} />}
+                    </span>
+                    <button type="button" tabIndex={-1} className="fl-btn">{scene.secondary}</button>
+                    <button type="button" tabIndex={-1} className="fl-btn is-icon">···</button>
+                  </div>
+                </section>
+
+                <section className="fl-docpane">
+                  <div className="fl-docpane-h">
+                    <FileText size={13} /> Document
+                    <span className="fl-view">View</span>
+                  </div>
+                  <div className="fl-docpane-body">
+                    {prevScene && prevScene.key !== scene.key && (
+                      <div className="fl-pane is-out" key={`dout-${prevScene.key}`}>
+                        <prevScene.Doc t={prevScene.duration} />
+                      </div>
+                    )}
+                    <div className="fl-pane is-in" key={`din-${scene.key}`}>
+                      <DocView t={shownT} />
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {/* the closing card: the whole transaction, as the records it made */}
+            {closing && (
+              <div className="fl-closing">
+                <b>One enquiry. One connected operation.</b>
+                <span className="fl-closing-chain">
+                  {CHAIN.map((id, i) => (
+                    <span key={id} className="fl-unit">
+                      {i > 0 && <em className="fl-sep" style={{ animationDelay: `${i * 110}ms` }}>›</em>}
+                      <span className="fl-chip" style={{ animationDelay: `${i * 110}ms` }}>{id}</span>
+                    </span>
+                  ))}
+                </span>
+                <small>Seven documents · one record · nothing retyped</small>
+              </div>
+            )}
+          </div>
+
+          {/* what a screen reader is told instead of watching */}
+          <p className="fl-sr" aria-live="polite">{closing ? 'One enquiry became seven linked documents.' : scene.sr}</p>
         </div>
 
-        <div className={`fl-app is-${mode}`} aria-hidden="true">
-          {/* the customer's own screen, for the first scene */}
-          {mode === 'customer' && scene.Customer && (
-            <div className="fl-cust-wrap fl-enter"><scene.Customer t={shownT} /></div>
-          )}
-
-          {mode === 'app' && (
-            <div className="fl-shell fl-enter-soft">
-              <aside className="fl-side">
-                <span className="fl-side-hl" style={{ transform: `translateY(${idx * 36}px)` }} />
-                {SCENES.map((s, i) => (
-                  <span key={s.key} className={`fl-side-item is-${stateOf(i)}`} onClick={() => goTo(i, { fromUser: true })}>
-                    <s.Icon size={15} />
-                    {s.title}
-                    {i === 0 && idx === 0 && shownT < 6500 && <b className="fl-side-badge">1</b>}
-                    {stateOf(i) === 'done' && <Check size={12} strokeWidth={3} className="fl-side-check" />}
-                  </span>
-                ))}
-              </aside>
-
-              <section className="fl-main">
-                <header className="fl-head">
-                  <span className="fl-head-icon"><Morph k={scene.key}><scene.Icon size={17} /></Morph></span>
-                  <h4><Morph k={scene.key}>{scene.title}</Morph></h4>
-                  <span className="fl-id"><Morph k={scene.id}>{scene.id}</Morph></span>
-                  <span className="fl-status">
-                    <Morph k={statusLabel}><Pill tone={statusTone} dot>{statusLabel}</Pill></Morph>
-                  </span>
-                </header>
-                <p className="fl-desc"><Morph k={scene.key}>{scene.desc}</Morph></p>
-
-                <div className="fl-body">
-                  {prevScene && prevScene.key !== scene.key && (
-                    <div className="fl-pane is-out" key={`out-${prevScene.key}`}>
-                      <prevScene.Body t={prevScene.duration} />
-                    </div>
-                  )}
-                  <div className="fl-pane is-in" key={`in-${scene.key}`}>
-                    <Body t={shownT} />
-                  </div>
-                </div>
-
-                <div className="fl-actions">
-                  <span className="fl-cursor-host is-inline" ref={actionRef}>
-                    <button type="button" tabIndex={-1} className={`fl-btn primary${pressed ? ' is-pressed' : ''}`}>
-                      <Morph k={action.label}>{action.label}</Morph> <span aria-hidden="true">→</span>
-                    </button>
-                    {!reduced && <Cursor on={shownT >= action.cursor && shownT < action.click + 650} click={pressed} />}
-                  </span>
-                  <button type="button" tabIndex={-1} className="fl-btn">{scene.secondary}</button>
-                  <button type="button" tabIndex={-1} className="fl-btn is-icon">···</button>
-                </div>
-              </section>
-
-              <section className="fl-docpane">
-                <div className="fl-docpane-h">
-                  <FileText size={13} /> Document
-                  <span className="fl-view">View</span>
-                </div>
-                <div className="fl-docpane-body">
-                  {prevScene && prevScene.key !== scene.key && (
-                    <div className="fl-pane is-out" key={`dout-${prevScene.key}`}>
-                      <prevScene.Doc t={prevScene.duration} />
-                    </div>
-                  )}
-                  <div className="fl-pane is-in" key={`din-${scene.key}`}>
-                    <DocView t={shownT} />
-                  </div>
-                </div>
-              </section>
-            </div>
-          )}
-
-          {/* the closing card: the whole transaction, as the records it made */}
-          {closing && (
-            <div className="fl-closing">
-              <b>One enquiry. One connected operation.</b>
-              <span className="fl-closing-chain">
-                {CHAIN.map((id, i) => (
-                  <span key={id} className="fl-unit">
-                    {i > 0 && <em className="fl-sep" style={{ animationDelay: `${i * 110}ms` }}>›</em>}
-                    <span className="fl-chip" style={{ animationDelay: `${i * 110}ms` }}>{id}</span>
-                  </span>
-                ))}
-              </span>
-              <small>Seven documents · one record · nothing retyped</small>
-            </div>
-          )}
-        </div>
-
-        {/* what a screen reader is told instead of watching */}
-        <p className="fl-sr" aria-live="polite">{closing ? 'One enquiry became seven linked documents.' : scene.sr}</p>
+        {/* the line being spoken. Hidden from screen readers, which already
+            have the live region above and would read every line twice. */}
+        {voiceOn && (
+          <p className="fl-caption" aria-hidden="true">
+            <Volume2 size={14} />
+            <span key={caption} className="fl-caption-line">{voiceLive ? caption : 'Voice-over paused'}</span>
+          </p>
+        )}
       </div>
 
       {/* the record in flight between stages */}

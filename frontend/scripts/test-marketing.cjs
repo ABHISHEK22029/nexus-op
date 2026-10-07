@@ -40,7 +40,7 @@ const ok = (c, m) => { c ? pass++ : fail++; console.log(`   ${c ? '✅' : '❌'}
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 (async () => {
-  const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+  const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--mute-audio'] });
   const page = await browser.newPage();
   const errs = [];
   page.on('pageerror', (e) => errs.push(e.message));
@@ -220,6 +220,111 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await sleep(1200);
   const p3 = await snap();
   ok(p3.pressed === 'false' && p3.win !== p2.win, 'and resumes it');
+
+  /* ── 2b. the voice-over ───────────────────────────────────────────────
+     Off until asked for; once on, each stage is narrated from recorded
+     clips and the story waits for the words. Playback is faked — play()
+     records the clip and reports it ended after __clipMs — so the timing
+     is the test's to set and nothing makes a sound. */
+  console.log('\n  ── the voice-over');
+  const { pathToFileURL } = require('url');
+  const path = require('path');
+  const fs = require('fs');
+  const { NARRATION, sentences, clipName } = await import(pathToFileURL(path.join(__dirname, '../src/components/marketing/flow/narration.js')).href);
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/components/marketing/flow/voice-clips.json'), 'utf8'));
+  const lines = Object.values(NARRATION).flatMap(sentences);
+  const missing = lines.filter((s) => !manifest.clips[clipName(s)] || !fs.existsSync(path.join(__dirname, '../public/voice', clipName(s))));
+  ok(!missing.length, `every sentence of the script is recorded (${lines.length - missing.length}/${lines.length}${missing.length ? `; re-run scripts/voiceover/make.mjs for: ${missing.join(' | ')}` : ''})`);
+  const clipOf = (key, i = 0) => clipName(sentences(NARRATION[key])[i]);
+
+  const fakeAudio = await page.evaluateOnNewDocument(() => {
+    window.__MK_FLOW_SPEED__ = 0;
+    window.__played = []; window.__clipMs = 300;
+    const timers = new WeakMap();
+    HTMLMediaElement.prototype.play = function () {
+      clearTimeout(timers.get(this));
+      if (!this.src.startsWith('data:')) window.__played.push(this.src.split('/').pop());
+      timers.set(this, setTimeout(() => this.dispatchEvent(new Event('ended')), window.__clipMs));
+      return Promise.resolve();
+    };
+    HTMLMediaElement.prototype.pause = function () { clearTimeout(timers.get(this)); };
+  });
+  await go('/');
+  await page.removeScriptToEvaluateOnNewDocument(fakeAudio.identifier);
+  const played = () => page.evaluate(() => window.__played.slice());
+  const forget = () => page.evaluate(() => { window.__played.length = 0; });
+  const voiceState = () => page.evaluate(() => ({
+    pressed: document.querySelector('.fl-voice')?.getAttribute('aria-pressed'),
+    caption: document.querySelector('.fl-caption-line')?.textContent || null,
+    stage: document.querySelector('.fl-card[aria-current="step"] .fl-card-title')?.textContent,
+  }));
+
+  const v0 = await voiceState();
+  ok(v0.pressed === 'false' && !(await played()).length && !v0.caption, 'the voice-over is off until asked for — nothing plays by itself');
+  const served = await page.evaluate(async (u) => { const r = await fetch(u); return `${r.status} ${r.headers.get('content-type')}`; }, `/voice/${clipOf('purchase')}`);
+  ok(/^200 audio\/mpeg/.test(served), `the clips are served as audio (${served})`);
+
+  await page.click('.fl-voice');
+  await page.mouse.move(2, 2);
+  await sleep(150);
+  const v1 = await voiceState();
+  ok(v1.pressed === 'true' && (await played())[0] === clipOf('enquiry'), `turning it on narrates the stage on screen (${(await played())[0]})`);
+  ok(v1.caption === sentences(NARRATION.enquiry)[0], 'and captions the sentence being spoken');
+
+  /* the stage waits for its words: Enquiry is 9s of story, 0.75s at 12x;
+     its two sentences take 2.5s each */
+  await page.evaluate(() => { window.__clipMs = 2500; });
+  await forget();
+  await page.evaluate(() => document.querySelectorAll('.fl-card')[0].click());
+  await page.mouse.move(2, 2);
+  await speed(12);
+  await sleep(1800);
+  const waiting = await voiceState();
+  ok(waiting.stage === 'Enquiry', `a stage does not hand over while its line is being said (${waiting.stage} at 1.8s)`);
+  const moved = await nextStage('Enquiry', 6000);
+  const order = await played();
+  ok(moved === 'Quotation' && order[0] === clipOf('enquiry') && order[1] === clipOf('enquiry', 1) && order[2] === clipOf('quotation'),
+    `and moves on when it has, straight into the next stage's line (${moved})`);
+
+  await page.evaluate(() => { window.__clipMs = 300; });
+  await speed(0);
+  await forget();
+  await page.evaluate(() => document.querySelectorAll('.fl-card')[3].click());
+  await page.mouse.move(2, 2);
+  await sleep(150);
+  const v2 = await voiceState();
+  ok(v2.stage === 'Purchase' && (await played())[0] === clipOf('purchase') && v2.caption === sentences(NARRATION.purchase)[0],
+    'choosing a card cuts the line short and narrates that stage');
+
+  await page.click('.fl-live');
+  await page.mouse.move(2, 2);
+  await forget();
+  await sleep(700);
+  const v3 = await voiceState();
+  ok(!(await played()).length && v3.caption === 'Voice-over paused', 'pausing the walkthrough silences it');
+  await page.click('.fl-live');
+  await page.mouse.move(2, 2);
+  await sleep(150);
+  ok((await played())[0] === clipOf('purchase'), 'and resuming starts the stage again, with its line');
+
+  await page.evaluate(() => { window.__clipMs = 120; });
+  await forget();
+  await speed(12);
+  let closed = false;
+  for (let t0 = Date.now(); Date.now() - t0 < 15000 && !closed;) {
+    closed = await page.evaluate(() => !!document.querySelector('.fl-closing'));
+    await sleep(80);
+  }
+  await sleep(600);
+  const tail = await played();
+  ok(closed && sentences(NARRATION.closing).every((s) => tail.includes(clipName(s))), 'the closing card has its own line');
+
+  await speed(0);
+  await page.click('.fl-voice');
+  await forget();
+  await sleep(800);
+  const v4 = await voiceState();
+  ok(v4.pressed === 'false' && !v4.caption && !(await played()).length, 'and turning it off silences it at once');
 
   /* ── 3. feature grid ──────────────────────────────────────────────── */
   console.log('\n  ── feature grid');

@@ -7,6 +7,7 @@ import {
   Show, Typed, Count, Bar, Pill, Field, Tick, FileChip, Doc, DocMeta, DocKV,
   inr, num, prog, Letterhead, SELLER,
 } from './kit';
+import { NARRATION } from './narration';
 
 /* ══════════════════════════════════════════════════════════════════════
    The story: one transaction, seven scenes, about sixty seconds.
@@ -716,6 +717,7 @@ export const SCENES = [
     secondary: 'Reply',
     Body: EnquiryBody, Doc: EnquiryDoc, Customer: CustomerCatalogue,
     sr: `${CUSTOMER} finds the ${PRODUCT} in the public catalogue and asks for ${QTY}. The enquiry arrives in Maks Ops as ${IDS.enq}.`,
+    voice: NARRATION.enquiry,
   },
   {
     key: 'quotation', n: '02', title: 'Quotation', sub: 'Price it', Icon: FileText,
@@ -729,6 +731,7 @@ export const SCENES = [
     secondary: 'Download PDF',
     Body: QuotationBody, Doc: QuotationDoc,
     sr: `Quotation ${IDS.qt}: ${QTY} at ${inr(RATE)}, total ${inr(TOTAL)} with CGST and SGST. Emailed, and accepted by the customer.`,
+    voice: NARRATION.quotation,
   },
   {
     key: 'order', n: '03', title: 'Order', sub: 'Can we fulfil it?', Icon: ClipboardCheck,
@@ -739,6 +742,7 @@ export const SCENES = [
     secondary: 'Print',
     Body: OrderBody, Doc: OrderDoc,
     sr: `Sales order ${IDS.so}. Open orders need 323 kg of ${MATERIAL}; 143 kg is on hand, so the order is short by 180 kg.`,
+    voice: NARRATION.order,
   },
   {
     key: 'purchase', n: '04', title: 'Purchase', sub: 'Buy smarter', Icon: ShoppingCart,
@@ -749,6 +753,7 @@ export const SCENES = [
     secondary: 'Upload quote',
     Body: PurchaseBody, Doc: PurchaseDoc,
     sr: `Three vendor quotes are read and compared. Deccan Metals is lowest at ₹260 a kilo; purchase order ${IDS.po} is raised for 180 kg.`,
+    voice: NARRATION.purchase,
   },
   {
     key: 'grn', n: '05', title: 'Goods receipt', sub: 'Stock updates itself', Icon: Truck,
@@ -759,6 +764,7 @@ export const SCENES = [
     secondary: 'Print GRN',
     Body: GrnBody, Doc: GrnDoc,
     sr: `Goods receipt ${IDS.grn}: 180 kg received. Stock goes from 143 kg to 323 kg, and the order is fully covered.`,
+    voice: NARRATION.grn,
   },
   {
     key: 'production', n: '06', title: 'Production', sub: 'Output, scrap, cost', Icon: Factory,
@@ -769,6 +775,7 @@ export const SCENES = [
     secondary: 'Log scrap',
     Body: ProductionBody, Doc: ProductionDoc,
     sr: `Production ${IDS.prod}: 300 kg issued, 120 pieces made, 17.4 kg scrap logged, yield 94.2%, material cost ₹642 a piece.`,
+    voice: NARRATION.production,
   },
   {
     key: 'invoice', n: '07', title: 'Tax invoice', sub: 'Get paid', Icon: ReceiptText,
@@ -779,8 +786,12 @@ export const SCENES = [
     secondary: 'Download PDF',
     Body: InvoiceBody, Doc: InvoiceDoc,
     sr: `Tax invoice ${IDS.inv} for ${inr(TOTAL)}, with e-way bill, emailed to the customer.`,
+    voice: NARRATION.invoice,
   },
 ];
+
+/* What the voice-over says over the closing card. */
+export const CLOSING_VOICE = NARRATION.closing;
 
 /* The seven numbered records the one transaction produced. */
 export const CHAIN = SCENES.map((s) => s.id);

@@ -1,0 +1,10 @@
+{
+  "name": "maks-voiceover",
+  "private": true,
+  "type": "module",
+  "description": "Generates the homepage walkthrough's voice-over clips. Not part of the site build: run `npm install && node make.mjs` here when the narration changes.",
+  "dependencies": {
+    "@breezystack/lamejs": "1.2.7",
+    "kokoro-js": "1.2.1"
+  }
+}

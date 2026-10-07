@@ -190,7 +190,7 @@
    THE WINDOW — the product.
    ══════════════════════════════════════════════════════════════════════ */
 .fl-window {
-  position: relative; margin-top: 18px;
+  position: relative;
   background: var(--bg-surface);
   border: 1px solid var(--border-default); border-radius: var(--r-lg);
   box-shadow:
@@ -200,6 +200,69 @@
   overflow: hidden;
   text-align: left;
 }
+
+/* ── the window's stand, and the voice-over button on its top edge ──
+   The window clips its contents, so the button lives on this wrapper
+   instead and sits across the window's top edge. It reaches no more than
+   4px into the title bar, clear of the trail and the "Live" chip. */
+.fl-stage { position: relative; margin-top: 28px; }
+.fl-voice {
+  position: absolute; z-index: 3; left: 50%; top: 0;
+  transform: translate(-50%, -88%);
+  display: inline-flex; align-items: center; gap: 8px;
+  font: inherit; font-size: var(--t-xs); font-weight: 700; line-height: 1;
+  padding: 7px 8px 7px 12px; border-radius: var(--r-full); cursor: pointer;
+  color: #fff; background: hsl(20 88% 38%);
+  border: 1px solid hsl(20 88% 32%);
+  box-shadow: 0 1px 0 hsl(0 0% 100% / 0.22) inset, 0 10px 22px -10px hsl(22 90% 35% / 0.75);
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.fl-voice:hover { background: hsl(20 88% 33%); }
+.fl-voice:focus-visible { outline: 2px solid var(--brand-amber); outline-offset: 3px; }
+.fl-voice b {
+  font-size: var(--t-3xs); letter-spacing: var(--track-label); text-transform: uppercase;
+  padding: 2px 6px; border-radius: var(--r-full);
+  background: hsl(0 0% 100% / 0.2);
+}
+/* off: a slow ring asks for the click, without making a sound */
+.fl-voice:not(.is-on)::after {
+  content: ''; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  border: 2px solid var(--brand-amber); opacity: 0;
+  animation: fl-voice-ring 2.6s ease-out infinite;
+}
+@keyframes fl-voice-ring {
+  0% { opacity: 0.7; transform: scale(1); }
+  70%, 100% { opacity: 0; transform: scale(1.16, 1.5); }
+}
+.fl-voice.is-on {
+  color: var(--text-primary); background: var(--bg-surface);
+  border-color: var(--fl-amber-line);
+  box-shadow: 0 10px 22px -12px hsl(25 40% 20% / 0.45);
+}
+.fl-voice.is-on:hover { background: var(--bg-elevated); }
+.fl-voice.is-on b { color: var(--brand-amber-dark); background: var(--fl-amber-tint); }
+
+/* the bars move while the voice can be heard, and rest when it is paused */
+.fl-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 13px; color: var(--brand-amber); }
+.fl-eq i {
+  display: block; width: 3px; height: 100%; border-radius: 1px; background: currentColor;
+  transform-origin: 50% 100%; transform: scaleY(0.3);
+}
+.fl-voice.is-live .fl-eq i { animation: fl-eq 0.9s ease-in-out infinite; }
+.fl-voice.is-live .fl-eq i:nth-child(2) { animation-delay: -0.45s; }
+.fl-voice.is-live .fl-eq i:nth-child(3) { animation-delay: -0.2s; }
+.fl-voice.is-live .fl-eq i:nth-child(4) { animation-delay: -0.65s; }
+@keyframes fl-eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+
+/* the caption: the sentence being spoken, under the window */
+.fl-caption {
+  display: flex; align-items: flex-start; justify-content: center; gap: 8px;
+  max-width: 640px; min-height: 3em; margin: 14px auto 0; padding: 0 8px;
+  font-size: var(--t-sm); line-height: 1.5; text-align: center;
+  color: var(--text-secondary); text-wrap: balance;
+}
+.fl-caption svg { flex: none; margin-top: 3px; color: var(--brand-amber-dark); }
+.fl-caption-line { animation: fl-fade 0.35s ease both; }
 
 /* Named .fl-titlebar, not .fl-bar: that name belongs to the progress-bar
    primitive, and sharing it gave every progress bar on the page this 42px
@@ -754,7 +817,9 @@
 
 /* nothing loops where nobody is looking */
 .fl-root.is-offscreen .fl-card-ping::after,
-.fl-root.is-offscreen .fl-live i { animation-play-state: paused; }
+.fl-root.is-offscreen .fl-live i,
+.fl-root.is-offscreen .fl-voice::after,
+.fl-root.is-offscreen .fl-eq i { animation-play-state: paused; }
 
 /* ══════════════════════════════════════════════════════════════════════
    RESPONSIVE — the window keeps its proportions; what it shows narrows.
