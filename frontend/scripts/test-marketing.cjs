@@ -148,9 +148,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(run.customerScreen, 'it opens on the CUSTOMER\'s screen — your public catalogue at maksops.co.in/c/…');
   ok(JSON.stringify(run.order) === JSON.stringify([...STAGES, 'CLOSING']),
     `it plays every stage in order, then closes (${run.order.join(' → ')})`);
-  const prefixes = ['ENQ-', 'QT-', 'SO-', 'PO-', 'GRN-', 'PROD-', 'INV-'];
-  ok(prefixes.every((pfx) => run.ids.some((i) => i.startsWith(pfx))),
-    `each stage produces its own numbered record (${run.ids.join(', ')})`);
+  /* The numbers are the app's own formats (CO-0012, PFW/FY2026-27/018 …),
+     checked against the patterns the film uses too. */
+  const { ID_PATTERNS } = await import(require('url').pathToFileURL(require('path').join(__dirname, '../src/components/marketing/data/transaction.js')).href);
+  const kinds = ['enq', 'qt', 'co', 'po', 'grn', 'prod', 'inv'];
+  ok(kinds.every((k) => run.ids.some((i) => ID_PATTERNS[k].test(i))),
+    `each stage produces its own numbered record, in the app's own formats (${run.ids.join(', ')})`);
   ok(run.maxTrail === 7, `and the window's trail links all seven (${run.maxTrail})`);
   ok(run.acme.length === 7, `the SAME customer is on screen in every stage (${run.acme.length}/7)`);
   ok(run.flew, 'between stages the new record flies up to the next card');
@@ -618,13 +621,18 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(expensiveNames.length === 0,
     `animations are compositor-only${expensiveNames.length ? ` — still painting: ${expensiveNames.join(', ')}` : ` (${cost.composited} transform/opacity)`}`);
 
-  const runningAtEngine = cost.running;
+  /* Loops only. A raw count included one-off transitions — the nav restyling
+     as the page scrolls, a reveal finishing — so it rose and fell with timing
+     and said nothing about whether loops stop off screen. */
+  const loopsRunning = () => page.evaluate(() =>
+    document.getAnimations().filter(a => a.playState === 'running' && a.effect?.getTiming?.().iterations === Infinity)
+      .map(a => { const el = a.effect?.target; return el ? String(el.className?.baseVal ?? el.className).split(' ')[0] || el.tagName : '?'; }));
+  const atEngine = await loopsRunning();
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await sleep(1600);
-  const atFooter = await page.evaluate(() =>
-    document.getAnimations().filter(a => a.playState === 'running').length);
-  ok(atFooter < runningAtEngine,
-    `motion follows the viewport — ${runningAtEngine} running at the engine, ${atFooter} at the footer`);
+  const atFooter = await loopsRunning();
+  ok(atFooter.length < atEngine.length && !atFooter.some(c => /^fl-/.test(c)),
+    `motion follows the viewport — ${atEngine.length} loops at the engine, ${atFooter.length} at the footer (${atFooter.join(', ') || 'none'})`);
 
   console.log('');
   ok(errs.length === 0, `no JavaScript or console errors${errs.length ? ': ' + errs[0].slice(0, 110) : ''}`);

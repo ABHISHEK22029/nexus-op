@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ArrowRight, Zap, Map, BarChart3, FileText,
@@ -173,6 +173,11 @@ const Welcome = () => {
     }, 5000);
     return () => clearInterval(timer);
   }, []);
+
+  /* The logo strip loops forever; it pauses while it is off screen, like
+     every other loop on this page — a reader at the footer should not be
+     paying for a marquee they scrolled past. */
+  const [marqueeRef, , marqueeVisible] = useInView(0);
 
   /* ── Marquee animation keyframe (injected once) ── */
   const marqueeStyle = `@keyframes nx-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }`;
@@ -364,8 +369,8 @@ const Welcome = () => {
             letterSpacing: '0.12em', textTransform: 'uppercase',
           }}>Built for India's growing SMEs</span>
         </div>
-        <div style={{ overflow: 'hidden' }}>
-          <div style={{ display: 'flex', animation: 'nx-marquee 30s linear infinite', width: 'max-content' }}>
+        <div ref={marqueeRef} style={{ overflow: 'hidden' }}>
+          <div style={{ display: 'flex', animation: 'nx-marquee 30s linear infinite', animationPlayState: marqueeVisible ? 'running' : 'paused', width: 'max-content' }}>
             {[...LOGOS, ...LOGOS].map((name, i) => (
               <div key={i} style={{
                 padding: '8px 40px', borderRight: '1px solid var(--border-subtle)',

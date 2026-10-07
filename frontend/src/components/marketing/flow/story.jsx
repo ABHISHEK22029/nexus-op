@@ -8,6 +8,10 @@ import {
   inr, num, prog, Letterhead, SELLER,
 } from './kit';
 import { NARRATION } from './narration';
+import {
+  makeDay, makeIds, CATALOGUE_URL, CUSTOMER as TX_CUSTOMER, PRODUCT as TX_PRODUCT,
+  MATERIAL as TX_MATERIAL, QTY, RATE, SUB, HALF_GST, TOTAL,
+} from '../data/transaction';
 
 /* ══════════════════════════════════════════════════════════════════════
    The story: one transaction, seven scenes, about sixty seconds.
@@ -48,32 +52,21 @@ import { NARRATION } from './narration';
      first thing a fabricator noticed.
    ══════════════════════════════════════════════════════════════════════ */
 
+/* The transaction itself — customer, product, money, stock and record
+   numbers — lives in ../data/transaction, shared with the product film.
+   Dates move with the calendar, so the demo never looks months stale, and
+   the PO number's financial year moves with them. */
 const NOW = new Date();
-const Y = NOW.getFullYear();
-/* Dates move with the calendar, so the demo never looks months stale. */
-export const day = (offset = 0) => {
-  const d = new Date(NOW);
-  d.setDate(d.getDate() + offset);
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-};
+export const day = makeDay(NOW);
+export const IDS = makeIds(NOW);
 
-export const IDS = {
-  enq: `ENQ-${Y}-01842`, qt: `QT-${Y}-00981`, so: `SO-${Y}-00672`, po: `PO-${Y}-00418`,
-  grn: `GRN-${Y}-00311`, prod: `PROD-${Y}-00287`, inv: `INV-${Y}-00193`,
-};
-
-export const CUSTOMER = 'Acme Engineering Pvt. Ltd.';
-const CUSTOMER_SHORT = 'Acme Engineering';
-const EMAIL = 'purchase@acme.example';
-export const CATALOGUE_URL = 'maksops.co.in/c/precision-fab';
-const PRODUCT = 'SS304 Mounting Bracket';
-const PRODUCT_SLUG = 'ss304-mounting-bracket';
-const MATERIAL = 'SS304 sheet, 2 mm';
-const QTY = 120;
-const RATE = 2320;
-const SUB = 278400;
-const HALF_GST = 25056;
-const TOTAL = 328500;
+export const CUSTOMER = TX_CUSTOMER.name;
+const CUSTOMER_SHORT = TX_CUSTOMER.short;
+const EMAIL = TX_CUSTOMER.email;
+export { CATALOGUE_URL };
+const PRODUCT = TX_PRODUCT.name;
+const PRODUCT_SLUG = TX_PRODUCT.slug;
+const MATERIAL = TX_MATERIAL.name;
 
 /* ── shared pieces ─────────────────────────────────────────────────── */
 
@@ -366,8 +359,8 @@ const EnquiryInApp = ({ t }) => {
           <span className="r">{QTY}</span>
           <span className="r"><Pill tone="info" dot>New</Pill></span>
         </Show>
-        <div className="fl-tr is-old"><span className="fl-mono">ENQ-{Y}-01841</span><span>Orbit Infra</span><span>Base Plate</span><span className="r">40</span><span className="r"><Pill>Quoted</Pill></span></div>
-        <div className="fl-tr is-old"><span className="fl-mono">ENQ-{Y}-01839</span><span>Sunline Solar</span><span>Module Clamp</span><span className="r">600</span><span className="r"><Pill>Quoted</Pill></span></div>
+        <div className="fl-tr is-old"><span className="fl-mono">ENQ-0041</span><span>Orbit Infra</span><span>Base Plate</span><span className="r">40</span><span className="r"><Pill>Quoted</Pill></span></div>
+        <div className="fl-tr is-old"><span className="fl-mono">ENQ-0039</span><span>Sunline Solar</span><span>Module Clamp</span><span className="r">600</span><span className="r"><Pill>Quoted</Pill></span></div>
         <Show on={t >= CUSTOMER_UNTIL + 600} className="fl-arrived">
           Arrived from your catalogue — nobody typed it in.
         </Show>
@@ -492,7 +485,7 @@ const OrderBody = ({ t }) => {
 };
 
 const OrderDoc = ({ t }) => (
-  <Doc title="SALES ORDER" id={IDS.so}>
+  <Doc title="CUSTOMER ORDER" id={IDS.co}>
     <DocMeta
       left={<><small>Customer</small><b>{CUSTOMER}</b><span>PO ref: ACME/PO/7713</span></>}
       right={<><small>Delivery due</small><b>{day(28)}</b><span>Ref {IDS.qt}</span></>}
@@ -550,7 +543,7 @@ const PurchaseDoc = ({ t }) => {
     <Doc title="PURCHASE ORDER" id={filled ? IDS.po : 'Draft'}>
       <DocMeta
         left={<><small>Vendor</small><b>{filled ? 'Deccan Metals' : '—'}</b><span>{filled ? 'Hyderabad, Telangana' : 'awaiting comparison'}</span></>}
-        right={<><small>For</small><b>{IDS.so}</b><span>{CUSTOMER_SHORT}</span></>}
+        right={<><small>For</small><b>{IDS.co}</b><span>{CUSTOMER_SHORT}</span></>}
       />
       <div className="fl-doc-lines">
         <DocLine on name={MATERIAL} qty="180 kg" amount={filled ? inr(46800) : '—'} />
@@ -596,7 +589,7 @@ const GrnDoc = () => (
   <Doc title="GOODS RECEIPT NOTE" id={IDS.grn}>
     <DocMeta
       left={<><small>Vendor</small><b>Deccan Metals</b><span>Ref {IDS.po}</span></>}
-      right={<><small>For</small><b>{IDS.so}</b><span>{CUSTOMER_SHORT}</span></>}
+      right={<><small>For</small><b>{IDS.co}</b><span>{CUSTOMER_SHORT}</span></>}
     />
     <div className="fl-doc-lines"><DocLine on name={MATERIAL} qty="180 kg" amount="Batch HT-2219" /></div>
     <div className="fl-doc-tot"><DocKV k="Stock after receipt" v="323 kg" strong /></div>
@@ -650,7 +643,7 @@ const ProductionBody = ({ t }) => {
 const ProductionDoc = ({ t }) => (
   <Doc title="PRODUCTION ORDER" id={IDS.prod}>
     <DocMeta
-      left={<><small>For</small><b>{IDS.so}</b><span>{CUSTOMER_SHORT}</span></>}
+      left={<><small>For</small><b>{IDS.co}</b><span>{CUSTOMER_SHORT}</span></>}
       right={<><small>Due</small><b>{day(28)}</b><span>{QTY} Nos</span></>}
     />
     <div className="fl-doc-lines">
@@ -688,7 +681,7 @@ const InvoiceDoc = ({ t }) => (
   <Doc title="TAX INVOICE" id={IDS.inv}>
     <DocMeta
       left={<><small>Bill to</small><b>{CUSTOMER}</b><span>GSTIN 36ABCDE1234F1Z5</span></>}
-      right={<><small>Date</small><b>{day(24)}</b><span>Ref {IDS.so}</span></>}
+      right={<><small>Date</small><b>{day(24)}</b><span>Ref {IDS.co}</span></>}
     />
     <div className="fl-doc-lines">
       <DocLine on={t >= 150} name={PRODUCT} qty={`${QTY} × ${inr(RATE)}`} amount={inr(SUB)} />
@@ -735,13 +728,13 @@ export const SCENES = [
   },
   {
     key: 'order', n: '03', title: 'Order', sub: 'Can we fulfil it?', Icon: ClipboardCheck,
-    id: IDS.so, duration: 7000,
+    id: IDS.co, duration: 7000,
     desc: 'Before you promise a date, Maks Ops checks every open order against what you actually hold.',
     status: () => ['Confirmed', 'ok'],
     actions: [{ from: 0, label: 'Raise purchase', cursor: 5300, click: 6000 }],
     secondary: 'Print',
     Body: OrderBody, Doc: OrderDoc,
-    sr: `Sales order ${IDS.so}. Open orders need 323 kg of ${MATERIAL}; 143 kg is on hand, so the order is short by 180 kg.`,
+    sr: `Customer order ${IDS.co}. Open orders need 323 kg of ${MATERIAL}; 143 kg is on hand, so the order is short by 180 kg.`,
     voice: NARRATION.order,
   },
   {
