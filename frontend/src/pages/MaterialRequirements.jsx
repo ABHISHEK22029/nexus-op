@@ -11,8 +11,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import SetupReadiness from '../components/SetupReadiness';
 import { useSearchParams } from 'react-router-dom';
-import { Layers, AlertTriangle, Search, RefreshCw, Info, TrendingDown, PackageCheck } from 'lucide-react';
+import { Layers, AlertTriangle, Search, RefreshCw, Info, TrendingDown, PackageCheck, ShoppingCart } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
+import ShortfallPoModal from '../components/ShortfallPoModal';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const num = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 });
@@ -29,6 +31,11 @@ const STATUS = {
 
 export default function MaterialRequirements() {
   const toast = useToast();
+  const { can } = usePermissions();
+  /* Raising purchase orders is the PO permission, not this screen's:
+     Production may read and plan requirements but not buy. */
+  const canRaise = can('po', 'write');
+  const [ordering, setOrdering] = useState(false);
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -108,10 +115,26 @@ export default function MaterialRequirements() {
             money goes where it matters.
           </p>
         </div>
-        <button onClick={load} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {canRaise && Number(data?.summary?.materials_short) > 0 && (
+            <button onClick={() => setOrdering(true)} className="btn-primary" data-open-shortfall-po
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <ShoppingCart size={14} /> Raise purchase orders
+            </button>
+          )}
+          <button onClick={load} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
+
+      {ordering && (
+        <ShortfallPoModal
+          query={orderId ? `orderId=${encodeURIComponent(orderId)}` : ''}
+          onClose={() => setOrdering(false)}
+          onRaised={(d) => { toast.success(d.message || 'Purchase orders raised'); load(); }}
+        />
+      )}
 
       {/* What needs attention, before any table */}
       {data?.summary && (

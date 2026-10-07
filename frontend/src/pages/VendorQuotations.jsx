@@ -25,9 +25,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Upload, Eye, Trash2, Scale, AlertTriangle, Loader2, FileSpreadsheet,
-  FileText, FileType, CheckCircle2, X, Pencil, Plus, Download, Printer, ShieldCheck,
+  FileText, FileType, CheckCircle2, X, Pencil, Plus, Download, Printer, ShieldCheck, ShoppingCart,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const token = () => localStorage.getItem('nexus_token');
@@ -57,6 +59,9 @@ const StatusChip = ({ status, note }) => {
 
 export default function VendorQuotations() {
   const toast = useToast();
+  const { can } = usePermissions();
+  /* Ordering is the PO permission, not this screen's quotation one. */
+  const canRaise = can('po', 'write');
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [picked, setPicked] = useState([]);
@@ -147,6 +152,23 @@ export default function VendorQuotations() {
       if (!r.ok) { toast.error(d.error || 'Could not compare'); return; }
       setCmp(d);
       setTimeout(() => document.getElementById('vq-compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    } finally { setBusy(false); }
+  };
+
+  /* The comparison names the vendor; this orders from them. The server
+     takes the quotation's own lines and rates, refuses unchecked lines and a
+     second PO from the same quotation, and holds a large one for sign-off. */
+  const raisePo = async (q) => {
+    if (!window.confirm(`Raise a purchase order to ${q.vendor} from this quotation — ${q.linesQuoted} item${q.linesQuoted === 1 ? '' : 's'}, at the rates they quoted?`)) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`${API}/vendor-quotations/${q.id}/to-po`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...auth() }, body: JSON.stringify({}),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { toast.error(d.error || 'The purchase order was not raised'); if (r.status === 409 && cmp) await compare(cmp.quotations.map(x => x.id)); return; }
+      toast.success(`${d.poNumber} raised to ${d.vendor}${d.approvalStatus === 'Pending Approval' ? ' — it needs sign-off' : ''}`);
+      if (cmp) await compare(cmp.quotations.map(x => x.id));
     } finally { setBusy(false); }
   };
 
@@ -266,7 +288,7 @@ export default function VendorQuotations() {
           onOpen={openOriginal} onSaved={async () => { await load(); if (cmp) compare(cmp.quotations.map(q => q.id)); }} />
       )}
 
-      {cmp && <Comparison cmp={cmp} onClose={() => setCmp(null)} onOpen={openOriginal} />}
+      {cmp && <Comparison cmp={cmp} onClose={() => setCmp(null)} onOpen={openOriginal} onRaisePo={canRaise ? raisePo : null} busy={busy} />}
     </div>
   );
 }
@@ -390,7 +412,7 @@ function csvOf(cmp) {
   return [head, ...body, foot].map(r => r.map(esc).join(',')).join('\n');
 }
 
-function Comparison({ cmp, onClose, onOpen }) {
+function Comparison({ cmp, onClose, onOpen, onRaisePo, busy }) {
   const qs = cmp.quotations;
   const cheapest = qs.find(q => q.id === cmp.cheapestOnLikeForLike);
   const download = () => {
@@ -458,7 +480,18 @@ function Comparison({ cmp, onClose, onOpen }) {
                     {q.linesQuoted}
                     {q.linesMissing > 0 && <span style={{ color: '#b45309' }}> · {q.linesMissing} not quoted</span>}
                   </td>
-                  <td className="no-print" style={{ ...S.td, textAlign: 'right' }}>
+                  <td className="no-print" style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {q.poNumber ? (
+                      <Link to="/purchase-orders" data-po-raised style={{ fontSize: '0.78rem', fontWeight: 700, color: '#16a34a', marginRight: 6 }}>
+                        <CheckCircle2 size={13} style={{ verticalAlign: '-2px' }} /> {q.poNumber}
+                      </Link>
+                    ) : onRaisePo && q.vendorId ? (
+                      <button onClick={() => onRaisePo(q)} disabled={busy} data-raise-po={q.id}
+                        className={best ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 4 }}>
+                        <ShoppingCart size={13} /> Raise PO
+                      </button>
+                    ) : null}
                     <button onClick={() => onOpen({ id: q.id })} title="Open the original file" aria-label={`Open the original file for ${q.vendor}`} style={S.icon}><Eye size={16} /></button>
                   </td>
                 </tr>

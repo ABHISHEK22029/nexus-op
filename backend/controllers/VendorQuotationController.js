@@ -16,7 +16,10 @@
 const db = require('../db');
 const { parseQuotation, matchKey, itemSignature, similarity } = require('../shared/quoteParser');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
-const { isCrossTenant } = require('../shared/roles');
+const { isCrossTenant, can, WRITE } = require('../shared/roles');
+const { allocatePoNumber } = require('../shared/docNumber');
+const { writePoLines, poLinesProblem, notifyApproval } = require('../shared/poLines');
+const { notify } = require('../notify');
 const { runList } = require('../shared/listQuery');
 
 const ownerOf = (req) => req.user?.orgId ?? req.user?.id ?? null;
@@ -174,7 +177,9 @@ exports.compare = async (req, res) => {
     let scope = '';
     if (!isAdmin(req)) { params.push(ownerOf(req)); scope = ` AND owner_id = $${params.length}`; }
     const quotes = (await db.query(
-      `SELECT * FROM vendor_quotations WHERE id = ANY($1)${scope} ORDER BY id`, params)).rows;
+      `SELECT vq.*, po."poNumber" AS po_number
+         FROM vendor_quotations vq LEFT JOIN purchase_orders po ON po.id = vq.po_id
+        WHERE vq.id = ANY($1)${scope.replace('owner_id', 'vq.owner_id')} ORDER BY vq.id`, params)).rows;
     if (quotes.length !== ids.length) {
       return res.status(404).json({ error: 'One or more of those quotations could not be found.' });
     }
@@ -276,6 +281,9 @@ exports.compare = async (req, res) => {
         filename: q.filename,
         parseStatus: q.parse_status,
         parseNote: q.parse_note,
+        vendorId: q.vendor_id,
+        poId: q.po_number ? q.po_id : null,
+        poNumber: q.po_number || null,
         statedTotal: q.grand_total == null ? null : Number(q.grand_total),
         linesTotal: r2(own),
         comparableTotal: r2(common),
@@ -397,4 +405,104 @@ exports.update = async (req, res) => {
     const ls = (await db.query('SELECT * FROM vendor_quotation_lines WHERE vendor_quotation_id = $1 ORDER BY line_no', [q.id])).rows;
     res.json({ ...row, lines: ls });
   } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* POST /vendor-quotations/:id/to-po   Body: { projectId? }
+
+   The comparison names the vendor; this orders from them. One vendor's
+   quotation becomes a purchase order with that quotation's own lines,
+   quantities and rates — nothing retyped, which is the whole point of
+   reading the file in the first place.
+
+   Three refusals, each saying what to do instead:
+     · the quotation is not linked to a vendor in the directory — a PO is
+       addressed to a vendor, not to a name read off a PDF
+     · a line was read with less than full confidence and nobody has checked
+       it — a figure going onto a purchase order must have been looked at
+     · a PO was already raised from it — a second click must not order twice
+
+   Needs permission to create purchase orders, checked here: the route's
+   own permission is the quotations one, which is not the same thing. */
+exports.toPo = async (req, res) => {
+  if (!can(req.user?.role, 'po', WRITE, req.user?.orgId)) {
+    return res.status(403).json({ error: 'Raising a purchase order needs permission to create purchase orders.' });
+  }
+  let client;
+  try {
+    const s = scopedById(req, req.params.id);
+    const q = (await db.query(`SELECT * FROM vendor_quotations WHERE ${s.where}`, s.params)).rows[0];
+    if (!q) return res.status(404).json({ error: 'Not found' });
+    if (q.po_id) {
+      const prior = (await db.query('SELECT id, "poNumber" FROM purchase_orders WHERE id = $1', [q.po_id])).rows[0];
+      if (prior) {
+        return res.status(409).json({ error: `A purchase order was already raised from this quotation: ${prior.poNumber}.`, poId: prior.id, poNumber: prior.poNumber });
+      }
+    }
+    if (!q.vendor_id) {
+      return res.status(400).json({ error: 'Link this quotation to a vendor first — a purchase order is addressed to a vendor in your directory.' });
+    }
+    const vendor = (await db.query('SELECT id, name, owner_id FROM vendors WHERE id = $1', [q.vendor_id])).rows[0];
+    if (!vendor) return res.status(400).json({ error: 'The vendor on this quotation no longer exists. Link it to a vendor first.' });
+
+    const lines = (await db.query(
+      'SELECT * FROM vendor_quotation_lines WHERE vendor_quotation_id = $1 ORDER BY line_no', [q.id])).rows;
+    const unchecked = lines.filter((l) => l.confidence !== 'high' && l.confidence !== 'checked');
+    if (unchecked.length) {
+      return res.status(400).json({ error: `Check the lines first (Review → Save as checked): ${unchecked.length} were read from the file with less than full confidence.` });
+    }
+    /* A line with a total but no rate (common on PDFs) orders at the rate
+       its total implies. A line with neither is not something to order. */
+    const items = lines
+      .map((l) => {
+        const qty = Number(l.quantity);
+        const rate = l.rate != null ? Number(l.rate) : (l.amount != null && qty > 0 ? r2(Number(l.amount) / qty) : null);
+        return { description: String(l.description || '').trim(), uom: l.uom || "No's", hsn: l.hsn || null, quantity: qty, unitPrice: rate };
+      })
+      .filter((it) => it.description && it.quantity > 0 && it.unitPrice != null)
+      .map((it, i) => ({ ...it, sno: i + 1 }));
+    if (!items.length) return res.status(400).json({ error: 'This quotation has no line with a quantity and a rate to order.' });
+    const problem = poLinesProblem(items);
+    if (problem) return res.status(400).json({ error: problem });
+
+    const owner = q.owner_id;
+    const totalQty = r2(items.reduce((a, it) => a + it.quantity, 0));
+    const total = r2(items.reduce((a, it) => a + it.quantity * it.unitPrice, 0));
+    /* The tax the vendor quoted, as a rate, when both figures were read.
+       Otherwise the usual 18%. */
+    const quotedRate = Number(q.subtotal) > 0 && Number(q.tax_total) > 0
+      ? Math.round((Number(q.tax_total) / Number(q.subtotal)) * 100) : null;
+    const gstRate = [0, 5, 12, 18, 28].includes(quotedRate) ? quotedRate : 18;
+    const itemName = items.length === 1 ? items[0].description : `${items.length} items (${vendor.name} quotation)`;
+
+    client = await db.getClient();
+    await client.query('BEGIN');
+    const poNumber = await allocatePoNumber(client, owner);
+    const { rows } = await client.query(
+      `INSERT INTO purchase_orders
+         ("projectId", "vendorId", "poNumber", "itemName", quantity, "unitPrice", "quoteRef", gst_rate, status, owner_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending',$9) RETURNING id`,
+      [req.body?.projectId || null, vendor.id, poNumber, itemName, totalQty,
+       totalQty > 0 ? r2(total / totalQty) : 0,
+       q.quote_ref ? `Quotation ${q.quote_ref}` : `Quotation file ${q.filename || q.id}`,
+       gstRate, owner]);
+    const poId = rows[0].id;
+    const gate = await writePoLines(client, poId, items, owner);
+    await client.query('UPDATE vendor_quotations SET po_id = $1 WHERE id = $2', [poId, q.id]);
+    await client.query(
+      `INSERT INTO activities ("projectId", type, description, timestamp, owner_id) VALUES ($1,$2,$3,NOW(),$4)`,
+      [req.body?.projectId || null, 'PO_CREATED', `${poNumber} raised from ${vendor.name}'s quotation`, owner]);
+    await client.query('COMMIT');
+
+    notify({ org: owner }, { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${vendor.name} · ₹${gate.subtotal.toLocaleString('en-IN')}`, entityType: 'po', entityId: poId, link: `/po/${poId}` });
+    notifyApproval(poId, poNumber, gate, owner);
+    res.json({
+      id: poId, poNumber, vendor: vendor.name, lines: items.length, value: r2(gate.subtotal),
+      approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required',
+    });
+  } catch (e) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client?.release();
+  }
 };

@@ -126,7 +126,7 @@ exports.getById = async (req, res) => {
 
 // POST /sales-quotations
 exports.create = async (req, res) => {
-  const { customerId, quoteDate, validUntil, items, discount, gstRate, roundOff, notes, terms } = req.body;
+  const { customerId, quoteDate, validUntil, items, discount, gstRate, roundOff, notes, terms, enquiryId } = req.body;
   if (!customerId) return res.status(400).json({ error: 'Pick a customer' });
   if (!items || !items.length) return res.status(400).json({ error: 'Add at least one line item' });
   const client = await db.getClient();
@@ -156,6 +156,16 @@ exports.create = async (req, res) => {
         `INSERT INTO sales_quotation_items (sales_quotation_id, sku_id, description, hsn, uom, quantity, rate, amount, sort_order)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [qid, l.skuId || null, l.description, l.hsn || null, l.uom || 'nos', l.quantity || 0, l.rate || 0, l.amount || 0, so++]);
+    }
+    /* Priced from an enquiry: link the two, so the enquiry shows the
+       quotation it became and the chain runs back to the customer's first
+       message. Only the caller's own enquiry, and only one not already
+       linked to another quotation. */
+    if (enquiryId && /^\d+$/.test(String(enquiryId))) {
+      await client.query(
+        `UPDATE enquiries SET quotation_id = $1, updated_at = NOW()
+          WHERE id = $2 AND owner_id = $3 AND quotation_id IS NULL`,
+        [qid, enquiryId, req.user?.orgId ?? null]);
     }
     await client.query('COMMIT');
     res.json({ id: qid, quoteNumber: qnum, net: t.net });
@@ -365,7 +375,7 @@ exports.convertToOrder = async (req, res) => {
     }
     await client.query(`UPDATE sales_quotations SET status = 'Converted', converted_order_id = $1 WHERE id = $2`, [orderId, q.id]);
     await client.query('COMMIT');
-    notify(q.owner_id || 'admins', { type: 'QUOTE_CONVERTED', title: `Quotation ${q.quote_number} won`, message: `Converted to order ${onum}`, entityType: 'customer_order', entityId: orderId, link: '/customer-orders' });
+    notify({ org: q.owner_id }, { type: 'QUOTE_CONVERTED', title: `Quotation ${q.quote_number} won`, message: `Converted to order ${onum}`, entityType: 'customer_order', entityId: orderId, link: '/customer-orders' });
     res.json({ success: true, orderId, orderNumber: onum });
   } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
   finally { client.release(); }

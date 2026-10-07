@@ -45,6 +45,7 @@ const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
 const { andOwner } = require('./shared/ownerScope');
 const { docNumber, loadProfile, nextSeq, allocatePoNumber } = require('./shared/docNumber');
+const { writePoLines, poLinesProblem, notifyApproval } = require('./shared/poLines');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -264,6 +265,13 @@ app.use((req, res, next) => {
      resource name is not just a code change; it is a migration for every
      installation.) */
   if (segment === 'vendor-quotations') segment = 'quotations';
+
+  /* Signing off a purchase order is its own permission, held by Finance and
+     the Owner — deliberately not by Procurement, who raise the PO. Checked
+     as `po` write, it was refused to Finance (who only read POs) before the
+     route's own po-approval check could run, so the one role meant to sign
+     off could not. */
+  if (segment === 'po' && parts[2] === 'approval') segment = 'po-approval';
 
   /* How documents are numbered is part of the company's own set-up, so it
      is held by whoever may edit the company profile — the same reasoning
@@ -647,49 +655,17 @@ app.get('/po/:id/items', async (req, res) => {
   }
 });
 
-/* A purchase order's lines, written inside the caller's transaction, and
-   the approval gate that depends on their value. One function for both
-   ways in — the lines arriving with the PO, or replaced afterwards. */
-async function writePoLines(client, poId, items, orgId) {
-  await client.query('DELETE FROM po_line_items WHERE "poId" = $1', [poId]);
-  let subtotal = 0;
-  for (const item of items) {
-    subtotal += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
-    await client.query(
-      `INSERT INTO po_line_items ("poId", sno, description, uom, hsn, quantity, "unitPrice")
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [poId, item.sno, item.description, item.uom || "No's", item.hsn || null, item.quantity, item.unitPrice]
-    );
-  }
-  // Approval gate: if the PO value exceeds the owner's threshold, hold it for sign-off.
-  const thr = (await client.query('SELECT po_approval_threshold FROM automation_settings WHERE owner_id = $1', [orgId || 0])).rows[0]?.po_approval_threshold || 0;
-  const needsApproval = thr > 0 && subtotal > thr;
-  await client.query(`UPDATE purchase_orders SET approval_status = $1 WHERE id = $2`, [needsApproval ? 'Pending Approval' : 'Not Required', poId]);
-  return { needsApproval, subtotal, thr };
-}
-
-/* Said before the database is touched, so a bad line is a clear 400 and
-   not a half-written PO or a raw SQL error. */
-function poLinesProblem(items) {
-  for (const [i, it] of (items || []).entries()) {
-    if (!String(it?.description || '').trim()) return `Line ${i + 1} needs a description.`;
-    const q = Number(it.quantity), p = Number(it.unitPrice);
-    if (!Number.isFinite(q) || q <= 0) return `Line ${i + 1}: the quantity must be a number above 0.`;
-    if (!Number.isFinite(p) || p < 0) return `Line ${i + 1}: the unit price must be a number, 0 or more.`;
-  }
-  return null;
-}
-
-function notifyApproval(poId, poNumber, gate) {
-  if (!gate || !gate.needsApproval) return;
-  notify('admins', { type: 'APPROVAL_NEEDED', title: `Approval needed · ${poNumber}`, message: `PO value ₹${gate.subtotal.toLocaleString('en-IN')} exceeds the ₹${Number(gate.thr).toLocaleString('en-IN')} limit`, entityType: 'po', entityId: Number(poId), link: `/po/${poId}` });
-}
+/* writePoLines, poLinesProblem and notifyApproval live in shared/poLines,
+   shared with the vendor-quotation and shortfall ways of raising a PO. */
 
 app.post('/po', async (req, res) => {
   const { projectId, vendorId, workOrderId, itemName, quantity, unitPrice, quoteRef, paymentTerms, priceBasis, pnfInsurance, loadingScope, warranty, amountInWords, indentId, gstRate, items } = req.body;
 
-  if (!projectId || !vendorId || !itemName || !quantity)
-    return res.status(400).json({ error: 'projectId, vendorId, itemName, quantity required' });
+  /* A project is optional. A purchase order for stock — the usual case for a
+     fabricator — belongs to no project, and requiring one meant a PO could
+     only be raised once somebody had invented a project to hang it on. */
+  if (!vendorId || !itemName || !quantity)
+    return res.status(400).json({ error: 'vendorId, itemName, quantity required' });
   if (items !== undefined && (!Array.isArray(items) || !items.length))
     return res.status(400).json({ error: 'items, when sent, must be a list of at least one line' });
   const lineProblem = items ? poLinesProblem(items) : null;
@@ -714,7 +690,7 @@ app.post('/po', async (req, res) => {
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'Pending', $17) RETURNING id`,
       [
-        projectId, vendorId, workOrderId || null, itemName, quantity, unitPrice || null,
+        projectId || null, vendorId, workOrderId || null, itemName, quantity, unitPrice || null,
         poNumber, quoteRef || null, paymentTerms || null, priceBasis || 'Ex Works',
         pnfInsurance || 'Vendor Scope', loadingScope || 'Buyer Scope', warranty || '12 months',
         amountInWords || null, indentId || null, (gstRate === undefined || gstRate === '' ? 18 : Number(gstRate)),
@@ -722,13 +698,13 @@ app.post('/po', async (req, res) => {
       ]
     );
     const poId = rows[0].id;
-    const gate = items ? await writePoLines(client, poId, items, req.user?.orgId) : null;
+    const gate = items ? await writePoLines(client, poId, items, poOwner) : null;
     await client.query('COMMIT');
 
-    await logActivity(projectId, 'PO_CREATED', `${poNumber} created for "${itemName}"`, poOwner);
+    await logActivity(projectId || null, 'PO_CREATED', `${poNumber} created for "${itemName}"`, poOwner);
     const poValue = gate ? gate.subtotal : (Number(quantity) || 0) * (Number(unitPrice) || 0);
-    notify('admins', { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${itemName} · ₹${poValue.toLocaleString('en-IN')}`, entityType: 'po', entityId: poId, link: `/po/${poId}` });
-    notifyApproval(poId, poNumber, gate);
+    notify({ org: poOwner }, { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${itemName} · ₹${poValue.toLocaleString('en-IN')}`, entityType: 'po', entityId: poId, link: `/po/${poId}` });
+    notifyApproval(poId, poNumber, gate, poOwner);
     res.json({ id: poId, poNumber, linesSaved: !!gate, approvalStatus: gate ? (gate.needsApproval ? 'Pending Approval' : 'Not Required') : undefined });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -751,12 +727,10 @@ app.post('/po/:id/items', async (req, res) => {
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
-      const gate = await writePoLines(client, poId, items, req.user?.orgId);
+      const po = (await client.query('SELECT "poNumber", owner_id FROM purchase_orders WHERE id = $1', [poId])).rows[0];
+      const gate = await writePoLines(client, poId, items, po?.owner_id ?? req.user?.orgId);
       await client.query('COMMIT');
-      if (gate.needsApproval) {
-        const po = (await db.query('SELECT "poNumber" FROM purchase_orders WHERE id = $1', [poId])).rows[0];
-        notifyApproval(poId, po?.poNumber, gate);
-      }
+      notifyApproval(poId, po?.poNumber, gate, po?.owner_id);
       res.json({ success: true, approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required' });
     } catch (e) {
       await client.query('ROLLBACK');
@@ -894,6 +868,9 @@ app.delete('/company-profile/logo', allow('company-profile', 'write'), companyLo
 // PO State Transitions
 app.patch('/po/:id/approve', async (req, res) => {
   try {
+    /* Yours only. Approve, sign-off and dispatch read the PO by id alone, so
+       another company could approve, sign off or dispatch it by guessing. */
+    if (!(await ownsPo(req, req.params.id))) return res.status(404).json({ error: 'PO not found' });
     const poResult = await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id]);
     const po = poResult.rows[0];
     if (!po) return res.status(404).json({ error: 'PO not found' });
@@ -917,11 +894,14 @@ app.patch('/po/:id/approval', allow('po-approval', 'write'), async (req, res) =>
   const { decision, remark } = req.body;
   if (!['Approved', 'Rejected'].includes(decision)) return res.status(400).json({ error: 'decision must be Approved or Rejected' });
   try {
+    /* Yours only. Approve, sign-off and dispatch read the PO by id alone, so
+       another company could approve, sign off or dispatch it by guessing. */
+    if (!(await ownsPo(req, req.params.id))) return res.status(404).json({ error: 'PO not found' });
     const po = (await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id])).rows[0];
     if (!po) return res.status(404).json({ error: 'PO not found' });
     await db.query(`UPDATE purchase_orders SET approval_status = $1, approval_remark = $2 WHERE id = $3`, [decision, remark || null, req.params.id]);
     await logActivity(po.projectId, 'PO_APPROVAL', `PO-${po.id} sign-off: ${decision}${remark ? ' — ' + remark : ''}`, req.user?.orgId ?? req.user?.id ?? null);
-    notify('admins', { type: 'APPROVAL_NEEDED', title: `PO ${po.poNumber} ${decision.toLowerCase()}`, message: `${req.user.name || 'A manager'} ${decision === 'Approved' ? 'signed off' : 'rejected'} this PO`, entityType: 'po', entityId: Number(req.params.id), link: `/po/${req.params.id}` });
+    notify({ org: po.owner_id }, { type: 'APPROVAL_NEEDED', title: `PO ${po.poNumber} ${decision.toLowerCase()}`, message: `${req.user.name || 'A manager'} ${decision === 'Approved' ? 'signed off' : 'rejected'} this PO`, entityType: 'po', entityId: Number(req.params.id), link: `/po/${req.params.id}` });
     res.json({ success: true, approvalStatus: decision });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1004,6 +984,9 @@ app.get('/kb/articles/:slug', aiController.kbGet);
 
 app.patch('/po/:id/dispatch', async (req, res) => {
   try {
+    /* Yours only. Approve, sign-off and dispatch read the PO by id alone, so
+       another company could approve, sign off or dispatch it by guessing. */
+    if (!(await ownsPo(req, req.params.id))) return res.status(404).json({ error: 'PO not found' });
     const poResult = await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id]);
     const po = poResult.rows[0];
     if (!po) return res.status(404).json({ error: 'PO not found' });
@@ -1526,7 +1509,10 @@ registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'pan', 'con
      be blocked on knowing. */
   'requirement_category', 'requirement']);
 registerOwnedCrud('skus',         'skus',          ['sku_code', 'name', 'description', 'unit', 'price', 'hsn']);
-registerOwnedCrud('raw-materials','raw_materials', ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn']);
+/* base_uom … lead_time_days were dropped on create and edit, though the
+   requirements engine reads every one of them. */
+registerOwnedCrud('raw-materials','raw_materials', ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn',
+  'base_uom', 'purchase_uom', 'category', 'moq', 'lead_time_days']);
 registerOwnedCrud('expenses',     'expenses',      ['project_id', 'category', 'description', 'amount', 'expense_date', 'paid_to', 'payment_mode', 'reference', 'notes']);
 
 /* ── Customer Orders ── */
@@ -1559,6 +1545,7 @@ app.get('/vendor-quotations',             vendorQuotationController.list);
 app.get('/vendor-quotations/:id/file',    vendorQuotationController.file);
 app.get('/vendor-quotations/:id',         vendorQuotationController.getById);
 app.put('/vendor-quotations/:id',         vendorQuotationController.update);
+app.post('/vendor-quotations/:id/to-po',  vendorQuotationController.toPo);
 app.delete('/vendor-quotations/:id',      vendorQuotationController.remove);
 
 app.get('/attachments/:id/download', attachmentController.download);

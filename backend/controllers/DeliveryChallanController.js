@@ -200,7 +200,7 @@ exports.setStatus = async (req, res) => {
 
     await client.query('COMMIT');
 
-    if (status === 'Dispatched') notify('admins', { type: 'GOODS_DISPATCHED', title: `Dispatched · ${dc.challan_number}`, message: 'Goods dispatched to the customer', entityType: 'delivery_challan', entityId: Number(req.params.id), link: '/delivery-challans' });
+    if (status === 'Dispatched') notify({ org: dc.owner_id }, { type: 'GOODS_DISPATCHED', title: `Dispatched · ${dc.challan_number}`, message: 'Goods dispatched to the customer', entityType: 'delivery_challan', entityId: Number(req.params.id), link: '/delivery-challans' });
     res.json({ success: true, status, stockLinesMoved: moved, orderProgress });
   } catch (e) {
     await client.query('ROLLBACK');

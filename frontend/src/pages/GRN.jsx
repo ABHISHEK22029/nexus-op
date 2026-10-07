@@ -1,5 +1,6 @@
 /* ══════════════════════════════════════════════════════════
-   GRN — searchable and paginated, scoped to the active project.
+   GRN — searchable and paginated, scoped to the active project, or to
+   all of the company's work when none is chosen.
 
    No filter chips: the grn table has no status, and nothing else on it has
    a fixed set of values. Search covers what someone actually holds when
@@ -21,10 +22,13 @@ const GRN = () => {
   const toast = useToast();
   const navigate = useNavigate();
   const { can } = usePermissions();
-  /* No active project → ask for project 0, which matches nothing. Sending no
-     projectId at all would quietly widen the list to every project. */
-  const scope = activeProject?.id ? String(activeProject.id) : '0';
-  const q = useListQuery('grn', { pageSize: 25, initialFilters: { projectId: scope } });
+  /* No project chosen is "All work": every receipt the company has
+     recorded, project or not. It used to ask for project 0, which matched
+     nothing — so a business that doesn't use projects could never see a
+     receipt, or record one. The list is owner-scoped on the server either
+     way; "all" never means another company's. */
+  const scope = activeProject?.id ? String(activeProject.id) : '';
+  const q = useListQuery('grn', { pageSize: 25, initialFilters: scope ? { projectId: scope } : {} });
   const [pos, setPos] = useState([]);
   const [newItem, setNewItem] = useState({ poId: '', vehicleNumber: '', batchNumber: '', chainage: '', receivedQuantity: '' });
   const [warning, setWarning] = useState('');
@@ -34,7 +38,11 @@ const GRN = () => {
 
   // Follow the global project switcher.
   useEffect(() => {
-    q.setFilters(f => ({ ...f, projectId: scope }));
+    q.setFilters(f => {
+      const next = { ...f };
+      if (scope) next.projectId = scope; else delete next.projectId;
+      return next;
+    });
   }, [scope]);
 
   // Only the PO pick-list loads here; the list itself is q's job.
@@ -68,12 +76,6 @@ const GRN = () => {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    /* Was a silent return — the Generate GRN button did nothing. */
-    if (!activeProject) {
-      toast.error('Choose a project first — a goods receipt is recorded against one.');
-      return;
-    }
-
     if (!newItem.poId || newItem.receivedQuantity === '') {
       toast.error('Please select a PO and enter the received quantity');
       return;
@@ -83,11 +85,17 @@ const GRN = () => {
     const workOrderId = selectedPo ? selectedPo.workOrderId : 0;
 
     try {
-      await fetch(`${API}/grn`, {
+      /* The project is the one chosen, else the PO's own, else none — the
+         server falls back the same way. */
+      const res = await fetch(`${API}/grn`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...newItem, projectId: activeProject.id, workOrderId })
+        body: JSON.stringify({ ...newItem, projectId: activeProject?.id ?? null, workOrderId })
       });
+      /* The response was never read: a refused receipt (over-delivery, a PO
+         not yet dispatched) still said "GRN generated". */
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(body.error || 'The receipt was not recorded'); return; }
       toast.success('GRN generated');
       setNewItem({ poId: '', vehicleNumber: '', batchNumber: '', chainage: '', receivedQuantity: '' });
       q.reload();

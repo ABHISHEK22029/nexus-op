@@ -19,7 +19,9 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { allocatePoNumber } = require('../shared/docNumber');
-const { isCrossTenant } = require('../shared/roles');
+const { isCrossTenant, can, WRITE } = require('../shared/roles');
+const { writePoLines, notifyApproval } = require('../shared/poLines');
+const { notify } = require('../notify');
 const { computeRequirements } = require('./MaterialRequirementsController');
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -59,6 +61,11 @@ exports.plan = async (req, res) => {
    Body: { materialIds?: number[], projectId?: number }
    Raises one PO per vendor. */
 exports.create = async (req, res) => {
+  /* The route is checked against material-requirements, which Production
+     may write. Raising purchase orders is a different permission. */
+  if (!can(req.user?.role, 'po', WRITE, req.user?.orgId)) {
+    return res.status(403).json({ error: 'Raising purchase orders needs permission to create purchase orders.' });
+  }
   const only = Array.isArray(req.body?.materialIds) && req.body.materialIds.length
     ? new Set(req.body.materialIds.map(Number)) : null;
 
@@ -80,6 +87,7 @@ exports.create = async (req, res) => {
 
     await client.query('BEGIN');
     const created = [];
+    const gates = [];
 
     for (const v of plan.byVendor) {
       /* The `+ created.length` was there because a count does not move until
@@ -111,22 +119,28 @@ exports.create = async (req, res) => {
       );
       const poId = rows[0].id;
 
-      let sort = 0;
-      for (const l of v.lines) {
-        await client.query(
-          `INSERT INTO po_line_items ("poId", sno, description, uom, quantity, "unitPrice")
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [poId, ++sort, l.material, l.uom || 'nos', l.qty, l.rate || 0]
-        );
-      }
+      /* The shared writer, so a shortfall PO over the sign-off threshold is
+         held for approval like any other. Writing the lines here directly
+         skipped the gate: the largest automatic orders were the ones that
+         went out unapproved. */
+      const gate = await writePoLines(client, poId, v.lines.map((l, i) => ({
+        sno: i + 1, description: l.material, uom: l.uom || 'nos', quantity: l.qty, unitPrice: l.rate || 0,
+      })), req.user?.orgId);
+      gates.push([poId, poNumber, gate, v.vendorName]);
 
       created.push({
         id: poId, poNumber, vendor: v.vendorName, vendorId: v.vendorId,
         lines: v.lines.length, value: v.total,
+        approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required',
       });
     }
 
     await client.query('COMMIT');
+    const org = req.user?.orgId ?? req.user?.id ?? null;
+    for (const [poId, poNumber, gate, vendorName] of gates) {
+      notify({ org }, { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${vendorName} · ₹${gate.subtotal.toLocaleString('en-IN')} (material shortfall)`, entityType: 'po', entityId: poId, link: `/po/${poId}` });
+      notifyApproval(poId, poNumber, gate, org);
+    }
     res.json({
       success: true,
       created,

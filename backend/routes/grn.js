@@ -313,7 +313,7 @@ router.post('/', async (req, res) => {
     );
 
     await client.query('COMMIT');
-    notify('admins', { type: 'GRN_RECEIVED', title: `Goods received · GRN-${String(grnId).padStart(5, '0')}`, message: `${receivedQuantity} of ${po.itemName} received against PO-${poId}`, entityType: 'grn', entityId: grnId, link: `/grn/${grnId}/bill` });
+    notify({ org: po.owner_id ?? req.user?.orgId ?? req.user?.id }, { type: 'GRN_RECEIVED', title: `Goods received · GRN-${String(grnId).padStart(5, '0')}`, message: `${receivedQuantity} of ${po.itemName} received against PO-${poId}`, entityType: 'grn', entityId: grnId, link: `/grn/${grnId}/bill` });
     /* The caller needs to know whether the order is finished or still owed
        something — that is the question a receipt raises. */
     res.json({

@@ -32,10 +32,10 @@ export default function Production() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ productName: '', plannedQty: '', outputUom: 'nos' });
 
-  /* /production REQUIRES ?projectId — it 400s without one. The active
-     project therefore goes in as a baseline filter rather than a hand-built
-     query string, so it composes with search instead of being overwritten by
-     it, and "Clear filters" cannot widen the list to every project. */
+  /* With a project chosen, it goes in as a baseline filter rather than a
+     hand-built query string, so it composes with search instead of being
+     overwritten by it. With none, /production lists all of the company's
+     orders (owner-scoped on the server). */
   const q = useListQuery('production', {
     pageSize: 25,
     initialFilters: activeProject ? { projectId: String(activeProject.id) } : {},
@@ -152,16 +152,11 @@ export default function Production() {
         </form>
       )}
 
-      {!activeProject ? (
-        /* The endpoint is project-scoped and refuses a call without one, so
-           say that plainly rather than showing an empty table. */
-        <div style={{ ...card, padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>
-          <Factory size={40} style={{ opacity: 0.4, marginBottom: 12 }} />
-          <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Select a project first</div>
-          <div style={{ fontSize: '0.85rem', marginTop: 4 }}>Production orders belong to a project — pick one from the switcher.</div>
-        </div>
-      ) : (
-        <>
+      {/* No project chosen is "All work": every production order the company
+          has. This used to stop at "Select a project first", though the list
+          endpoint has served the no-project case for a while — a fabricator
+          that runs no projects could never open the screen. */}
+      <>
           {/* Statuses are the three production_orders.status actually holds. */}
           <ListToolbar
             q={q}
@@ -215,8 +210,7 @@ export default function Production() {
           </div>
 
           <Pagination q={q} />
-        </>
-      )}
+      </>
     </div>
   );
 }

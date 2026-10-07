@@ -193,6 +193,9 @@ exports.createOrder = async (req, res) => {
 };
 
 exports.getOrderById = async (req, res) => {
+  /* Yours only: this route had no ownership check, so any signed-in user
+     could read another company's production order by its id. */
+  if (!await assertOwned(db, req, res, 'production_orders', req.params.id, { columns: 'id' })) return;
   try {
     const o = await db.query('SELECT * FROM production_orders WHERE id = $1', [req.params.id]);
     if (!o.rows[0]) return res.status(404).json({ error: 'Production order not found' });
@@ -256,22 +259,47 @@ exports.addConsumption = async (req, res) => {
   /* Issuing material against another tenant's production order would draw
      down their stock. Checked before the transaction opens. */
   if (!await assertOwned(db, req, res, 'production_orders', orderId, { columns: 'id' })) return;
+  const qty = Number(consumedQty);
+  if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'The quantity issued must be a number above 0.' });
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
     let cost = unitCost;
-    // If linked to a stock item, deduct from inventory and inherit its unit cost.
+    /* Linked to a stock row, the issue comes off stock — through the ledger,
+       as every stock movement does, so the stock-on-hand screen and the
+       movement history agree. It used to be a bare UPDATE with no ledger
+       row, and the screen never sent a stock row at all, so material issued
+       to production never left stock. */
+    let inv = null;
     if (inventoryId) {
-      const inv = await client.query('SELECT * FROM inventory WHERE id = $1', [inventoryId]);
-      if (!inv.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Inventory item not found' }); }
-      if (cost == null) cost = inv.rows[0].unit_cost || 0;
-      await client.query('UPDATE inventory SET quantity = quantity - $1 WHERE id = $2', [consumedQty, inventoryId]);
+      inv = (await client.query('SELECT * FROM inventory WHERE id = $1 FOR UPDATE', [inventoryId])).rows[0];
+      const theirs = inv && !isCrossTenant(req.user?.role)
+        && String(inv.owner_id) !== String(req.user?.orgId ?? req.user?.id);
+      if (!inv || theirs) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Inventory item not found' }); }
+      const onHand = Number(inv.quantity) || 0;
+      if (qty > onHand + 1e-9) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: `Only ${onHand} ${inv.uom || uom || 'kg'} of ${inv.itemName} is in stock. Receive the material first, or issue less.`,
+          onHand,
+        });
+      }
+      if (cost == null || cost === '') cost = inv.unit_cost || 0;
     }
     const r = await client.query(
       `INSERT INTO production_consumption (production_order_id, inventory_id, item_name, consumed_qty, uom, unit_cost)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [orderId, inventoryId || null, itemName, consumedQty, uom || 'kg', cost || 0]
+      [orderId, inventoryId || null, itemName, qty, uom || inv?.uom || 'kg', cost || 0]
     );
+    if (inv) {
+      const prod = (await client.query('SELECT prod_number FROM production_orders WHERE id = $1', [orderId])).rows[0];
+      await stock.stockOut(client, {
+        ownerId: inv.owner_id, inventoryId: inv.id, rawMaterialId: inv.raw_material_id, skuId: inv.sku_id,
+        itemName: inv.itemName || itemName, quantity: qty, uom: inv.uom || uom, unitCost: cost || 0,
+        movementType: 'production_consumption', refType: 'production_consumption', refId: r.rows[0].id,
+        refNumber: prod?.prod_number || null, note: 'Issued to production', userId: req.user?.id,
+      });
+    }
     await client.query('COMMIT');
     res.json({ id: r.rows[0].id, yield: await computeYield(orderId) });
   } catch (err) {
@@ -287,6 +315,9 @@ exports.addOutput = async (req, res) => {
   const { itemName, outputQty, uom, outputWeight } = req.body;
   const orderId = req.params.id;
   if (!itemName) return res.status(400).json({ error: 'itemName is required' });
+  /* Yours only: this route had no ownership check, so any signed-in user
+     could add output to another company's production order by its id. */
+  if (!await assertOwned(db, req, res, 'production_orders', orderId, { columns: 'id' })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -352,6 +383,9 @@ exports.addScrap = async (req, res) => {
   const { scrapType, scrapQty, uom, reason, saleValue, isSold } = req.body;
   const orderId = req.params.id;
   if (scrapQty == null) return res.status(400).json({ error: 'scrapQty is required' });
+  /* Yours only: this route had no ownership check, so any signed-in user
+     could add scrap to another company's production order by its id. */
+  if (!await assertOwned(db, req, res, 'production_orders', orderId, { columns: 'id' })) return;
   try {
     const r = await db.query(
       `INSERT INTO production_scrap (production_order_id, scrap_type, scrap_qty, uom, reason, sale_value, is_sold)
@@ -370,15 +404,26 @@ exports.deleteLine = async (req, res) => {
   const tables = { consumption: 'production_consumption', output: 'production_output', scrap: 'production_scrap' };
   const table = tables[kind];
   if (!table) return res.status(400).json({ error: 'invalid line kind' });
+  if (!/^\d+$/.test(String(lineId))) return res.status(400).json({ error: 'invalid line id' });
+  /* The line's production order must be yours. Without this, any signed-in
+     user could delete another company's lines by id — and a consumption
+     line's delete puts material back on that company's shelf. */
+  const parent = (await db.query(`SELECT production_order_id FROM ${table} WHERE id = $1`, [lineId]).catch(() => ({ rows: [] }))).rows[0];
+  if (!parent) return res.status(404).json({ error: 'Line not found' });
+  if (!await assertOwned(db, req, res, 'production_orders', parent.production_order_id, { columns: 'id' })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
     if (kind === 'consumption') {
-      const row = (await client.query('SELECT * FROM production_consumption WHERE id = $1', [lineId])).rows[0];
+      /* The stock row's owner: production_consumption has no owner_id of its
+         own, and reading row.owner_id wrote the return with no organisation. */
+      const row = (await client.query(
+        `SELECT pc.*, i.owner_id AS stock_owner FROM production_consumption pc
+           LEFT JOIN inventory i ON i.id = pc.inventory_id WHERE pc.id = $1`, [lineId])).rows[0];
       if (row?.inventory_id) {
         // Material goes back on the shelf.
         await stock.stockIn(client, {
-          ownerId: row.owner_id, inventoryId: row.inventory_id, itemName: row.item_name,
+          ownerId: row.stock_owner, inventoryId: row.inventory_id, itemName: row.item_name,
           quantity: row.consumed_qty, uom: row.uom, unitCost: row.unit_cost,
           movementType: 'adjustment', refType: 'production_consumption', refId: Number(lineId),
           note: 'Consumption line deleted — material returned to stock', userId: req.user?.id,

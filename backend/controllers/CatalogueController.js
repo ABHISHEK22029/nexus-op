@@ -282,7 +282,7 @@ exports.publicEnquiry = async (req, res) => {
     }
     await client.query('COMMIT');
 
-    notify('admins', {
+    notify({ org: cat.owner_id }, {
       type: 'ENQUIRY_RECEIVED',
       title: `New enquiry · ${ref}`,
       message: `${name}${company ? ` (${company})` : ''} — ${lines.length} item${lines.length > 1 ? 's' : ''}`,
@@ -606,8 +606,12 @@ exports.convertEnquiry = async (req, res) => {
       [cust.id, e.id]);
     await client.query('COMMIT');
 
+    /* The catalogue product each line came from, so the quotation keeps the
+       link and the HSN — the rate stays blank on purpose (below). */
     const { rows: items } = await db.query(
-      'SELECT * FROM enquiry_items WHERE enquiry_id = $1 ORDER BY sort_order, id', [e.id]);
+      `SELECT ei.*, s.hsn FROM enquiry_items ei
+         LEFT JOIN skus s ON s.id = ei.sku_id AND s.owner_id = $2
+        WHERE ei.enquiry_id = $1 ORDER BY ei.sort_order, ei.id`, [e.id, owner]);
 
     /* The quotation is not created here. It is prefilled in the builder so
        a person can price it before anything is committed — the enquiry
@@ -616,9 +620,17 @@ exports.convertEnquiry = async (req, res) => {
       customerId: cust.id,
       customerName: cust.name,
       prefill: {
+        /* Which enquiry this is, so the quotation can be linked back to it
+           (enquiries.quotation_id) and the builder can show what was asked. */
+        enquiryId: e.id,
+        enquiryRef: e.ref || null,
+        message: e.message || null,
         customerId: cust.id,
+        customerName: cust.name,
         items: items.map(i => ({
+          skuId: i.sku_id || '',
           description: i.description,
+          hsn: i.hsn || '',
           quantity: i.quantity || 1,
           uom: i.unit || 'nos',
           rate: '',

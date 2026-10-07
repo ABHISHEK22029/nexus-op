@@ -235,12 +235,12 @@ exports.addPayment = async (req, res) => {
       `INSERT INTO vendor_payments (grn_bill_id, amount, mode, reference, paid_date, notes) VALUES ($1,$2,$3,$4,$5,$6)`,
       [req.params.id, Number(amount), mode || 'Bank', reference || null, paidDate || null, notes || null]);
     const paid = (await client.query('SELECT COALESCE(SUM(amount),0) s FROM vendor_payments WHERE grn_bill_id = $1', [req.params.id])).rows[0].s;
-    const bill = (await client.query('SELECT net_amount, bill_number, vendor_id FROM grn_bills WHERE id = $1', [req.params.id])).rows[0];
+    const bill = (await client.query('SELECT net_amount, bill_number, vendor_id, owner_id FROM grn_bills WHERE id = $1', [req.params.id])).rows[0];
     if (!bill) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bill not found' }); }
     const pstatus = Number(paid) >= Number(bill.net_amount || 0) ? 'Paid' : Number(paid) > 0 ? 'Partially Paid' : 'Unpaid';
     await client.query('UPDATE grn_bills SET amount_paid = $1, payment_status = $2 WHERE id = $3', [r2(paid), pstatus, req.params.id]);
     await client.query('COMMIT');
-    notify('admins', { type: 'VENDOR_PAID', title: `Vendor payment · ${bill.bill_number}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank'} — ${pstatus}`, entityType: 'grn_bill', entityId: Number(req.params.id), link: '/payables' });
+    notify({ org: bill.owner_id }, { type: 'VENDOR_PAID', title: `Vendor payment · ${bill.bill_number}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank'} — ${pstatus}`, entityType: 'grn_bill', entityId: Number(req.params.id), link: '/payables' });
     res.json({ success: true, amountPaid: r2(paid), paymentStatus: pstatus });
   } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
   finally { client.release(); }

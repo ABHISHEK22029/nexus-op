@@ -11,8 +11,8 @@
    longer honour, and both need someone to look.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FileText, Plus, Trash2, X, ArrowRightLeft, Eye } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { FileText, Plus, Trash2, X, ArrowRightLeft, Eye, MessageSquareQuote } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
@@ -24,6 +24,12 @@ const STATUSES = ['Draft', 'Sent', 'Accepted', 'Rejected', 'Converted'];
 const STATUS_COLOR = { Draft: '#64748b', Sent: '#2563eb', Accepted: '#10b981', Rejected: '#ef4444', Converted: '#8b5cf6' };
 const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
+/* What Enquiries left for us, when we arrived from Convert to quotation. */
+function readEnquiryPrefill(search) {
+  if (new URLSearchParams(search).get('from') !== 'enquiry') return null;
+  try { return JSON.parse(sessionStorage.getItem('quotation_prefill') || 'null'); } catch { return null; }
+}
+
 export default function SalesQuotations() {
   const toast = useToast();
   const navigate = useNavigate();
@@ -31,9 +37,29 @@ export default function SalesQuotations() {
   const q = useListQuery('sales-quotations', { pageSize: 25 });
   const [customers, setCustomers] = useState([]);
   const [skus, setSkus] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [head, setHead] = useState({ customerId: '', quoteDate: today(), validUntil: daysFromToday(15), gstRate: '18', discount: '', terms: '' });
-  const [lines, setLines] = useState([{ skuId: '', description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
+  /* "Convert to quotation" on an enquiry leaves what was asked for in
+     sessionStorage and comes here. That hand-off used to be written and
+     never read, so the form opened empty and the request was retyped —
+     the one thing converting is meant to save. It is read once, as the
+     form's starting state, and then cleared so a refresh does not re-open
+     a quotation already started. */
+  const location = useLocation();
+  const [prefill] = useState(() => readEnquiryPrefill(location.search));
+  useEffect(() => {
+    if (prefill) { try { sessionStorage.removeItem('quotation_prefill'); } catch { /* storage blocked */ } }
+  }, [prefill]);
+  const [showForm, setShowForm] = useState(() => !!prefill);
+  const [head, setHead] = useState(() => ({ customerId: prefill?.customerId ? String(prefill.customerId) : '', quoteDate: today(), validUntil: daysFromToday(15), gstRate: '18', discount: '', terms: '' }));
+  const [lines, setLines] = useState(() => (prefill?.items?.length
+    ? prefill.items.map(i => ({
+        skuId: i.skuId ? String(i.skuId) : '', description: i.description || '', hsn: i.hsn || '',
+        quantity: i.quantity ?? '', uom: i.uom || 'nos', rate: i.rate ?? '',
+      }))
+    : [{ skuId: '', description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]));
+  /* The enquiry being priced, shown above the form. */
+  const [fromEnquiry, setFromEnquiry] = useState(() => (prefill
+    ? { id: prefill.enquiryId || null, ref: prefill.enquiryRef || null, message: prefill.message || null, customer: prefill.customerName || null }
+    : null));
 
   // Only the pick-lists for the form load here; the list itself is q's job.
   useEffect(() => {
@@ -71,11 +97,12 @@ export default function SalesQuotations() {
     const res = await fetch(`${API}/sales-quotations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ ...head, items }),
+      body: JSON.stringify({ ...head, items, enquiryId: fromEnquiry?.id || undefined }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.detail || d.error || 'Could not create the quotation');
     toast.success(`Quotation ${d.quoteNumber} created`);
+    setFromEnquiry(null);
     setShowForm(false); setHead({ customerId: '', quoteDate: today(), validUntil: daysFromToday(15), gstRate: '18', discount: '', terms: '' });
     setLines([{ skuId: '', description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
     q.reload();
@@ -151,6 +178,17 @@ export default function SalesQuotations() {
 
       {showForm && (
         <form onSubmit={create} style={{ ...card, padding: 18, marginBottom: 18 }}>
+          {fromEnquiry && (
+            /* What the customer asked for, beside the form that prices it. */
+            <div data-from-enquiry style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', marginBottom: 14, borderRadius: 10, background: 'rgba(37, 99, 235, 0.08)', border: '1px solid rgba(37, 99, 235, 0.25)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              <MessageSquareQuote size={16} style={{ color: '#2563eb', flex: 'none', marginTop: 1 }} />
+              <div>
+                <b style={{ color: 'var(--text-primary)' }}>From enquiry{fromEnquiry.ref ? ` ${fromEnquiry.ref}` : ''}{fromEnquiry.customer ? ` · ${fromEnquiry.customer}` : ''}</b>
+                {' '}— their lines are below; price them.
+                {fromEnquiry.message && <div style={{ marginTop: 4, fontStyle: 'italic' }}>“{fromEnquiry.message}”</div>}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
             <div><label style={lbl}>Customer *</label>
               <select style={input} value={head.customerId} onChange={e => setHead({ ...head, customerId: e.target.value })}>
@@ -206,7 +244,7 @@ export default function SalesQuotations() {
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <button type="submit" className="btn-primary btn-sm">Create Quotation</button>
-            <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={() => { setShowForm(false); setFromEnquiry(null); }} className="btn-secondary">Cancel</button>
           </div>
         </form>
       )}

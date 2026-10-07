@@ -207,7 +207,7 @@ async function runPass(ownerId = null) {
       summary.generated++;
       if (g.type === 'sales_invoice') summary.invoices++; else summary.expenses++;
       summary.items.push({ profile: p.title, created: g.ref });
-      notify(p.owner_id || 'admins', {
+      notify({ org: p.owner_id }, {
         type: 'RECURRING_GENERATED',
         title: `Recurring ${p.doc_type === 'expense' ? 'expense' : 'invoice'} created`,
         message: `${g.ref} from schedule “${p.title}”`,
@@ -236,7 +236,7 @@ async function runPass(ownerId = null) {
   for (const inv of overdue) {
     const daysOver = Math.max(1, Math.round((Date.now() - new Date(inv.due_date).getTime()) / 86400000));
     const outstanding = r2((inv.net_amount || 0) - (inv.amount_paid || 0));
-    notify(inv.owner_id || 'admins', {
+    notify({ org: inv.owner_id }, {
       type: 'INVOICE_OVERDUE',
       title: `Invoice overdue · ${inv.invoice_number}`,
       message: `${inv.customer_name || 'Customer'} — ₹${outstanding.toLocaleString('en-IN')} outstanding, ${daysOver} day(s) past due`,

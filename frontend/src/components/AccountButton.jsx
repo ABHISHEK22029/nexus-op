@@ -23,11 +23,13 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Sun, Moon, Settings, Building2, Bell } from 'lucide-react';
+import { LogOut, Sun, Moon, Settings, Building2, Bell, ChevronLeft } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
+import { NotificationList } from './NotificationBell';
+import useNotifications from '../hooks/useNotifications';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -39,7 +41,9 @@ export default function AccountButton() {
 
   const [open, setOpen] = useState(false);
   const [org, setOrg] = useState(null);
-  const [unread, setUnread] = useState(0);
+  /* 'menu', or 'notifications' when the list is open inside the card. */
+  const [view, setView] = useState('menu');
+  const { items, unread, load: reloadNotes, openItem, readAll } = useNotifications();
   const ref = useRef(null);
 
   useEffect(() => {
@@ -48,17 +52,18 @@ export default function AccountButton() {
     const h = { Authorization: `Bearer ${t}` };
     fetch(`${API}/company-profile`, { headers: h })
       .then(r => (r.ok ? r.json() : null)).then(setOrg).catch(() => {});
-    /* The bell went with the bar, but unread notifications still have to be
-       visible from anywhere — a count on the avatar is the smallest thing
-       that does that honestly. */
-    fetch(`${API}/notifications`, { headers: h })
-      .then(r => (r.ok ? r.json() : []))
-      .then(d => {
-        const list = Array.isArray(d) ? d : (d?.items || []);
-        setUnread(list.filter(n => !n.read_at && !n.is_read).length);
-      })
-      .catch(() => {});
   }, []);
+
+  /* The bell went with the bar, but notifications still have to be readable
+     from anywhere: the count rides on the avatar, and the list opens inside
+     the account card. It used to link to Activity — the audit log — so the
+     count pointed at a page that did not show what it was counting. */
+  const toggleOpen = () => {
+    setOpen(o => {
+      if (!o) { setView('menu'); reloadNotes(); }
+      return !o;
+    });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -86,8 +91,8 @@ export default function AccountButton() {
   return (
     <div ref={ref} style={{ position: 'fixed', top: 14, right: 20, zIndex: 120 }}>
       <button
-        onClick={() => setOpen(o => !o)}
-        aria-label={`Account — ${name}`}
+        onClick={toggleOpen}
+        aria-label={`Account — ${name}${unread > 0 ? `, ${unread} unread notification${unread === 1 ? '' : 's'}` : ''}`}
         title={name}
         style={{
           position: 'relative', width: 36, height: 36, borderRadius: '50%',
@@ -116,6 +121,15 @@ export default function AccountButton() {
           borderRadius: 16, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', padding: 8,
           animation: 'dropdownFade 140ms ease-out',
         }}>
+          {view === 'notifications' ? (
+            <>
+              <button style={{ ...row, fontWeight: 700 }} onMouseEnter={hoverIn} onMouseLeave={hoverOut} onClick={() => setView('menu')}>
+                <ChevronLeft size={15} style={{ color: 'var(--text-muted)' }} /> Back
+              </button>
+              <NotificationList items={items} unread={unread} maxHeight={420}
+                onOpen={(n) => { setOpen(false); openItem(n); }} onReadAll={readAll} />
+            </>
+          ) : (<>
           {/* Identity, in the order it is asked: who, which company, what may I do */}
           <div style={{ textAlign: 'center', padding: '16px 12px 14px' }}>
             <div style={{
@@ -149,17 +163,17 @@ export default function AccountButton() {
 
           <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 10px 6px' }} />
 
-          {unread > 0 && (
-            <button style={row} onMouseEnter={hoverIn} onMouseLeave={hoverOut}
-              onClick={() => { setOpen(false); navigate('/activity'); }}>
-              <Bell size={15} style={{ color: 'var(--text-muted)' }} />
-              <span style={{ flex: 1 }}>Notifications</span>
+          <button style={row} onMouseEnter={hoverIn} onMouseLeave={hoverOut} data-open-notifications
+            onClick={() => setView('notifications')}>
+            <Bell size={15} style={{ color: 'var(--text-muted)' }} />
+            <span style={{ flex: 1 }}>Notifications</span>
+            {unread > 0 && (
               <span style={{
                 minWidth: 18, height: 18, borderRadius: 999, background: '#ef4444', color: '#fff',
                 fontSize: '0.66rem', fontWeight: 800, lineHeight: '18px', textAlign: 'center', padding: '0 5px',
               }}>{unread}</span>
-            </button>
-          )}
+            )}
+          </button>
 
           <button style={row} onMouseEnter={hoverIn} onMouseLeave={hoverOut}
             onClick={() => { setOpen(false); navigate('/company-profile'); }}>
@@ -180,6 +194,7 @@ export default function AccountButton() {
           >
             <LogOut size={15} /> Sign out
           </button>
+          </>)}
         </div>
       )}
     </div>

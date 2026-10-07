@@ -95,7 +95,12 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
      simply absent, which is what the LEFT JOIN produced too — the loop
      already falls back to the BOM's component_name. */
   const materialRows = (await db.query(
-    `SELECT id, name, base_uom, purchase_uom, category, moq, lead_time_days,
+    /* base_uom falls back to unit: the materials screen and its API write
+       `unit`, and a material with no base_uom made every shortfall line —
+       and the purchase order raised from it — read "nos": 1,000 nos of
+       steel sheet instead of 1,000 kg. */
+    `SELECT id, name, COALESCE(base_uom, unit) AS base_uom,
+            COALESCE(purchase_uom, base_uom, unit) AS purchase_uom, category, moq, lead_time_days,
             standard_rate, weight_per_piece_kg, length_mm, width_mm,
             thickness_mm, density_kg_m3, is_critical
        FROM raw_materials`)).rows;
