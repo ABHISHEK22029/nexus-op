@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   FolderGit2, FileText, Users, ShoppingCart, Truck, BookOpen,
@@ -358,6 +358,9 @@ const HowItWorks = () => {
               notes — a visitor arriving from there should recognise it, and
               this page is where the seven stages are then explained in detail. */}
           <FlowShowcase notes={false} />
+          <Link to="/see-maksops" className="mk-film-link">
+            The whole business, chapter by chapter: watch the product film <ArrowRight size={15} />
+          </Link>
         </div>
       </section>
 

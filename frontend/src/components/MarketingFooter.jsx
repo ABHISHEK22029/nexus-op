@@ -18,6 +18,7 @@ const footerLinks = {
     { label: 'RA Bills', to: '/bills' },
   ],
   Resources: [
+    { label: 'Product film', to: '/see-maksops' },
     { label: 'Platform Overview', to: '/platform' },
     { label: 'How It Works', to: '/how-it-works' },
     { label: 'Process Flow', to: '/flow' },

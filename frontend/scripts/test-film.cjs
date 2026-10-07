@@ -94,11 +94,7 @@ const FAKE = () => {
   ok(/See Maks Ops/.test(pg.h1), `the page says what it is ("${pg.h1.replace(/\s+/g, ' ')}")`);
   ok(pg.entries === KEYS.length && pg.transcripts === KEYS.length, `every chapter is listed, with its transcript (${pg.entries}/${KEYS.length})`);
   ok(JSON.stringify(pg.watch) === JSON.stringify(KEYS.map((k) => `#${k}`)), 'and a "Watch from here" link to each');
-  /* The page is unlisted until every chapter is in: no menu, footer or
-     homepage link yet. Strict again once they are added (FILM_LINKED=1). */
-  const LINKED = process.env.FILM_LINKED === '1';
-  if (LINKED || pg.nav || pg.footer) ok(pg.nav && pg.footer, 'the top menu and the footer link to it');
-  else console.log('   ·  not linked from the menu or footer yet — the page is unlisted until the film is complete');
+  ok(pg.nav && pg.footer, 'the top menu and the footer link to it');
   ok(!pg.nexus && /See Maks Ops/.test(pg.title), `no "Nexus", and its own title ("${pg.title}")`);
 
   /* ── waits to be started ── */
@@ -314,8 +310,10 @@ const FAKE = () => {
   await sleep(1500);
   ok(!loaded.some((u) => /ProductFilm|SeeMaksOps|\/film\//.test(u)), 'the homepage never downloads the film');
   const homeLink = await page.evaluate(() => [...document.querySelectorAll('a')].some((a) => a.getAttribute('href') === '/see-maksops'));
-  if (LINKED || homeLink) ok(homeLink, 'and links to it under the walkthrough');
-  else console.log('   ·  the homepage does not link to it yet (unlisted)');
+  ok(homeLink, 'and links to it under the walkthrough');
+  await go('/how-it-works');
+  await sleep(800);
+  ok(await page.evaluate(() => [...document.querySelectorAll('a')].some((a) => a.getAttribute('href') === '/see-maksops')), 'How it works links to it too');
 
   console.log('');
   ok(errs.length === 0, `no JavaScript or console errors${errs.length ? ': ' + errs[0].slice(0, 140) : ''}`);

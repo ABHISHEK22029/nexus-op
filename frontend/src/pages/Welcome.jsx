@@ -265,6 +265,11 @@ const Welcome = () => {
             <FlowShowcase />
           </div>
 
+          {/* The walkthrough is one order in a minute; the film is the rest. */}
+          <Link to="/see-maksops" className="mk-film-link">
+            That was one order. See the whole business at work <ArrowRight size={15} />
+          </Link>
+
           <ul className="mk-proof" aria-label="Why it holds together">
             {[
               [<FileText size={17} />, 'Every step creates a document', 'Numbered and printable, on your letterhead'],
@@ -731,7 +736,7 @@ const Welcome = () => {
               Open the Beta Platform
             </button>
             <Link
-              to="/how-it-works"
+              to="/see-maksops"
               style={{
                 background: 'rgba(255,255,255,0.15)',
                 color: '#fff',
@@ -749,7 +754,7 @@ const Welcome = () => {
               onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.25)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
             >
-              Watch How It Works
+              Watch the product film
             </Link>
           </div>
           {/* Trust badges in CTA (CSOD-inspired) */}

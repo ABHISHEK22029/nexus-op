@@ -20,6 +20,7 @@ const MarketingNav = () => {
   const navLinks = [
     { label: 'Platform', to: '/platform' },
     { label: 'How It Works', to: '/how-it-works' },
+    { label: 'See Maks Ops', to: '/see-maksops' },
     { label: 'Features', to: '/#features' },
   ];
 
