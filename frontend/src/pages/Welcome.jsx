@@ -15,6 +15,7 @@ import FlowShowcase from '../components/marketing/flow/FlowShowcase';
 import CatalogueShowcase from '../components/marketing/CatalogueShowcase';
 import { FeatureGrid } from '../components/marketing/FeatureDiagrams';
 import PromiseCheck from '../components/marketing/PromiseCheck';
+import AdSection from '../components/marketing/ad/AdSection';
 
 /* ── Warm SVG wave dividers (CSOD-inspired organic shapes) ── */
 const WaveDivider = ({ flip = false, color1 = 'hsl(28,80%,90%)', color2 = 'hsl(22,70%,85%)' }) => (
@@ -285,6 +286,10 @@ const Welcome = () => {
           </ul>
         </div>
       </section>
+
+      {/* ── THE AD: the walkthrough above is one order, step by step; this is
+             the whole idea in under a minute, as a film. ── */}
+      <AdSection />
 
       {/* ── WAVE TRANSITION: Hero → Stats (CSOD-inspired organic waves) ── */}
       <WaveDivider color1="var(--brand-amber)" color2="hsl(22,70%,75%)" />

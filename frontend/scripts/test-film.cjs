@@ -308,7 +308,9 @@ const FAKE = () => {
   page.on('request', (r) => loaded.push(r.url()));
   await go('/');
   await sleep(1500);
-  ok(!loaded.some((u) => /ProductFilm|SeeMaksOps|\/film\//.test(u)), 'the homepage never downloads the film');
+  /* The homepage ad shares the film's shell (the app window, the stage);
+     the film itself — its player and its chapters — must not load. */
+  ok(!loaded.some((u) => /ProductFilm|SeeMaksOps|\/film\/(chapters|controls)\/|\/film\/scenes/.test(u)), 'the homepage never downloads the film\'s player or chapters');
   const homeLink = await page.evaluate(() => [...document.querySelectorAll('a')].some((a) => a.getAttribute('href') === '/see-maksops'));
   ok(homeLink, 'and links to it under the walkthrough');
   await go('/how-it-works');

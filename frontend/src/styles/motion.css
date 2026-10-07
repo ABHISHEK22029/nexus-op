@@ -280,3 +280,14 @@
 }
 .mk-film-link:hover { text-decoration: underline; }
 .mk-film-link:focus-visible { outline: 2px solid var(--brand-amber); outline-offset: 3px; border-radius: 4px; }
+
+/* ── the ad (components/marketing/ad/AdSection.jsx) ──
+   A contained frame under its heading, sized to the screen's height as
+   well as its width, so a 58-second film never makes the page a wall. */
+.mk-ad-section { padding-top: 48px; }
+.mk-ad-head { max-width: 680px; margin: 0 auto 32px; text-align: center; }
+.mk-ad-head h2 { margin: 16px 0 0; text-wrap: balance; }
+.mk-ad-head p { max-width: 560px; margin: 14px auto 0; color: var(--text-muted); line-height: 1.75; }
+.mk-ad-slot { max-width: min(1160px, 115vh); margin: 0 auto; }
+.mk-ad-ph { aspect-ratio: 1280 / 720; border-radius: 22px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
+@media (max-width: 671px) { .mk-ad-ph { aspect-ratio: 420 / 720; } }

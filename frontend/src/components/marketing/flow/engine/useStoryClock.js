@@ -43,10 +43,13 @@ export default function useStoryClock(scenes, {
     last: null, lastCommit: 0, lastT: -1, speaking: false, speakUntil: 0, gate: Infinity,
   });
   const opts = useRef({});
+  /* restarts the loop after it has gone to sleep (see below) */
+  const wake = useRef(() => {});
   useLayoutEffect(() => {
     S.current.running = running && !reduced;
     S.current.hold = hold;
     opts.current = { scenes, handoffMs, closingMs, atEnd, onHandoff, speedKey, commitMs };
+    if (S.current.running) wake.current();
   });
 
   const enter = useCallback((i, at = 0) => {
@@ -90,10 +93,13 @@ export default function useStoryClock(scenes, {
   }, []);
   const releaseVoice = useCallback(() => { S.current.speaking = false; }, []);
 
-  /* ── the loop ── */
+  /* ── the loop ──
+     It runs only while the story may move. Paused, off-screen or in a
+     background tab, it commits the last frame and stops asking for frames
+     at all, and `running` turning true again wakes it. */
   useEffect(() => {
     if (reduced) return undefined;
-    let raf;
+    let raf = null;
     const loop = (now) => {
       const s = S.current;
       const o = opts.current;
@@ -145,10 +151,16 @@ export default function useStoryClock(scenes, {
       if (now - s.lastCommit >= o.commitMs && s.elapsed !== s.lastT) {
         s.lastCommit = now; s.lastT = s.elapsed; setT(s.elapsed);
       }
-      raf = requestAnimationFrame(loop);
+      if (s.running || s.elapsed !== s.lastT) raf = requestAnimationFrame(loop);
+      else { raf = null; s.last = null; }
     };
+    wake.current = () => { if (raf == null) raf = requestAnimationFrame(loop); };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      if (raf != null) cancelAnimationFrame(raf);
+      raf = null;
+      wake.current = () => {};
+    };
   }, [reduced, enter]);
 
   /* the outgoing scene stays for the length of its exit, then goes */

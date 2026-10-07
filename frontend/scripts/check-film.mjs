@@ -172,4 +172,43 @@ section('film formats: record numbers are what the backend issues', () => {
   for (const [k, re] of Object.entries(TX.ID_PATTERNS)) if (!re.test(ids[k])) fail(`${k}: ${ids[k]} does not match its pattern`);
 });
 
-if (failures) { console.log(`\n${failures} problem(s) with the product film`); process.exit(1); }
+/* ── the homepage ad (components/marketing/ad) ──
+   Its timeline must be in order and inside its length, every caption
+   inside its scene, every app label it shows still in the app, and the
+   production numbers it draws must add up like the rest. */
+const AD = await import(pathURL(path.join(SRC, 'components', 'marketing', 'ad', 'script.js')));
+section(`ad timeline: ${AD.SCENES.length} scenes in ${AD.ACTS.length} acts, ${AD.AD_MS / 1000} s, in order`, () => {
+  if (AD.AD_MS < 50000 || AD.AD_MS > 60000) fail(`the ad runs ${AD.AD_MS / 1000} s — it is meant to be 50–60`);
+  const acts = AD.ACTS.map((a) => a.key);
+  AD.ACTS.forEach((a, i) => { if (i && a.at <= AD.ACTS[i - 1].at) fail(`act ${a.key} starts before the one before it`); });
+  AD.SCENES.forEach((s, i) => {
+    const end = AD.sceneEnd(i);
+    if (i && s.at <= AD.SCENES[i - 1].at) fail(`scene ${s.key} starts before the one before it`);
+    if (!acts.includes(s.act)) fail(`scene ${s.key} belongs to act "${s.act}", which does not exist`);
+    const act = AD.ACTS.find((a) => a.key === s.act);
+    if (s.at < act.at) fail(`scene ${s.key} starts before its act`);
+    if (!(s.still >= 0 && s.at + s.still <= end)) fail(`scene ${s.key}: its still frame is outside the scene`);
+    for (const c of s.caption) {
+      if (s.at + c.at >= end) fail(`scene ${s.key}: "${c.text}" would appear after the scene has ended`);
+      if (c.accent && !c.text.includes(c.accent)) fail(`scene ${s.key}: accent "${c.accent}" is not in "${c.text}"`);
+    }
+    if (!s.sr || /lorem/i.test(s.sr)) fail(`scene ${s.key} has no transcript line`);
+  });
+  AD.CUES.forEach((c) => { if (c.at < 0 || c.at > AD.AD_MS) fail(`sound cue ${c.name} at ${c.at} is outside the ad`); });
+});
+section('ad truth: every app label the ad shows still exists in the app', () => {
+  for (const [file, label] of AD.TRUTH) {
+    const p = path.join(SRC, file);
+    if (!fs.existsSync(p)) { fail(`ad: ${file} no longer exists`); continue; }
+    if (!fs.readFileSync(p, 'utf8').includes(label)) fail(`ad: "${label}" is no longer in ${file} — the ad shows something the app does not`);
+  }
+});
+section('ad numbers: production adds up', () => {
+  const { YIELD, QTY, VENDORS } = TX;
+  const rate = Math.min(...VENDORS.map((v) => v.rate));
+  if (+(((YIELD.issued - YIELD.scrap) / YIELD.issued) * 100).toFixed(1) !== YIELD.yieldPct) fail('yield ≠ (issued − scrap) ÷ issued');
+  if (Math.round((YIELD.issued * rate - 960) / QTY) !== YIELD.costPerPiece) fail('cost per piece ≠ (issued × rate − scrap value) ÷ pieces');
+  if (YIELD.issued !== QTY * TX.MATERIAL.perPiece) fail('material issued ≠ pieces × material per piece');
+});
+
+if (failures) { console.log(`\n${failures} problem(s) with the product film or the ad`); process.exit(1); }
