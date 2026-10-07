@@ -2,28 +2,30 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Zap } from 'lucide-react';
 
+/* Every link goes somewhere a visitor can read. These columns used to point
+   at the app's own screens (/dashboard, /po, /grn, /boq, /mb, /bills …),
+   which for anyone not signed in meant a trip to the sign-in page. The
+   module links open that module on the platform page. */
 const footerLinks = {
-  Platform: [
-    { label: 'Dashboard', to: '/dashboard' },
-    { label: 'Projects', to: '/projects' },
-    { label: 'Work Orders', to: '/workorders' },
-    { label: 'Vendors', to: '/vendors' },
-    { label: 'BOQ', to: '/boq' },
-  ],
-  Operations: [
-    { label: 'Purchase Orders', to: '/po' },
-    { label: 'GRN', to: '/grn' },
-    { label: 'Inventory', to: '/inventory' },
-    { label: 'Measurement Book', to: '/mb' },
-    { label: 'RA Bills', to: '/bills' },
-  ],
-  Resources: [
+  Product: [
+    { label: 'Platform overview', to: '/platform' },
+    { label: 'How it works', to: '/how-it-works' },
+    { label: 'Features', to: '/#features' },
     { label: 'Product film', to: '/see-maksops' },
-    { label: 'Platform Overview', to: '/platform' },
-    { label: 'How It Works', to: '/how-it-works' },
-    { label: 'Process Flow', to: '/flow' },
-    { label: 'Activity Log', to: '/activity' },
-    { label: 'Milestones', to: '/milestones' },
+  ],
+  Modules: [
+    { label: 'Catalogue & enquiries', to: '/platform?module=catalogue' },
+    { label: 'Quotations', to: '/platform?module=quotations' },
+    { label: 'Vendor quotes', to: '/platform?module=vendor-quotes' },
+    { label: 'Goods receipt & stock', to: '/platform?module=inventory' },
+    { label: 'Production', to: '/platform?module=production' },
+    { label: 'GST invoicing', to: '/platform?module=gst' },
+    { label: 'Projects & BOQ (optional)', to: '/platform?module=projects' },
+  ],
+  'Get going': [
+    { label: 'Test Maks Ops', to: '/login' },
+    { label: 'Get started', to: '/get-started' },
+    { label: 'Sign in', to: '/login' },
   ],
 };
 
@@ -100,7 +102,7 @@ const MarketingFooter = () => {
               production and GST billing in one connected flow.
             </p>
             {/* Version pill */}
-            <span className="pill pill-amber">⚡ Beta v1.0</span>
+            <span className="pill pill-amber"><Zap size={11} /> Beta v1.0</span>
           </div>
 
           {/* Link cols */}

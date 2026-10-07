@@ -290,4 +290,67 @@
 .mk-ad-head p { max-width: 560px; margin: 14px auto 0; color: var(--text-muted); line-height: 1.75; }
 .mk-ad-slot { max-width: min(1160px, 115vh); margin: 0 auto; }
 .mk-ad-ph { aspect-ratio: 1280 / 720; border-radius: 22px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
-@media (max-width: 671px) { .mk-ad-ph { aspect-ratio: 420 / 720; } }
+/* the slot is the container the ad measures itself against (narrow below
+   640px of its own width), so the placeholder and the frame switch shape at
+   exactly the same point as the ad does */
+.mk-ad-slot { container-type: inline-size; }
+@container (max-width: 639px) { .mk-ad-ph { aspect-ratio: 420 / 720; } }
+
+/* ── hover effects, in CSS rather than onMouseEnter/Leave ──
+   Inline hover handlers stick on touch screens: a tap fires the enter and
+   never the leave, so a tapped card stayed lifted. These only apply where
+   there is a real pointer to hover with. */
+.mk-role { transition: transform 250ms ease, box-shadow 250ms ease, border-color 250ms ease; }
+@media (hover: hover) {
+  .mk-role:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--role) 34%, transparent); box-shadow: 0 12px 40px color-mix(in srgb, var(--role) 9%, transparent); }
+}
+
+/* the CTA band's two buttons (same look as before) */
+.mk-cta-main, .mk-cta-alt {
+  display: flex; align-items: center; gap: 8px; border-radius: var(--r-full);
+  font-family: var(--font-body); font-size: var(--t-md); text-decoration: none; cursor: pointer;
+  transition: transform 200ms ease, box-shadow 200ms ease, background 200ms ease;
+}
+.mk-cta-main { background: #fff; color: hsl(25,90%,38%); border: none; padding: 16px 36px; font-weight: 700; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+.mk-cta-alt { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.4); padding: 15px 32px; font-weight: 600; }
+@media (hover: hover) {
+  .mk-cta-main:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+  .mk-cta-alt:hover { background: rgba(255,255,255,0.25); }
+}
+.mk-cta-main:focus-visible, .mk-cta-alt:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+/* the marketing nav's links (same look as before) */
+.mkt-nav-link {
+  padding: 8px 16px; border-radius: 8px; font-size: var(--t-base); font-weight: 500;
+  color: var(--text-secondary); text-decoration: none; transition: color 200ms ease, background 200ms ease;
+}
+.mkt-nav-link.active { color: var(--brand-amber); }
+@media (hover: hover) {
+  .mkt-nav-link:hover { color: var(--brand-amber); background: hsl(36,28%,94%); }
+  [data-theme="dark"] .mkt-nav-link:hover { background: var(--bg-elevated); }
+}
+
+/* the industry strip: it scrolls only for those who have not asked for less motion */
+@keyframes nx-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.mk-marquee { animation: nx-marquee 30s linear infinite; }
+
+/* the ad's slot keeps room for the controls under the frame, so nothing
+   below it moves when the ad arrives */
+.mk-ad-ph { margin-bottom: 42px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-marquee { animation: none; }
+  /* index.css's entrance animations (.animate-in and friends) still played */
+  .animate-in, .animate-slide-up, .animate-fade { animation: none !important; opacity: 1 !important; transform: none !important; }
+}
+
+/* How it works: the invoice maths — line, rule and worked example in three
+   columns; on a phone the example drops under its line instead of
+   scrolling off to the side */
+.mk-math { display: grid; grid-template-columns: max-content max-content 1fr; column-gap: 20px; }
+.mk-math-eg { color: var(--text-muted); text-align: right; }
+.mk-math-eg.is-total { color: var(--text-primary); font-weight: 700; }
+@media (max-width: 600px) {
+  .mk-math { grid-template-columns: max-content 1fr; column-gap: 12px; padding: 20px !important; font-size: 13px !important; line-height: 1.8 !important; }
+  .mk-math-eg { grid-column: 2; text-align: left; margin-bottom: 4px; }
+}

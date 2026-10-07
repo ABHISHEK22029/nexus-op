@@ -8,6 +8,7 @@ import {
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
 import useInView from '../hooks/useInView';
+import usePageMeta from '../hooks/usePageMeta';
 import FlowShowcase from '../components/marketing/flow/FlowShowcase';
 
 /* The fourth and last local copy of useInView, deleted. All four had drifted
@@ -248,6 +249,10 @@ const StepCard = ({ step, index, isLeft }) => {
 const HowItWorks = () => {
   const navigate = useNavigate();
   const [heroRef, heroInView] = useInView(0.01, { once: true });
+  usePageMeta(
+    'How it works — Maks Ops',
+    'One order through Maks Ops, step by step: an enquiry from your catalogue, the quotation, the order, buying what is short, the goods receipt, production and the GST invoice.',
+  );
 
   return (
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
@@ -276,16 +281,8 @@ const HowItWorks = () => {
           >
             <Zap size={12} /> Complete Workflow Guide
           </span>
-          <h1
-            style={{
-              maxWidth: '700px',
-              margin: '0 auto 20px',
-              opacity: heroInView ? 1 : 0,
-              transform: heroInView ? 'translateY(0)' : 'translateY(20px)',
-              transition: 'all 0.6s ease 0.1s',
-            }}
-          >
-            From Site to Statement,{' '}
+          <h1 style={{ maxWidth: '700px', margin: '0 auto 20px' }}>
+            From Enquiry to Invoice,{' '}
             <span className="gradient-text-amber">In One Flow</span>
           </h1>
           <p
@@ -295,12 +292,10 @@ const HowItWorks = () => {
               color: 'var(--text-muted)',
               fontSize: 'var(--t-lg)',
               lineHeight: 1.8,
-              opacity: heroInView ? 1 : 0,
-              transition: 'opacity 0.6s ease 0.2s',
             }}
           >
-            A step-by-step walkthrough of how Maks Ops handles every stage of civil
-            project procurement and billing — from project creation to RA Bill generation.
+            A step-by-step walkthrough of one order through Maks Ops — from an enquiry
+            on your catalogue to a paid GST invoice, with every record linked to the last.
           </p>
           {/* Step counter badges */}
           <div
@@ -379,19 +374,22 @@ const HowItWorks = () => {
         </div>
       </section>
 
-      {/* RA Bill Formula highlight */}
+      {/* The maths behind the invoice this page walks through. It was the RA
+          bill formula (contracting), on a dark 60%-transparent panel that was
+          grey-on-grey in the light theme. Same box, the page's own story, and
+          the page's own surface colours. */}
       <section
         className="section-sm"
         style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)' }}
       >
         <div className="container-narrow" style={{ textAlign: 'center' }}>
           <span className="pill pill-amber" style={{ marginBottom: '20px' }}>
-            <Receipt size={12} /> RA Bill Formula
+            <Receipt size={12} /> GST Invoice Formula
           </span>
-          <h3 style={{ marginBottom: '32px' }}>The Math Behind Every Bill</h3>
+          <h3 style={{ marginBottom: '32px' }}>The Math Behind Every Invoice</h3>
           <div
             style={{
-              background: 'hsl(225, 40%, 6%, 0.6)',
+              background: 'var(--bg-elevated)',
               border: '1px solid var(--border-default)',
               borderRadius: 'var(--r-md)',
               padding: '32px',
@@ -399,17 +397,38 @@ const HowItWorks = () => {
               fontSize: 'var(--t-base)',
               lineHeight: 2,
               textAlign: 'left',
-              color: 'var(--text-secondary)',
+              color: 'var(--text-primary)',
+              overflowX: 'auto',
             }}
+            className="mk-math"
           >
-            <div><span style={{ color: '#22C55E' }}>Net Qty</span>         = Cumulative MB Qty − Previously Billed Qty</div>
-            <div><span style={{ color: '#3B82F6' }}>Gross Amount</span>    = Net Qty × BOQ Unit Rate (₹)</div>
-            <div><span style={{ color: '#EF4444' }}>TDS (2%)</span>        = Gross Amount × 0.02</div>
-            <div><span style={{ color: '#F59E0B' }}>Retention (5%)</span>  = Gross Amount × 0.05</div>
-            <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: '8px', paddingTop: '8px' }}>
-              <span style={{ color: 'var(--brand-amber)', fontWeight: 700 }}>Net Payable</span>   = Gross Amount − TDS − Retention
-            </div>
+            {/* three columns — the line, its rule, and the worked example from
+                the order the walkthrough follows — so they never run together */}
+            {[
+              ['Sub-total', '#16A34A', '= Qty × Rate', '120 × ₹2,320 = ₹2,78,400'],
+              ['CGST (9%)', '#2563EB', '= Sub-total × 0.09', '₹25,056'],
+              ['SGST (9%)', '#2563EB', '= Sub-total × 0.09', '₹25,056'],
+              ['Round off', '#D97706', 'to the nearest rupee', '−₹12'],
+            ].map(([label, tone, rule, eg]) => (
+              <React.Fragment key={label}>
+                <span style={{ color: tone, fontWeight: 700 }}>{label}</span>
+                <span>{rule}</span>
+                <span className="mk-math-eg">{eg}</span>
+              </React.Fragment>
+            ))}
+            <span style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', fontSize: 'var(--t-sm)' }}>
+              CGST + SGST when the goods stay in your state; IGST (18%) when the place of supply is another state.
+            </span>
+            <span style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border-subtle)', margin: '8px 0 4px' }} />
+            <span style={{ color: 'var(--brand-amber)', fontWeight: 700 }}>Invoice total</span>
+            <span>= Sub-total + GST ± round off</span>
+            <span className="mk-math-eg is-total">₹3,28,500</span>
           </div>
+          <p style={{ marginTop: '16px', fontSize: 'var(--t-sm)', color: 'var(--text-muted)' }}>
+            Contractors billing against measurement get running-account bills too — with
+            TDS and retention shown — in the optional{' '}
+            <Link to="/platform?module=projects" style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>Projects &amp; BOQ</Link> module.
+          </p>
         </div>
       </section>
 
@@ -431,7 +450,7 @@ const HowItWorks = () => {
               style={{ fontSize: 'var(--t-md)', padding: '16px 32px' }}
             >
               <Play size={16} fill="#fff" />
-              Open the Beta Platform
+              Test Maks Ops
             </button>
             <Link to="/platform" className="btn-ghost" style={{ fontSize: 'var(--t-md)', padding: '16px 32px' }}>
               Explore Capabilities

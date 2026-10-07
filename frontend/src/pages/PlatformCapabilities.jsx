@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronRight, ArrowRight, FolderGit2, FileText, Users,
   ShoppingCart, Truck, BookOpen, Receipt, Map, Workflow,
@@ -9,6 +9,7 @@ import {
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
 import useInView from '../hooks/useInView';
+import usePageMeta from '../hooks/usePageMeta';
 import EverythingInside from '../components/marketing/EverythingInside';
 import {
   ParseLines, CompareBars, YieldRing, TaxSplit, DocMorph,
@@ -152,11 +153,11 @@ const modules = [
     id: "projects",
     icon: <FolderGit2 size={20} />,
     label: "Projects & BOQ",
-    title: "For work billed against measurement",
+    title: "Optional: for work billed against measurement",
     color: "#0EA5E9",
     diagram: (p) => <DocMorph {...p} from="BOQ" to="RA" tone="#0EA5E9" />,
     description:
-      "If you run jobs against a bill of quantities, measurements recorded on site drive the running-account bill — quantity times agreed rate, with GST, TDS and retention applied as deductions.",
+      "An optional module for contractors. If you run jobs against a bill of quantities, measurements recorded on site drive the running-account bill — quantity times agreed rate, with GST, TDS and retention applied as deductions.",
     bullets: [
       "Itemised BOQ with units and agreed rates",
       "Site measurements recorded against BOQ lines",
@@ -240,9 +241,21 @@ const ModulePanel = ({ module }) => {
 };
 
 const PlatformCapabilities = () => {
-  const [activeTab, setActiveTab] = useState('projects');
   const navigate = useNavigate();
   const [headerRef, headerInView] = useInView(0.1, { once: true });
+  usePageMeta(
+    'Platform — every part of Maks Ops',
+    'Quotations, vendor quotes, comparison, goods receipt, production, GST invoicing and your public catalogue — what each part of Maks Ops does. Contracting (BOQ, measurement book, RA bills) is an optional module.',
+  );
+
+  /* The open module lives in the address (?module=…), so the footer can link
+     straight to one and a link to this page shows what was being looked at.
+     It used to open on Projects & BOQ — the contracting module — so the
+     first thing a fabricator saw here was billing against measurement. */
+  const [params, setParams] = useSearchParams();
+  const asked = params.get('module');
+  const activeTab = modules.some((m) => m.id === asked) ? asked : modules[0].id;
+  const setActiveTab = (id) => setParams({ module: id }, { replace: true, preventScrollReset: true });
 
   const activeModule = modules.find(m => m.id === activeTab);
 
@@ -271,17 +284,9 @@ const PlatformCapabilities = () => {
           <span className="pill pill-amber" style={{ marginBottom: '20px', opacity: headerInView ? 1 : 0, transition: 'opacity 0.5s' }}>
             <Zap size={12} /> Platform Deep-Dive
           </span>
-          <h1
-            style={{
-              maxWidth: '700px',
-              margin: '0 auto 20px',
-              opacity: headerInView ? 1 : 0,
-              transform: headerInView ? 'translateY(0)' : 'translateY(20px)',
-              transition: 'all 0.6s ease 0.1s',
-            }}
-          >
+          <h1 style={{ maxWidth: '700px', margin: '0 auto 20px' }}>
             The Full Stack for{' '}
-            <span className="gradient-text-amber">Infrastructure Delivery</span>
+            <span className="gradient-text-amber">SME Operations</span>
           </h1>
           <p
             style={{
@@ -290,12 +295,11 @@ const PlatformCapabilities = () => {
               color: 'var(--text-muted)',
               fontSize: 'var(--t-lg)',
               lineHeight: 1.8,
-              opacity: headerInView ? 1 : 0,
-              transition: 'opacity 0.6s ease 0.2s',
             }}
           >
-            7 core capability areas covering the complete lifecycle of civil project operations.
-            Click any module to explore its features.
+            Eight capability areas, from your public catalogue to the GST invoice.
+            Contracting tools — BOQ, measurement book, RA bills — are an optional
+            module. Click any module to explore it.
           </p>
         </div>
       </section>
@@ -400,7 +404,7 @@ const PlatformCapabilities = () => {
                   onClick={() => navigate('/dashboard')}
                   className="btn-primary"
                 >
-                  Try in Beta <ArrowRight size={16} />
+                  Test Maks Ops <ArrowRight size={16} />
                 </button>
               </div>
 
@@ -443,10 +447,10 @@ const PlatformCapabilities = () => {
             <span className="gradient-text-amber">Live Beta</span>
           </h2>
           <p style={{ color: 'var(--text-muted)', marginBottom: '32px', fontSize: 'var(--t-md)' }}>
-            All 7 capability areas are live and fully functional in the beta platform.
+            All eight capability areas are live in the beta.
           </p>
           <button onClick={() => navigate('/dashboard')} className="btn-primary" style={{ fontSize: 'var(--t-md)', padding: '16px 32px' }}>
-            <Play size={16} fill="#fff" /> Open the Beta Platform
+            <Play size={16} fill="#fff" /> Test Maks Ops
           </button>
         </div>
       </section>

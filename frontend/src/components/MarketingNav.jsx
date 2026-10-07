@@ -21,7 +21,9 @@ const MarketingNav = () => {
     { label: 'Platform', to: '/platform' },
     { label: 'How It Works', to: '/how-it-works' },
     { label: 'See Maks Ops', to: '/see-maksops' },
-    { label: 'Features', to: '/#features' },
+    /* a place on the homepage, not a page: it is never "the page you are
+       on", so it never lights up as one (it used to, on the homepage) */
+    { label: 'Features', to: '/#features', hash: true },
   ];
 
   /* Nav background adapts to theme */
@@ -65,26 +67,15 @@ const MarketingNav = () => {
         {/* Desktop nav links */}
         <div className="desktop-nav" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           {navLinks.map((link) => (
-            <NavLink
-              key={link.label}
-              to={link.to}
-              style={({ isActive }) => ({
-                padding: '8px 16px', borderRadius: '8px',
-                fontSize: 'var(--t-base)', fontWeight: 500,
-                color: isActive ? 'var(--brand-amber)' : 'var(--text-secondary)',
-                textDecoration: 'none', transition: 'all 200ms ease',
-              })}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = 'var(--brand-amber)';
-                e.currentTarget.style.background = isDark ? 'var(--bg-elevated)' : 'hsl(36,28%,94%)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--text-secondary)';
-              }}
-            >
-              {link.label}
-            </NavLink>
+            /* hover is CSS (.mkt-nav-link in motion.css): the inline handlers
+               reset the link to grey on mouse-out, even the current page's */
+            link.hash
+              ? <Link key={link.label} to={link.to} className="mkt-nav-link">{link.label}</Link>
+              : (
+                <NavLink key={link.label} to={link.to} className={({ isActive }) => `mkt-nav-link${isActive ? ' active' : ''}`}>
+                  {link.label}
+                </NavLink>
+              )
           ))}
         </div>
 
@@ -146,7 +137,7 @@ const MarketingNav = () => {
                 className="btn-primary btn-sm"
                 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
               >
-                Test Beta
+                Test Maks Ops
                 <ChevronRight size={14} />
               </button>
             </>
@@ -182,7 +173,7 @@ const MarketingNav = () => {
               style={({ isActive }) => ({
                 display: 'block', padding: '12px 16px', borderRadius: '8px',
                 fontSize: 'var(--t-md)', fontWeight: 500,
-                color: isActive ? 'var(--brand-amber)' : 'var(--text-secondary)',
+                color: isActive && !link.hash ? 'var(--brand-amber)' : 'var(--text-secondary)',
                 textDecoration: 'none', marginBottom: '4px',
               })}
             >

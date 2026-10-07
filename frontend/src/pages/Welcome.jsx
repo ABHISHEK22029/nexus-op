@@ -1,20 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  ChevronRight, ArrowRight, Zap, Map, BarChart3, FileText,
-  Truck, ShoppingCart, BookOpen, Receipt, Workflow, Users,
-  FolderGit2, CheckCircle, TrendingUp, Package, Shield,
-  Play, Star, Building2, HardHat, IndianRupee, Calculator,
-  Activity, Brain, Factory, ShoppingBag, Files, ReceiptText, Store,
-  Link2, ShieldCheck,
+  ArrowRight, Zap, FileText, ShoppingCart, Workflow, Users, CheckCircle, Shield,
+  Play, Factory, Store, Link2, ShieldCheck, Crown, Handshake, Wallet,
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
 import useInView from '../hooks/useInView';
+import usePageMeta from '../hooks/usePageMeta';
 import FlowShowcase from '../components/marketing/flow/FlowShowcase';
 import CatalogueShowcase from '../components/marketing/CatalogueShowcase';
 import { FeatureGrid } from '../components/marketing/FeatureDiagrams';
-import PromiseCheck from '../components/marketing/PromiseCheck';
+import { canFor } from '../components/marketing/film/data/roleViews';
 import AdSection from '../components/marketing/ad/AdSection';
 
 /* ── Warm SVG wave dividers (CSOD-inspired organic shapes) ── */
@@ -28,24 +25,44 @@ const WaveDivider = ({ flip = false, color1 = 'hsl(28,80%,90%)', color2 = 'hsl(2
   </div>
 );
 
-/* ── Testimonials data ── */
-const TESTIMONIALS = [
-  {
-    quote: 'Maks Ops cut our order-to-PO time from 3 days to a few hours. Comparing three vendor quotes and raising the PO is now one screen.',
-    name: 'Rajesh Kumar', role: 'Operations Head, Precision Fabricators', avatar: '👷',
-  },
-  {
-    quote: "The billing is the most accurate we've used. GST, TDS, retention, freight — all computed automatically on a proper tax invoice. Zero manual errors.",
-    name: 'Priya Sharma', role: 'Finance Head, Kirashi Business Synergies', avatar: '💼',
-  },
-  {
-    quote: 'Material in, finished goods out, scrap sold — the yield view finally tells us the real cost per piece. We stopped guessing.',
-    name: 'Venkat Rao', role: 'Plant Manager, Metro Steel Works', avatar: '🏗️',
-  },
-];
+/* The testimonial carousel is gone: its three named quotes were not from
+   customers, and a beta has no business inventing them. Nor does the stats
+   strip that sat under the hero ("5× faster", "100% GST-accurate") — numbers
+   nobody had measured. */
 
-/* ── Logo marquee data ── */
-const LOGOS = ['Fabrication', 'Steel & Metals', 'Manufacturing', 'EPC Contractors', 'Trading & Distribution', 'Solar & Power', 'Machinery', 'Infrastructure'];
+/* ── Industry strip: SMEs first; contracting is an optional module ── */
+const LOGOS = ['Fabrication', 'Steel & Metals', 'Manufacturing', 'Trading & Distribution', 'Solar & Power', 'Machinery', 'Engineering Services', 'Contractors'];
+
+/* ── The roles, as the app defines them ──
+   Was "Admin / Engineer / Finance / Vendor" — names the backend retired
+   (roles.js maps them to Administrator / Production / Viewer), so the page
+   described an app that no longer exists. Each tick below is the role's
+   real write permission, read from the backend's own role table
+   (film/data/roles.snapshot.js, checked against backend/shared/roles.js). */
+const ACTIONS = [
+  ['Send quotations', 'sales-quotations'],
+  ['Take customer orders', 'customer-orders'],
+  ['Raise invoices', 'sales-invoices'],
+  ['Compare vendor quotes', 'quotations'],
+  ['Raise purchase orders', 'po'],
+  ['Receive goods', 'grn'],
+  ['Adjust stock', 'inventory'],
+  ['Run production', 'production'],
+  ['Sign off purchase orders', 'po-approval'],
+  ['Record expenses', 'expenses'],
+  ['Manage the team', 'users'],
+];
+const ROLES = [
+  { role: 'Owner', Icon: Crown, color: '#FF7A00', tagline: 'Runs the business, and can do everything in it' },
+  { role: 'Sales', Icon: Handshake, color: '#3B82F6', tagline: 'Turns enquiries into quotations, orders and invoices' },
+  { role: 'Procurement', Icon: ShoppingCart, color: '#A78BFA', tagline: 'Buys what is short and receives it into stock' },
+  { role: 'Production', Icon: Factory, color: '#06B6D4', tagline: 'Runs the work and records what was made' },
+  { role: 'Finance', Icon: Wallet, color: '#22C55E', tagline: 'Signs off purchase orders and keeps the books' },
+].map((r) => {
+  const can = canFor(r.role);
+  const allowed = ACTIONS.filter(([, res]) => can(res, 'write')).map(([label]) => label);
+  return { ...r, does: allowed.length === ACTIONS.length ? ['Everything every other role can do', 'Sign off purchase orders', 'Manage the team and its roles'] : allowed };
+});
 
 /* The local copy of useInView that lived here has been replaced by the
    shared hook (hooks/useInView). Two copies of the same observer was exactly
@@ -57,65 +74,26 @@ const LOGOS = ['Fabrication', 'Steel & Metals', 'Manufacturing', 'EPC Contractor
    (the second value) and pass once:true. Looping animations take the third
    value instead, so they only run while actually on screen. */
 
-/* ── Animated counter ── */
-const Counter = ({ target, suffix = '', duration = 1500 }) => {
-  const [count, setCount] = useState(0);
-  const [ref, inView] = useInView(0.1, { once: true });
-  useEffect(() => {
-    if (!inView) return;
-    let start = 0;
-    const step = Math.ceil(target / (duration / 16));
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= target) { setCount(target); clearInterval(timer); }
-      else setCount(start);
-    }, 16);
-    return () => clearInterval(timer);
-  }, [inView, target, duration]);
-  return <span ref={ref}>{count}{suffix}</span>;
-};
-
-/* ── Role card ── */
-const RoleCard = ({ emoji, role, tagline, modules, color }) => (
-  <div
-    className="card"
-    style={{
-      borderColor: `${color}22`,
-      transition: 'all 250ms ease',
-    }}
-    onMouseEnter={(e) => {
-      e.currentTarget.style.borderColor = `${color}55`;
-      e.currentTarget.style.transform = 'translateY(-4px)';
-      e.currentTarget.style.boxShadow = `0 12px 40px ${color}15`;
-    }}
-    onMouseLeave={(e) => {
-      e.currentTarget.style.borderColor = `${color}22`;
-      e.currentTarget.style.transform = 'translateY(0)';
-      e.currentTarget.style.boxShadow = 'none';
-    }}
-  >
+/* ── Role card ──
+   Hover is CSS (.mk-role in motion.css), so a tap on a phone no longer
+   leaves the card lifted. */
+const RoleCard = ({ role, color, tagline, does, ...rest }) => (
+  <div className="card mk-role" style={{ borderColor: `${color}22`, '--role': color }}>
     <div
       style={{
-        width: '48px',
-        height: '48px',
-        borderRadius: 'var(--r-md)',
-        background: `${color}15`,
-        border: `1px solid ${color}30`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '22px',
-        marginBottom: '16px',
+        width: '48px', height: '48px', borderRadius: 'var(--r-md)',
+        background: `${color}15`, border: `1px solid ${color}30`, color,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px',
       }}
     >
-      {emoji}
+      {React.createElement(rest.Icon, { size: 22 })}
     </div>
     <h4 style={{ marginBottom: '6px', color: 'var(--text-primary)' }}>{role}</h4>
     <p style={{ fontSize: 'var(--t-sm)', color: 'var(--text-muted)', marginBottom: '14px' }}>{tagline}</p>
     <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-      {modules.map((m) => (
+      {does.map((m) => (
         <li key={m} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--t-sm)', color: 'var(--text-secondary)' }}>
-          <CheckCircle size={12} color={color} />
+          <CheckCircle size={12} color={color} style={{ flex: 'none' }} />
           {m}
         </li>
       ))}
@@ -123,69 +101,23 @@ const RoleCard = ({ emoji, role, tagline, modules, color }) => (
   </div>
 );
 
-/* ── Differentiator card (Why Maks Ops) ── */
-const DiffCard = ({ icon, color, title, desc, delay = 0 }) => {
-  const [ref, inView] = useInView(0.1, { once: true });
-  return (
-    <div
-      ref={ref}
-      className="card"
-      style={{
-        opacity: inView ? 1 : 0,
-        transform: inView ? 'translateY(0)' : 'translateY(24px)',
-        transition: `all 0.5s ease ${delay}ms`,
-        display: 'flex', flexDirection: 'column', gap: '16px',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = `${color}55`;
-        e.currentTarget.style.boxShadow = `0 12px 40px ${color}15`;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = 'var(--border-default)';
-        e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-      }}
-    >
-      <div style={{
-        width: '48px', height: '48px', borderRadius: 'var(--r-md)',
-        background: `${color}15`, border: `1px solid ${color}30`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: color,
-      }}>{icon}</div>
-      <div>
-        <h4 style={{ marginBottom: '8px', color: 'var(--text-primary)' }}>{title}</h4>
-        <p style={{ fontSize: 'var(--t-base)', color: 'var(--text-muted)', lineHeight: 1.7 }}>{desc}</p>
-      </div>
-    </div>
-  );
-};
-
 /* ─────────────────────────────────────────────── */
 const Welcome = () => {
   const navigate = useNavigate();
-  const [activeTestimonial, setActiveTestimonial] = useState(0);
   const [heroRef, heroInView] = useInView(0.01, { once: true });
-  const [statsRef, statsInView] = useInView(0.1, { once: true });
   const [featRef, featInView] = useInView(0.05, { once: true });
-
-  // Auto-advance testimonials
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setActiveTestimonial((s) => (s + 1) % TESTIMONIALS.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, []);
+  usePageMeta(
+    'Maks Ops — From catalogue to cash',
+    'Maks Ops connects every step of your operation — catalogue, enquiries, quotations, vendor quotes, purchasing, inventory, production and GST invoices — in one place.',
+  );
 
   /* The logo strip loops forever; it pauses while it is off screen, like
      every other loop on this page — a reader at the footer should not be
      paying for a marquee they scrolled past. */
   const [marqueeRef, , marqueeVisible] = useInView(0);
 
-  /* ── Marquee animation keyframe (injected once) ── */
-  const marqueeStyle = `@keyframes nx-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }`;
-
   return (
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
-      <style>{marqueeStyle}</style>
 
       {/* The announcement banner ("Maks Ops Beta is Live — Explore Beta") is
           gone: 46px above the headline restating what the nav's Test Beta
@@ -247,15 +179,17 @@ const Welcome = () => {
                  through quotation, order, purchase, receipt, production and
                  invoice. Not a video: the stage cards are the controller and
                  the window below is the application, running. */}
-          <div className="pill pill-amber animate-in" style={{ opacity: heroInView ? 1 : 0 }}>
+          {/* The words are on screen at once: the headline is the page's largest
+              element, and it used to wait for a fade before anyone could read it. */}
+          <div className="pill pill-amber">
             <Zap size={12} /> Operations flow
           </div>
 
-          <h1 className="animate-in stagger-1 mk-hero-h1" style={{ opacity: heroInView ? 1 : 0 }}>
+          <h1 className="mk-hero-h1">
             From catalogue <span className="mk-hero-accent">to cash.</span>
           </h1>
 
-          <p className="animate-in stagger-2 mk-hero-lede" style={{ opacity: heroInView ? 1 : 0 }}>
+          <p className="mk-hero-lede">
             <strong>Maks Ops connects every step in between.</strong>{' '}
             Create your catalogue, capture enquiries, send quotations, compare vendor
             quotes, buy smarter, track inventory, run production and raise invoices —
@@ -291,82 +225,12 @@ const Welcome = () => {
              the whole idea in under a minute, as a film. ── */}
       <AdSection />
 
-      {/* ── WAVE TRANSITION: Hero → Stats (CSOD-inspired organic waves) ── */}
+      {/* ── WAVE TRANSITION (CSOD-inspired organic waves) ──
+             The stats strip that sat here ("5× faster", "100% GST-accurate",
+             "20+ modules") is gone — unmeasured claims, and a module count no
+             other page agreed with. So is the separate Ask AI section: the
+             features below already give Ask AI and Smart Knowledge a card each. */}
       <WaveDivider color1="var(--brand-amber)" color2="hsl(22,70%,75%)" />
-
-      {/* ── STATS STRIP ── */}
-      <section ref={statsRef} className="section-sm" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)' }}>
-        <div className="container">
-          <div className="mk-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '1px', background: 'var(--border-subtle)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
-            {[
-              { val: 5, suffix: '×', label: 'Faster Order-to-Bill', icon: '⚡' },
-              { val: 20, suffix: '+', label: 'Integrated Modules', icon: '📋' },
-              { val: 100, suffix: '%', label: 'GST-Accurate Billing', icon: '💰' },
-              { val: 1, suffix: '', label: 'Connected Flow', icon: '🔗' },
-            ].map(({ val, suffix, label, icon }) => (
-              <div
-                key={label}
-                style={{
-                  background: 'var(--bg-surface)',
-                  padding: '40px 24px',
-                  textAlign: 'center',
-                  opacity: statsInView ? 1 : 0,
-                  transition: 'opacity 0.6s ease',
-                }}
-              >
-                <div style={{ fontSize: 'var(--t-2xl)', marginBottom: '10px' }}>{icon}</div>
-                <div
-                  style={{
-                    fontFamily: 'var(--font-display)',
-                    fontSize: '2.6rem',
-                    fontWeight: 800,
-                    color: 'var(--brand-amber)',
-                    lineHeight: 1,
-                    letterSpacing: '-0.04em',
-                    marginBottom: '10px',
-                  }}
-                >
-                  {statsInView ? <Counter target={val} suffix={suffix} /> : `0${suffix}`}
-                </div>
-                <div style={{ fontSize: 'var(--t-sm)', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── AI & SMART KNOWLEDGE HIGHLIGHT (new) ── */}
-      <section className="section" style={{ paddingTop: '56px', paddingBottom: '24px' }}>
-        <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-            <span className="pill pill-amber" style={{ marginBottom: '16px' }}><Brain size={12} /> New in Beta · Intelligence</span>
-            <h2 style={{ maxWidth: '620px', margin: '16px auto 0' }}>
-              Answers and guidance, <span className="gradient-text-amber">built in</span>
-            </h2>
-            <p style={{ maxWidth: '580px', margin: '16px auto 0', color: 'var(--text-muted)', lineHeight: 1.8 }}>
-              Never get stuck. <b>Ask AI</b> knows your data and your workflow, and <b>Smart Knowledge</b> documents
-              every step — all inside Maks Ops, on every screen.
-            </p>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', maxWidth: '900px', margin: '0 auto' }}>
-            {[
-              { icon: <Brain size={24} />, title: 'Ask AI', to: '/knowledge', cta: 'Try Ask AI',
-                desc: 'A read-only assistant on every screen. Ask "what\'s overdue?", "what needs approval?", or "how do I raise a PO?" — grounded in your own data, and it points you to the right screen. Stays strictly on Maks Ops topics.' },
-              { icon: <BookOpen size={24} />, title: 'Smart Knowledge', to: '/knowledge', cta: 'Browse guides',
-                desc: 'A searchable library of guides and how-tos for every part of the platform — orders, procurement, production, GST billing and more. One click to "Ask AI a follow-up" from any article.' },
-            ].map((c) => (
-              <div key={c.title} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--r-lg)', padding: '28px', boxShadow: '0 8px 40px hsl(28,40%,50%,0.06)' }}>
-                <div style={{ width: '48px', height: '48px', borderRadius: 'var(--r-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))', marginBottom: '16px' }}>{c.icon}</div>
-                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--t-xl)', fontWeight: 800, margin: '0 0 8px' }}>{c.title}</h3>
-                <p style={{ color: 'var(--text-muted)', lineHeight: 1.7, margin: '0 0 18px', fontSize: 'var(--t-base)' }}>{c.desc}</p>
-                <Link to={c.to} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--brand-amber)', fontWeight: 700, fontSize: 'var(--t-base)', textDecoration: 'none' }}>
-                  {c.cta} <ArrowRight size={15} />
-                </Link>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* ── LOGO MARQUEE (CSOD-style trust strip) ── */}
       <div style={{
@@ -380,7 +244,7 @@ const Welcome = () => {
           }}>Built for India's growing SMEs</span>
         </div>
         <div ref={marqueeRef} style={{ overflow: 'hidden' }}>
-          <div style={{ display: 'flex', animation: 'nx-marquee 30s linear infinite', animationPlayState: marqueeVisible ? 'running' : 'paused', width: 'max-content' }}>
+          <div className="mk-marquee" style={{ display: 'flex', animationPlayState: marqueeVisible ? 'running' : 'paused', width: 'max-content' }}>
             {[...LOGOS, ...LOGOS].map((name, i) => (
               <div key={i} style={{
                 padding: '8px 40px', borderRight: '1px solid var(--border-subtle)',
@@ -452,23 +316,9 @@ const Welcome = () => {
         </div>
       </section>
 
-      {/* ── KNOW WHAT YOU CAN PROMISE ──────────────────────────────────
-             The full list of 39 screens that lived here has moved to the
-             platform page. The homepage has one job — show that Maks Ops
-             connects the operation — and a catalogue of every screen works
-             against it; it reads as a spec sheet and buries the two or three
-             ideas that make someone want to look further.
-
-             This is one of those ideas. "We have inventory management" is
-             something every competitor says. What the deficiency engine
-             actually answers is the question a fabricator asks before quoting
-             a date: can we fulfil this? */}
-      <section className="section" style={{ background: 'var(--bg-deep)' }}>
-        <div className="container">
-          <PromiseCheck />
-        </div>
-      </section>
-
+      {/* "Know what you can promise" (PromiseCheck) used to sit here. Smart
+             Inventory is now the centre of the ad near the top of the page,
+             so a third telling of it went. */}
       {/* The engine used to be duplicated here, five screens below the fold.
           It now opens the page, where the thing that explains the product
           belongs — so this section is just the way through to the detail. */}
@@ -515,137 +365,23 @@ const Welcome = () => {
             </span>
             <h2 style={{ maxWidth: '500px', margin: '16px auto 0' }}>
               One Platform,{' '}
-              <span className="gradient-text-amber">Four Roles</span>
+              <span className="gradient-text-amber">Five Roles</span>
             </h2>
-          </div>
-
-          <div className="mk-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '20px' }}>
-            <RoleCard
-              emoji="👑"
-              role="Admin"
-              tagline="Full platform access across all projects and modules"
-              color="#FF7A00"
-              modules={['All 15 modules', 'Project creation', 'Vendor management', 'Bill approval']}
-            />
-            <RoleCard
-              emoji="👷"
-              role="Engineer"
-              tagline="Field operations: indents, GRN, measurement book"
-              color="#3B82F6"
-              modules={['Indent requests', 'GRN recording', 'MB entries', 'Inventory view']}
-            />
-            <RoleCard
-              emoji="💼"
-              role="Finance"
-              tagline="Financial oversight: bills, payments, dashboard"
-              color="#22C55E"
-              modules={['RA Bills engine', 'Dashboard KPIs', 'Activity log', 'Report view']}
-            />
-            <RoleCard
-              emoji="🏢"
-              role="Vendor"
-              tagline="Track your assigned purchase orders and deliveries"
-              color="#A78BFA"
-              modules={['Purchase orders', 'Delivery status', 'GRN confirmation']}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ── WHY MAKS OPS — Differentiator grid (CSOD-inspired) ── */}
-      <section className="section" style={{ paddingTop: '48px' }}>
-        <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
-            <span className="pill pill-amber" style={{ marginBottom: '16px' }}>
-              <Shield size={12} /> Domain-Built Advantage
-            </span>
-            <h2 style={{ maxWidth: '580px', margin: '16px auto 0' }}>
-              Why Teams Choose{' '}
-              <span className="gradient-text-amber">Maks Ops</span>
-            </h2>
-            <p style={{ maxWidth: '480px', margin: '12px auto 0', color: 'var(--text-muted)', lineHeight: 1.8 }}>
-              Not a generic ERP. Built for Indian SMEs — fabricators, traders and
-              contractors — with GST-accurate rules and a flow that connects end to end.
+            <p style={{ maxWidth: '540px', margin: '12px auto 0', color: 'var(--text-muted)', lineHeight: 1.8 }}>
+              Each person can change only what their role allows. Add a read-only
+              Viewer, or start a role of your own from any of these.
             </p>
           </div>
-          <div className="mk-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '20px' }}>
-            <DiffCard delay={0}   icon={<IndianRupee size={22} />} color="var(--brand-amber)"   title="GST-Native Calculations" desc="SGST/CGST/IGST auto-computed from GSTIN state codes. All 37 Indian states, TDS sections 194C, 194I, 194J." />
-            <DiffCard delay={80}  icon={<Workflow size={22} />}    color="var(--accent-blue)"    title="One Connected Flow"      desc="Customer order → quotation → PO → GRN → bill, all linked and traceable. No re-typing, no islands — the data flows through." />
-            <DiffCard delay={160} icon={<BarChart3 size={22} />}   color="var(--accent-emerald)" title="Real Billing Math"        desc="RA bills and GRN bills compute GST, TDS, retention, freight and discounts exactly — proper print-ready tax invoices." />
-            <DiffCard delay={240} icon={<Factory size={22} />}     color="#A78BFA"               title="Fabrication Yield"       desc="Track raw material in, finished goods out, and scrap — with live yield %, material reconciliation and true cost per piece." />
-            <DiffCard delay={320} icon={<Activity size={22} />}    color="#EC4899"               title="Full Audit Trail"        desc="Every approval, status change, and payment is logged with timestamp, user, and reason. 100% auditable." />
-            <DiffCard delay={400} icon={<Brain size={22} />}       color="#06B6D4"               title="Intelligence Alerts"     desc="Overdue PO alerts, milestone delay detection, low-stock warnings, vendor agreement expiry — all automated." />
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+            {ROLES.map((r) => <RoleCard key={r.role} {...r} />)}
           </div>
         </div>
       </section>
 
-      {/* ── TESTIMONIALS (CSOD customer stories style) ── */}
-      <section className="section" style={{ background: 'var(--bg-deep)' }}>
-        <div className="container-narrow" style={{ textAlign: 'center' }}>
-          <span className="pill pill-emerald" style={{ marginBottom: '16px' }}>
-            <Star size={12} /> From Our Users
-          </span>
-          <h2 style={{ maxWidth: '480px', margin: '16px auto 48px' }}>
-            Built for teams{' '}
-            <span className="gradient-text-amber">leaving Excel behind</span>
-          </h2>
-
-          {/* Testimonial carousel */}
-          {TESTIMONIALS.map((t, i) => (
-            <div
-              key={i}
-              className="glass"
-              style={{
-                display: activeTestimonial === i ? 'block' : 'none',
-                borderRadius: 'var(--r-lg)',
-                padding: '40px 48px',
-                maxWidth: '700px',
-                margin: '0 auto',
-                animation: activeTestimonial === i ? 'fade-in-fast 0.5s ease' : 'none',
-              }}
-            >
-              <div style={{
-                fontSize: '3.5rem', color: 'var(--brand-amber)', lineHeight: 1,
-                marginBottom: '8px', fontFamily: 'Georgia, serif', opacity: 0.7,
-              }}>"</div>
-              <p style={{
-                fontSize: 'var(--t-lg)', color: 'var(--text-primary)',
-                lineHeight: 1.8, fontStyle: 'italic',
-                marginBottom: '28px',
-              }}>{t.quote}</p>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: '50%',
-                  background: 'var(--brand-amber-muted)', border: '2px solid hsl(28,100%,54%,0.3)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '20px',
-                }}>{t.avatar}</div>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 'var(--t-base)' }}>{t.name}</div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: 'var(--t-sm)' }}>{t.role}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {/* Dot indicators */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '24px' }}>
-            {TESTIMONIALS.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setActiveTestimonial(i)}
-                style={{
-                  width: activeTestimonial === i ? 24 : 8, height: 8,
-                  borderRadius: 'var(--r-full)',
-                  background: activeTestimonial === i ? 'var(--brand-amber)' : 'var(--border-emphasis)',
-                  border: 'none', cursor: 'pointer',
-                  transition: 'all 300ms ease',
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* "Why Teams Choose Maks Ops" was a second, six-card features grid
+          repeating the twelve above; the testimonials after it were not from
+          customers. Both are gone. */}
 
       {/* ── WAVE TRANSITION → CTA ── */}
       <WaveDivider flip color1="var(--brand-amber)" color2="hsl(22,70%,75%)" />
@@ -683,7 +419,7 @@ const Welcome = () => {
                 textTransform: 'uppercase',
               }}
             >
-              ⚡ Beta Access Available Now
+              <Zap size={11} style={{ verticalAlign: '-1px', marginRight: 4 }} /> Beta Access Available Now
             </span>
           </div>
           <h2
@@ -710,55 +446,11 @@ const Welcome = () => {
             production and GST bills — in one connected interface. No setup required.
           </p>
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '32px' }}>
-            <button
-              onClick={() => navigate('/login')}
-              style={{
-                background: '#fff',
-                color: 'hsl(25,90%,38%)',
-                border: 'none',
-                borderRadius: 'var(--r-full)',
-                padding: '16px 36px',
-                fontWeight: 700,
-                fontSize: 'var(--t-md)',
-                cursor: 'pointer',
-                transition: 'all 200ms ease',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontFamily: 'var(--font-body)',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.2)';
-              }}
-            >
+            <button onClick={() => navigate('/login')} className="mk-cta-main">
               <Play size={16} fill="hsl(25,90%,38%)" />
-              Open the Beta Platform
+              Test Maks Ops
             </button>
-            <Link
-              to="/see-maksops"
-              style={{
-                background: 'rgba(255,255,255,0.15)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.4)',
-                borderRadius: 'var(--r-full)',
-                padding: '15px 32px',
-                fontWeight: 600,
-                fontSize: 'var(--t-md)',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                transition: 'all 200ms ease',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.25)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
-            >
+            <Link to="/see-maksops" className="mk-cta-alt">
               Watch the product film
             </Link>
           </div>

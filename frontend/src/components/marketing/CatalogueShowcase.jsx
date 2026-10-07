@@ -97,6 +97,9 @@ const Tile = ({ item, dim }) => (
 const CatalogueShowcase = () => {
   const [filter, setFilter] = useState('all');
   const [ref, inView] = useInView(0.1, { once: true });
+  /* the glow behind the shopfront drifts only while it can be seen — it was
+     the one loop on the page still running with the reader at the footer */
+  const [driftRef, , driftVisible] = useInView(0);
 
   /* Tiles are DIMMED rather than removed. Removing them reflows the grid and
      the reader loses their place; dimming shows the catalogue is being
@@ -106,7 +109,8 @@ const CatalogueShowcase = () => {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <div aria-hidden="true" className="mk-drift" style={{
+      <div aria-hidden="true" className="mk-drift" ref={driftRef} style={{
+        animationPlayState: driftVisible ? 'running' : 'paused',
         position: 'absolute', top: -50, right: '6%', width: 280, height: 280,
         background: 'radial-gradient(circle, var(--brand-amber-muted), transparent 70%)',
         filter: 'blur(30px)', pointerEvents: 'none', zIndex: 0,

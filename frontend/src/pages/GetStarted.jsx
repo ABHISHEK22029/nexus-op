@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -7,6 +7,7 @@ import {
   CheckCircle, Zap, Play, Star, Shield, ChevronRight, Loader2
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
+import usePageMeta from '../hooks/usePageMeta';
 
 /* ── Sample data that gets loaded in "Explore" mode ──
 
@@ -56,6 +57,7 @@ const SAMPLE_PROJECTS = [
 ];
 
 const GetStarted = () => {
+  usePageMeta('Get started — Maks Ops', 'Start Maks Ops fresh with your own company, or explore it first with sample data already filled in.');
   const navigate = useNavigate();
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(false);
