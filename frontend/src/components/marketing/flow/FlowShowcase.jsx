@@ -4,8 +4,12 @@ import useInView from '../../../hooks/useInView';
 import { Morph, Pill, Cursor } from './kit';
 import { SCENES, CHAIN, CATALOGUE_URL, CLOSING_VOICE } from './story';
 import useNarrator from './voice';
+import { NARRATION } from './narration';
 import { useStoryClock, useStoryVoice, useReducedMotion, useKeyboardPause, usePageShown } from './engine';
 import './flow.css';
+
+/* every line the walkthrough says, for the voice to fetch ahead */
+const HOME_LINES = Object.values(NARRATION);
 
 /* ══════════════════════════════════════════════════════════════════════
    FlowShowcase — Maks Ops, operating, for about a minute.
@@ -164,7 +168,7 @@ export default function FlowShowcase({ notes = true }) {
 
   const toggleVoice = () => {
     if (voiceOn) { setVoiceOn(false); return; }
-    narrator.unlock();
+    narrator.unlock(HOME_LINES);
     setVoiceOn(true);
     setUserPaused(false);   // asking to hear it is asking to see it
   };

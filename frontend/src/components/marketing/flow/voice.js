@@ -77,7 +77,7 @@ export default function useNarrator() {
   /* Chrome can garbage-collect a queued utterance and then never fire its
      end event; holding on to it prevents that. */
   const held = useRef(null);
-  const warmed = useRef(false);
+  const fetched = useRef(new Set());
 
   useEffect(() => {
     const counter = turn;   // a counter, not a node: read it when cleaning up
@@ -152,24 +152,33 @@ export default function useNarrator() {
     next();
   }, [stop, speakOne]);
 
-  /* Called inside the click that turns the voice on: unlocks the audio
-     element for iOS, and fetches the clips ahead of time (a few hundred
-     kilobytes) so no sentence waits on the network. */
-  const unlock = useCallback(() => {
-    const a = element();
-    if (a && SILENCE) {
-      a.src = SILENCE;
-      a.play()?.catch?.(() => {});
-    }
-    if (!warmed.current && typeof fetch === 'function') {
-      warmed.current = true;
-      for (const name of Object.keys(CLIPS.clips || {})) {
+  /* Fetches the clips for `lines` ahead of time, so no sentence waits on
+     the network. Only the lines asked for: the homepage needs its own
+     sixteen clips, not the film's ninety. */
+  const prefetch = useCallback((lines = []) => {
+    if (typeof fetch !== 'function') return;
+    for (const line of lines) {
+      for (const s of sentences(line)) {
+        const name = clipName(s);
+        if (!CLIPS.clips?.[name] || fetched.current.has(name)) continue;
+        fetched.current.add(name);
         fetch(`${CLIP_DIR}${name}`, { priority: 'low' }).catch(() => {});
       }
     }
   }, []);
 
-  return useMemo(() => ({ supported, say, stop, unlock }), [supported, say, stop, unlock]);
+  /* Called inside the click that turns the voice on: unlocks the audio
+     element for iOS, and fetches the first lines it will say. */
+  const unlock = useCallback((lines) => {
+    const a = element();
+    if (a && SILENCE) {
+      a.src = SILENCE;
+      a.play()?.catch?.(() => {});
+    }
+    prefetch(lines);
+  }, [prefetch]);
+
+  return useMemo(() => ({ supported, say, stop, unlock, prefetch }), [supported, say, stop, unlock, prefetch]);
 }
 
 /* A tab in the background is not listening either. */

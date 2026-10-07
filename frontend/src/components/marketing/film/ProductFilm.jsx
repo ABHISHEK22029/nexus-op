@@ -17,6 +17,9 @@ import Controls, { Timeline } from './controls/Controls';
 import '../flow/flow.css';
 import './film.css';
 
+/* what the voice will say in chapter i and the one after it */
+const linesNear = (i) => CHAPTERS.slice(i, i + 2).flatMap((c) => beatsOf(c).map((b) => b.voice).filter(Boolean));
+
 /* ══════════════════════════════════════════════════════════════════════
    The product film — Maks Ops, the whole of it, in chapters.
 
@@ -79,6 +82,9 @@ export default function ProductFilm({ mode = 'page' }) {
   const voiceLive = voiceOn && started && onScreen && (reduced || !userPaused);
   const { caption } = useStoryVoice(clock, { scenes: CHAPTERS, live: voiceLive, narrator, reduced, closingLine: null });
 
+  /* the voice fetches this chapter's clips and the next one's, as it goes */
+  useEffect(() => { if (voiceOn) narrator.prefetch(linesNear(idx)); }, [voiceOn, idx, narrator]);
+
   const ch = CHAPTERS[idx];
   const beats = beatsOf(ch);
   /* before it starts, the poster shows a finished frame of the chapter
@@ -90,11 +96,11 @@ export default function ProductFilm({ mode = 'page' }) {
 
   /* ── starting, and the controls ── */
   const start = useCallback((withVoice) => {
-    if (withVoice) narrator.unlock();
+    if (withVoice) narrator.unlock(linesNear(idx));
     setVoiceOn(!!withVoice);
     setStarted(true);
     setUserPaused(false);
-  }, [narrator]);
+  }, [narrator, idx]);
 
   const jump = useCallback((i) => {
     goTo(Math.max(0, Math.min(CHAPTERS.length - 1, i)));
@@ -109,7 +115,7 @@ export default function ProductFilm({ mode = 'page' }) {
     setUserPaused((p) => !p);
   };
   const toggleVoice = () => {
-    if (!voiceOn) narrator.unlock();
+    if (!voiceOn) narrator.unlock(linesNear(idx));
     setVoiceOn((v) => !v);
     if (!started) setStarted(true);
   };
