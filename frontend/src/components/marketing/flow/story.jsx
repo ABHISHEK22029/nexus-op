@@ -131,7 +131,7 @@ const METALS = {
   ms: ['#cfd4db', '#9da6b2', '#dde1e6', '#8c96a3'],
 };
 
-const StudioDefs = () => (
+export const StudioDefs = () => (
   <svg className="fl-defs" width="0" height="0" aria-hidden="true">
     <defs>
       {Object.entries(METALS).map(([k, [a, b]]) => (
@@ -192,7 +192,7 @@ const Slot = ({ x, y, d, r = 2.6 }) => (
 );
 
 const ARM = [84, -22];
-const PRODUCTS = [
+export const PRODUCTS = [
   [PRODUCT, '2 mm SS304 · brushed', (
     <Solid profile={[[22, 14], [32, 14], [32, 56], [88, 56], [88, 64], [22, 64]]} d={[14, -10]}>
       <ellipse cx="55" cy="51" rx="4" ry="1.8" />
@@ -242,7 +242,7 @@ const PRODUCTS = [
    product should be looks unfinished; this is the bracket itself — an
    extruded L profile in brushed steel with its fixing holes, drawn as
    flat faces so it stays crisp at any size and costs nothing to render. */
-const BracketArt = () => (
+export const BracketArt = () => (
   <svg viewBox="0 0 250 170" role="img" aria-label="SS304 mounting bracket">
     <defs>
       <linearGradient id="fl-steel-front" x1="0" y1="0" x2="1" y2="1">
@@ -336,7 +336,7 @@ const CustomerCatalogue = ({ t }) => {
 
 /* A local cursor, for scenes where the pointer acts on something other than
    the primary action. */
-const CursorAt = ({ on, click }) => (
+export const CursorAt = ({ on, click }) => (
   <span className={`fl-cursor${on ? ' is-on' : ''}${click ? ' is-click' : ''}`} aria-hidden="true">
     <span className="fl-cursor-ring" />
     <svg viewBox="0 0 24 24" width="20" height="20">

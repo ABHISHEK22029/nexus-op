@@ -41,7 +41,7 @@ const stamp = Date.now().toString(36);
 
 /* Routes reached only when signed out, or that navigate away on purpose. */
 const SKIP = new Set(['/login', '/signup', '/accept-invite', '*', '/logout']);
-const PUBLIC = ['/', '/platform', '/how-it-works', '/get-started', '/nexus', '/login', '/signup'];
+const PUBLIC = ['/', '/platform', '/how-it-works', '/see-maksops', '/get-started', '/nexus', '/login', '/signup'];
 
 /* API answers that are correct, not failures: an account with no logo
    uploaded gets a 404 for it, and the page draws the fallback. */

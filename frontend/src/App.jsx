@@ -61,6 +61,7 @@ const CreditDebitNoteDoc = lazy(() => import('./pages/CreditDebitNoteDoc'));
 const Welcome = lazy(() => import('./pages/Welcome'));
 const PlatformCapabilities = lazy(() => import('./pages/PlatformCapabilities'));
 const HowItWorks = lazy(() => import('./pages/HowItWorks'));
+const SeeMaksOps = lazy(() => import('./pages/SeeMaksOps'));
 const Login = lazy(() => import('./pages/Login'));
 const Signup = lazy(() => import('./pages/Signup'));
 const AcceptInvite = lazy(() => import('./pages/AcceptInvite'));
@@ -200,6 +201,7 @@ const AppRoutes = () => {
       <Route path="/get-started"   element={<MarketingLayout><GetStarted /></MarketingLayout>} />
       <Route path="/platform"      element={<MarketingLayout><PlatformCapabilities /></MarketingLayout>} />
       <Route path="/how-it-works"  element={<MarketingLayout><HowItWorks /></MarketingLayout>} />
+      <Route path="/see-maksops"   element={<MarketingLayout><SeeMaksOps /></MarketingLayout>} />
 
       {/* ── App Layer ── */}
       <Route path="/dashboard"         element={<AppLayout><Dashboard /></AppLayout>} />

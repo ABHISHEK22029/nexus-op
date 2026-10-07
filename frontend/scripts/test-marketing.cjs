@@ -72,7 +72,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   /* ── 1. the rename ────────────────────────────────────────────────── */
   console.log('\n  ── no "Nexus" left where a visitor can read it');
-  for (const p of ['/', '/platform', '/how-it-works', '/get-started', '/login', '/signup']) {
+  for (const p of ['/', '/platform', '/how-it-works', '/see-maksops', '/get-started', '/login', '/signup']) {
     await go(p);
     const hit = await page.evaluate(() => {
       const t = document.body.innerText || '';
@@ -572,7 +572,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   /* A real customer project named in data labelled "sample" either implies a
      relationship or discloses someone else's job. Checked on all four pages,
      along with developer leakage. */
-  for (const pth of ['/', '/platform', '/how-it-works', '/get-started']) {
+  for (const pth of ['/', '/platform', '/how-it-works', '/see-maksops', '/get-started']) {
     await go(pth);
     const leak = await page.evaluate(() => {
       const m = (document.body.innerText || '').match(/\bORR\b|NHAI|HMDA|localhost:\d+|Port \d{4}|SQLite/);

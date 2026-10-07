@@ -29,16 +29,17 @@ export default function useStoryClock(scenes, {
   running = true, reduced = false, hold = false,
   handoffMs = 640, closingMs = null, atEnd = 'loop',
   onHandoff, speedKey = '__MK_FLOW_SPEED__', commitMs = 50,
+  initial = { idx: 0, t: 0 },         // where to open — the film opens on a #chapter link
 } = {}) {
-  const [idx, setIdx] = useState(0);
-  const [t, setT] = useState(0);
+  const [idx, setIdx] = useState(initial.idx);
+  const [t, setT] = useState(initial.t);
   const [phase, setPhase] = useState('play');     // play | handoff | closing | ended
   const [prev, setPrev] = useState(null);         // the scene leaving, for the cross-fade
   const [take, setTake] = useState(0);            // bumped each time a scene is started by hand
 
   /* everything the loop reads, so it never has to restart */
   const S = useRef({
-    idx: 0, phase: 'play', elapsed: 0, sub: 0, running: false, hold: false,
+    idx: initial.idx, phase: 'play', elapsed: initial.t, sub: 0, running: false, hold: false,
     last: null, lastCommit: 0, lastT: -1, speaking: false, speakUntil: 0, gate: Infinity,
   });
   const opts = useRef({});

@@ -272,3 +272,11 @@
 @media (max-width: 1180px) { .mk-hero-flow { margin-top: 8px; } }
 @media (max-width: 900px)  { .mk-proof { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px)  { .mk-proof { grid-template-columns: minmax(0, 1fr); } }
+
+/* "That was one order…" — under the walkthrough, on the way to the film */
+.mk-film-link {
+  display: inline-flex; align-items: center; gap: 6px; margin: 18px auto 0;
+  font-size: var(--t-sm); font-weight: 700; color: var(--brand-amber-dark); text-decoration: none;
+}
+.mk-film-link:hover { text-decoration: underline; }
+.mk-film-link:focus-visible { outline: 2px solid var(--brand-amber); outline-offset: 3px; border-radius: 4px; }

@@ -1,0 +1,55 @@
+/* /see-maksops — the page around the product film. */
+.smk { background: var(--bg-base); min-height: 100vh; color: var(--text-primary); }
+.smk-wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+.smk-wrap.is-wide { max-width: 1240px; }
+
+.smk-hero { padding: 96px 0 34px; text-align: center; }
+.smk-hero h1 { margin: 18px auto 14px; max-width: 760px; text-wrap: balance; }
+.smk-hero p { margin: 0 auto; max-width: 62ch; color: var(--text-muted); font-size: var(--t-lg); line-height: 1.7; }
+.smk-skip {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 18px; font-size: var(--t-sm); font-weight: 700;
+  color: var(--brand-amber-dark); text-decoration: none;
+}
+.smk-skip:hover { text-decoration: underline; }
+
+.smk-theatre { padding: 10px 0 64px; }
+.smk-ph {
+  display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: 22px; color: hsl(220 20% 92% / 0.5);
+  background: radial-gradient(120% 80% at 50% -10%, hsl(26 100% 55% / 0.16), transparent 60%), hsl(224 30% 8%);
+}
+
+.smk-index { padding: 56px 0 40px; border-top: 1px solid var(--border-subtle); }
+.smk-index h2, .smk-cta h2 { margin: 0; text-align: center; text-wrap: balance; }
+.smk-lede { margin: 10px auto 30px; text-align: center; color: var(--text-muted); max-width: 60ch; }
+.smk-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.smk-ch {
+  display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 16px; align-items: start;
+  padding: 18px 20px; border-radius: 16px; background: var(--bg-surface); border: 1px solid var(--border-subtle);
+}
+.smk-n { font-family: var(--font-mono); font-size: var(--t-lg); font-weight: 700; color: var(--brand-amber-dark); padding-top: 2px; }
+.smk-ch h3 { margin: 0; font-size: var(--t-lg); }
+.smk-ch h3 small { margin-left: 8px; font-size: var(--t-sm); font-weight: 500; color: var(--text-muted); }
+.smk-ch p { margin: 6px 0 0; color: var(--text-secondary); line-height: 1.65; max-width: 70ch; }
+.smk-where { font-size: var(--t-sm); color: var(--text-muted) !important; }
+.smk-ch details { margin-top: 8px; font-size: var(--t-sm); color: var(--text-muted); }
+.smk-ch summary { cursor: pointer; font-weight: 700; color: var(--text-secondary); }
+.smk-watch {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 8px 12px; border-radius: 999px;
+  font-size: var(--t-sm); font-weight: 700; text-decoration: none; color: var(--brand-amber-dark);
+  border: 1px solid var(--border-default);
+}
+.smk-watch:hover { background: var(--bg-elevated); }
+
+.smk-cta { padding: 56px 0 80px; text-align: center; }
+.smk-cta p { color: var(--text-muted); margin: 10px 0 22px; }
+.smk-cta-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.smk-cta-btns a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+
+.smk-filmmode { background: #000; min-height: 100vh; }
+
+@media (max-width: 640px) {
+  .smk-wrap { padding: 0 14px; }
+  .smk-hero { padding: 80px 0 22px; }
+  .smk-ch { grid-template-columns: 34px minmax(0, 1fr); padding: 14px; }
+  .smk-watch { grid-column: 2; justify-self: start; }
+}
