@@ -218,6 +218,32 @@ const FAKE = () => {
     'turning it off keeps it off');
   ok(await page.evaluate(() => !!document.querySelector('.fm-caption:not(.is-empty)')), 'with captions still there, for reading');
 
+  /* ── roles, end to end ── */
+  if (KEYS.includes('team')) {
+    console.log('\n  ── the team chapter shows each role its real menu');
+    const nav = await import(pathToFileURL(path.join(__dirname, '../src/lib/navigation.js')).href);
+    const rv = await import(pathToFileURL(path.join(__dirname, '../src/components/marketing/film/data/roleViews.js')).href);
+    const team = CHAPTERS.find((c) => c.key === 'team');
+    const views = team.beats.find((b) => b.key === 'views');
+    await go('/see-maksops');
+    await page.click('.fm-poster-alt'); await speed(0);
+    for (const [role, offset] of [['Owner', 300], ['Sales', 2100], ['Procurement', 3900], ['Finance', 5800]]) {
+      await page.evaluate((t) => window.__MK_FILM__.seek('team', t), views.at + offset); await sleep(300);
+      const seen = await page.evaluate(() => ({
+        role: document.querySelector('[data-role-view]')?.getAttribute('data-role-view'),
+        modules: [...document.querySelectorAll('[data-nav-module]')].map((e) => e.getAttribute('data-nav-module')),
+        items: [...document.querySelectorAll('[data-nav-item]')].map((e) => e.getAttribute('data-nav-item')),
+      }));
+      const can = rv.canFor(role);
+      const want = {
+        modules: nav.visibleModules(can, role, { contracting: false }).map((m) => m.key),
+        items: nav.visibleItems('purchases', can, role, { contracting: false }).filter((i) => i.path).map((i) => i.path),
+      };
+      ok(seen.role === role && JSON.stringify(seen.modules) === JSON.stringify(want.modules) && JSON.stringify(seen.items) === JSON.stringify(want.items),
+        `${role}: ${seen.modules.length} modules, Purchases shows ${seen.items.length} — as the app shows ${role}`);
+    }
+  }
+
   /* ── reduced motion ── */
   console.log('\n  ── prefers-reduced-motion');
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

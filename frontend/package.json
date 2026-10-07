@@ -16,7 +16,8 @@
     "test:ui:chain": "node scripts/chain-ui.cjs",
     "test:ui:configurator": "node scripts/test-configurator-ui.cjs",
     "test:film": "node scripts/test-film.cjs",
-    "test:marketing": "node scripts/test-marketing.cjs"
+    "test:marketing": "node scripts/test-marketing.cjs",
+    "film:roles": "node scripts/film/sync-roles.cjs"
   },
   "dependencies": {
     "axios": "^1.14.0",

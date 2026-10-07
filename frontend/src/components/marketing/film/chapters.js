@@ -19,10 +19,13 @@
    too, from Node.
    ══════════════════════════════════════════════════════════════════════ */
 import opening from './chapters/opening/script.js';
+import workspace from './chapters/workspace/script.js';
+import team from './chapters/team/script.js';
+import catalogue from './chapters/catalogue/script.js';
 import customer from './chapters/customer/script.js';
 import close from './chapters/close/script.js';
 
-const ORDER = [opening, customer, close];
+const ORDER = [opening, workspace, team, catalogue, customer, close];
 
 export const CHAPTERS = ORDER.map((c, i) => ({ ...c, n: String(i).padStart(2, '0') }));
 export const LAST_N = String(CHAPTERS.length - 1).padStart(2, '0');

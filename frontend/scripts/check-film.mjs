@@ -120,6 +120,26 @@ section('film truth: every app label the film shows still exists in the app', ()
   }
 });
 
+/* ── roles ── */
+section('film roles: the film\'s copy of every role equals the backend\'s, and every claim holds', () => {
+  const roles = require(path.resolve(FRONT, '..', 'backend', 'shared', 'roles.js'));
+  const snapPath = path.join(FILM, 'data', 'roles.snapshot.js');
+  if (!fs.existsSync(snapPath)) { fail('data/roles.snapshot.js is missing — run npm run film:roles'); return; }
+  const src = fs.readFileSync(snapPath, 'utf8');
+  const json = src.slice(src.indexOf('{', src.indexOf('export const ROLES')), src.indexOf('};', src.indexOf('export const ROLES')) + 1);
+  const snap = JSON.parse(json);
+  for (const [role, { permissions }] of Object.entries(snap)) {
+    const live = roles.permissionsFor(role).permissions;
+    if (JSON.stringify(permissions) !== JSON.stringify(live)) fail(`${role}: the film's permissions differ from backend/shared/roles.js — run npm run film:roles`);
+  }
+  for (const c of CHAPTERS) {
+    for (const cl of c.claims || []) {
+      const got = roles.can(cl.role, cl.resource, cl.action);
+      if (got !== cl.expect) fail(`${c.key}: claims ${cl.role} ${cl.expect ? 'may' : 'may not'} ${cl.action} ${cl.resource}, but the backend says ${got ? 'may' : 'may not'}`);
+    }
+  }
+});
+
 /* ── numbers ── */
 section('film numbers: the sample transaction adds up', () => {
   const { STOCK, SUB, HALF_GST, ROUND_OFF, TOTAL, QTY, RATE, MATERIAL, PO_VALUE, APPROVAL_THRESHOLD } = TX;

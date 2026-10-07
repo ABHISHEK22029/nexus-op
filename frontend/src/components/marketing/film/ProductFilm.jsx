@@ -12,6 +12,7 @@ import AppShell from './shell/AppShell';
 import PublicWindow from './shell/PublicWindow';
 import TitleCard from './shell/TitleCard';
 import { MoMark } from './shell/marks';
+import { canFor, canStoreKeeper } from './data/roleViews';
 import Controls, { Timeline } from './controls/Controls';
 import '../flow/flow.css';
 import './film.css';
@@ -185,11 +186,16 @@ export default function ProductFilm({ mode = 'page' }) {
       <span>One enquiry, carried from your catalogue to a paid invoice.</span>
     </div>
   );
-  else if (surface === 'app') picture = (
-    <AppShell path={beat.path || ch.path || '/dashboard'} role={beat.role || ch.role || 'Owner'}
-      badges={beat.badges || ch.badges || {}} layout={layout}>{scene}</AppShell>
-  );
+  else if (surface === 'app') {
+    const role = beat.role || ch.role || 'Owner';
+    picture = (
+      <AppShell path={beat.path || ch.path || '/dashboard'} role={role}
+        can={role === 'Store Keeper' ? canStoreKeeper : canFor(role)}
+        badges={beat.badges || ch.badges || {}} layout={layout}>{scene}</AppShell>
+    );
+  }
   else if (surface === 'public') picture = <PublicWindow path={beat.path || ch.path || '/'}>{scene}</PublicWindow>;
+  else if (surface === 'bare') picture = <div className="fm-baresurface">{scene}</div>;
   else picture = <div className="fm-titlesurface">{scene}</div>;
 
   const line = voiceLive ? caption : (cc && started && !ended && phase === 'play' ? beat.voice : '');
