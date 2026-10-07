@@ -12,7 +12,12 @@ export default function ProductionOrder() {
   const navigate = useNavigate();
   const toast = useToast();
   const [order, setOrder] = useState(null);
-  const [cons, setCons] = useState({ itemName: '', consumedQty: '', uom: 'kg', unitCost: '' });
+  const EMPTY_CONS = { inventoryId: '', itemName: '', consumedQty: '', uom: 'kg', unitCost: '' };
+  const [cons, setCons] = useState(EMPTY_CONS);
+  /* What is in stock, to issue from. Picking a row sends its id, so the
+     issue comes off stock through the ledger (ProductionController). The
+     field used to be free text only, so nothing issued ever left stock. */
+  const [stock, setStock] = useState([]);
   const [out, setOut] = useState({ itemName: '', outputQty: '', uom: 'nos', outputWeight: '' });
   const [scrap, setScrap] = useState({ scrapType: 'sellable', scrapQty: '', uom: 'kg', saleValue: '', isSold: false });
 
@@ -23,6 +28,21 @@ export default function ProductionOrder() {
     } catch { /* ignore */ }
   };
   useEffect(() => { load(); }, [id]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/inventory?limit=200`);
+        const d = r.ok ? await r.json() : [];
+        setStock((Array.isArray(d) ? d : d.items || []).filter(s => Number(s.quantity) > 0));
+      } catch { /* the free-text field still works */ }
+    })();
+  }, [id]);
+  const pickStock = (value) => {
+    const row = stock.find(s => String(s.id) === String(value));
+    setCons(row
+      ? { ...cons, inventoryId: String(row.id), itemName: row.itemName, uom: row.uom || 'kg', unitCost: row.unit_cost ?? '' }
+      : { ...cons, inventoryId: '', itemName: '' });
+  };
 
   const post = async (path, body, okMsg) => {
     try {
@@ -119,13 +139,27 @@ export default function ProductionOrder() {
         <div style={card}>
           <div style={secHead}><PackageMinus size={17} style={{ color: '#ef4444' }} /> Raw Material Consumed</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
-            <div style={{ flex: 2, minWidth: 120 }}><label style={label}>Material *</label><input style={input} placeholder="MS Steel" value={cons.itemName} onChange={e => setCons({ ...cons, itemName: e.target.value })} /></div>
+            <div style={{ flex: 2, minWidth: 160 }}><label style={label}>From stock</label>
+              <select style={input} value={cons.inventoryId} onChange={e => pickStock(e.target.value)} data-issue-from>
+                <option value="">— Not from stock (type it) —</option>
+                {stock.map(s => <option key={s.id} value={s.id}>{s.itemName} — {Number(s.quantity).toLocaleString('en-IN')} {s.uom || ''} on hand</option>)}
+              </select>
+            </div>
+            {!cons.inventoryId && <div style={{ flex: 2, minWidth: 120 }}><label style={label}>Material *</label><input style={input} placeholder="MS Steel" value={cons.itemName} onChange={e => setCons({ ...cons, itemName: e.target.value })} /></div>}
             <div style={{ flex: 1, minWidth: 70 }}><label style={label}>Qty (kg) *</label><input style={input} type="number" placeholder="100" value={cons.consumedQty} onChange={e => setCons({ ...cons, consumedQty: e.target.value })} /></div>
             <div style={{ flex: 1, minWidth: 70 }}><label style={label}>₹/kg</label><input style={input} type="number" placeholder="60" value={cons.unitCost} onChange={e => setCons({ ...cons, unitCost: e.target.value })} /></div>
-            <button className="btn-primary btn-sm" style={{ padding: '9px 12px' }} onClick={async () => { if (!cons.itemName || cons.consumedQty === '') return toast.error('Material + qty required'); if (await post('consumption', { ...cons, uom: 'kg' }, 'Consumption added')) setCons({ itemName: '', consumedQty: '', uom: 'kg', unitCost: '' }); }}><Plus size={15} /></button>
+            <button className="btn-primary btn-sm" style={{ padding: '9px 12px' }} aria-label="Issue material" onClick={async () => {
+              if (!cons.itemName || cons.consumedQty === '') return toast.error('Material + qty required');
+              const body = { ...cons, uom: cons.uom || 'kg', inventoryId: cons.inventoryId ? Number(cons.inventoryId) : undefined };
+              if (await post('consumption', body, cons.inventoryId ? 'Issued from stock' : 'Consumption added')) {
+                setCons(EMPTY_CONS);
+                /* the stock it came from has moved */
+                fetch(`${API}/inventory?limit=200`).then(r => (r.ok ? r.json() : [])).then(d => setStock((Array.isArray(d) ? d : d.items || []).filter(s => Number(s.quantity) > 0))).catch(() => {});
+              }
+            }}><Plus size={15} /></button>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <tbody>{(order.consumption || []).map(r => lineRow('consumption', [r.item_name, `${r.consumed_qty} ${r.uom}`, r.unit_cost ? `₹${r.unit_cost}/${r.uom}` : '—'], r.id))}</tbody>
+            <tbody>{(order.consumption || []).map(r => lineRow('consumption', [<>{r.item_name}{r.inventory_id ? <span style={{ marginLeft: 6, fontSize: '0.68rem', fontWeight: 700, color: '#10b981' }}>from stock</span> : null}</>, `${r.consumed_qty} ${r.uom}`, r.unit_cost ? `₹${r.unit_cost}/${r.uom}` : '—'], r.id))}</tbody>
           </table>
           {(!order.consumption || !order.consumption.length) && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '4px 2px' }}>No material issued yet.</div>}
         </div>

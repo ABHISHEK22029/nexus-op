@@ -189,6 +189,23 @@ async function cleanup() {
     await page.goto(`${UI}/production`, { waitUntil: 'networkidle2' });
     await sleep(800);
     ok(await page.evaluate(() => !/Select a project first/.test(document.body.innerText)), 'Production opens with no project chosen');
+
+    /* issuing material to a production order takes it off stock */
+    const po2 = await api('POST', '/production', { productName: skuName, plannedQty: 40 });
+    const [inv0] = await sql('SELECT id, quantity FROM inventory WHERE raw_material_id = $1 AND owner_id = $2', [mat.id, owner]);
+    await page.goto(`${UI}/production/${po2.id}`, { waitUntil: 'networkidle2' });
+    const offered = await waitFor((iid) => [...document.querySelectorAll('[data-issue-from] option')].some(o => o.value === String(iid)), 8000, inv0.id);
+    ok(offered, 'the production order offers the stock to issue from');
+    await page.select('[data-issue-from]', String(inv0.id));
+    const qtyIn = await page.$$('input[type="number"]');
+    await qtyIn[0].click({ clickCount: 3 }); await qtyIn[0].type('100');
+    await page.click('button[aria-label="Issue material"]');
+    await sleep(1500);
+    const [inv1] = await sql('SELECT quantity FROM inventory WHERE id = $1', [inv0.id]);
+    const [mv] = await sql(`SELECT quantity FROM stock_movements WHERE inventory_id = $1 AND movement_type = 'production_consumption'`, [inv0.id]);
+    ok(Number(inv1.quantity) === Number(inv0.quantity) - 100 && mv && Number(mv.quantity) === -100,
+      `issuing 100 kg from the screen takes it off stock, through the ledger (${inv0.quantity} → ${inv1.quantity} kg)`);
+    ok(await page.evaluate(() => /from stock/.test(document.body.innerText)), 'and the line says it came from stock');
     ok(!errs.length, `no page errors${errs.length ? ': ' + errs[0] : ''}`);
   } catch (e) {
     fail++; console.log('   ❌ threw:', e.message);
