@@ -23,6 +23,7 @@
    and that other records depend on.
    ══════════════════════════════════════════════════════════════════════ */
 const path = require('path');
+const { purgeOrg } = require('./purgeOrg');
 
 /* Test accounts from earlier work that other records genuinely depend on.
    Deleting them breaks real customer orders, so they stay. */
@@ -62,6 +63,12 @@ async function purge(ids, existingClient = null) {
     if (!safe.length) return 0;
     for (const sql of CHILD_SQL) await c.query(sql, [safe]).catch(() => {});
     for (const t of OWNED_TABLES) await c.query(`DELETE FROM ${t} WHERE owner_id = ANY($1)`, [safe]).catch(() => {});
+    /* The fixed list above falls behind every time a table gains an owner_id
+       (stock lists, uploads…), and a notification sent to the owner pins the
+       user row. Either way the account was silently left behind. Sweep every
+       owned table, and the notifications, before the user. */
+    for (let i = 0; i < 4; i++) { const p = await purgeOrg(c, safe); if (!p.deleted) break; }
+    await c.query('DELETE FROM notifications WHERE user_id = ANY($1)', [safe]).catch(() => {});
     const r = await c.query('DELETE FROM users WHERE id = ANY($1)', [safe]);
     return r.rowCount;
   } finally {

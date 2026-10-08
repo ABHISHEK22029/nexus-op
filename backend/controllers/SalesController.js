@@ -8,6 +8,7 @@ const db = require('../db');
 const { profileFor } = require('../shared/companyProfile');
 const { computeOrder } = require('../shared/orderTotals');
 const { allocatePoNumber } = require('../shared/docNumber');
+const { writePoLines, notifyApproval } = require('../shared/poLines');
 const { allocate } = require('../shared/docSeries');
 const { isInterstate } = require('../shared/gstStates');
 const { amountInWords } = require('../shared/amountInWords');
@@ -235,6 +236,12 @@ exports.getQuotationById = async (req, res) => {
 exports.addQuoteLine = async (req, res) => {
   const { vendorId, vendorName, unitPrice, leadTimeDays, terms } = req.body;
   try {
+    /* Ownership through the quotation, as deleteQuoteLine does: with no
+       check, any company could add a vendor quote to another's comparison —
+       and the PO generated from it would carry that price. The vendor, when
+       one is named, must be this company's too. */
+    if (!await assertOwned(db, req, res, 'quotations', req.params.id, { columns: 'id' })) return;
+    if (vendorId && !await assertOwned(db, req, res, 'vendors', vendorId, { columns: 'id' })) return;
     const cnt = await db.query('SELECT COUNT(*) FROM quote_lines WHERE quotation_id = $1', [req.params.id]);
     const slot = parseInt(cnt.rows[0].count) + 1;
     if (slot > 3) return res.status(400).json({ error: 'Max 3 quotes (Q1 / Q2 / Q3)' });
@@ -269,6 +276,10 @@ exports.selectQuote = async (req, res) => {
   const { quoteLineId } = req.body;
   try {
     if (!await assertOwned(db, req, res, 'quotations', req.params.id, { columns: 'id' })) return;
+    /* The chosen line must be one of THIS quotation's — any line id was
+       accepted, so a PO could be generated at another comparison's price. */
+    const line = (await db.query('SELECT id FROM quote_lines WHERE id = $1 AND quotation_id = $2', [quoteLineId, req.params.id])).rows[0];
+    if (!line) return res.status(400).json({ error: 'That quote is not one of this comparison’s quotes' });
     await db.query('UPDATE quotations SET selected_quote_id = $1, status = $2 WHERE id = $3', [quoteLineId, 'Selected', req.params.id]);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -321,16 +332,18 @@ exports.generatePO = async (req, res) => {
       [projectId, line.vendor_id, quote.part_description, quote.quantity || 1, line.unit_price || 0, poNumber, customerOrderId, quote.id,
        req.user?.orgId ?? req.user?.id ?? null]
     );
-    await db.query(
-      `INSERT INTO po_line_items ("poId", sno, description, uom, quantity, "unitPrice")
-       VALUES ($1,1,$2,$3,$4,$5)`,
-      [rows[0].id, quote.part_description, quote.unit || 'nos', quote.quantity || 1, line.unit_price || 0]
-    );
+    /* Through writePoLines, like every other way a PO is raised, so the
+       approval threshold applies. Written directly, this PO was never gated:
+       its approval status stayed empty and it could be approved at any value. */
+    const gate = await writePoLines(db, rows[0].id,
+      [{ sno: 1, description: quote.part_description, uom: quote.unit || 'nos', quantity: quote.quantity || 1, unitPrice: line.unit_price || 0 }],
+      ownerId);
+    notifyApproval(rows[0].id, poNumber, gate, ownerId);
     await db.query('UPDATE quotations SET status = $1 WHERE id = $2', ['PO Raised', req.params.id]);
     // Move the customer order into procurement automatically.
     if (customerOrderId) {
       await db.query(`UPDATE customer_orders SET status = 'In Procurement' WHERE id = $1 AND status = 'Open'`, [customerOrderId]);
     }
-    res.json({ poId: rows[0].id, poNumber, customerOrderId });
+    res.json({ poId: rows[0].id, poNumber, customerOrderId, approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

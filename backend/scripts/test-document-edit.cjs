@@ -14,8 +14,7 @@
 
    Refuses to run against a deployed host, and removes what it creates.
    ══════════════════════════════════════════════════════════════════════ */
-const path = require('path');
-const { sweepStale } = require('../scripts/lib/testAccounts');
+const { sweepStale, purge } = require('../scripts/lib/testAccounts');
 
 const API = process.env.API_BASE || 'http://localhost:5099';
 if (/^https:|onrender\.com|vercel\.app/.test(API)) {
@@ -126,21 +125,11 @@ const J = async (r) => ({ status: r.status, body: await r.json().catch(() => ({}
   ok(r.status === 404, `nor org A's invoice (${r.status})`);
 
   /* ── leave the database as it was found ── */
-  const base = path.join(__dirname, '..');
-  require(path.join(base, 'node_modules', 'dotenv')).config({ path: path.join(base, '.env') });
-  const { Client } = require(path.join(base, 'node_modules', 'pg'));
-  const c = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-  await c.connect();
-  for (const u of [A, B]) {
-    await c.query('DELETE FROM sales_quotation_items WHERE sales_quotation_id IN (SELECT id FROM sales_quotations WHERE owner_id=$1)', [u.id]).catch(() => {});
-    await c.query('DELETE FROM sales_invoice_items WHERE sales_invoice_id IN (SELECT id FROM sales_invoices WHERE owner_id=$1)', [u.id]).catch(() => {});
-    await c.query('DELETE FROM sales_payments WHERE sales_invoice_id IN (SELECT id FROM sales_invoices WHERE owner_id=$1)', [u.id]).catch(() => {});
-    for (const t of ['sales_quotations', 'sales_invoices', 'customers', 'company_profile', 'document_sequences']) {
-      await c.query(`DELETE FROM ${t} WHERE owner_id = $1`, [u.id]).catch(() => {});
-    }
-    await c.query('DELETE FROM users WHERE id = $1', [u.id]).catch(() => {});
-  }
-  await c.end();
+  /* The shared purge: every owned table and the notifications, then the
+     user. This list of five tables missed the owner's notifications, and
+     the user delete failed silently, leaving the accounts behind. */
+  const removed = await purge([A.id, B.id]);
+  ok(removed === 2, `both test accounts removed (${removed})`);
 
   console.log(`\n   ${pass} passed, ${fail} failed\n`);
   process.exit(fail ? 1 : 0);

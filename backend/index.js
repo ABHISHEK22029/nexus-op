@@ -45,7 +45,7 @@ const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
 const { andOwner } = require('./shared/ownerScope');
 const { docNumber, loadProfile, nextSeq, allocatePoNumber } = require('./shared/docNumber');
-const { writePoLines, poLinesProblem, notifyApproval } = require('./shared/poLines');
+const { writePoLines, gatePo, poLinesProblem, notifyApproval } = require('./shared/poLines');
 const grnRouter = require('./routes/grn');
 
 const app = express();
@@ -698,14 +698,18 @@ app.post('/po', async (req, res) => {
       ]
     );
     const poId = rows[0].id;
-    const gate = items ? await writePoLines(client, poId, items, poOwner) : null;
+    /* Sent without a line list, the PO is gated on quantity × unit price.
+       It was not gated at all, so its approval status stayed empty and it
+       could be approved at any value; the lines, if posted later, re-gate it. */
+    const gate = items ? await writePoLines(client, poId, items, poOwner)
+      : await gatePo(client, poId, (Number(quantity) || 0) * (Number(unitPrice) || 0), poOwner);
     await client.query('COMMIT');
 
     await logActivity(projectId || null, 'PO_CREATED', `${poNumber} created for "${itemName}"`, poOwner);
-    const poValue = gate ? gate.subtotal : (Number(quantity) || 0) * (Number(unitPrice) || 0);
+    const poValue = gate.subtotal;
     notify({ org: poOwner }, { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${itemName} · ₹${poValue.toLocaleString('en-IN')}`, entityType: 'po', entityId: poId, link: `/po/${poId}` });
     notifyApproval(poId, poNumber, gate, poOwner);
-    res.json({ id: poId, poNumber, linesSaved: !!gate, approvalStatus: gate ? (gate.needsApproval ? 'Pending Approval' : 'Not Required') : undefined });
+    res.json({ id: poId, poNumber, linesSaved: !!items, approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: err.message });
@@ -727,7 +731,14 @@ app.post('/po/:id/items', async (req, res) => {
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
-      const po = (await client.query('SELECT "poNumber", owner_id FROM purchase_orders WHERE id = $1', [poId])).rows[0];
+      const po = (await client.query('SELECT "poNumber", owner_id, status FROM purchase_orders WHERE id = $1 FOR UPDATE', [poId])).rows[0];
+      /* Lines are fixed once a PO is approved. Changing them afterwards
+         re-ran the threshold but left the PO approved, so one signed off at
+         ₹50,000 could be raised to ₹9,00,000 and still be dispatched. */
+      if (po && po.status !== 'Pending') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `This PO is already ${String(po.status).toLowerCase()} — its lines can no longer be changed` });
+      }
       const gate = await writePoLines(client, poId, items, po?.owner_id ?? req.user?.orgId);
       await client.query('COMMIT');
       notifyApproval(poId, po?.poNumber, gate, po?.owner_id);
@@ -920,9 +931,14 @@ app.get('/automation-settings', async (req, res) => {
 app.put('/automation-settings', allow('automation-settings', 'write'), async (req, res) => {
   const has = (k) => Object.prototype.hasOwnProperty.call(req.body || {}, k);
   if (has('po_approval_threshold')) {
-    const t = Number(req.body.po_approval_threshold);
+    /* A number, or digits in a string. Number() alone read true as ₹1 and
+       null or '' as 0 (switching sign-off off), and a figure too big for
+       the column came back as a 500. */
+    const v = req.body.po_approval_threshold;
+    const t = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN;
     if (!Number.isFinite(t) || t < 0) return res.status(400).json({ error: 'The PO approval threshold must be a number, 0 or more.' });
   }
+    if (t >= 1e15) return res.status(400).json({ error: 'That PO approval threshold is too large.' });
   if (has('reminders_enabled') && typeof req.body.reminders_enabled !== 'boolean') {
     return res.status(400).json({ error: 'reminders_enabled must be true or false.' });
   }

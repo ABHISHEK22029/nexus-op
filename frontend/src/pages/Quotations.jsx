@@ -69,7 +69,7 @@ export default function Quotations() {
     const res = await fetch(`${API}/quotations/${qid}/generate-po`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: activeProject?.id ?? null }) });
     const d = await res.json();
     if (!res.ok) { toast.error(d.error || 'Failed'); return; }
-    toast.success(`Vendor PO ${d.poNumber} raised`);
+    toast.success(`Vendor PO ${d.poNumber} raised${d.approvalStatus === 'Pending Approval' ? ' — it needs sign-off' : ''}`);
     load();
     setTimeout(() => navigate('/purchase-orders'), 900);
   };

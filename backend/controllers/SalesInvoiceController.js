@@ -87,6 +87,9 @@ async function resolveTax(exec, ownerId, customerId, placeOfSupplyOverride) {
     placeOfSupplyCode: toStateCode(placeOfSupply),
   };
 }
+/* Recurring invoices use it too, so a scheduled invoice is taxed by the
+   same rule as one raised by hand. */
+exports.resolveTax = resolveTax;
 
 
 // GET /sales-invoices/prefill/:customerOrderId — draft from a customer order

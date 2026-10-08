@@ -34,7 +34,7 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      <div style={{ position: 'fixed', top: 18, right: 18, zIndex: 99999, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 380, pointerEvents: 'none' }}>
+      <div style={{ position: 'fixed', top: 18, right: 18, zIndex: 99999, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 'min(380px, calc(100vw - 36px))', pointerEvents: 'none' }}>
         {toasts.map((t) => {
           const Icon = ICONS[t.type] || Info;
           const accent = ACCENT[t.type] || '#3b82f6';

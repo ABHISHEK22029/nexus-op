@@ -1,7 +1,7 @@
 /* A purchase order's lines, and the approval gate that depends on their
    value. Shared by every way a PO is raised — the PO screen, a vendor's
-   quotation, the shortfall planner — so they all write lines the same way
-   and all hold a large PO for sign-off. */
+   quotation, the shortfall planner, the RFQ comparison — so they all write
+   lines the same way and all hold a large PO for sign-off. */
 const { notify } = require('../notify');
 
 /* Written inside the caller's transaction. Replaces any lines already on
@@ -17,8 +17,15 @@ async function writePoLines(client, poId, items, orgId) {
       [poId, item.sno, item.description, item.uom || "No's", item.hsn || null, item.quantity, item.unitPrice]
     );
   }
-  // Approval gate: if the PO value exceeds the owner's threshold, hold it for sign-off.
-  const thr = (await client.query('SELECT po_approval_threshold FROM automation_settings WHERE owner_id = $1', [orgId || 0])).rows[0]?.po_approval_threshold || 0;
+  return gatePo(client, poId, subtotal, orgId);
+}
+
+/* Approval gate: if the PO value exceeds the owner's threshold, hold it for
+   sign-off. Its own function for a PO raised without a line list, whose
+   value is its quantity × unit price — that one was never gated at all, so
+   its approval status stayed empty and it could be approved at any value. */
+async function gatePo(client, poId, subtotal, orgId) {
+  const thr = Number((await client.query('SELECT po_approval_threshold FROM automation_settings WHERE owner_id = $1', [orgId || 0])).rows[0]?.po_approval_threshold) || 0;
   const needsApproval = thr > 0 && subtotal > thr;
   await client.query(`UPDATE purchase_orders SET approval_status = $1 WHERE id = $2`, [needsApproval ? 'Pending Approval' : 'Not Required', poId]);
   return { needsApproval, subtotal, thr };
@@ -42,4 +49,4 @@ function notifyApproval(poId, poNumber, gate, ownerId) {
   notify({ org: ownerId, can: ['po-approval'] }, { type: 'APPROVAL_NEEDED', title: `Approval needed · ${poNumber}`, message: `PO value ₹${gate.subtotal.toLocaleString('en-IN')} exceeds the ₹${Number(gate.thr).toLocaleString('en-IN')} limit`, entityType: 'po', entityId: Number(poId), link: `/po/${poId}` });
 }
 
-module.exports = { writePoLines, poLinesProblem, notifyApproval };
+module.exports = { writePoLines, gatePo, poLinesProblem, notifyApproval };
