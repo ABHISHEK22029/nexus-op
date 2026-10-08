@@ -12,29 +12,23 @@ const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const { toStateCode, toStateName, isInterstate } = require('../shared/gstStates');
 const { syncOrderDelivery } = require('../shared/orderProgress');
+const { prepareLines, checkAdjustments } = require('../shared/lineChecks');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
-function amountInWords(num) {
-  num = Math.round(Number(num) || 0);
-  if (num === 0) return 'Rupees Zero Only';
-  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  const two = (n) => n < 20 ? a[n] : b[Math.floor(n / 10)] + (n % 10 ? ' ' + a[n % 10] : '');
-  const three = (n) => (Math.floor(n / 100) ? a[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' : '') : '') + (n % 100 ? two(n % 100) : '');
-  let out = '', crore = Math.floor(num / 10000000); num %= 10000000;
-  let lakh = Math.floor(num / 100000); num %= 100000;
-  let thousand = Math.floor(num / 1000); num %= 1000;
-  if (crore) out += three(crore) + ' Crore ';
-  if (lakh) out += two(lakh) + ' Lakh ';
-  if (thousand) out += two(thousand) + ' Thousand ';
-  if (num) out += three(num);
-  return 'Rupees ' + out.trim().replace(/\s+/g, ' ') + ' Only';
-}
+/* Words for amounts: one shared function (shared/amountInWords), which
+   spells a crore count of any size. This file had its own copy, which
+   printed "undefined Hundred … Crore" from 1,000 crore up. */
+const { amountInWords } = require('../shared/amountInWords');
 
-function compute(items, { discount = 0, gstRate = 18, interstate = false, roundOff = 0 }) {
-  const lines = (items || []).map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
+/* Lines are checked first (shared/lineChecks): a line with figures but no
+   description, an impossible quantity or rate, a discount larger than the
+   sub-total or a round-off over ₹1 is refused with a 400 that says which.
+   `strictUnits` for lines a person has just sent. */
+function compute(items, { discount = 0, gstRate = 18, interstate = false, roundOff = 0 }, { strictUnits = false } = {}) {
+  const lines = prepareLines(items, { strictUnits }).map(it => ({ ...it, amount: r2(it.quantity * it.rate) }));
   const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
+  checkAdjustments(subTotal, { discount, roundOff });
   const taxable = r2(subTotal - Number(discount || 0));
   const gstTotal = r2(taxable * (Number(gstRate) || 0) / 100);
   const cgst = interstate ? 0 : r2(gstTotal / 2);
@@ -228,7 +222,7 @@ exports.create = async (req, res) => {
     /* On the transaction's client, not the pool — see resolveTax. */
     const tax = await resolveTax(client, req.user?.orgId, customerId, placeOfSupply);
     const isInter = interstate === undefined || interstate === null ? tax.interstate : !!interstate;
-    const t = compute(items, { discount, gstRate, interstate: isInter, roundOff });
+    const t = compute(items, { discount, gstRate, interstate: isInter, roundOff }, { strictUnits: true });
     /* A tax invoice number must be unique within the financial year — Rule
        46. A count reissues one after any deletion, and a duplicate invoice
        number is a GSTR-1 filing error, so this is the call site that
@@ -304,7 +298,7 @@ exports.create = async (req, res) => {
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     if (isDuplicate(e)) return res.status(409).json({ error: 'That invoice number is already used.' });
-    res.status(500).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   }
   finally { client.release(); }
 };
@@ -506,7 +500,7 @@ exports.update = async (req, res) => {
         gstRate: set.gst_rate ?? inv.gst_rate,
         interstate: tax.interstate,
         roundOff: set.round_off ?? inv.round_off,
-      });
+      }, { strictUnits: !!req.body.items });
       Object.assign(set, {
         sub_total: t.subTotal, interstate: tax.interstate, cgst: t.cgst, sgst: t.sgst,
         igst: t.igst, gst_total: t.gstTotal, net_amount: t.net,
@@ -548,7 +542,7 @@ exports.update = async (req, res) => {
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     if (isDuplicate(e)) return res.status(409).json({ error: 'That invoice number is already used.' });
-    res.status(500).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   } finally { client.release(); }
 };
 

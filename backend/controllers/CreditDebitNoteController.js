@@ -14,22 +14,10 @@ const { runList } = require('../shared/listQuery');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
-function amountInWords(num) {
-  num = Math.round(Number(num) || 0);
-  if (num === 0) return 'Rupees Zero Only';
-  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  const two = (n) => n < 20 ? a[n] : b[Math.floor(n / 10)] + (n % 10 ? ' ' + a[n % 10] : '');
-  const three = (n) => (Math.floor(n / 100) ? a[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' : '') : '') + (n % 100 ? two(n % 100) : '');
-  let out = '', crore = Math.floor(num / 10000000); num %= 10000000;
-  let lakh = Math.floor(num / 100000); num %= 100000;
-  let thousand = Math.floor(num / 1000); num %= 1000;
-  if (crore) out += three(crore) + ' Crore ';
-  if (lakh) out += two(lakh) + ' Lakh ';
-  if (thousand) out += two(thousand) + ' Thousand ';
-  if (num) out += three(num);
-  return 'Rupees ' + out.trim().replace(/\s+/g, ' ') + ' Only';
-}
+/* Words for amounts: one shared function (shared/amountInWords), which
+   spells a crore count of any size. This file had its own copy, which
+   printed "undefined Hundred … Crore" from 1,000 crore up. */
+const { amountInWords } = require('../shared/amountInWords');
 
 /* Takes the executor — see the note on the same function in
    SalesQuotationController. Called from inside a transaction, reaching for

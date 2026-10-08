@@ -1078,3 +1078,15 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
    These follow the token, so a caption stays a caption in either theme. */
 .txt-muted     { color: var(--text-muted); }
 .txt-secondary { color: var(--text-secondary); }
+
+/* The "server is waking up" notice (lib/reliability.js). */
+.app-waking {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 9999;
+  display: flex; align-items: center; gap: 10px; max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 16px; border-radius: 12px; font-size: 0.84rem; line-height: 1.45;
+  background: var(--bg-surface); color: var(--text-secondary); border: 1px solid var(--border-default);
+  box-shadow: 0 12px 32px -12px hsl(222 40% 12% / 0.35);
+}
+.app-waking b { color: var(--text-primary); }
+.app-waking-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--brand-amber); animation: pulse-amber 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .app-waking-dot { animation: none; } }

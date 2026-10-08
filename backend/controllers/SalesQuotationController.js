@@ -12,29 +12,23 @@ const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
+const { prepareLines, checkAdjustments } = require('../shared/lineChecks');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
-function amountInWords(num) {
-  num = Math.round(Number(num) || 0);
-  if (num === 0) return 'Rupees Zero Only';
-  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  const two = (n) => n < 20 ? a[n] : b[Math.floor(n / 10)] + (n % 10 ? ' ' + a[n % 10] : '');
-  const three = (n) => (Math.floor(n / 100) ? a[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' : '') : '') + (n % 100 ? two(n % 100) : '');
-  let out = '', crore = Math.floor(num / 10000000); num %= 10000000;
-  let lakh = Math.floor(num / 100000); num %= 100000;
-  let thousand = Math.floor(num / 1000); num %= 1000;
-  if (crore) out += three(crore) + ' Crore ';
-  if (lakh) out += two(lakh) + ' Lakh ';
-  if (thousand) out += two(thousand) + ' Thousand ';
-  if (num) out += three(num);
-  return 'Rupees ' + out.trim().replace(/\s+/g, ' ') + ' Only';
-}
+/* Words for amounts: one shared function (shared/amountInWords), which
+   spells a crore count of any size. This file had its own copy, which
+   printed "undefined Hundred … Crore" from 1,000 crore up. */
+const { amountInWords } = require('../shared/amountInWords');
 
-function compute(items, { discount = 0, gstRate = 18, interstate = false, roundOff = 0 }) {
-  const lines = (items || []).map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
+/* Lines are checked first (shared/lineChecks): a line with figures but no
+   description, an impossible quantity or rate, a discount larger than the
+   sub-total or a round-off over ₹1 is refused with a 400 that says which.
+   `strictUnits` for lines a person has just sent. */
+function compute(items, { discount = 0, gstRate = 18, interstate = false, roundOff = 0 }, { strictUnits = false } = {}) {
+  const lines = prepareLines(items, { strictUnits }).map(it => ({ ...it, amount: r2(it.quantity * it.rate) }));
   const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
+  checkAdjustments(subTotal, { discount, roundOff });
   const taxable = r2(subTotal - Number(discount || 0));
   const gstTotal = r2(taxable * (Number(gstRate) || 0) / 100);
   const cgst = interstate ? 0 : r2(gstTotal / 2);
@@ -133,7 +127,7 @@ exports.create = async (req, res) => {
   try {
     await client.query('BEGIN');
     const interstate = await deriveInterstate(client, customerId, req.user?.orgId);
-    const t = compute(items, { discount, gstRate, interstate, roundOff });
+    const t = compute(items, { discount, gstRate, interstate, roundOff }, { strictUnits: true });
     /* From a sequence, not a count. COUNT(*) + 1 reissues a number after a
        delete and hands the same one to two people creating at once. */
     const qnum = await allocate(client, { ownerId: req.user?.orgId, docType: 'quotation' });
@@ -169,7 +163,7 @@ exports.create = async (req, res) => {
     }
     await client.query('COMMIT');
     res.json({ id: qid, quoteNumber: qnum, net: t.net });
-  } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
+  } catch (e) { await client.query('ROLLBACK'); res.status(e.status || 500).json({ error: e.message }); }
   finally { client.release(); }
 };
 
@@ -270,7 +264,7 @@ exports.update = async (req, res) => {
         gstRate: set.gst_rate ?? q.gst_rate,
         interstate,
         roundOff: set.round_off ?? q.round_off,
-      });
+      }, { strictUnits: !!req.body.items });
       Object.assign(set, {
         sub_total: t.subTotal, interstate, cgst: t.cgst, sgst: t.sgst, igst: t.igst,
         gst_total: t.gstTotal, net_amount: t.net, amount_in_words: amountInWords(t.net),
@@ -298,7 +292,7 @@ exports.update = async (req, res) => {
     res.json(rows[0]);
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   } finally { client.release(); }
 };
 
@@ -377,7 +371,7 @@ exports.convertToOrder = async (req, res) => {
     await client.query('COMMIT');
     notify({ org: q.owner_id }, { type: 'QUOTE_CONVERTED', title: `Quotation ${q.quote_number} won`, message: `Converted to order ${onum}`, entityType: 'customer_order', entityId: orderId, link: '/customer-orders' });
     res.json({ success: true, orderId, orderNumber: onum });
-  } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
+  } catch (e) { await client.query('ROLLBACK'); res.status(e.status || 500).json({ error: e.message }); }
   finally { client.release(); }
 };
 

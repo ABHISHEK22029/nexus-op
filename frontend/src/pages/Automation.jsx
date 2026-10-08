@@ -15,6 +15,9 @@ export default function Automation() {
   const [customers, setCustomers] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [running, setRunning] = useState(false);
+  /* Overdue reminders can be switched off (they were shown as always ON). */
+  const [reminders, setReminders] = useState(true);
+  const [savingReminders, setSavingReminders] = useState(false);
   const emptyForm = { docType: 'expense', title: '', customerId: '', amount: '', frequency: 'monthly', nextRun: '', category: '', paidTo: '', gstRate: '18', termsDays: '30' };
   const [form, setForm] = useState(emptyForm);
 
@@ -23,6 +26,7 @@ export default function Automation() {
   useEffect(() => {
     fetch(`${API}/automation-settings`).then(r => r.ok ? r.json() : {}).then(d => {
       setThreshold(d.po_approval_threshold ? String(d.po_approval_threshold) : '');
+      setReminders(d.reminders_enabled !== false);
       setLoaded(true);
     });
     loadProfiles();
@@ -33,6 +37,19 @@ export default function Automation() {
     const res = await fetch(`${API}/automation-settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ po_approval_threshold: Number(threshold) || 0 }) });
     if (!res.ok) { toast.error((await res.json()).error || 'Failed'); return; }
     toast.success('Automation settings saved');
+  };
+
+  const toggleReminders = async () => {
+    const next = !reminders;
+    setSavingReminders(true);
+    try {
+      const res = await fetch(`${API}/automation-settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reminders_enabled: next }) });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'Could not change reminders');
+      setReminders(d.reminders_enabled !== false);
+      toast.success(next ? 'Reminders switched on' : 'Reminders switched off — overdue invoices will not be chased');
+    } catch (e) { toast.error(e.message); }
+    finally { setSavingReminders(false); }
   };
 
   const createProfile = async (e) => {
@@ -64,16 +81,28 @@ export default function Automation() {
       const res = await fetch(`${API}/recurring/run-now`, { method: 'POST' });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed');
-      const parts = [];
-      if (d.invoices) parts.push(`${d.invoices} invoice(s)`);
-      if (d.expenses) parts.push(`${d.expenses} expense(s)`);
-      if (d.reminders) parts.push(`${d.reminders} reminder(s)`);
-      toast.success(parts.length ? `Done — ${parts.join(', ')}` : 'Nothing was due right now');
+      /* It used to say "Done — 1 expense(s)" whatever happened, which read
+         as if Maks Ops invented a cost. Now it names each schedule, how many
+         it made and for which days — or, with nothing due, what comes next. */
+      const by = {};
+      for (const it of d.items || []) {
+        const k = it.profile;
+        by[k] = by[k] || { n: 0, kind: it.type === 'sales_invoice' ? 'invoice' : 'expense', dates: [] };
+        by[k].n++; if (it.date) by[k].dates.push(it.date);
+      }
+      const made = Object.entries(by).map(([title, v]) => {
+        const span = v.dates.length > 1 ? ` (${fmtDay(v.dates[0])} – ${fmtDay(v.dates[v.dates.length - 1])})` : v.dates[0] ? ` (${fmtDay(v.dates[0])})` : '';
+        return `${v.n} ${v.kind}${v.n > 1 ? 's' : ''} for “${title}”${span}`;
+      });
+      if (d.reminders) made.push(`${d.reminders} overdue reminder${d.reminders > 1 ? 's' : ''}`);
+      if (made.length) toast.success(`Created ${made.join('; ')}`);
+      else toast.info(d.next ? `Nothing was due today. Next: “${d.next.title}” on ${fmtDay(d.next.next_run)}.` : 'Nothing was due today.');
       loadProfiles();
     } catch (e) { toast.error(e.message); }
     finally { setRunning(false); }
   };
 
+  const fmtDay = (d) => (d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 22 };
   const input = { padding: '9px 11px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 8, color: 'var(--text-primary)', fontSize: '0.85rem', outline: 'none', width: '100%' };
   const lbl = { display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 };
@@ -136,7 +165,7 @@ export default function Automation() {
               ))}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>Title / description *</label>
+              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>Title / Description *</label>
                 <input style={input} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder={form.docType === 'expense' ? 'e.g. Office Rent' : 'e.g. AMC — monthly retainer'} />
               </div>
               {form.docType === 'sales_invoice' && (
@@ -196,7 +225,7 @@ export default function Automation() {
                     </td>
                     <td style={{ padding: '10px 12px', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{rupee(p.amount)}</td>
                     <td style={{ padding: '10px 12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{FREQ_LABEL[p.frequency]}</td>
-                    <td style={{ padding: '10px 12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{p.active ? (p.next_run || '').slice(0, 10) : <span style={{ color: 'var(--text-muted)' }}>paused</span>}</td>
+                    <td style={{ padding: '10px 12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{p.active ? fmtDay(p.next_run) : <span style={{ color: 'var(--text-muted)' }}>paused</span>}</td>
                     <td style={{ padding: '10px 12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{p.generated_count || 0}×</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button onClick={() => toggleActive(p)} title={p.active ? 'Pause' : 'Resume'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 2 }}>{p.active ? <Pause size={15} /> : <Play size={15} />}</button>
@@ -213,14 +242,32 @@ export default function Automation() {
       {/* ── Reminders ── */}
       <div style={{ ...card }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-          <AlarmClock size={18} style={{ color: 'var(--brand-amber)' }} /> Reminders <span style={{ fontSize: '0.68rem', fontWeight: 700, background: 'hsl(152,60%,45%,0.15)', color: 'var(--accent-emerald)', padding: '2px 8px', borderRadius: 20 }}>ON</span>
+          <AlarmClock size={18} style={{ color: 'var(--brand-amber)' }} /> Reminders
+          <button type="button" role="switch" aria-checked={reminders} aria-label="Overdue invoice reminders" onClick={toggleReminders} disabled={savingReminders}
+            style={{
+              marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, border: 0, background: 'none', cursor: 'pointer',
+              fontSize: '0.78rem', fontWeight: 700, color: reminders ? 'var(--accent-emerald)' : 'var(--text-muted)', padding: 0,
+            }}>
+            {reminders ? 'On' : 'Off'}
+            <span aria-hidden="true" style={{
+              width: 38, height: 22, borderRadius: 999, position: 'relative', flex: 'none', transition: 'background 160ms ease',
+              background: reminders ? 'var(--accent-emerald)' : 'var(--border-emphasis)',
+            }}>
+              <span style={{
+                position: 'absolute', top: 3, left: reminders ? 19 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                transition: 'left 160ms ease', boxShadow: '0 1px 3px rgba(0,0,0,.25)',
+              }} />
+            </span>
+          </button>
         </div>
         <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-          Maks Ops watches your money and nudges you automatically:
+          {reminders
+            ? 'Maks Ops watches your money and nudges you automatically:'
+            : 'Reminders are off — overdue invoices will not be chased. Switch them on to be told again:'}
         </p>
         <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: 'var(--text-secondary)', fontSize: '0.86rem', lineHeight: 1.9 }}>
           <li><b>Overdue invoices</b> — when a customer invoice passes its due date and isn't fully paid, your admins get a notification with the outstanding amount and days overdue.</li>
-          <li>Payments, POs and GRNs already notify in real time via the <Bell size={12} style={{ verticalAlign: 'middle' }} /> bell.</li>
+          <li>Payments, POs and GRNs already notify in real time via the <Bell size={13} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> bell.</li>
         </ul>
       </div>
     </div>

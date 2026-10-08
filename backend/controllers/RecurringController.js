@@ -14,27 +14,15 @@ const { allocate } = require('../shared/docSeries');
 const { assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { notify } = require('../notify');
+const { amountInWords } = require('../shared/amountInWords');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
+const ownerOf = (req) => req.user?.orgId ?? req.user?.id ?? null;
+/* how many missed occurrences one pass will catch up, per schedule */
+const CATCH_UP_MAX = 62;
 const DOC_TYPES = ['expense', 'sales_invoice'];
 const FREQ = ['daily', 'weekly', 'monthly'];
 
-function amountInWords(num) {
-  num = Math.round(Number(num) || 0);
-  if (num === 0) return 'Rupees Zero Only';
-  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  const two = (n) => n < 20 ? a[n] : b[Math.floor(n / 10)] + (n % 10 ? ' ' + a[n % 10] : '');
-  const three = (n) => (Math.floor(n / 100) ? a[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' : '') : '') + (n % 100 ? two(n % 100) : '');
-  let out = '', crore = Math.floor(num / 10000000); num %= 10000000;
-  let lakh = Math.floor(num / 100000); num %= 100000;
-  let thousand = Math.floor(num / 1000); num %= 1000;
-  if (crore) out += three(crore) + ' Crore ';
-  if (lakh) out += two(lakh) + ' Lakh ';
-  if (thousand) out += two(thousand) + ' Thousand ';
-  if (num) out += three(num);
-  return 'Rupees ' + out.trim().replace(/\s+/g, ' ') + ' Only';
-}
 
 const intervalSql = (freq) =>
   freq === 'daily' ? "interval '1 day'" : freq === 'weekly' ? "interval '7 days'" : "interval '1 month'";
@@ -109,9 +97,9 @@ async function generateExpense(client, p) {
   const pl = p.payload || {};
   const { rows } = await client.query(
     `INSERT INTO expenses (owner_id, category, description, amount, expense_date, paid_to, payment_mode, notes)
-     VALUES ($1,$2,$3,$4,CURRENT_DATE,$5,$6,$7) RETURNING id`,
+     VALUES ($1,$2,$3,$4,$8::date,$5,$6,$7) RETURNING id`,
     [p.owner_id, pl.category || 'Recurring', p.title, p.amount, pl.paidTo || null, pl.paymentMode || null,
-     `Auto-generated from recurring schedule #${p.id}`]
+     `Auto-generated from recurring schedule #${p.id}`, p.next_run]
   );
   return { type: 'expense', id: rows[0].id, ref: `Expense ₹${Number(p.amount).toLocaleString('en-IN')}` };
 }
@@ -148,11 +136,11 @@ async function generateInvoice(client, p) {
   const { rows } = await client.query(
     `INSERT INTO sales_invoices (owner_id, customer_id, invoice_number, invoice_date, due_date,
        sub_total, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes, status)
-     VALUES ($1,$2,$3,CURRENT_DATE,(CURRENT_DATE + ($4 || ' days')::interval)::date,
+     VALUES ($1,$2,$3,$15::date,($15::date + ($4 || ' days')::interval)::date,
        $5,0,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,'Draft') RETURNING id`,
     [p.owner_id, p.customer_id, invNumber, String(termsDays),
      subTotal, gstRate, interstate, cgst, sgst, igst, gstTotal, net, amountInWords(net),
-     `Auto-generated from recurring schedule #${p.id}`]
+     `Auto-generated from recurring schedule #${p.id}`, p.next_run]
   );
   const invId = rows[0].id;
   await client.query(
@@ -167,6 +155,11 @@ async function generateInvoice(client, p) {
 // ownerId: limit to one owner (self-service "run now"); null = everyone (interval).
 async function runPass(ownerId = null) {
   const summary = { generated: 0, invoices: 0, expenses: 0, reminders: 0, items: [] };
+  /* A schedule that fell behind (the server asleep, a first run in the
+     past) used to catch up ONE occurrence per pass, so every press of "Run
+     now" made one more expense, which looked like it was inventing them.
+     Each pass now catches a schedule all the way up: one document per missed
+     occurrence, each dated on the day it was due. */
 
   // 1) Generate everything due today.
   const due = (await db.query(
@@ -176,7 +169,9 @@ async function runPass(ownerId = null) {
     ownerId ? [ownerId] : []
   )).rows;
 
-  for (const p of due) {
+  for (const first of due) {
+   let p = first;
+   for (let n = 0; n < CATCH_UP_MAX && p; n++) {
     const client = await db.getClient();
     try {
       await client.query('BEGIN');
@@ -186,10 +181,11 @@ async function runPass(ownerId = null) {
          both generated: the same invoice twice. SKIP LOCKED lets the other
          pass move on; the next_run test catches one that already ran. */
       const claim = await client.query(
-        `SELECT id FROM recurring_profiles
+        `SELECT * FROM recurring_profiles
           WHERE id = $1 AND active = TRUE AND next_run <= CURRENT_DATE
           FOR UPDATE SKIP LOCKED`, [p.id]);
-      if (!claim.rowCount) { await client.query('ROLLBACK'); continue; }
+      if (!claim.rowCount) { await client.query('ROLLBACK'); p = null; continue; }
+      p = claim.rows[0];                       // this occurrence, with its own due date
       const g = p.doc_type === 'expense' ? await generateExpense(client, p) : await generateInvoice(client, p);
       await client.query(
         `INSERT INTO recurring_runs (profile_id, result_type, result_id, result_ref) VALUES ($1,$2,$3,$4)`,
@@ -206,7 +202,7 @@ async function runPass(ownerId = null) {
       await client.query('COMMIT');
       summary.generated++;
       if (g.type === 'sales_invoice') summary.invoices++; else summary.expenses++;
-      summary.items.push({ profile: p.title, created: g.ref });
+      summary.items.push({ profile: p.title, created: g.ref, type: g.type, date: p.next_run });
       notify({ org: p.owner_id }, {
         type: 'RECURRING_GENERATED',
         title: `Recurring ${p.doc_type === 'expense' ? 'expense' : 'invoice'} created`,
@@ -217,10 +213,13 @@ async function runPass(ownerId = null) {
     } catch (e) {
       await client.query('ROLLBACK');
       console.error(`[scheduler] profile ${p.id} failed:`, e.message);
+      p = null;
     } finally { client.release(); }
+   }
   }
 
-  // 2) Overdue-invoice reminders — fire once when an invoice first goes overdue.
+  // 2) Overdue-invoice reminders: once, when an invoice first goes overdue,
+  //    for companies that have not switched reminders off.
   const overdue = (await db.query(
     `SELECT si.*, c.name AS customer_name
        FROM sales_invoices si LEFT JOIN customers c ON c.id = si.customer_id
@@ -229,6 +228,7 @@ async function runPass(ownerId = null) {
         AND si.status <> 'Paid'
         AND si.net_amount > COALESCE(si.amount_paid, 0)
         AND si.reminder_stage = 0
+        AND COALESCE((SELECT a.reminders_enabled FROM automation_settings a WHERE a.owner_id = si.owner_id), TRUE)
         ${ownerId ? 'AND si.owner_id = $1' : ''}`,
     ownerId ? [ownerId] : []
   )).rows;
@@ -251,10 +251,17 @@ async function runPass(ownerId = null) {
 exports.runPass = runPass;
 
 // POST /recurring/run-now
+/* Always this company's own schedules. It used to run EVERY company's for
+   a platform admin, and for a team member who was not the owner it passed
+   their user id, which owns no schedules, so it did nothing. */
 exports.runNow = async (req, res) => {
   try {
-    const summary = await runPass(isAdmin(req) ? null : req.user.id);
-    res.json({ success: true, ...summary });
+    const owner = ownerOf(req);
+    const summary = await runPass(owner);
+    const next = (await db.query(
+      'SELECT title, next_run FROM recurring_profiles WHERE owner_id = $1 AND active = TRUE ORDER BY next_run ASC LIMIT 1',
+      [owner])).rows[0] || null;
+    res.json({ success: true, ...summary, next });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

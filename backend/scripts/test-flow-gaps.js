@@ -101,8 +101,8 @@ const QUOTE_CSV = 'Description,Qty,Unit,Rate,Amount\nSS304 sheet 2 mm,180,kg,260
     const pf = conv.body.prefill || {};
     ok(conv.status === 200 && pf.enquiryId === enq.id && pf.message === 'Brushed finish, delivery in 4 weeks',
       'converting hands over which enquiry it was and what the customer wrote');
-    ok(pf.items?.length === 1 && String(pf.items[0].skuId) === String(sku.id) && pf.items[0].hsn === '7326' && Number(pf.items[0].quantity) === 120 && pf.items[0].rate === '',
-      'and its lines, with the product and its HSN — the rate left for a person to set');
+    ok(pf.items?.length === 1 && String(pf.items[0].skuId) === String(sku.id) && pf.items[0].hsn === '7326' && Number(pf.items[0].quantity) === 120 && Number(pf.items[0].rate) === 2320,
+      'and its lines, with the product, its HSN and its list price — editable in the builder (the customer gives a quantity, not a price)');
     const qt = await call(A, 'POST', '/sales-quotations', {
       customerId: pf.customerId, enquiryId: pf.enquiryId,
       items: pf.items.map(i => ({ ...i, rate: 2320 })),

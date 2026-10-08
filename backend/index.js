@@ -911,18 +911,35 @@ app.patch('/po/:id/approval', allow('po-approval', 'write'), async (req, res) =>
 app.get('/automation-settings', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM automation_settings WHERE owner_id = $1', [req.user.orgId]);
-    res.json(rows[0] || { owner_id: req.user.orgId, po_approval_threshold: 0 });
+    res.json(rows[0] || { owner_id: req.user.orgId, po_approval_threshold: 0, reminders_enabled: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* Each setting is saved only when it is sent, so saving the PO threshold
+   does not switch reminders back on, and toggling reminders does not reset
+   the threshold. */
 app.put('/automation-settings', allow('automation-settings', 'write'), async (req, res) => {
-  const t = Number(req.body.po_approval_threshold) || 0;
+  const has = (k) => Object.prototype.hasOwnProperty.call(req.body || {}, k);
+  if (has('po_approval_threshold')) {
+    const t = Number(req.body.po_approval_threshold);
+    if (!Number.isFinite(t) || t < 0) return res.status(400).json({ error: 'The PO approval threshold must be a number, 0 or more.' });
+  }
+  if (has('reminders_enabled') && typeof req.body.reminders_enabled !== 'boolean') {
+    return res.status(400).json({ error: 'reminders_enabled must be true or false.' });
+  }
   try {
-    await db.query(
-      `INSERT INTO automation_settings (owner_id, po_approval_threshold, updated_at) VALUES ($1,$2,NOW())
-       ON CONFLICT (owner_id) DO UPDATE SET po_approval_threshold = EXCLUDED.po_approval_threshold, updated_at = NOW()`,
-      [req.user.orgId, t]
+    const { rows } = await db.query(
+      `INSERT INTO automation_settings (owner_id, po_approval_threshold, reminders_enabled, updated_at)
+       VALUES ($1, COALESCE($2::numeric, 0), COALESCE($3::boolean, TRUE), NOW())
+       ON CONFLICT (owner_id) DO UPDATE SET
+         po_approval_threshold = COALESCE($2::numeric, automation_settings.po_approval_threshold),
+         reminders_enabled     = COALESCE($3::boolean, automation_settings.reminders_enabled),
+         updated_at = NOW()
+       RETURNING po_approval_threshold, reminders_enabled`,
+      [req.user.orgId,
+        has('po_approval_threshold') ? Number(req.body.po_approval_threshold) : null,
+        has('reminders_enabled') ? req.body.reminders_enabled : null]
     );
-    res.json({ success: true, po_approval_threshold: t });
+    res.json({ success: true, ...rows[0] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

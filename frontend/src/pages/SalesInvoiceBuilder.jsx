@@ -23,11 +23,14 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ReceiptIndianRupee, Hash, AlertTriangle, Settings2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { today } from '../lib/dates';
+import UnitSelect from '../components/UnitSelect';
+import { lineProblems, discountAmount, adjustmentProblems, money } from '../lib/lineChecks';
 import { GST_STATES, stateCode, stateName } from '../lib/gstStates';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
-const rup = n => `₹${Number(r2(n)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/* a minus goes before the rupee sign: −₹21.00, never ₹-21.00 */
+const rup = money;
 const blankParty = { name: '', address: '', gstin: '', state: '' };
 const blankLine = () => ({ description: '', hsn: '', uom: 'nos', quantity: '', rate: '' });
 
@@ -190,22 +193,32 @@ export default function SalesInvoiceBuilder() {
   const t = useMemo(() => {
     const lines = items.map(it => r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)));
     const sub = r2(lines.reduce((s, a) => s + a, 0));
-    const taxable = r2(sub - (Number(f?.discount) || 0));
+    const disc = discountAmount(f?.discount, f?.discountMode, sub);
+    const taxable = r2(sub - disc);
     const gst = r2(taxable * (Number(f?.gstRate) || 0) / 100);
     const cgst = interstate ? 0 : r2(gst / 2);
     const sgst = interstate ? 0 : r2(gst - cgst);
     const before = r2(taxable + gst);
     const net = r2(before + (Number(f?.roundOff) || 0));
-    return { lines, sub, taxable, gst, cgst, sgst, before, net };
-  }, [items, f?.discount, f?.gstRate, f?.roundOff, interstate]);
+    return { lines, sub, disc, taxable, gst, cgst, sgst, before, net };
+  }, [items, f?.discount, f?.discountMode, f?.gstRate, f?.roundOff, interstate]);
+
+  /* what would stop this invoice from saving, shown where it is wrong */
+  const rowProblems = useMemo(() => lineProblems(items), [items]);
+  const adjProblems = useMemo(() => adjustmentProblems({ discount: f?.discount, mode: f?.discountMode, roundOff: f?.roundOff, sub: t.sub }), [f?.discount, f?.discountMode, f?.roundOff, t.sub]);
 
   const numberError = f ? numberProblem(f.invoiceNumber) : null;
 
   const save = async () => {
-    const valid = items.filter(it => String(it.description || '').trim());
+    /* A row with nothing in it is the spare line, and is left out. A row with
+       figures but no description used to be left out too — silently, taking
+       its amount with it. Now it stops the save and says which line. */
+    const valid = rowProblems.kept;
     if (!customerId) { toast.error('Pick a customer'); return; }
+    if (rowProblems.list.length) { toast.error(rowProblems.list[0]); return; }
     if (!valid.length) { toast.error('Add at least one line item'); return; }
     if (valid.some(it => !(Number(it.quantity) > 0))) { toast.error('Every line needs a quantity above zero'); return; }
+    if (adjProblems.length) { toast.error(adjProblems[0]); return; }
     if (numberError) { toast.error(numberError); return; }
     if (f.dueDate && f.invoiceDate && f.dueDate < f.invoiceDate) { toast.error('The due date is before the invoice date'); return; }
     const shipTo = f.shipSame ? f.billTo : f.shipTo;
@@ -217,7 +230,7 @@ export default function SalesInvoiceBuilder() {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             invoice_number: f.invoiceNumber.trim(), invoice_date: f.invoiceDate || null, due_date: f.dueDate || null,
-            discount: Number(f.discount) || 0, gst_rate: Number(f.gstRate) || 0, round_off: Number(f.roundOff) || 0,
+            discount: t.disc, gst_rate: Number(f.gstRate) || 0, round_off: Number(f.roundOff) || 0,
             notes: f.notes || null, terms: f.terms || null,
             place_of_supply: f.posCode ? stateName(f.posCode) : null, place_of_supply_code: f.posCode || null,
             reverse_charge: !!f.reverseCharge, eway_bill_no: f.ewayBillNo || null,
@@ -236,7 +249,7 @@ export default function SalesInvoiceBuilder() {
                invoices at the same moment. */
             invoiceNumber: f.invoiceNumber.trim() !== suggested ? f.invoiceNumber.trim() : undefined,
             invoiceDate: f.invoiceDate || null, dueDate: f.dueDate || null,
-            items: valid, discount: Number(f.discount) || 0, gstRate: Number(f.gstRate) || 0,
+            items: valid, discount: t.disc, gstRate: Number(f.gstRate) || 0,
             interstate, roundOff: Number(f.roundOff) || 0, notes: f.notes || null, terms: f.terms || null,
             placeOfSupply: f.posCode || null, reverseCharge: !!f.reverseCharge, ewayBillNo: f.ewayBillNo || null,
             billTo: f.billTo, shipTo,
@@ -364,11 +377,15 @@ export default function SalesInvoiceBuilder() {
               <tbody>
                 {items.map((it, i) => (
                   <tr key={i} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                    <td style={{ padding: '5px 4px' }}><input style={S.input} value={it.description} onChange={e => setItem(i, { description: e.target.value })} placeholder="Item or service" aria-label={`Line ${i + 1} description`} /></td>
+                    <td style={{ padding: '5px 4px' }}>
+                      <input style={{ ...S.input, borderColor: rowProblems.rows.has(i) ? '#dc2626' : undefined }} value={it.description} onChange={e => setItem(i, { description: e.target.value })}
+                        placeholder="Item or service" aria-label={`Line ${i + 1} description`} aria-invalid={rowProblems.rows.has(i)} autoComplete="off" />
+                      {rowProblems.rows.has(i) && <div role="alert" style={{ fontSize: '0.7rem', color: '#dc2626', marginTop: 3 }}>Describe this item, or remove the line</div>}
+                    </td>
                     <td style={{ padding: '5px 4px', width: 96 }}><input style={{ ...S.input, fontFamily: 'var(--font-mono)' }} value={it.hsn || ''} onChange={e => setItem(i, { hsn: e.target.value.replace(/[^\d]/g, '') })} aria-label={`Line ${i + 1} HSN`} /></td>
-                    <td style={{ padding: '5px 4px', width: 76 }}><input style={S.input} value={it.uom || ''} onChange={e => setItem(i, { uom: e.target.value })} aria-label={`Line ${i + 1} unit`} /></td>
-                    <td style={{ padding: '5px 4px', width: 88 }}><input style={S.input} type="number" min="0" step="any" value={it.quantity} onChange={e => setItem(i, { quantity: e.target.value })} aria-label={`Line ${i + 1} quantity`} /></td>
-                    <td style={{ padding: '5px 4px', width: 104 }}><input style={S.input} type="number" min="0" step="any" value={it.rate} onChange={e => setItem(i, { rate: e.target.value })} aria-label={`Line ${i + 1} rate`} /></td>
+                    <td style={{ padding: '5px 4px', width: 110 }}><UnitSelect style={S.input} value={it.uom} onChange={v => setItem(i, { uom: v })} ariaLabel={`Line ${i + 1} unit`} /></td>
+                    <td style={{ padding: '5px 4px', width: 88 }}><input style={S.input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={it.quantity} onChange={e => setItem(i, { quantity: e.target.value })} aria-label={`Line ${i + 1} quantity`} /></td>
+                    <td style={{ padding: '5px 4px', width: 104 }}><input style={S.input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={it.rate} onChange={e => setItem(i, { rate: e.target.value })} aria-label={`Line ${i + 1} rate`} /></td>
                     <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{rup(t.lines[i])}</td>
                     <td style={{ padding: '5px 4px' }}>
                       <button onClick={() => setItems(items.filter((_, idx) => idx !== i))} aria-label={`Remove line ${i + 1}`}
@@ -386,10 +403,22 @@ export default function SalesInvoiceBuilder() {
             <div style={S.card}>
               <div style={S.h}>Adjustments and notes</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Field label="Discount ₹ (−)"><input style={S.input} type="number" min="0" step="any" value={f.discount} onChange={set('discount')} /></Field>
+                <Field label="Discount" hint={(f.discountMode === 'pct' && Number(f.discount) > 0) ? <>= {rup(t.disc)} off the sub-total</> : null}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input style={{ ...S.input, borderColor: adjProblems.discount ? '#dc2626' : undefined }} type="number" min="0" step="any" inputMode="decimal" autoComplete="off"
+                      value={f.discount} onChange={set('discount')} aria-label="Discount" aria-invalid={!!adjProblems.discount} placeholder="0" />
+                    <select style={{ ...S.input, width: 64, flex: 'none' }} value={f.discountMode || 'amt'} aria-label="Discount in"
+                      onChange={e => setF(p => ({ ...p, discountMode: e.target.value }))}>
+                      <option value="amt">₹</option><option value="pct">%</option>
+                    </select>
+                  </div>
+                  {adjProblems.discount && <div role="alert" style={{ fontSize: '0.7rem', color: '#dc2626', marginTop: 3 }}>{adjProblems.discount}</div>}
+                </Field>
                 <Field label="Round off ₹" hint={<button type="button" onClick={() => setF(p => ({ ...p, roundOff: r2(Math.round(t.before) - t.before) }))}
                   style={{ border: 0, background: 'none', padding: 0, color: 'var(--brand-amber)', cursor: 'pointer', fontSize: 'inherit', fontWeight: 600 }}>Round to the nearest rupee</button>}>
-                  <input style={S.input} type="number" step="0.01" value={f.roundOff} onChange={set('roundOff')} />
+                  <input style={{ ...S.input, borderColor: adjProblems.roundOff ? '#dc2626' : undefined }} type="number" min="-1" max="1" step="0.01" inputMode="decimal" autoComplete="off"
+                    value={f.roundOff} onChange={set('roundOff')} aria-label="Round off" aria-invalid={!!adjProblems.roundOff} />
+                  {adjProblems.roundOff && <div role="alert" style={{ fontSize: '0.7rem', color: '#dc2626', marginTop: 3 }}>{adjProblems.roundOff}</div>}
                 </Field>
               </div>
               <div style={{ marginTop: 12 }}><Field label="Notes (printed on the invoice)"><input style={S.input} value={f.notes} onChange={set('notes')} placeholder="e.g. Against your PO 4471" /></Field></div>
@@ -398,7 +427,7 @@ export default function SalesInvoiceBuilder() {
             <div style={S.card}>
               <div style={S.h}>Invoice summary</div>
               {[
-                ['Sub-total', t.sub], ['− Discount', -(Number(f.discount) || 0)], ['Taxable value', t.taxable],
+                ['Sub-total', t.sub], ...(t.disc ? [['Discount', -t.disc]] : []), ['Taxable value', t.taxable],
                 ...(interstate ? [[`IGST @ ${Number(f.gstRate) || 0}%`, t.gst]]
                   : [[`CGST @ ${r2((Number(f.gstRate) || 0) / 2)}%`, t.cgst], [`SGST @ ${r2((Number(f.gstRate) || 0) / 2)}%`, t.sgst]]),
                 ['Round off', Number(f.roundOff) || 0],
@@ -410,7 +439,7 @@ export default function SalesInvoiceBuilder() {
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 4px', marginTop: 6, borderTop: '2px solid var(--border-default)', fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 <span>Invoice total</span><span style={{ fontFamily: 'var(--font-mono)' }}>{rup(t.net)}</span>
               </div>
-              <button onClick={save} disabled={saving} className="btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: 16 }}>
+              <button onClick={save} disabled={saving || rowProblems.list.length > 0 || adjProblems.length > 0} className="btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: 16 }}>
                 {saving ? 'Saving…' : mode === 'edit' ? 'Save changes' : `Create invoice ${f.invoiceNumber.trim() || ''}`}
               </button>
               {mode !== 'edit' && (

@@ -19,6 +19,8 @@ import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components
 
 import { getToken } from '../lib/apiAuth';
 import { today, daysFromToday } from '../lib/dates';
+import UnitSelect from '../components/UnitSelect';
+import { lineProblems, discountAmount, adjustmentProblems, money } from '../lib/lineChecks';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Draft', 'Sent', 'Accepted', 'Rejected', 'Converted'];
 const STATUS_COLOR = { Draft: '#64748b', Sent: '#2563eb', Accepted: '#10b981', Rejected: '#ef4444', Converted: '#8b5cf6' };
@@ -49,7 +51,7 @@ export default function SalesQuotations() {
     if (prefill) { try { sessionStorage.removeItem('quotation_prefill'); } catch { /* storage blocked */ } }
   }, [prefill]);
   const [showForm, setShowForm] = useState(() => !!prefill);
-  const [head, setHead] = useState(() => ({ customerId: prefill?.customerId ? String(prefill.customerId) : '', quoteDate: today(), validUntil: daysFromToday(15), gstRate: '18', discount: '', terms: '' }));
+  const [head, setHead] = useState(() => ({ customerId: prefill?.customerId ? String(prefill.customerId) : '', quoteDate: today(), validUntil: daysFromToday(15), gstRate: '18', discount: '', discountMode: 'amt', terms: '' }));
   const [lines, setLines] = useState(() => (prefill?.items?.length
     ? prefill.items.map(i => ({
         skuId: i.skuId ? String(i.skuId) : '', description: i.description || '', hsn: i.hsn || '',
@@ -84,26 +86,34 @@ export default function SalesQuotations() {
 
   // live preview of the total
   const sub = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.rate) || 0), 0);
-  const taxable = sub - (Number(head.discount) || 0);
+  const disc = discountAmount(head.discount, head.discountMode, sub);
+  const taxable = sub - disc;
   const gst = taxable * (Number(head.gstRate) || 0) / 100;
   const net = taxable + gst;
+  /* what would stop this quotation saving, shown where it is wrong */
+  const rowProblems = lineProblems(lines);
+  const adjProblems = adjustmentProblems({ discount: head.discount, mode: head.discountMode, sub });
 
   const create = async (e) => {
     e.preventDefault();
     if (!head.customerId) { toast.error('Pick a customer'); return; }
-    const items = lines.filter(l => l.description.trim());
+    /* The spare blank line is left out; a line with figures but no
+       description is no longer dropped without a word. */
+    if (rowProblems.list.length) { toast.error(rowProblems.list[0]); return; }
+    const items = rowProblems.kept;
     if (!items.length) { toast.error('Add at least one line item'); return; }
+    if (adjProblems.length) { toast.error(adjProblems[0]); return; }
     const token = getToken();
     const res = await fetch(`${API}/sales-quotations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ ...head, items, enquiryId: fromEnquiry?.id || undefined }),
+      body: JSON.stringify({ ...head, discount: disc, items, enquiryId: fromEnquiry?.id || undefined }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.detail || d.error || 'Could not create the quotation');
     toast.success(`Quotation ${d.quoteNumber} created`);
     setFromEnquiry(null);
-    setShowForm(false); setHead({ customerId: '', quoteDate: today(), validUntil: daysFromToday(15), gstRate: '18', discount: '', terms: '' });
+    setShowForm(false); setHead({ customerId: '', quoteDate: today(), validUntil: daysFromToday(15), gstRate: '18', discount: '', discountMode: 'amt', terms: '' });
     setLines([{ skuId: '', description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
     q.reload();
   };
@@ -198,25 +208,36 @@ export default function SalesQuotations() {
             </div>
             <div><label style={lbl}>Quote Date</label><input style={input} type="date" value={head.quoteDate} onChange={e => setHead({ ...head, quoteDate: e.target.value })} /></div>
             <div><label style={lbl}>Valid Until</label><input style={input} type="date" value={head.validUntil} onChange={e => setHead({ ...head, validUntil: e.target.value })} /></div>
-            <div><label style={lbl}>GST %</label><input style={input} type="number" value={head.gstRate} onChange={e => setHead({ ...head, gstRate: e.target.value })} /></div>
+            <div><label style={lbl}>GST %</label><input style={input} type="number" min="0" max="28" step="0.01" inputMode="decimal" autoComplete="off" value={head.gstRate} onChange={e => setHead({ ...head, gstRate: e.target.value })} /></div>
           </div>
 
           <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>Line items</div>
           {lines.map((l, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
-              <div style={{ flex: 1.2 }}><label style={lbl}>SKU</label>
-                <select style={input} value={l.skuId} onChange={e => pickSku(i, e.target.value)}>
-                  <option value="">— free text —</option>
-                  {skus.map(sk => <option key={sk.id} value={sk.id}>{sk.name}</option>)}
-                </select>
+              <div style={{ flex: 1.2 }}><label style={lbl}>Product</label>
+                {skus.length ? (
+                  <select style={input} value={l.skuId} onChange={e => pickSku(i, e.target.value)} aria-label={`Line ${i + 1} product`}>
+                    <option value="">Not a saved product: type it →</option>
+                    {skus.map(sk => <option key={sk.id} value={sk.id}>{sk.name}{sk.sku_code ? ` · ${sk.sku_code}` : ''}</option>)}
+                  </select>
+                ) : (
+                  /* It used to be a list holding only "— free text —", which
+                     read as a box you could type in and was not. */
+                  <div style={{ ...input, background: 'transparent', fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.3, padding: '6px 8px' }}>
+                    No saved products. Type the item, or <a href="/skus" style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>add products</a>.
+                  </div>
+                )}
               </div>
-              <div style={{ flex: 2 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} /></div>
+              <div style={{ flex: 2 }}><label style={lbl}>Description *</label>
+                <input style={{ ...input, borderColor: rowProblems.rows.has(i) ? '#dc2626' : undefined }} value={l.description} onChange={e => setLine(i, { description: e.target.value })}
+                  aria-label={`Line ${i + 1} description`} aria-invalid={rowProblems.rows.has(i)} autoComplete="off" placeholder="Item or service" />
+              </div>
               {/* Unit, quantity, rate, total — the order a purchase order
                   is written in, and the order the printed quotation, the
                   invoice and the vendor bill already used. */}
-              <div style={{ flex: 0.6 }}><label style={lbl}>Unit</label><input style={input} value={l.uom} onChange={e => setLine(i, { uom: e.target.value })} /></div>
-              <div style={{ flex: 0.7 }}><label style={lbl}>Qty</label><input style={input} type="number" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
-              <div style={{ flex: 0.9 }}><label style={lbl}>Rate ₹</label><input style={input} type="number" value={l.rate} onChange={e => setLine(i, { rate: e.target.value })} /></div>
+              <div style={{ flex: 0.8 }}><label style={lbl}>Unit</label><UnitSelect style={input} value={l.uom} onChange={v => setLine(i, { uom: v })} ariaLabel={`Line ${i + 1} unit`} /></div>
+              <div style={{ flex: 0.7 }}><label style={lbl}>Qty</label><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} aria-label={`Line ${i + 1} quantity`} /></div>
+              <div style={{ flex: 0.9 }}><label style={lbl}>Rate ₹</label><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={l.rate} onChange={e => setLine(i, { rate: e.target.value })} aria-label={`Line ${i + 1} rate`} /></div>
               <div style={{ flex: 0.9 }}>
                 <label style={lbl}>Total ₹</label>
                 <div style={{ ...input, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
@@ -231,19 +252,28 @@ export default function SalesQuotations() {
 
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 200 }}>
-              <label style={lbl}>Discount ₹</label>
-              <input style={{ ...input, width: 160 }} type="number" value={head.discount} onChange={e => setHead({ ...head, discount: e.target.value })} placeholder="0" />
+              <label style={lbl}>Discount</label>
+              <div style={{ display: 'flex', gap: 6, width: 230 }}>
+                <input style={{ ...input, borderColor: adjProblems.discount ? '#dc2626' : undefined }} type="number" min="0" step="any" inputMode="decimal" autoComplete="off"
+                  value={head.discount} onChange={e => setHead({ ...head, discount: e.target.value })} placeholder="0" aria-label="Discount" />
+                <select style={{ ...input, width: 64, flex: 'none' }} value={head.discountMode} onChange={e => setHead({ ...head, discountMode: e.target.value })} aria-label="Discount in">
+                  <option value="amt">₹</option><option value="pct">%</option>
+                </select>
+              </div>
+              {adjProblems.discount && <div role="alert" style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: 4 }}>{adjProblems.discount}</div>}
+              {rowProblems.list[0] && <div role="alert" style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: 4 }}>{rowProblems.list[0]}</div>}
             </div>
             <div style={{ textAlign: 'right', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-              <div>Sub-total: <b style={{ color: 'var(--text-primary)' }}>{rupee(sub)}</b></div>
-              <div>GST ({head.gstRate || 0}%): <b style={{ color: 'var(--text-primary)' }}>{rupee(gst)}</b></div>
-              <div style={{ fontSize: '1.05rem', marginTop: 2 }}>Net: <b style={{ color: 'var(--brand-amber)' }}>{rupee(net)}</b></div>
+              <div>Sub-total: <b style={{ color: 'var(--text-primary)' }}>{money(sub)}</b></div>
+              {disc > 0 && <div>Discount: <b style={{ color: 'var(--text-primary)' }}>{money(-disc)}</b></div>}
+              <div>GST ({head.gstRate || 0}%): <b style={{ color: 'var(--text-primary)' }}>{money(gst)}</b></div>
+              <div style={{ fontSize: '1.05rem', marginTop: 2 }}>Net: <b style={{ color: 'var(--brand-amber)' }}>{money(net)}</b></div>
             </div>
           </div>
           <div style={{ marginTop: 12 }}><label style={lbl}>Terms / notes</label><input style={input} value={head.terms} onChange={e => setHead({ ...head, terms: e.target.value })} placeholder="Payment terms, validity, delivery…" /></div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button type="submit" className="btn-primary btn-sm">Create Quotation</button>
+            <button type="submit" className="btn-primary btn-sm" disabled={rowProblems.list.length > 0 || adjProblems.length > 0}>Create Quotation</button>
             <button type="button" onClick={() => { setShowForm(false); setFromEnquiry(null); }} className="btn-secondary">Cancel</button>
           </div>
         </form>

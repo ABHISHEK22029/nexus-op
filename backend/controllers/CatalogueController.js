@@ -607,15 +607,17 @@ exports.convertEnquiry = async (req, res) => {
     await client.query('COMMIT');
 
     /* The catalogue product each line came from, so the quotation keeps the
-       link and the HSN — the rate stays blank on purpose (below). */
+       link, the HSN, and starts at the product's own price. */
     const { rows: items } = await db.query(
-      `SELECT ei.*, s.hsn FROM enquiry_items ei
+      `SELECT ei.*, s.hsn, s.price, s.moq, s.lead_time_note FROM enquiry_items ei
          LEFT JOIN skus s ON s.id = ei.sku_id AND s.owner_id = $2
         WHERE ei.enquiry_id = $1 ORDER BY ei.sort_order, ei.id`, [e.id, owner]);
 
     /* The quotation is not created here. It is prefilled in the builder so
-       a person can price it before anything is committed — the enquiry
-       says what they asked for, not what you are willing to sell it for. */
+       a person can check it before anything is committed. The customer
+       gives a quantity, never a price: the rate starts at the product's
+       list price (blank if it has none) and stays editable — the enquiry
+       says what they asked for, the quotation what you will sell it for. */
     res.json({
       customerId: cust.id,
       customerName: cust.name,
@@ -633,7 +635,9 @@ exports.convertEnquiry = async (req, res) => {
           hsn: i.hsn || '',
           quantity: i.quantity || 1,
           uom: i.unit || 'nos',
-          rate: '',
+          rate: i.price != null && Number(i.price) > 0 ? Number(i.price) : '',
+          moq: i.moq != null ? Number(i.moq) : null,
+          leadTime: i.lead_time_note || null,
         })),
       },
     });

@@ -5,6 +5,8 @@ import './index.css'
 import './styles/print.css'
 import './styles/motion.css'
 import './lib/apiAuth.js' // installs global JWT interceptors (fetch + axios)
+import './lib/reliability.js' // a sleeping server, a stale tab: no more manual refresh
+import './lib/inputGuards.js' // number fields take numbers; the wheel does not change them
 import App from './App.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 

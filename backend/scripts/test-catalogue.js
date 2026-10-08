@@ -216,8 +216,13 @@ const stranger = (path, opts = {}) => call(path, opts);
     `the customer is their company, not their own name → "${conv.body.customerName}"`);
   ok((conv.body.prefill?.items || []).length === 2,
     `the quotation is prefilled with what they asked for (${(conv.body.prefill?.items || []).length} lines)`);
-  ok(conv.body.prefill?.items?.every(i => i.rate === ''),
-    'with the rates left blank — the enquiry says what they want, not what you charge');
+  {
+    const [fromProduct, freeText] = conv.body.prefill?.items || [];
+    ok(Number(fromProduct?.rate) === 8500,
+      `the product line starts at the product's own list price, still editable → ${JSON.stringify(fromProduct?.rate)}`);
+    ok(freeText && freeText.rate === '',
+      `a free-text line has no list price, so its rate is left for the seller → ${JSON.stringify(freeText?.rate)}`);
+  }
 
   const after = await call('/customers?limit=100', {}, A.token);
   ok((after.body.items || after.body).length === beforeCount + 1,

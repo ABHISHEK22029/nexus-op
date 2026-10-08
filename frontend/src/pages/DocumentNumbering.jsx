@@ -92,8 +92,8 @@ export default function DocumentNumbering() {
         <Info size={16} style={{ flex: 'none', marginTop: 2, color: 'var(--brand-amber)' }} />
         <div>
           Put <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{'{FY}'}</code> in a prefix to print the
-          financial year — <code style={{ fontFamily: 'var(--font-mono)' }}>KBS/{'{FY}'}/</code> gives{' '}
-          <b style={{ fontFamily: 'var(--font-mono)' }}>{preview('KBS/{FY}/', 3, 148)}</b>. A series with the year in it
+          financial year — <code style={{ fontFamily: 'var(--font-mono)' }}>MAKS/{'{FY}'}/</code> gives{' '}
+          <b style={{ fontFamily: 'var(--font-mono)' }}>{preview('MAKS/{FY}/', 3, 148)}</b>. A series with the year in it
           starts again at 1 each April. GST allows at most 16 characters, using letters, digits, “-” and “/”.
         </div>
       </div>
