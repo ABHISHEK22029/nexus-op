@@ -220,3 +220,71 @@
      charge, e-way bill, order and PO references. */
   .inv-facts { padding: 4pt 10pt !important; font-size: 8pt !important; gap: 14pt !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   The end of a document, and the numbers in it.
+
+   A tester's 25-line invoice printed its last rows on page one and the
+   totals, bank details, terms and signature on page two with nothing above
+   them — and the bank box on one sheet, the signature on the next. Every
+   document page now wraps its closing part (totals → amount in words →
+   bank, terms → signature → footer) in `.doc-closing`, and the rules
+   below keep it in one piece and never let it start a sheet alone: the
+   last item row may not be separated from the row before it, and the
+   closing block may not be separated from the last row, so when the block
+   does not fit, the last two rows move over with it. The browser repeats
+   the table header above them.
+
+   Measured, not assumed: scripts/test-documents-print.cjs prints long
+   documents and checks where each page breaks.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* On screen as well as on paper: an amount is right-aligned, on one line,
+   with figures of equal width. ₹14,25,41,68,500.00 wrapped onto two lines
+   reads as two numbers. (Item cells set this inline; the totals box here.) */
+.inv-totals-table { width: auto; min-width: 240px; }
+.inv-totals-table td { white-space: nowrap; }
+.inv-totals-table .tv { font-variant-numeric: tabular-nums; }
+/* Terms and notes are typed by people: a line of asterisks or a pasted URL
+   has no spaces to break at, and it ran out of its box. */
+.doc-wrap { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+
+/* A document is a sheet of paper. On a phone it keeps its paper layout and
+   scrolls sideways inside its own box, instead of crushing seven columns
+   into 300px until the totals fall off the edge. The padding keeps the
+   sheet's shadow from being clipped by the scroll box. */
+.doc-scroll { overflow-x: auto; padding: 0 28px 34px; margin: 0 -28px -34px; }
+.doc-scroll > .invoice-mock, .doc-scroll > .doc-sheet { min-width: 680px; }
+@media (max-width: 640px) { .doc-scroll { padding: 0 16px 34px; margin: 0 -16px -34px; } }
+
+@media print {
+  .doc-closing {
+    break-inside: avoid !important; page-break-inside: avoid !important;
+    break-before: avoid !important; page-break-before: avoid !important;
+  }
+  .doc-items tbody tr:last-child,
+  .inv-items-table tbody tr:last-child { break-before: avoid !important; page-break-before: avoid !important; }
+
+  /* The screen lets a wide document scroll sideways inside its card. On
+     paper that box must not clip, and a scroll box is not split across
+     pages the way an ordinary one is. */
+  .doc-scroll { overflow: visible !important; padding: 0 !important; margin: 0 !important; }
+  .doc-scroll > .invoice-mock, .doc-scroll > .doc-sheet { min-width: 0 !important; }
+
+  /* The quotation, challan and note are drawn in the app's theme colours.
+     On paper they are black on white whatever the theme on screen — a
+     dark-theme print came out as pale grey text. */
+  .doc-sheet {
+    --text-primary: #000; --text-secondary: #222; --text-muted: #555;
+    --border-default: #bbb; --border-subtle: #ddd;
+    --bg-surface: #fff; --bg-elevated: #f4f4f4;
+    color: #000 !important;
+  }
+
+  .inv-bank-terms { margin: 6pt 10pt 0 !important; gap: 8pt !important; }
+
+  /* The totals box stays a box at the right, as on screen. "Every table
+     full width" (section 3) was meant for item tables; stretched, it put
+     "SUB-TOTAL" a hand's width from its figure. */
+  .inv-totals-table { width: auto !important; min-width: 45% !important; }
+}

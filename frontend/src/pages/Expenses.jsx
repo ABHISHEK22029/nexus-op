@@ -27,7 +27,7 @@ export default function Expenses() {
         { key: 'description', label: 'Description' },
         { key: 'paid_to', label: 'Paid To' },
         { key: 'payment_mode', label: 'Mode' },
-        { key: 'amount', label: 'Amount', render: r => `₹${Number(r.amount || 0).toLocaleString('en-IN')}` },
+        { key: 'amount', label: 'Amount', numeric: true, render: r => `₹${Number(r.amount || 0).toLocaleString('en-IN')}` },
       ]}
     />
   );

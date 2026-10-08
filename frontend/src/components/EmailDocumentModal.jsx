@@ -46,6 +46,7 @@ export default function EmailDocumentModal({
   extra: extraProp,       // [[label, value], …] — due date, valid until, vehicle
   closing,                // a last line, if the kind wants one
   onDownloadPdf,
+  fileName,               // what the download is called, e.g. "Quotation QT-0007 - Customer.pdf"
   onClose,
 }) {
   const toast = useToast();
@@ -55,6 +56,9 @@ export default function EmailDocumentModal({
      catch it. */
   const company = companyProp ?? {};
   const extra = extraProp ?? [];
+  /* The rows as one string, so the draft is rebuilt when a value changes
+     and not on every render (a new array each time). */
+  const extraKey = JSON.stringify(extra);
 
   const body0 = useMemo(() => {
     const lines = [
@@ -84,7 +88,7 @@ export default function EmailDocumentModal({
     lines.push('', closing || 'Please let us know if anything needs correcting.', '',
       'Thank you,', company.name || '');
     return lines.join('\n');
-  }, [kind, number, partyName, amount, JSON.stringify(extra), company.name]);
+  }, [kind, number, partyName, amount, extraKey, company.name]);
 
   /* `initialTo = ''` in the signature is not enough: a default parameter
      only applies to undefined, and a customer with no email on file gives
@@ -199,7 +203,7 @@ export default function EmailDocumentModal({
               {!onDownloadPdf
                 ? <>Attach the PDF from this page in the compose window.</>
                 : downloaded
-                  ? <><strong>{number}.pdf is in your Downloads</strong> — attach it in the compose window.</>
+                  ? <><strong>{fileName || `${number}.pdf`} is in your Downloads</strong> — attach it in the compose window.</>
                   : <>The PDF downloads when you continue. Attach it in the compose window: no website can put a file into another site's compose box for you.</>}
             </span>
           </div>

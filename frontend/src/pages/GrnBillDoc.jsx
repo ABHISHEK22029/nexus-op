@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download } from 'lucide-react';
 import Attachments from '../components/Attachments';
+import { docFileName, printAs } from '../lib/documentPdf';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -18,15 +19,10 @@ export default function GrnBillDoc() {
     await fetch(`${API}/grn-bills/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     setBill(b => ({ ...b, status }));
   };
-  const pdf = () => {
-    /* Browser print-to-PDF rather than html2canvas: the output stays real
-       text, the print stylesheet controls page breaks, and the item table
-       repeats its header. The filename comes from document.title. */
-    const prev = document.title;
-    document.title = `${bill.bill_number}`;
-    window.print();
-    setTimeout(() => { document.title = prev; }, 0);
-  };
+  /* Browser print-to-PDF rather than html2canvas: the output stays real
+     text, the print stylesheet controls page breaks, and the item table
+     repeats its header. The filename comes from document.title. */
+  const pdf = () => printAs(docFileName('Purchase Bill', bill.bill_number, bill.vendor?.name));
 
   if (!bill) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading bill…</div>;
   const co = bill.company || {};
@@ -42,7 +38,7 @@ export default function GrnBillDoc() {
             {['Draft', 'Approved', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <button onClick={pdf} className="inv-act-btn"><Download size={15} /> PDF</button>
-          <button onClick={() => window.print()} className="inv-act-btn primary"><Printer size={15} /> Print</button>
+          <button onClick={pdf} className="inv-act-btn primary"><Printer size={15} /> Print</button>
         </div>
       </div>
 
@@ -52,6 +48,7 @@ export default function GrnBillDoc() {
       </div>
 
       {/* B&W document */}
+      <div className="doc-scroll">
       <div ref={ref} className="invoice-mock">
         <div className="inv-header">
           <div>
@@ -84,28 +81,31 @@ export default function GrnBillDoc() {
         </div>
 
         <div className="inv-items-table">
-          <table>
+          <table className="doc-items">
             <thead><tr>
-              <th style={{ width: '6%' }}>#</th><th style={{ width: '42%' }}>DESCRIPTION</th><th>HSN</th><th>UOM</th><th>QTY</th><th>RATE</th><th>AMOUNT</th>
+              <th style={{ width: '6%' }}>#</th><th style={{ width: '42%' }}>DESCRIPTION</th><th>HSN</th><th>UOM</th><th style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>QTY</th><th style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>RATE</th><th style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>AMOUNT</th>
             </tr></thead>
             <tbody>
               {bill.items.map((it, i) => (
                 <tr key={it.id}>
                   <td style={{ textAlign: 'center' }}>{i + 1}</td>
-                  <td style={{ fontWeight: 600 }}>{it.description}</td>
+                  <td className="doc-wrap" style={{ fontWeight: 600 }}>{it.description}</td>
                   <td>{it.hsn || '-'}</td>
                   <td>{it.uom}</td>
-                  <td>{it.quantity}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)' }}>{rup(it.rate)}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{rup(it.amount)}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{it.quantity}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)' }}>{rup(it.rate)}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{rup(it.amount)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
+        {/* Totals to footer: kept whole, and never on a sheet by itself
+            (print.css, .doc-closing). */}
+        <div className="doc-closing">
         <div className="inv-totals-section">
-          <div className="inv-notes">{bill.notes && <><strong>Notes</strong>{bill.notes}</>}</div>
+          <div className="inv-notes doc-wrap">{bill.notes && <><strong>Notes</strong>{bill.notes}</>}</div>
           <table className="inv-totals-table">
             <tbody>
               <tr><td className="tl">SUB-TOTAL</td><td className="tv">{rup(bill.sub_total)}</td></tr>
@@ -137,6 +137,8 @@ export default function GrnBillDoc() {
           <div className="inv-footer-left">Generated by Maks Ops Platform</div>
           <div className="inv-footer-right">{bill.bill_number} &nbsp;|&nbsp; {date}</div>
         </div>
+        </div>
+      </div>
       </div>
     </div>
   );

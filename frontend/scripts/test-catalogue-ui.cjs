@@ -37,7 +37,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const auth = { Authorization: `Bearer ${reg.token}`, 'Content-Type': 'application/json' };
   await fetch(`${API}/company-profile`, {
     method: 'PUT', headers: auth,
-    body: JSON.stringify({ name: `Kirashi ${stamp}`, phone: '9866644456', setup_completed_at: new Date().toISOString() }),
+    body: JSON.stringify({ name: `Kirashi ${stamp}`, phone: '9000000002', setup_completed_at: new Date().toISOString() }),
   });
   const sku = await (await fetch(`${API}/skus`, {
     method: 'POST', headers: auth,
@@ -127,7 +127,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const put = (ph, v) => { const el = p(ph); if (el) set(el, v); };
     put('Your name *', 'Ramesh Kumar');
     put('Company', 'Sahasra Infra');
-    put('Phone', '9866644456');
+    put('Phone', '9000000002');
   });
   await sleep(400);
   await guest.evaluate(() => [...document.querySelectorAll('button')].find(b => /Send enquiry/i.test(b.innerText))?.click());

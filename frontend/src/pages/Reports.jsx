@@ -2,9 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { BarChart3, Download, TrendingUp, TrendingDown, Wallet, Receipt } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rup = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+/* Compact (₹16.03 L) with the exact figure on hover, and never wider than
+   the tile. Module scope, so it is not a new component on every render. */
+const Tile = ({ icon: Icon, label, amount, color }) => (
+  <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 18, minWidth: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>{Icon && <Icon size={13} />} {label}</div>
+    <FitNumber exact={fmtINR(amount)} style={{ fontSize: '1.6rem', fontWeight: 800, color: color || 'var(--text-primary)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>{fmtCompactINR(amount)}</FitNumber>
+  </div>
+);
 
 function toCSV(rows) {
   if (!rows || !rows.length) return '';
@@ -47,12 +56,6 @@ export default function Reports() {
   };
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 18 };
-  const Tile = ({ icon: Icon, label, value, color }) => (
-    <div style={card}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>{Icon && <Icon size={13} />} {label}</div>
-      <div style={{ fontSize: '1.6rem', fontWeight: 800, color: color || 'var(--text-primary)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>{value}</div>
-    </div>
-  );
 
   const registers = [
     { name: 'sales-invoices', label: 'Sales Invoices', path: '/sales-invoices', count: d.sales.length },
@@ -74,15 +77,15 @@ export default function Reports() {
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>A live snapshot of the business, and one-click CSV/Excel export of every register.</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 14 }}>
-        <Tile icon={TrendingUp} label="Total Sales Invoiced" value={rup(totalSales)} />
-        <Tile icon={Receipt} label="Receivables Outstanding" value={rup(receivable)} color={receivable > 0 ? '#ef4444' : '#10b981'} />
-        <Tile icon={TrendingDown} label="Purchase Bills" value={rup(totalPurch)} />
-        <Tile icon={Wallet} label="Expenses" value={rup(totalExp)} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 14 }}>
+        <Tile icon={TrendingUp} label="Total Sales Invoiced" amount={totalSales} />
+        <Tile icon={Receipt} label="Receivables Outstanding" amount={receivable} color={receivable > 0 ? '#ef4444' : '#10b981'} />
+        <Tile icon={TrendingDown} label="Purchase Bills" amount={totalPurch} />
+        <Tile icon={Wallet} label="Expenses" amount={totalExp} />
       </div>
-      <div style={{ ...card, marginBottom: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ ...card, marginBottom: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-muted)' }}>Operational Margin <span style={{ fontWeight: 500, textTransform: 'none' }}>(sales − purchases − expenses)</span></span>
-        <span style={{ fontSize: '1.5rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: opMargin >= 0 ? '#10b981' : '#ef4444' }}>{rup(opMargin)}</span>
+        <span title={fmtINR(opMargin)} style={{ fontSize: '1.5rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: opMargin >= 0 ? '#10b981' : '#ef4444', whiteSpace: 'nowrap' }}>{fmtCompactINR(opMargin)}</span>
       </div>
 
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>

@@ -13,7 +13,7 @@
    Both tiers are filtered by permission from the same map the route guard
    uses, so the nav can never advertise a page the server will refuse.
    ══════════════════════════════════════════════════════════ */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useSyncExternalStore } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import ScopeBar from './ScopeBar';
 import {
@@ -24,7 +24,7 @@ import { usePermissions } from '../context/PermissionContext';
 import { useTheme } from '../context/ThemeContext';
 import { getToken } from '../lib/apiAuth';
 import {
-  MODULES, moduleForPath, visibleItems, visibleLinks, visibleModules, badgeEndpoints,
+  MODULES, moduleForPath, visibleItems, visibleLinks, visibleModules,
 } from '../lib/navigation';
 
 /* Module icons live in lib/navIcons, shared with the product film. */
@@ -46,11 +46,13 @@ const PANEL_KEY = 'maks_nav_panel_open';
    requests to tell someone something they may not be looking at.
    ══════════════════════════════════════════════════════════ */
 function useBadges(moduleKey, items) {
-  const [counts, setCounts] = useState({});
+  /* Counts are kept with the module they were fetched for, so moving to a
+     module with no badges shows none without clearing state in the effect. */
+  const [fetched, setFetched] = useState({ module: null, counts: {} });
 
   useEffect(() => {
     const wanted = items.filter(i => i.badge);
-    if (!wanted.length) { setCounts({}); return; }
+    if (!wanted.length) return undefined;
 
     let cancelled = false;
     const byEndpoint = new Map();
@@ -78,14 +80,27 @@ function useBadges(moduleKey, items) {
           }
         } catch { /* a badge is a nicety; never break the nav for one */ }
       }));
-      if (!cancelled) setCounts(next);
+      if (!cancelled) setFetched({ module: moduleKey, counts: next });
     })();
 
     return () => { cancelled = true; };
+    /* Once per module: `items` is rebuilt on every render, and following it
+       would refetch the counts each time the page re-renders. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moduleKey]);
 
-  return counts;
+  return fetched.module === moduleKey ? fetched.counts : {};
 }
+
+/* Phones and small tablets, where the menu floats over the page (index.css,
+   max-width 900px) rather than sitting beside it. */
+const NARROW = '(max-width: 900px)';
+const onNarrowChange = (cb) => {
+  const m = window.matchMedia(NARROW);
+  m.addEventListener('change', cb);
+  return () => m.removeEventListener('change', cb);
+};
+const useNarrow = () => useSyncExternalStore(onNarrowChange, () => window.matchMedia(NARROW).matches, () => false);
 
 export default function AppNav() {
   const location = useLocation();
@@ -106,6 +121,23 @@ export default function AppNav() {
     try { localStorage.setItem(PANEL_KEY, panelOpen ? 'open' : 'closed'); } catch { /* private mode */ }
   }, [panelOpen]);
 
+  /* On a phone the menu floats OVER the page, and it opened on every screen
+     and stayed open after a choice — so every page arrived hidden behind it.
+     There it is a menu you open: it is open only on the page it was opened
+     on, so choosing a screen closes it by itself, and a tap outside or
+     Escape closes it too. The desktop keeps the remembered choice. */
+  const narrow = useNarrow();
+  const [openOn, setOpenOn] = useState(null);
+  const shown = narrow ? openOn === location.pathname : panelOpen;
+  const openPanel = () => (narrow ? setOpenOn(location.pathname) : setPanelOpen(true));
+  const closePanel = () => (narrow ? setOpenOn(null) : setPanelOpen(false));
+  useEffect(() => {
+    if (!narrow) return undefined;
+    const esc = (e) => { if (e.key === 'Escape') setOpenOn(null); };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [narrow]);
+
   /* Every hook runs BEFORE the loading early-return. useBadges was below it
      for a few minutes, which is a conditional hook call — React throws
      "rendered more hooks than during the previous render" the moment
@@ -121,7 +153,10 @@ export default function AppNav() {
      open — not a hardcoded landing page they may not have access to. */
   const goToModule = (m) => {
     const allowed = visibleLinks(m.key, can, role, orgModules);
-    if (allowed.length) navigate(allowed[0].path);
+    if (!allowed.length) return;
+    navigate(allowed[0].path);
+    /* On a phone, tapping a module also shows its screens to choose from. */
+    if (narrow) setOpenOn(allowed[0].path);
   };
 
   return (
@@ -156,7 +191,8 @@ export default function AppNav() {
         </button>
       </nav>
 
-      {panelOpen && items.some(i => i.path) && (
+      {narrow && shown && <div className="nav-panel-backdrop" onClick={closePanel} aria-hidden="true" />}
+      {shown && items.some(i => i.path) && (
         <aside className="nav-panel" aria-label={`${current?.label} screens`}>
           {/* The organisation and the scope being viewed. Moved out of the
               top bar: they answer "where am I", which is what the navigation
@@ -164,7 +200,7 @@ export default function AppNav() {
           <ScopeBar />
           <div className="nav-panel-head">
             <span>{current?.label}</span>
-            <button onClick={() => setPanelOpen(false)} title="Collapse menu" aria-label="Collapse menu">
+            <button onClick={closePanel} title="Collapse menu" aria-label="Collapse menu">
               <ChevronLeft size={15} />
             </button>
           </div>
@@ -206,8 +242,8 @@ export default function AppNav() {
         </aside>
       )}
 
-      {!panelOpen && (
-        <button className="nav-panel-reopen" onClick={() => setPanelOpen(true)}
+      {!shown && (
+        <button className="nav-panel-reopen" onClick={openPanel}
           title="Show menu" aria-label="Show menu">
           <ChevronRight size={15} />
         </button>

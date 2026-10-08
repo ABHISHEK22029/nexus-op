@@ -947,7 +947,11 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 }
 
 @media (max-width: 900px) {
-  .nav-panel { position: fixed; left: 76px; top: 0; bottom: 0; z-index: 55; box-shadow: 8px 0 28px rgba(0,0,0,.28); }
+  /* Against the 58px rail: at 76px a strip of the page showed between them. */
+  .nav-panel { position: fixed; left: 58px; top: 0; bottom: 0; z-index: 55; box-shadow: 8px 0 28px rgba(0,0,0,.28); }
+  .nav-panel-reopen { left: 58px; }
+  /* Tap outside the floating menu to close it. */
+  .nav-panel-backdrop { position: fixed; inset: 0 0 0 58px; z-index: 54; background: rgba(0,0,0,.22); }
   .nav-rail-item span { display: none; }
   .nav-rail { width: 58px; }
   .nav-rail-item { width: 46px; }
@@ -1035,6 +1039,17 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
    not to sit under it. */
 .app-page { padding-top: 22px; }
 .app-page > *:first-child { padding-right: 56px; }
+/* On a phone that 56px is a sixth of the screen, and the first child is
+   usually the whole page — so every form was squeezed to ~240px and its
+   fields spilled past their cards. There the page starts below the avatar
+   instead of beside it. */
+@media (max-width: 640px) {
+  .app-page { padding-top: 64px; }
+  .app-page > *:first-child { padding-right: 0; }
+  /* The menu tab moves up into the avatar's row, clear of the heading it
+     sat over at 74px. */
+  .nav-panel-reopen { top: 14px; }
+}
 
 /* ═══════════════════════════════════════════════════════════
    Status pills — readable in BOTH themes.

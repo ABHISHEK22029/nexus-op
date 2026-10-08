@@ -78,7 +78,7 @@ const stranger = (path, opts = {}) => call(path, opts);
     body: JSON.stringify({
       slug: slugA, headline: 'Fabricated galvanized materials',
       subhead: '11kV line hardware, made to JBVNL spec',
-      is_published: true, show_prices: false, whatsapp_number: '9866644456',
+      is_published: true, show_prices: false, whatsapp_number: '9000000002',
     }),
   }, A.token);
   ok(setup.ok, `the catalogue is created and published (${setup.status})`);
@@ -162,7 +162,7 @@ const stranger = (path, opts = {}) => call(path, opts);
   const enq = await stranger(`/public/catalogue/${slugA}/enquiry`, {
     method: 'POST',
     body: JSON.stringify({
-      name: 'Ramesh Kumar', company: 'Sahasra Infra', phone: '9866644456',
+      name: 'Ramesh Kumar', company: 'Sahasra Infra', phone: '9000000002',
       email: 'taxation.sahasra@example.test',
       message: 'Need these for the MUJY package.',
       items: [

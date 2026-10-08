@@ -13,6 +13,7 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState } from 'react';
 import { X, Save } from 'lucide-react';
+import { formProblems } from '../lib/validators';
 
 export default function PersonEditor({ person, people, onCancel, onSave }) {
   const [f, setF] = useState({
@@ -26,6 +27,11 @@ export default function PersonEditor({ person, people, onCancel, onSave }) {
     notes: person.notes || '',
   });
   const set = (k, v) => setF(s => ({ ...s, [k]: v }));
+  /* A phone that is not a phone is said under the field, once you leave it
+     or press Save; the number they already had is not re-checked. */
+  const [touched, setTouched] = useState(false);
+  const problems = formProblems(f, { phone: 'phone' }, { original: { phone: person.phone || '' } });
+  const phoneError = touched ? problems.phone : null;
 
   const input = {
     width: '100%', boxSizing: 'border-box', padding: '9px 11px',
@@ -72,7 +78,9 @@ export default function PersonEditor({ person, people, onCancel, onSave }) {
             <input style={input} value={f.department} onChange={e => set('department', e.target.value)} placeholder="Fabrication" />
           </label>
           <label style={lbl}>Phone
-            <input style={input} value={f.phone} onChange={e => set('phone', e.target.value)} placeholder="98850 00000" />
+            <input style={{ ...input, borderColor: phoneError ? '#dc2626' : undefined, boxShadow: phoneError ? 'inset 0 0 0 1px #dc2626' : undefined }} value={f.phone} onChange={e => set('phone', e.target.value)}
+              onBlur={() => setTouched(true)} placeholder="98850 00000" type="tel" inputMode="tel" autoComplete="off" aria-invalid={!!phoneError} />
+            {phoneError && <span role="alert" style={{ fontSize: '0.72rem', fontWeight: 500, color: '#dc2626' }}>{phoneError}</span>}
           </label>
           <label style={lbl}>Reports to
             <select style={input} value={f.reports_to || ''} onChange={e => set('reports_to', e.target.value)}>
@@ -88,10 +96,11 @@ export default function PersonEditor({ person, people, onCancel, onSave }) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-          <button onClick={() => onSave(f)} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={() => { setTouched(true); if (!problems.phone) onSave(f); }} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Save size={14} /> Save
           </button>
           <button onClick={onCancel} className="btn-secondary">Cancel</button>
+          {phoneError && <span role="alert" style={{ alignSelf: 'center', fontSize: '0.8rem', fontWeight: 600, color: '#dc2626' }}>Fix the phone number before saving</span>}
         </div>
       </div>
     </div>

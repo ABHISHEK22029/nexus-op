@@ -18,10 +18,10 @@ import Attachments from '../components/Attachments';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, ComplianceWarning, fmtDate,
 } from '../components/DocumentKit';
+import { docFileName, printAs } from '../lib/documentPdf';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmt = (d) => (d ? String(d).slice(0, 10) : '—');
 
 export default function CreditDebitNoteDoc() {
   const { id } = useParams();
@@ -50,7 +50,7 @@ export default function CreditDebitNoteDoc() {
   const td = { padding: '9px 10px', fontSize: '0.85rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)' };
   const totRow = (l, v, bold) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: bold ? '1rem' : '0.85rem', fontWeight: bold ? 800 : 500, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-      <span>{l}</span><span style={{ fontFamily: 'var(--font-mono)' }}>{v}</span>
+      <span>{l}</span><span style={{ fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', marginLeft: 16 }}>{v}</span>
     </div>
   );
 
@@ -58,11 +58,12 @@ export default function CreditDebitNoteDoc() {
     <div style={{ maxWidth: 820, margin: '0 auto' }}>
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <button onClick={() => navigate('/credit-debit-notes')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All Notes</button>
-        <button onClick={() => window.print()} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
+        <button onClick={() => printAs(docFileName(n.note_type === 'credit' ? 'Credit Note' : 'Debit Note', n.note_number, (n.party || {}).name))} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
       </div>
 
       <div className="no-print"><ComplianceWarning gaps={gaps} /></div>
 
+      <div className="doc-scroll">
       <div className="doc-sheet" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 32 }}>
         <CompanyHeader
           company={co}
@@ -109,35 +110,38 @@ export default function CreditDebitNoteDoc() {
           </div>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div>
+          <table className="doc-items" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
               <th style={{ ...th, textAlign: 'left' }}>#</th>
               <th style={{ ...th, textAlign: 'left' }}>Description</th>
               <th style={{ ...th, textAlign: 'left' }}>HSN</th>
               <th style={{ ...th, textAlign: 'center' }}>UOM</th>
-              <th style={{ ...th, textAlign: 'right' }}>Qty</th>
-              <th style={{ ...th, textAlign: 'right' }}>Rate</th>
-              <th style={{ ...th, textAlign: 'right' }}>Amount</th>
+              <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Qty</th>
+              <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Rate</th>
+              <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Amount</th>
             </tr></thead>
             <tbody>
               {(n.items || []).map((it, i) => (
                 <tr key={it.id}>
                   <td style={td}>{i + 1}</td>
-                  <td style={{ ...td, fontWeight: 600 }}>{it.description}</td>
+                  <td className="doc-wrap" style={{ ...td, fontWeight: 600 }}>{it.description}</td>
                   <td style={{ ...td, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{it.hsn || '—'}</td>
                   <td style={{ ...td, textAlign: 'center', color: 'var(--text-muted)' }}>{it.uom || '—'}</td>
-                  <td style={{ ...td, textAlign: 'right' }}>{it.quantity}</td>
-                  <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{rupee(it.rate)}</td>
-                  <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{rupee(it.amount)}</td>
+                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{it.quantity}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{rupee(it.rate)}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{rupee(it.amount)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
+        {/* Totals to footer: kept whole, and never on a sheet by itself
+            (print.css, .doc-closing). */}
+        <div className="doc-closing">
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-          <div style={{ width: 300 }}>
+          <div style={{ minWidth: 300 }}>
             {totRow('Sub-total', rupee(n.sub_total))}
             {n.interstate ? totRow(`IGST (${n.gst_rate}%)`, rupee(n.igst)) : (<>{totRow(`CGST (${n.gst_rate / 2}%)`, rupee(n.cgst))}{totRow(`SGST (${n.gst_rate / 2}%)`, rupee(n.sgst))}</>)}
             <div style={{ borderTop: '1px solid var(--border-default)', marginTop: 6, paddingTop: 6 }}>{totRow('Total', rupee(n.total), true)}</div>
@@ -153,6 +157,8 @@ export default function CreditDebitNoteDoc() {
 
         <SignatureBlock company={co} />
         <DocFooter company={co} right={n.note_number} />
+        </div>
+      </div>
       </div>
 
       {/* Files that belong with this note — the debit note or letter from

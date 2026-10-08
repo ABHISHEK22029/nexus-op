@@ -8,9 +8,11 @@ import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import { numberToWords } from '../utils/numberToWords';
+import UnitSelect from '../components/UnitSelect';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rup = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 const PurchaseOrders = () => {
   const navigate = useNavigate();
@@ -52,7 +54,7 @@ const PurchaseOrders = () => {
   };
   const [formData, setFormData] = useState(initialForm);
   
-  const [items, setItems] = useState([{ sno: 1, description: '', uom: "No's", hsn: '', quantity: 1, unitPrice: 0 }]);
+  const [items, setItems] = useState([{ sno: 1, description: '', uom: 'nos', hsn: '', quantity: 1, unitPrice: 0 }]);
   const [gstType, setGstType] = useState(null);
 
   /* Vendors and the company profile stay whole loads — they are form
@@ -96,7 +98,7 @@ const PurchaseOrders = () => {
   }, [formData.vendorId, company, vendors]);
 
   const handleAddItem = () => {
-    setItems([...items, { sno: items.length + 1, description: '', uom: "No's", hsn: '', quantity: 1, unitPrice: 0 }]);
+    setItems([...items, { sno: items.length + 1, description: '', uom: 'nos', hsn: '', quantity: 1, unitPrice: 0 }]);
   };
 
   const handleRemoveItem = (index) => {
@@ -147,7 +149,7 @@ const PurchaseOrders = () => {
       if (!poRes.data.linesSaved) await axios.post(`${API}/po/${poRes.data.id}/items`, items);
 
       setFormData(initialForm);
-      setItems([{ sno: 1, description: '', uom: "No's", hsn: '', quantity: 1, unitPrice: 0 }]);
+      setItems([{ sno: 1, description: '', uom: 'nos', hsn: '', quantity: 1, unitPrice: 0 }]);
       setShowForm(false);
       fetchData();
       toast.success('Purchase Order created');
@@ -210,7 +212,7 @@ const PurchaseOrders = () => {
           page, and "Order Value" would quietly mean "value on page 1". */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <Kpi label={q.isFiltered ? 'Orders (filtered)' : 'Purchase Orders'} value={s.count ?? q.total} />
-        <Kpi label="Order Value" value={rup(s.value)} />
+        <Kpi label="Order Value" value={fmtCompactINR(s.value)} exact={fmtINR(s.value)} />
         <Kpi label="Awaiting sign-off" value={s.awaiting_approval ?? 0}
              tone={Number(s.awaiting_approval) > 0 ? 'text-amber-400' : 'text-white'} />
         <Kpi label="Delivered" value={s.delivered ?? 0} tone="text-emerald-400" />
@@ -296,9 +298,12 @@ const PurchaseOrders = () => {
                       <input type="text" required value={item.description} onChange={e => handleItemChange(idx, 'description', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="Item description" />
                     </td>
                     <td className="p-2">
-                      <select value={item.uom} onChange={e => handleItemChange(idx, 'uom', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-1 py-1 text-white outline-none appearance-none">
-                        <option>No's</option><option>Kgs</option><option>EA</option><option>SET</option><option>AU</option><option>Mtr</option>
-                      </select>
+                      {/* The standard unit list (lib/units) every other document
+                          uses. This one had its own six — No's, Kgs, EA, SET, AU,
+                          Mtr — none of which the unit table or the shortfall
+                          engine recognises. */}
+                      <UnitSelect value={item.uom} onChange={v => handleItemChange(idx, 'uom', v)} ariaLabel={`Line ${idx + 1} unit`}
+                        className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-1 py-1 text-white outline-none appearance-none" />
                     </td>
                     <td className="p-2">
                       <input type="text" value={item.hsn} onChange={e => handleItemChange(idx, 'hsn', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="HSN" />
@@ -500,10 +505,11 @@ const PurchaseOrders = () => {
   );
 };
 
-const Kpi = ({ label, value, tone }) => (
-  <div className="bg-[#111113] border border-white/5 rounded-xl p-4">
+/* Compact in the tile, exact in the tooltip, never wider than the tile. */
+const Kpi = ({ label, value, tone, exact }) => (
+  <div className="bg-[#111113] border border-white/5 rounded-xl p-4" style={{ minWidth: 0 }}>
     <div className="text-[0.68rem] font-bold uppercase tracking-wider text-gray-500">{label}</div>
-    <div className={`text-2xl font-bold mt-1 tabular-nums ${tone || 'text-white'}`}>{value}</div>
+    <div className={`text-2xl font-bold mt-1 tabular-nums ${tone || 'text-white'}`}><FitNumber exact={exact}>{value}</FitNumber></div>
   </div>
 );
 

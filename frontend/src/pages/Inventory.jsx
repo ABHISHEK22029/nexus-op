@@ -25,11 +25,15 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Database, Package, Search, X, AlertTriangle, CheckCircle2, Plus, Scale, FileSpreadsheet, Pencil, Trash2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Database, Package, Search, X, AlertTriangle, CheckCircle2, Plus, Scale, FileSpreadsheet, Pencil, Trash2, Link2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { AddStockModal, ItemStockPanel } from '../components/StockActions';
 import StockUpload from '../components/StockUpload';
+import StockLinkDialog from '../components/StockLinkDialog';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtCompactQty, fmtINR, fmtQty } from '../lib/format';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -59,6 +63,13 @@ export default function Inventory() {
   const [lists, setLists] = useState([]);
   const [listFilter, setListFilter] = useState('all');
   const [uploading, setUploading] = useState(false);
+  /* Stock with no raw material or product behind it, which shortfalls
+     cannot count. ?unlinked=1 — where the setup banner's "Fix this" lands —
+     shows only those. */
+  const [params, setParams] = useSearchParams();
+  const onlyUnlinked = params.get('unlinked') === '1';
+  const setOnlyUnlinked = (on) => setParams(p => { const n = new URLSearchParams(p); if (on) n.set('unlinked', '1'); else n.delete('unlinked'); return n; }, { replace: true });
+  const [linking, setLinking] = useState(null);
   const { can } = usePermissions();
   const canWrite = can('inventory', 'write');
 
@@ -108,9 +119,12 @@ export default function Inventory() {
     }
     return m;
   }, [inventory]);
-  const inFilter = (i) => (listFilter === 'all' ? true
-    : listFilter === 'main' ? i.stock_list_id == null
-      : String(i.stock_list_id) === String(listFilter));
+  const isLinked = (i) => i.raw_material_id != null || i.sku_id != null;
+  const unlinkedCount = useMemo(() => inventory.filter(i => !isLinked(i)).length, [inventory]);
+  const inFilter = (i) => (onlyUnlinked && isLinked(i) ? false
+    : listFilter === 'all' ? true
+      : listFilter === 'main' ? i.stock_list_id == null
+        : String(i.stock_list_id) === String(listFilter));
   const mainCount = useMemo(() => inventory.filter(i => i.stock_list_id == null).length, [inventory]);
   const activeList = lists.find(l => String(l.id) === String(listFilter)) || null;
 
@@ -125,7 +139,7 @@ export default function Inventory() {
       String(i.location || '').toLowerCase().includes(q) ||
       String(i.stock_list_name || '').toLowerCase().includes(q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inventory, search, listFilter]);
+  }, [inventory, search, listFilter, onlyUnlinked]);
 
   /* Worth knowing before you read the cards: how much is short. */
   const summary = useMemo(() => {
@@ -134,7 +148,7 @@ export default function Inventory() {
     const value = scoped.reduce((s, i) => s + (Number(i.stock_value) || 0), 0);
     return { short, value, count: scoped.length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inventory, listFilter]);
+  }, [inventory, listFilter, onlyUnlinked]);
 
   const saveReorder = async (item) => {
     const value = draft === '' ? 0 : Number(draft);
@@ -242,20 +256,39 @@ export default function Inventory() {
       )}
 
       {/* Two numbers worth having above the grid. */}
+      {/* Shortfalls cannot count stock that is not linked to an item. Said
+          here, with the way to see just those rows, rather than only in the
+          setup banner on another screen. */}
+      {!loading && (unlinkedCount > 0 || onlyUnlinked) && (
+        <div data-unlinked-note style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14, padding: '10px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
+          <AlertTriangle size={15} style={{ color: '#b45309', flexShrink: 0 }} />
+          <span style={{ flex: '1 1 220px' }}>
+            {unlinkedCount === 0
+              ? 'Every stock row is linked to an item.'
+              : <><b style={{ color: 'var(--text-primary)' }}>{unlinkedCount} of {inventory.length}</b> stock row{inventory.length === 1 ? '' : 's'} {unlinkedCount === 1 ? 'is' : 'are'} not linked to a raw material or product, so shortfalls cannot count {unlinkedCount === 1 ? 'it' : 'them'}.</>}
+          </span>
+          <button type="button" className="btn-secondary" style={{ fontSize: '0.78rem', padding: '5px 11px' }} onClick={() => setOnlyUnlinked(!onlyUnlinked)}>
+            {onlyUnlinked ? 'Show all stock' : 'Show only these'}
+          </button>
+        </div>
+      )}
+
+      {/* Compact figures (₹16.03 L) with the exact value on hover; a stock
+          value in the crores ran out of its tile. */}
       {!loading && inventory.length > 0 && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-          <div style={{ ...card, padding: '12px 16px', flex: '1 1 180px' }}>
+          <div style={{ ...card, padding: '12px 16px', flex: '1 1 180px', minWidth: 0 }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Items held</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{summary.count}</div>
+            <FitNumber style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{summary.count}</FitNumber>
           </div>
-          <div style={{ ...card, padding: '12px 16px', flex: '1 1 180px' }}>
+          <div style={{ ...card, padding: '12px 16px', flex: '1 1 180px', minWidth: 0 }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Needs ordering</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: summary.short ? '#dc2626' : 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{summary.short}</div>
+            <FitNumber style={{ fontSize: '1.5rem', fontWeight: 800, color: summary.short ? '#dc2626' : 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{summary.short}</FitNumber>
           </div>
           {summary.value > 0 && (
-            <div style={{ ...card, padding: '12px 16px', flex: '1 1 180px' }}>
+            <div style={{ ...card, padding: '12px 16px', flex: '1 1 180px', minWidth: 0 }} data-tile="stock-value">
               <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Stock value</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>₹{summary.value.toLocaleString('en-IN')}</div>
+              <FitNumber exact={fmtINR(summary.value)} style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{fmtCompactINR(summary.value)}</FitNumber>
             </div>
           )}
         </div>
@@ -279,8 +312,8 @@ export default function Inventory() {
             const qty = item.totalQuantity ?? item.quantity ?? 0;
             const isEditing = editingId === item.id;
             return (
-              <div key={item.id || item.itemName}
-                style={{ ...card, padding: 16, border: `1px solid ${alert ? tone.ring : 'var(--border-subtle)'}` }}>
+              <div key={item.id || item.itemName} data-stock-card
+                style={{ ...card, padding: 16, minWidth: 0, border: `1px solid ${alert ? tone.ring : 'var(--border-subtle)'}` }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
                   <div style={{
                     width: 34, height: 34, borderRadius: 9, flexShrink: 0,
@@ -290,7 +323,7 @@ export default function Inventory() {
                     <Package size={17} style={{ color: alert ? tone.fg : 'var(--brand-amber)' }} />
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.3 }}>{item.itemName}</div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.3, overflowWrap: 'anywhere' }}>{item.itemName}</div>
                     {(item.category || item.item_code) && (
                       <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>{[item.item_code, item.category].filter(Boolean).join(' · ')}</div>
                     )}
@@ -302,14 +335,30 @@ export default function Inventory() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                    <span style={{ fontSize: '1.8rem', fontWeight: 800, color: alert ? tone.fg : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-                      {Number(qty).toLocaleString('en-IN')}
-                    </span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{item.uom || item.base_uom || 'units'}</span>
+                {!isLinked(item) && (
+                  <div data-unlinked style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', margin: '-2px 0 10px', padding: '6px 9px', borderRadius: 8, background: 'rgba(245,158,11,0.10)', fontSize: '0.74rem', fontWeight: 600, color: '#b45309' }}>
+                    Not linked to an item
+                    {canWrite && (
+                      <button type="button" onClick={() => setLinking(item)} aria-label={`Link ${item.itemName} to an item`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-surface)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 7, padding: '3px 9px', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 700, color: '#b45309' }}>
+                        <Link2 size={12} /> Link
+                      </button>
+                    )}
                   </div>
-                  <span style={pill(tone)}>
+                )}
+
+                {/* The quantity, then the status. They wrap onto two lines
+                    when a big quantity needs the width — the pill used to be
+                    pushed out past the card's edge. */}
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, minWidth: 0, maxWidth: '100%' }}
+                    title={`${fmtQty(qty)} ${item.uom || item.base_uom || 'units'}`}>
+                    <span data-qty style={{ fontSize: '1.8rem', fontWeight: 800, color: alert ? tone.fg : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                      {fmtCompactQty(qty)}
+                    </span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', overflowWrap: 'anywhere' }}>{item.uom || item.base_uom || 'units'}</span>
+                  </div>
+                  <span style={{ ...pill(tone), flexShrink: 0, whiteSpace: 'nowrap' }} data-pill>
                     {alert ? <AlertTriangle size={11} /> : <CheckCircle2 size={11} />}{status}
                   </span>
                 </div>
@@ -345,7 +394,7 @@ export default function Inventory() {
                         textDecoration: 'underline dotted', textUnderlineOffset: 3,
                       }}
                     >
-                      Reorder at {Number(item.reorderLevel) > 0 ? Number(item.reorderLevel).toLocaleString('en-IN') : 'not set'}
+                      Reorder at {Number(item.reorderLevel) > 0 ? fmtCompactQty(item.reorderLevel) : 'not set'}
                     </button>
                   )}
 
@@ -372,7 +421,9 @@ export default function Inventory() {
             );
           }) : (
             <div style={{ ...card, gridColumn: '1 / -1', padding: 36, textAlign: 'center', color: 'var(--text-muted)' }}>
-              {inventory.length === 0
+              {onlyUnlinked && !search
+                ? <>Every stock row here is linked to an item. <button type="button" className="btn-secondary" style={{ marginLeft: 6 }} onClick={() => setOnlyUnlinked(false)}>Show all stock</button></>
+                : inventory.length === 0
                 ? <>Nothing in stock yet. Upload your stock sheet (Excel or CSV) to bring it all in at once — or it appears as goods receipts and production are recorded.
                   {canWrite && <div><button onClick={() => setUploading(true)} className="btn-primary btn-sm" style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileSpreadsheet size={14} /> Upload stock sheet</button></div>}</>
                 : search ? `Nothing matches “${search}”.` : 'Nothing in this list yet.'}
@@ -386,6 +437,7 @@ export default function Inventory() {
       {uploading && <StockUpload lists={lists} defaultTarget={listFilter === 'all' ? 'main' : listFilter} onClose={() => setUploading(false)}
         onDone={(r) => { reloadAll(); if (r?.list?.id) setListFilter(String(r.list.id)); }} />}
       {counting && <ItemStockPanel item={counting} onClose={() => setCounting(null)} onSaved={reloadAll} />}
+      {linking && <StockLinkDialog item={linking} onClose={() => setLinking(null)} onLinked={reloadAll} />}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { useNavigate, Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Eye, EyeOff, Loader2, AlertCircle, Building2, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertCircle, Building2, Sparkles, CheckCircle2 } from 'lucide-react';
+import { SIGNED_OUT_KEY } from '../lib/apiAuth';
 
 /* The demo login used to be two string literals here, which meant a working
    administrator password was compiled into the JavaScript bundle and served
@@ -21,9 +22,23 @@ const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || '';
 const DEMO_AVAILABLE = Boolean(DEMO_EMAIL && DEMO_PASSWORD);
 
 export default function Login() {
-  const navigate = useNavigate();
   const { login, loading, error, token } = useAuth();
-  const [email, setEmail]       = useState('');
+  const [params] = useSearchParams();
+  /* Arriving from a reset: say it worked, and keep the address. */
+  const justReset = params.get('reset') === '1';
+  const [email, setEmail]       = useState(() => params.get('email') || '');
+  /* Signed out by the server — a password change, or the account switched
+     off. Read once, then forgotten. */
+  /* Kept until the next sign-in (or ten minutes): the sign-in screen can
+     render twice on the way here — once as the session is dropped, again
+     when the page reloads — and clearing it on the first left the second
+     with nothing to say. */
+  const [signedOut] = useState(() => {
+    try {
+      const v = JSON.parse(sessionStorage.getItem(SIGNED_OUT_KEY) || 'null');
+      return v && Date.now() - v.at < 10 * 60 * 1000 ? v.reason : '';
+    } catch { return ''; }
+  });
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [localErr, setLocalErr] = useState('');
@@ -45,6 +60,7 @@ export default function Login() {
     if (!email || !password) { setLocalErr('Enter email and password'); return; }
     try {
       await login(email, password);
+      try { sessionStorage.removeItem(SIGNED_OUT_KEY); } catch { /* private mode */ }
       // Hard navigation so all context providers re-init WITH the token
       // present (ProjectProvider fetches /projects once on mount).
       window.location.assign('/dashboard');
@@ -120,6 +136,25 @@ export default function Login() {
             Enter your credentials to continue
           </p>
 
+          {justReset && !localErr && !error && (
+            <div role="status" style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+              background: 'hsl(152,60%,45%,0.10)', border: '1px solid hsl(152,60%,45%,0.35)',
+              borderRadius: 8, marginBottom: 20, fontSize: '0.82rem', color: 'var(--accent-emerald)',
+            }}>
+              <CheckCircle2 size={14}/> Your password has been changed. Sign in with the new one.
+            </div>
+          )}
+          {signedOut && !justReset && !localErr && !error && (
+            <div role="status" style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+              background: 'hsl(38,92%,50%,0.10)', border: '1px solid hsl(38,92%,50%,0.35)',
+              borderRadius: 8, marginBottom: 20, fontSize: '0.82rem', color: 'var(--text-secondary)',
+            }}>
+              <AlertCircle size={14}/> {signedOut}
+            </div>
+          )}
+
           {(localErr || error) && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
@@ -136,7 +171,7 @@ export default function Login() {
                 Email Address
               </label>
               <input
-                type="email" required value={email}
+                type="email" required value={email} autoComplete="username"
                 onChange={e => setEmail(e.target.value)}
                 placeholder="you@company.com"
                 style={inputStyle}
@@ -146,11 +181,18 @@ export default function Login() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Password
-              </label>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                <label htmlFor="login-password" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Password
+                </label>
+                <Link to={`/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}
+                  style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--brand-amber)', textDecoration: 'none' }}>
+                  Forgot password?
+                </Link>
+              </div>
               <div style={{ position: 'relative' }}>
                 <input
+                  id="login-password" autoComplete="current-password"
                   type={showPass ? 'text' : 'password'} required value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
@@ -158,7 +200,7 @@ export default function Login() {
                   onFocus={e => { e.target.style.borderColor = 'var(--brand-amber)'; e.target.style.boxShadow = '0 0 0 3px var(--brand-amber-muted)'; }}
                   onBlur={e => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; }}
                 />
-                <button type="button" onClick={() => setShowPass(!showPass)} style={{
+                <button type="button" onClick={() => setShowPass(!showPass)} aria-label={showPass ? 'Hide password' : 'Show password'} style={{
                   position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
                   background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4,
                 }}>
@@ -230,7 +272,7 @@ export default function Login() {
         </div>
 
         <p style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-disabled)', marginTop: 16 }}>
-          Maks Ops v2.0 · Secured with JWT · Roles: Admin, PM, Finance, Site Engineer
+          Maks Ops
         </p>
       </div>
     </div>

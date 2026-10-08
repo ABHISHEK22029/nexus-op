@@ -38,6 +38,7 @@ import {
 import { useToast } from '../context/ToastContext';
 import CategoryPicker from '../components/CategoryPicker';
 import { getToken } from '../lib/apiAuth';
+import { formProblems, fixMessage } from '../lib/validators';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -55,6 +56,15 @@ const GST_STATES = {
   37: 'Andhra Pradesh', 38: 'Ladakh',
 };
 const stateFromGstin = (g) => GST_STATES[String(g || '').slice(0, 2)] || null;
+
+/* What each checked field must look like (lib/validators), and what to call
+   it when it is wrong. The server checks the same and names the same field. */
+const CHECKS = { phone: 'phone', email: 'email', gstin: 'gstin', pan: 'pan', pincode: 'pincode', accountHolder: 'accountHolder', accountNumber: 'accountNumber', ifsc: 'ifsc' };
+const LABELS = { phone: 'Phone', email: 'Email', gstin: 'GSTIN', pan: 'PAN', pincode: 'Pincode', accountHolder: 'Account holder', accountNumber: 'Account number', ifsc: 'IFSC' };
+/* The server's column for each, so a 400 lands on the right field. */
+const FROM_SERVER = { contactPhone: 'phone', contactEmail: 'email', gstin: 'gstin', pan: 'pan', pincode: 'pincode', account_holder: 'accountHolder', account_number: 'accountNumber', ifsc_code: 'ifsc' };
+const IN_MORE = ['pan', 'email', 'pincode'];
+const IN_BANK = ['accountHolder', 'accountNumber', 'ifsc'];
 
 /* Defined at module scope, NOT inside the component.
  *
@@ -113,6 +123,13 @@ export default function VendorFormMinimal() {
   const [openBank, setOpenBank] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  /* A field says it is wrong once you have left it, or once you have tried
+     to save — not while you are still typing your first character. */
+  const [touched, setTouched] = useState({});
+  const [tried, setTried] = useState(false);
+  const [original, setOriginal] = useState(null);
+  const touch = (k) => setTouched(t => (t[k] ? t : { ...t, [k]: true }));
+  const change = (k, v) => { set(k, v); setErrors(x => (x[k] ? { ...x, [k]: null } : x)); };
 
   const derivedState = stateFromGstin(f.gstin);
 
@@ -133,7 +150,7 @@ export default function VendorFormMinimal() {
       .then(v => {
         if (!v) return;
         const d = v.vendor || v;
-        setF({
+        const loaded = {
           name: d.name || '',
           supplyCategory: d.supply_category || d.type || '',
           supplies: d.supplies || '',
@@ -154,7 +171,11 @@ export default function VendorFormMinimal() {
           accountNumber: d.account_number || '',
           ifsc: d.ifsc_code || '',
           branch: d.branch_name || '',
-        });
+        };
+        setF(loaded);
+        /* An odd value an older record already holds is not re-checked
+           unless it is changed, so its other fields can still be saved. */
+        setOriginal(loaded);
         /* Deliberately NOT auto-expanded. Opening every section that holds
            something put 13 fields back on screen the moment you edited an
            existing vendor, which is the wall this form exists to remove.
@@ -165,15 +186,24 @@ export default function VendorFormMinimal() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  const problems = { ...formProblems(f, CHECKS, { original, pair: ['gstin', 'pan'] }), ...Object.fromEntries(Object.entries(errors).filter(([, v]) => v)) };
+  const shown = (k) => ((touched[k] || tried) ? problems[k] : null);
+  const blocking = { ...problems };
+  if (!f.name.trim()) blocking.name = 'A vendor needs a name';
+
   const save = async (e) => {
     e.preventDefault();
-    const errs = {};
-    if (!f.name.trim()) errs.name = 'A vendor needs a name';
-    if (f.gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]{3}$/.test(f.gstin.toUpperCase())) {
-      errs.gstin = "That doesn't look like a GSTIN — 15 characters, e.g. 33AABCN1234M1Z7";
+    /* Never a button that does nothing: open whichever section holds the
+       problem, mark it, and say so beside the button. */
+    if (Object.keys(blocking).length) {
+      setTried(true);
+      if (blocking.name) setErrors(x => ({ ...x, name: blocking.name }));
+      if (IN_MORE.some(k => blocking[k])) setOpenMore(true);
+      if (IN_BANK.some(k => blocking[k])) setOpenBank(true);
+      const first = Object.keys(blocking)[0];
+      setTimeout(() => document.querySelector(`[data-field="${first}"]`)?.focus(), 0);
+      return;
     }
-    setErrors(errs);
-    if (Object.keys(errs).length) return;
 
     setSaving(true);
     try {
@@ -214,7 +244,18 @@ export default function VendorFormMinimal() {
           branch_name: f.branch || null,
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not save this vendor');
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        /* The server names the field it refused; show it there too. */
+        const k = FROM_SERVER[d.field];
+        if (k) {
+          setErrors(x => ({ ...x, [k]: String(d.error || '').replace(/^[^:]+:s*/, '') }));
+          setTried(true);
+          if (IN_MORE.includes(k)) setOpenMore(true);
+          if (IN_BANK.includes(k)) setOpenBank(true);
+        }
+        throw new Error(d.error || 'Could not save this vendor');
+      }
       toast.success(`${f.name.trim()} ${id ? 'saved' : 'added'}`);
       navigate('/vendors');
     } catch (err) {
@@ -226,6 +267,8 @@ export default function VendorFormMinimal() {
     width: '100%', boxSizing: 'border-box', padding: '10px 12px',
     background: 'var(--bg-elevated)',
     border: `1px solid ${bad ? 'var(--accent-red, #dc2626)' : 'var(--border-default)'}`,
+    /* the light theme forces email/text borders; a ring still shows red */
+    boxShadow: bad ? 'inset 0 0 0 1px #dc2626' : undefined,
     borderRadius: 8, color: 'var(--text-primary)', fontSize: '0.88rem', outline: 'none',
   });
   const lbl = { display: 'block', fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 };
@@ -274,7 +317,7 @@ export default function VendorFormMinimal() {
         <div style={{ gridColumn: '1 / -1' }}>
           <label style={lbl}>Vendor name <span style={{ color: 'var(--accent-red, #dc2626)' }}>*</span></label>
           <input style={input(errors.name)} value={f.name} onChange={e => { set('name', e.target.value); setErrors(x => ({ ...x, name: null })); }}
-            placeholder="Kalinga Particle Board Co" autoFocus />
+            placeholder="Kalinga Particle Board Co" autoFocus data-field="name" />
           {errors.name && <p style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{errors.name}</p>}
         </div>
 
@@ -287,8 +330,11 @@ export default function VendorFormMinimal() {
 
         <div>
           <label style={lbl}>Phone</label>
-          <input style={input()} value={f.phone} onChange={e => set('phone', e.target.value)} placeholder="98850 00000" />
-          <p style={hint}>How you actually reach them.</p>
+          <input style={input(shown('phone'))} value={f.phone} onChange={e => change('phone', e.target.value)} onBlur={() => touch('phone')}
+            placeholder="98850 00000" type="tel" inputMode="tel" autoComplete="off" data-field="phone" aria-invalid={!!shown('phone')} />
+          {shown('phone')
+            ? <p role="alert" style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{shown('phone')}</p>
+            : <p style={hint}>How you actually reach them.</p>}
         </div>
 
         <div style={{ gridColumn: '1 / -1' }}>
@@ -300,11 +346,11 @@ export default function VendorFormMinimal() {
 
         <div>
           <label style={lbl}>GSTIN</label>
-          <input style={input(errors.gstin)} value={f.gstin}
-            onChange={e => { set('gstin', e.target.value.toUpperCase()); setErrors(x => ({ ...x, gstin: null })); }}
-            placeholder="33AABCN1234M1Z7" maxLength={15} />
-          {errors.gstin
-            ? <p style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{errors.gstin}</p>
+          <input style={input(shown('gstin'))} value={f.gstin}
+            onChange={e => change('gstin', e.target.value.toUpperCase())} onBlur={() => touch('gstin')}
+            placeholder="33AABCN1234M1Z7" maxLength={15} autoComplete="off" data-field="gstin" aria-invalid={!!shown('gstin')} />
+          {shown('gstin')
+            ? <p role="alert" style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{shown('gstin')}</p>
             : <p style={hint}>{derivedState ? `State: ${derivedState} — taken from the GSTIN` : 'Needed to claim input tax credit.'}</p>}
         </div>
 
@@ -322,7 +368,9 @@ export default function VendorFormMinimal() {
         filled={countFilled(['pan','contactName','email','city','pincode','paymentTerms','isMsme','msmeNumber','notes'])}>
         <div>
           <label style={lbl}>PAN</label>
-          <input style={input()} value={f.pan} onChange={e => set('pan', e.target.value.toUpperCase())} placeholder="AABCN1234M" maxLength={10} />
+          <input style={input(shown('pan'))} value={f.pan} onChange={e => change('pan', e.target.value.toUpperCase())} onBlur={() => touch('pan')}
+            placeholder="AABCN1234M" maxLength={10} autoComplete="off" data-field="pan" aria-invalid={!!shown('pan')} />
+          {shown('pan') && <p role="alert" style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{shown('pan')}</p>}
         </div>
         <div>
           <label style={lbl}>Contact person</label>
@@ -330,7 +378,9 @@ export default function VendorFormMinimal() {
         </div>
         <div>
           <label style={lbl}>Email</label>
-          <input style={input()} type="email" value={f.email} onChange={e => set('email', e.target.value)} placeholder="sales@vendor.com" />
+          <input style={input(shown('email'))} type="email" value={f.email} onChange={e => change('email', e.target.value)} onBlur={() => touch('email')}
+            placeholder="sales@vendor.com" autoComplete="off" data-field="email" aria-invalid={!!shown('email')} />
+          {shown('email') && <p role="alert" style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{shown('email')}</p>}
         </div>
         <div>
           <label style={lbl}>City</label>
@@ -338,7 +388,9 @@ export default function VendorFormMinimal() {
         </div>
         <div>
           <label style={lbl}>Pincode</label>
-          <input style={input()} value={f.pincode} onChange={e => set('pincode', e.target.value)} placeholder="635109" maxLength={6} />
+          <input style={input(shown('pincode'))} value={f.pincode} onChange={e => change('pincode', e.target.value)} onBlur={() => touch('pincode')}
+            placeholder="635109" maxLength={6} inputMode="numeric" autoComplete="off" data-field="pincode" aria-invalid={!!shown('pincode')} />
+          {shown('pincode') && <p role="alert" style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{shown('pincode')}</p>}
         </div>
         <div>
           <label style={lbl}>Payment terms</label>
@@ -375,15 +427,21 @@ export default function VendorFormMinimal() {
         </div>
         <div>
           <label style={lbl}>Account holder</label>
-          <input style={input()} value={f.accountHolder} onChange={e => set('accountHolder', e.target.value)} placeholder="As printed on the cheque" />
+          <input style={input(shown('accountHolder'))} value={f.accountHolder} onChange={e => change('accountHolder', e.target.value)} onBlur={() => touch('accountHolder')}
+            placeholder="As printed on the cheque" autoComplete="off" data-field="accountHolder" aria-invalid={!!shown('accountHolder')} />
+          {shown('accountHolder') && <p role="alert" style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{shown('accountHolder')}</p>}
         </div>
         <div>
           <label style={lbl}>Account number</label>
-          <input style={input()} value={f.accountNumber} onChange={e => set('accountNumber', e.target.value)} />
+          <input style={input(shown('accountNumber'))} value={f.accountNumber} onChange={e => change('accountNumber', e.target.value)} onBlur={() => touch('accountNumber')}
+            inputMode="numeric" maxLength={18} autoComplete="off" data-field="accountNumber" aria-invalid={!!shown('accountNumber')} />
+          {shown('accountNumber') && <p role="alert" style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{shown('accountNumber')}</p>}
         </div>
         <div>
           <label style={lbl}>IFSC</label>
-          <input style={input()} value={f.ifsc} onChange={e => set('ifsc', e.target.value.toUpperCase())} placeholder="HDFC0001234" maxLength={11} />
+          <input style={input(shown('ifsc'))} value={f.ifsc} onChange={e => change('ifsc', e.target.value.toUpperCase())} onBlur={() => touch('ifsc')}
+            placeholder="HDFC0001234" maxLength={11} autoComplete="off" data-field="ifsc" aria-invalid={!!shown('ifsc')} />
+          {shown('ifsc') && <p role="alert" style={{ ...hint, color: 'var(--accent-red, #dc2626)' }}>{shown('ifsc')}</p>}
         </div>
         <div>
           <label style={lbl}>Branch</label>
@@ -391,15 +449,22 @@ export default function VendorFormMinimal() {
         </div>
       </Section>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
         <button type="submit" disabled={saving} className="btn-primary"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 7, opacity: saving ? 0.6 : 1 }}>
-          <Check size={16} /> {saving ? 'Saving…' : 'Add vendor'}
+          <Check size={16} /> {saving ? 'Saving…' : id ? 'Save vendor' : 'Add vendor'}
         </button>
         <button type="button" onClick={() => navigate('/vendors')} className="btn-secondary">Cancel</button>
-        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-          <Phone size={12} style={{ verticalAlign: -2 }} /> Only the name is required — add the rest whenever you have it.
-        </span>
+        {/* What is stopping the save, said beside the button that was pressed. */}
+        {tried && Object.keys(blocking).length > 0 ? (
+          <span role="alert" style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--accent-red, #dc2626)', marginLeft: 'auto' }}>
+            {fixMessage(blocking, { ...LABELS, name: 'Vendor name' })}
+          </span>
+        ) : (
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+            <Phone size={12} style={{ verticalAlign: -2 }} /> Only the name is required — add the rest whenever you have it.
+          </span>
+        )}
       </div>
     </form>
   );

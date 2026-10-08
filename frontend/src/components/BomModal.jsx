@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Check, Layers } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import UnitSelect from './UnitSelect';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -111,8 +112,10 @@ export default function BomModal({ sku, onClose }) {
                     {materials.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                   <input style={input} placeholder="e.g. MS Angle" value={l.componentName} onChange={e => setLine(i, { componentName: e.target.value })} />
-                  <input style={input} type="number" step="any" placeholder="4" value={l.qtyPerUnit} onChange={e => setLine(i, { qtyPerUnit: e.target.value })} />
-                  <input style={input} placeholder="kg" value={l.uom} onChange={e => setLine(i, { uom: e.target.value })} />
+                  <input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" placeholder="4" value={l.qtyPerUnit} onChange={e => setLine(i, { qtyPerUnit: e.target.value })} />
+                  {/* A unit the shortfall engine can convert: "kgs" typed here
+                      matched nothing in the unit table and the line dropped out. */}
+                  <UnitSelect style={input} value={l.uom} onChange={v => setLine(i, { uom: v })} ariaLabel={`Component ${i + 1} unit`} />
                   <button onClick={() => removeLine(i)} title="Remove" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', justifyContent: 'center' }}><Trash2 size={16} /></button>
                 </div>
               ))}

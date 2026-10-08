@@ -8,12 +8,13 @@ import { UNIT_GROUPS, knownUnit } from '../lib/units';
    text at all. Now it is a choice. A unit stored on an older document that
    is not in the list stays selectable, marked as such, so nothing changes
    until somebody picks a proper one. */
-export default function UnitSelect({ value, onChange, style, ariaLabel = 'Unit', disabled }) {
+export default function UnitSelect({ value, onChange, style, className, ariaLabel = 'Unit', disabled }) {
   const known = knownUnit(value);
   const legacy = value && !known ? String(value) : null;
   return (
     <select
       style={style}
+      className={className}
       value={known || legacy || 'nos'}
       onChange={(e) => onChange(e.target.value)}
       aria-label={ariaLabel}

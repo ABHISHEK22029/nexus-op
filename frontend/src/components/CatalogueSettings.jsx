@@ -13,6 +13,7 @@ import { Store, Check, ExternalLink, Eye, EyeOff, Search, Share2, MessageCircle,
 import CatalogueProductEditor from './CatalogueProductEditor';
 import Thumb from './CatalogueThumb';
 import CatalogueAddProduct from './CatalogueAddProduct';
+import { matchesWords } from '../lib/search';
 
 export default function CatalogueSettings({ api, toast }) {
   const [s, setS] = useState(null);
@@ -73,8 +74,10 @@ export default function CatalogueSettings({ api, toast }) {
       setCopied(true); setTimeout(() => setCopied(false), 1900);
     } catch { toast.error('Could not copy — select the address above instead.'); }
   };
-  const shown = products.filter(p =>
-    !q || `${p.name} ${p.sku_code || ''} ${p.headline || ''}`.toLowerCase().includes(q.toLowerCase()));
+  /* Every word, in any field, in any order — the same rule as the public
+     page and the paged lists, so a product found there is found here. */
+  const shown = products.filter(p => matchesWords(q, p.name, p.sku_code, p.headline,
+    p.catalogue_category, p.hsn, p.use_case, p.description));
   const publishedCount = products.filter(p => p.is_published).length;
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 18 };
@@ -223,6 +226,7 @@ export default function CatalogueSettings({ api, toast }) {
             <div style={{ position: 'relative' }}>
               <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a product"
+                aria-label="Find a product" title="Name, code, HSN, category or description — any words, any order"
                 style={{ ...input, paddingLeft: 28, width: 180 }} />
             </div>
             <button type="button" onClick={() => setAdding(true)} className="btn-primary btn-sm"

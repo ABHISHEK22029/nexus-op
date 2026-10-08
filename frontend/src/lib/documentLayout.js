@@ -81,6 +81,19 @@ export const DOCUMENT_LAYOUTS = {
   },
 };
 
+/* The delivery promise on a quotation: "within 21 days of order", then
+   whatever was added to it. The words come from here for the page, the
+   print and the PDF alike, so a customer reads one promise in all three. */
+export function deliveryPromise({ delivery_days: days, delivery_note: note } = {}) {
+  const d = days === null || days === undefined || days === '' ? null : Number(days);
+  const when = d === null || !Number.isFinite(d) ? ''
+    : d === 0 ? 'on the day of order'
+      : `within ${d} day${d === 1 ? '' : 's'} of order`;
+  const extra = String(note || '').trim();
+  if (!when && !extra) return null;
+  return when && extra ? `${when}. ${extra}` : (when || extra);
+}
+
 /** The label for a totals row, which may depend on the document. */
 export const labelOf = (row, doc) => (typeof row.label === 'function' ? row.label(doc) : row.label);
 

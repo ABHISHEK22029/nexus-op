@@ -17,9 +17,14 @@ const USER_KEY = 'nexus_user';
 
 const getToken = () => localStorage.getItem(TOKEN_KEY);
 
-function forceLogout() {
+/* Why the session ended, for the sign-in screen to say — "Your password
+   was changed", "This account has been switched off". Without it a person
+   was simply back at the sign-in page with no idea why. */
+export const SIGNED_OUT_KEY = 'maks_signed_out_reason';
+function forceLogout(reason) {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  try { if (reason && String(reason).length <= 160) sessionStorage.setItem(SIGNED_OUT_KEY, JSON.stringify({ reason: String(reason), at: Date.now() })); } catch { /* private mode */ }
   // Avoid redirect loops on the auth screens themselves (login / signup).
   if (!/^\/(login|signup)/.test(window.location.pathname)) {
     window.location.assign('/login');
@@ -49,7 +54,11 @@ window.fetch = async (input, init = {}) => {
   // A 401 with no token is just an unauthenticated call (e.g. on /login) and
   // must never trigger a logout/redirect — that caused bounce loops.
   if (res.status === 401 && isApiUrl(url) && !isAuthEndpoint(url) && getToken()) {
-    forceLogout();
+    /* The reason is read before the response is handed back, so nothing
+       else can react to the 401 first and leave the sign-in screen without it. */
+    let reason;
+    try { reason = (await res.clone().json())?.error; } catch { /* not JSON */ }
+    forceLogout(reason);
   }
   return res;
 };
@@ -69,7 +78,7 @@ axios.interceptors.response.use(
   (error) => {
     const url = error?.config?.url;
     if (error?.response?.status === 401 && !isAuthEndpoint(url) && getToken()) {
-      forceLogout();
+      forceLogout(error?.response?.data?.error);
     }
     return Promise.reject(error);
   }

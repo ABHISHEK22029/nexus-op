@@ -13,6 +13,7 @@ const Vendors = lazy(() => import('./pages/Vendors'));
    short form — 22 of 36 columns had never been filled once on real data. */
 const VendorFormMinimal = lazy(() => import('./pages/VendorFormMinimal'));
 const PublicCatalogue = lazy(() => import('./pages/PublicCatalogue'));
+const PublicQuote = lazy(() => import('./pages/PublicQuote'));
 const Enquiries = lazy(() => import('./pages/Enquiries'));
 const CataloguePage = lazy(() => import('./pages/CataloguePage'));
 const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
@@ -65,6 +66,7 @@ const SeeMaksOps = lazy(() => import('./pages/SeeMaksOps'));
 const Login = lazy(() => import('./pages/Login'));
 const Signup = lazy(() => import('./pages/Signup'));
 const AcceptInvite = lazy(() => import('./pages/AcceptInvite'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const Onboarding = lazy(() => import('./pages/Onboarding'));
 const GetStarted = lazy(() => import('./pages/GetStarted'));
 const POInvoice = lazy(() => import('./pages/POInvoice'));
@@ -180,12 +182,18 @@ const AppRoutes = () => {
           or redirect them to a login they have no business seeing. */}
       <Route path="/c/:slug"               element={<PublicCatalogue />} />
       <Route path="/c/:slug/:productSlug"  element={<PublicCatalogue />} />
+      {/* A quotation the customer accepts or declines — outside AppLayout
+          for the same reason: they arrive from a message, with no login. */}
+      <Route path="/q/:token"              element={<PublicQuote />} />
 
       <Route path="/login"       element={<Login />} />
       <Route path="/signup"      element={<Signup />} />
       {/* Unauthenticated: an invited person has no password yet. The link
           in their message is the credential. */}
       <Route path="/accept-invite" element={<AcceptInvite />} />
+      {/* "Forgot password?": the code is asked for, then entered. Signed out by necessity. */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password"  element={<ForgotPassword />} />
       {/* First run: two questions, no sidebar, no wall. The older
           /onboarding and /beta-onboarding flows are still routed for anyone
           who wants the full company-details form, but nothing sends a new

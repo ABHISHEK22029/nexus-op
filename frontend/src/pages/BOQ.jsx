@@ -136,7 +136,7 @@ const BOQ = () => {
       {canWrite && (
         <div className="bg-[#111113] border border-white/5 rounded-xl p-6">
           <h2 className="text-lg font-semibold text-white mb-4">{editingId ? 'Edit BOQ Item' : 'Add BOQ Item'}</h2>
-          <form onSubmit={handleAdd} className="flex gap-4 items-end">
+          <form onSubmit={handleAdd} className="flex gap-4 items-end flex-wrap">
             <div className="flex-1">
               <label className="block text-xs font-medium text-gray-500 mb-1">Item Code</label>
               <input type="text" className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newItem.itemCode} onChange={e => setNewItem({...newItem, itemCode: e.target.value})} placeholder="e.g. EW-01" />

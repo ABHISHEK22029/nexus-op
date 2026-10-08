@@ -113,6 +113,9 @@ export default function PublicCatalogue() {
         skuId: p.id, description: p.headline || p.name,
         quantity: Number(qty) || Number(p.moq) || 1,
         unit: p.unit || 'nos', price: p.price,
+        /* Kept on the line so the basket can say when an edited quantity
+           drops under it — the server refuses the enquiry if it does. */
+        moq: Number(p.moq) > 0 ? Number(p.moq) : null,
       }];
     });
     setShowBasket(true);
@@ -347,7 +350,7 @@ export default function PublicCatalogue() {
           <Wrap style={{ padding: '22px 22px 40px' }}>
             {cat.products.length === 0 ? (
               <Center>
-                {query ? `Nothing matches “${query}”.` : category ? `Nothing in ${category} yet.` : 'Nothing is listed here yet.'}
+                {query ? `Nothing matches “${query}”. Try fewer words, or a product code or HSN.` : category ? `Nothing in ${category} yet.` : 'Nothing is listed here yet.'}
               </Center>
             ) : (
               <div style={{
@@ -506,7 +509,7 @@ function SearchBox({ q, setQ, accent, onSubmit }) {
       <Search size={16} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: focus ? accent : '#8b929a' }} />
       <input value={q} onChange={e => setQ(e.target.value)}
         onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
-        aria-label="Search products" placeholder="Search — size, description, code"
+        aria-label="Search products" placeholder="Search — size, description, code, HSN…"
         style={{
           width: '100%', padding: '12px 13px 12px 38px', borderRadius: 10, fontSize: '0.9rem',
           outline: 'none', background: '#fff', color: '#111827',
@@ -547,9 +550,11 @@ const PageBtn = ({ children, disabled, onClick }) => (
    already deciding to ask, so the control that answers "what does 500
    cost" is the one that adds it to the enquiry. */
 function ProductCard({ p, accent, showPrices, onAdd, onOpen }) {
-  const [qty, setQty] = useState(p.moq || 1);
+  const moq = minOrder(p);
+  const [qty, setQty] = useState(moq || 1);
   const [hover, setHover] = useState(false);
   const line = showPrices && p.price != null ? Number(qty || 0) * Number(p.price) : null;
+  const short = qtyProblem(qty, moq, p.unit);
   return (
     <article
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
@@ -585,8 +590,8 @@ function ProductCard({ p, accent, showPrices, onAdd, onOpen }) {
           <p style={{ fontSize: '0.775rem', color: '#6b7280', lineHeight: 1.45, margin: 0 }}>{p.use_case}</p>
         )}
 
-        <div style={{ display: 'flex', gap: 12, marginTop: 'auto', paddingTop: 10, fontSize: '0.73rem', color: '#8b929a' }}>
-          {p.moq ? <span>MOQ {p.moq} {p.unit}</span> : <span>{p.unit}</span>}
+        <div style={{ display: 'flex', gap: '4px 12px', flexWrap: 'wrap', marginTop: 'auto', paddingTop: 10, fontSize: '0.73rem', color: '#8b929a' }}>
+          {moq ? <span style={{ color: '#4b5563', fontWeight: 600 }}>Minimum order: {moq} {p.unit}</span> : <span>{p.unit}</span>}
           {p.lead_time_note && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <Clock size={11} /> {p.lead_time_note}
@@ -602,17 +607,19 @@ function ProductCard({ p, accent, showPrices, onAdd, onOpen }) {
         )}
 
         <div style={{ display: 'flex', gap: 7, marginTop: 9 }}>
-          <input type="number" value={qty} min={p.moq || 1} onChange={e => setQty(e.target.value)}
-            aria-label={`Quantity of ${p.name}`}
-            style={{ width: 74, padding: '9px 8px', border: '1px solid #d3d8de', borderRadius: 9, fontSize: '0.84rem', textAlign: 'right' }} />
-          <button onClick={() => onAdd(p, qty)} style={{
+          <input type="number" value={qty} min={moq || 1} onChange={e => setQty(e.target.value)}
+            aria-label={`Quantity of ${p.name}`} aria-invalid={!!short}
+            style={{ width: 74, padding: '9px 8px', border: `1px solid ${short ? '#d97706' : '#d3d8de'}`, borderRadius: 9, fontSize: '0.84rem', textAlign: 'right' }} />
+          <button onClick={() => onAdd(p, qty)} disabled={!!short} style={{
             flex: 1, padding: '9px 10px', borderRadius: 9, border: 'none',
-            background: hover ? accent : `${accent}14`, color: hover ? '#fff' : accent,
-            fontWeight: 800, fontSize: '0.8rem', cursor: 'pointer', transition: 'all 160ms',
+            background: hover && !short ? accent : `${accent}14`, color: hover && !short ? '#fff' : accent,
+            fontWeight: 800, fontSize: '0.8rem', cursor: short ? 'not-allowed' : 'pointer',
+            opacity: short ? 0.55 : 1, transition: 'all 160ms',
           }}>Add</button>
         </div>
+        {short && <QtyNote>{short}</QtyNote>}
 
-        {line != null && line > 0 && (
+        {!short && line != null && line > 0 && (
           <div style={{ fontSize: '0.77rem', color: '#4b5563', fontVariantNumeric: 'tabular-nums' }}>
             ≈ <strong style={{ color: '#111827' }}>{rupee(line)}</strong> for {qty} {p.unit}
           </div>
@@ -623,8 +630,10 @@ function ProductCard({ p, accent, showPrices, onAdd, onOpen }) {
 }
 
 function ProductView({ product: p, accent, showPrices, onBack, onAdd }) {
-  const [qty, setQty] = useState(p.moq || 1);
+  const moq = minOrder(p);
+  const [qty, setQty] = useState(moq || 1);
   const line = showPrices && p.price != null ? Number(qty || 0) * Number(p.price) : null;
+  const short = qtyProblem(qty, moq, p.unit);
   return (
     <div style={{ padding: '28px 0 54px' }}>
       <button onClick={onBack} style={{
@@ -666,7 +675,7 @@ function ProductView({ product: p, accent, showPrices, onBack, onAdd }) {
           <dl style={{ marginTop: 24, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '10px 20px', fontSize: '0.87rem' }}>
             {showPrices && p.price != null && (<><dt style={dt}>Rate</dt><dd style={dd}>{rupee(p.price)} / {p.unit}</dd></>)}
             {p.unit && (<><dt style={dt}>Unit</dt><dd style={dd}>{p.unit}</dd></>)}
-            {p.moq != null && (<><dt style={dt}>Minimum order</dt><dd style={dd}>{p.moq} {p.unit}</dd></>)}
+            {moq && (<><dt style={dt}>Minimum order</dt><dd style={dd}>{moq} {p.unit}</dd></>)}
             {p.lead_time_note && (<><dt style={dt}>Lead time</dt><dd style={dd}>{p.lead_time_note}</dd></>)}
             {p.hsn && (<><dt style={dt}>HSN</dt><dd style={dd}>{p.hsn}</dd></>)}
           </dl>
@@ -676,17 +685,21 @@ function ProductView({ product: p, accent, showPrices, onBack, onAdd }) {
               How many do you need?
             </label>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <input type="number" value={qty} min={p.moq || 1} onChange={e => setQty(e.target.value)}
-                aria-label="Quantity"
-                style={{ width: 122, padding: '12px 13px', border: '1px solid #d3d8de', borderRadius: 10, fontSize: '0.98rem', textAlign: 'right' }} />
+              <input type="number" value={qty} min={moq || 1} onChange={e => setQty(e.target.value)}
+                aria-label="Quantity" aria-invalid={!!short}
+                style={{ width: 122, padding: '12px 13px', border: `1px solid ${short ? '#d97706' : '#d3d8de'}`, borderRadius: 10, fontSize: '0.98rem', textAlign: 'right' }} />
               <span style={{ color: '#6b7280', fontSize: '0.92rem' }}>{p.unit}</span>
-              <button onClick={() => onAdd(p, qty)} style={{
+              <button onClick={() => onAdd(p, qty)} disabled={!!short} style={{
                 marginLeft: 'auto', padding: '12px 24px', borderRadius: 10, border: 'none',
-                background: accent, color: '#fff', fontWeight: 800, cursor: 'pointer',
-                boxShadow: `0 8px 22px -10px ${accent}`,
+                background: accent, color: '#fff', fontWeight: 800, cursor: short ? 'not-allowed' : 'pointer',
+                opacity: short ? 0.55 : 1, boxShadow: short ? 'none' : `0 8px 22px -10px ${accent}`,
               }}>Add to enquiry</button>
             </div>
-            {line != null && line > 0 && (
+            {moq && !short && (
+              <p style={{ margin: '10px 0 0', fontSize: '0.8rem', color: '#6b7280' }}>Minimum order: {moq} {p.unit}</p>
+            )}
+            {short && <QtyNote>{short}</QtyNote>}
+            {!short && line != null && line > 0 && (
               <p style={{ marginTop: 12, fontSize: '0.93rem', color: '#111827', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
                 ≈ {rupee(line)}
                 <span style={{ fontWeight: 400, color: '#8b929a', fontSize: '0.82rem' }}> · indicative, before GST and freight</span>
@@ -701,10 +714,33 @@ function ProductView({ product: p, accent, showPrices, onBack, onAdd }) {
 const dt = { color: '#8b929a', fontWeight: 600 };
 const dd = { margin: 0, color: '#111827', fontWeight: 700 };
 
+/* ── minimum order ───────────────────────────────────────────
+   A product with a minimum order starts its quantity there and will not
+   take less. The number typed is left exactly as typed — changing it
+   silently would be worse than refusing it — and the reason sits under the
+   box in plain words, with Add held until it is put right. The server
+   refuses the same enquiry, so this is the polite version of a rule that
+   holds either way. */
+const minOrder = (p) => (Number(p?.moq) > 0 ? Number(p.moq) : null);
+function qtyProblem(qty, moq, unit) {
+  const blank = qty === '' || qty == null;
+  const n = Number(qty);
+  if (moq && (blank || n < moq)) return `The minimum order is ${moq} ${unit || 'nos'}. Please enter ${moq} or more.`;
+  if (blank || !(n > 0)) return 'Enter how many you need.';
+  return null;
+}
+const QtyNote = ({ children }) => (
+  <p role="alert" style={{ margin: '7px 0 0', fontSize: '0.76rem', lineHeight: 1.4, color: '#b45309', fontWeight: 600 }}>
+    {children}
+  </p>
+);
+
 function BasketPanel({ basket, setBasket, accent, sent, showPrices, form, setForm, onSend, sending, err, onClose }) {
   const inp = { width: '100%', padding: '11px 13px', border: '1px solid #d3d8de', borderRadius: 10, fontSize: '0.9rem', outline: 'none' };
   const total = showPrices
     ? basket.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.price) || 0), 0) : null;
+  const problems = basket.map(i => qtyProblem(i.quantity, i.moq, i.unit));
+  const blocked = problems.some(Boolean);
   return (
     <div role="dialog" aria-label="Your enquiry" onClick={onClose} style={{
       position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.5)', display: 'flex', justifyContent: 'flex-end', zIndex: 70,
@@ -739,14 +775,18 @@ function BasketPanel({ basket, setBasket, accent, sent, showPrices, form, setFor
         ) : (
           <>
             {basket.map((i, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center', borderBottom: '1px solid #f1f3f5', paddingBottom: 11 }}>
-                <div style={{ flex: 1, fontSize: '0.88rem', lineHeight: 1.35 }}>{i.description}</div>
-                <input type="number" value={i.quantity} aria-label={`Quantity of ${i.description}`}
-                  onChange={e => setBasket(b => b.map((x, k) => k === idx ? { ...x, quantity: e.target.value } : x))}
-                  style={{ width: 72, padding: '7px 8px', border: '1px solid #d3d8de', borderRadius: 8, textAlign: 'right' }} />
-                <span style={{ fontSize: '0.77rem', color: '#8b929a', width: 32 }}>{i.unit}</span>
-                <button onClick={() => setBasket(b => b.filter((_, k) => k !== idx))} aria-label="Remove"
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aab0b7' }}><X size={15} /></button>
+              <div key={idx} style={{ borderBottom: '1px solid #f1f3f5', paddingBottom: 11 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ flex: 1, fontSize: '0.88rem', lineHeight: 1.35 }}>{i.description}</div>
+                  <input type="number" value={i.quantity} min={i.moq || 1} aria-label={`Quantity of ${i.description}`}
+                    aria-invalid={!!problems[idx]}
+                    onChange={e => setBasket(b => b.map((x, k) => k === idx ? { ...x, quantity: e.target.value } : x))}
+                    style={{ width: 72, padding: '7px 8px', border: `1px solid ${problems[idx] ? '#d97706' : '#d3d8de'}`, borderRadius: 8, textAlign: 'right' }} />
+                  <span style={{ fontSize: '0.77rem', color: '#8b929a', width: 32 }}>{i.unit}</span>
+                  <button onClick={() => setBasket(b => b.filter((_, k) => k !== idx))} aria-label="Remove"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aab0b7' }}><X size={15} /></button>
+                </div>
+                {problems[idx] && <QtyNote>{problems[idx]}</QtyNote>}
               </div>
             ))}
             {total != null && total > 0 && (
@@ -772,9 +812,14 @@ function BasketPanel({ basket, setBasket, accent, sent, showPrices, form, setFor
                 A phone number or an email — otherwise we cannot reply.
               </p>
               {err && <p style={{ color: '#dc2626', fontSize: '0.84rem', margin: 0 }}>{err}</p>}
-              <button type="submit" disabled={sending} style={{
+              {blocked && (
+                <p style={{ color: '#b45309', fontSize: '0.8rem', margin: 0, fontWeight: 600 }}>
+                  Fix the quantity marked above to send your enquiry.
+                </p>
+              )}
+              <button type="submit" disabled={sending || blocked} style={{
                 padding: '13px 16px', borderRadius: 10, border: 'none', background: accent, color: '#fff',
-                fontWeight: 800, cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.7 : 1,
+                fontWeight: 800, cursor: sending || blocked ? 'default' : 'pointer', opacity: sending || blocked ? 0.6 : 1,
                 display: 'inline-flex', gap: 7, alignItems: 'center', justifyContent: 'center',
                 boxShadow: `0 10px 24px -12px ${accent}`,
               }}>

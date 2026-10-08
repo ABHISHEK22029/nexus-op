@@ -41,7 +41,7 @@ const stamp = Date.now().toString(36);
 
 /* Routes reached only when signed out, or that navigate away on purpose. */
 const SKIP = new Set(['/login', '/signup', '/accept-invite', '*', '/logout']);
-const PUBLIC = ['/', '/platform', '/how-it-works', '/see-maksops', '/get-started', '/nexus', '/login', '/signup'];
+const PUBLIC = ['/', '/platform', '/how-it-works', '/see-maksops', '/get-started', '/nexus', '/login', '/signup', '/forgot-password'];
 
 /* API answers that are correct, not failures: an account with no logo
    uploaded gets a 404 for it, and the page draws the fallback. */
@@ -54,8 +54,10 @@ async function cleanup() {
     const { rows } = await c.query(`SELECT id FROM users WHERE email LIKE 'sweep-%@example.test'`);
     const ids = rows.map(r => r.id);
     if (!ids.length) return 0;
-    await purgeOrg(c, ids);
+    for (let i = 0; i < 4; i++) { const r = await purgeOrg(c, ids); if (!r.deleted) break; }
     await c.query('DELETE FROM document_sequences WHERE owner_id = ANY($1)', [ids]).catch(() => {});
+    /* A notification sent to the owner pins the user row. */
+    await c.query('DELETE FROM notifications WHERE user_id = ANY($1)', [ids]).catch(() => {});
     return (await c.query(`DELETE FROM users WHERE id = ANY($1) AND email LIKE '%@example.test'`, [ids])).rowCount;
   } finally { await c.end(); }
 }
@@ -73,13 +75,21 @@ async function seed(H) {
   const api = async (m, u, b) => {
     try { const r = await fetch(`${API}${u}`, { method: m, headers: J, body: b ? JSON.stringify(b) : undefined }); return await r.json(); } catch { return {}; }
   };
-  await api('PUT', '/company-profile', { name: `Sweep Fabricators ${stamp}`, address: 'Hyderabad', gstin: '36AAMCK2569F1Z9', stateCode: '36', bank_name: 'HDFC', bank_account_no: '1', bank_ifsc: 'HDFC0000001' });
+  await api('PUT', '/company-profile', { name: `Sweep Fabricators ${stamp}`, address: 'Hyderabad', gstin: '36AAMCK2569F1Z9', stateCode: '36', bank_name: 'HDFC', bank_account_no: '50100123456789', bank_ifsc: 'HDFC0000001' });
+  /* A profile the server refuses leaves the company "not set up", and every
+     signed-in screen then redirects to the first-run page. */
+  const prof = await (await fetch(`${API}/company-profile`, { headers: J })).json().catch(() => ({}));
+  if (!prof?.name) throw new Error('the sweep company could not be set up — check the seed data against the validators');
   const lines = [{ description: 'SS304 Mounting Bracket', hsn: '7326', uom: 'Nos', quantity: 12, rate: 2320 }];
   const cust = await api('POST', '/customers', { name: `Sweep Customer ${stamp}`, state: 'Telangana', billing_address: 'Plot 1, Hyderabad' });
   const vendor = await api('POST', '/vendors', { name: `Sweep Vendor ${stamp}`, type: 'Supplier' });
   const proj = await api('POST', '/projects', { name: `Sweep Project ${stamp}`, clientName: 'HMRL', type: 'Infrastructure' });
   const co = await api('POST', '/customer-orders', { customerId: cust.id, items: [{ description: 'SS304 Mounting Bracket', quantity: 12, unit: 'nos', rate: 2320 }] });
   await api('POST', '/sales-quotations', { customerId: cust.id, items: lines });
+  /* Big numbers, so the layout pass sees what a large business sees:
+     crores in the invoice tiles, lakhs of units on a stock card. */
+  await api('POST', '/sales-invoices', { customerId: cust.id, items: [{ description: 'Transmission tower set', hsn: '7308', uom: 'set', quantity: 125, rate: 12830000 }] });
+  await api('POST', '/inventory', { itemName: `Galvanised angle 65x65x6 ${stamp}`, quantity: 3243242, uom: 'kg', unitCost: 84, minStockLevel: 132423423 });
   await api('POST', '/sales-invoices', { customerId: cust.id, customerOrderId: co.id, items: lines });
   await api('POST', '/delivery-challans', { customerId: cust.id, items: lines });
   await api('POST', '/credit-debit-notes', { noteType: 'credit', partyType: 'customer', partyId: cust.id, gstRate: 18, items: lines });
@@ -192,6 +202,80 @@ async function seed(H) {
   const results = [];
   for (const r of ROUTES) results.push(await visit(r));
 
+  /* ── layout (LAYOUT=1): is everything where it should be? ──
+     Opt-in, because it doubles the run. At a desktop and a phone width:
+     a page that scrolls sideways, anything sticking out of the screen or
+     out of the card it sits in (a status pill pushed past a stock card's
+     edge by a long number), text clipped by its box, and "undefined",
+     "NaN" or "[object Object]" shown to a person. A screenshot of each
+     screen goes to LAYOUT_DIR, to be looked at, not just counted. */
+  const layoutIssues = [];
+  if (process.env.LAYOUT) {
+    const dir = process.env.LAYOUT_DIR || path.join(require('os').tmpdir(), `sweep-layout-${stamp}`);
+    fs.mkdirSync(dir, { recursive: true });
+    for (const width of [1440, 390]) {
+      await page.setViewport({ width, height: width > 500 ? 900 : 844 });
+      for (const route of ROUTES) {
+        try { await page.goto(`${UI}${route}`, { waitUntil: 'networkidle2', timeout: 25000 }); } catch { /* reported above */ }
+        await sleep(700);
+        const found = await page.evaluate(() => {
+          const vw = window.innerWidth;
+          const out = [];
+          const name = (el) => {
+            const t = (el.innerText || el.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+            return `${el.tagName.toLowerCase()}${t ? ` “${t}”` : ''}`;
+          };
+          const css = (el) => getComputedStyle(el);
+          /* inside a box that scrolls or clips (a ticker, a wide table) is contained */
+          const scrolls = (el) => { for (let p = el; p && p !== document.body; p = p.parentElement) if (/(auto|scroll|hidden|clip)/.test(css(p).overflowX)) return true; return false; };
+          const fixedish = (el) => { for (let p = el; p && p !== document.body; p = p.parentElement) if (/fixed|sticky/.test(css(p).position)) return true; return false; };
+          if (document.documentElement.scrollWidth > vw + 1) out.push(`the page scrolls sideways by ${document.documentElement.scrollWidth - vw}px`);
+          const text = document.body.innerText || '';
+          for (const re of [/\bundefined\b/, /\bNaN\b/, /\[object Object\]/, /Invalid Date/]) { const m = text.match(re); if (m) out.push(`shows “${m[0]}”`); }
+          /* A card: the nearest ancestor drawn as a box (border or shadow). */
+          const card = (el) => {
+            for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+              const s = css(p);
+              if (/(auto|scroll|hidden|clip)/.test(s.overflowX)) return null;   // it scrolls or clips by design
+              if (parseFloat(s.borderLeftWidth) > 0 && parseFloat(s.borderRightWidth) > 0 && p.getBoundingClientRect().width > 60) return p;
+            }
+            return null;
+          };
+          const seen = new Set();
+          for (const el of document.querySelectorAll('body *')) {
+            if (out.length > 12) break;
+            const s = css(el);
+            if (s.visibility === 'hidden' || s.display === 'none' || el.closest('[aria-hidden="true"]')) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width < 2 || r.height < 2) continue;
+            const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+            if (!ownText && !/^(svg|img|button|input|select|span)$/i.test(el.tagName)) continue;
+            if (r.right > vw + 1 && !scrolls(el) && !fixedish(el)) {
+              const k = `out:${name(el)}`; if (!seen.has(k)) { seen.add(k); out.push(`${name(el)} sticks out of the screen by ${Math.round(r.right - vw)}px`); }
+              continue;
+            }
+            const c = card(el);
+            if (c) {
+              const cr = c.getBoundingClientRect();
+              if (r.right > cr.right + 2 || r.left < cr.left - 2) {
+                const k = `card:${name(el)}`; if (!seen.has(k)) { seen.add(k); out.push(`${name(el)} spills out of its box by ${Math.round(Math.max(r.right - cr.right, cr.left - r.left))}px`); }
+              }
+            }
+            if (ownText && /(hidden|clip)/.test(s.overflowX) && s.textOverflow !== 'ellipsis' && el.scrollWidth > el.clientWidth + 2) {
+              const k = `clip:${name(el)}`; if (!seen.has(k)) { seen.add(k); out.push(`${name(el)} is cut off`); }
+            }
+          }
+          return out;
+        });
+        const file = `${route.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'root'}-${width}.png`;
+        await page.screenshot({ path: path.join(dir, file), fullPage: true }).catch(() => {});
+        if (found.length) layoutIssues.push({ route, width, found, file });
+      }
+    }
+    await page.setViewport({ width: 1500, height: 1000 });
+    console.log(`\nlayout screenshots: ${dir}`);
+  }
+
   /* ── every link found, followed ── */
   const visited = new Set(results.map(r => r.route));
   const deadLinks = [];
@@ -211,13 +295,17 @@ async function seed(H) {
   /* ── report ── */
   const navDead = NAV_PATHS.filter(p => !isRoute(p));
   const all = [...publicResults, ...results];
-  const bad = all.filter(r => r.nav !== 'ok' || r.crashed || r.stuck || r.notFound || r.js.length || r.net.length || r.chars < 40);
+  /* A signed-in screen that lands on sign-in or first-run is not "clean" —
+     the sweep would be looking at the wrong page entirely. */
+  const firstRun = new RegExp('^/(login|welcome|onboarding)(/|$)');
+  for (const r of results) r.bounced = firstRun.test(r.landed || '') && !firstRun.test(r.route);
+  const bad = all.filter(r => r.nav !== 'ok' || r.crashed || r.stuck || r.notFound || r.bounced || r.js.length || r.net.length || r.chars < 40);
   const denied = results.filter(r => r.denied);
   console.log(`\n  ${publicResults.length} website pages signed out, ${results.length} screens signed in, ${links.size + publicLinks.size} distinct links followed\n`);
   if (bad.length) {
     console.log(`  ── ${bad.length} with something wrong ──`);
     for (const r of bad) {
-      const flags = [r.nav !== 'ok' && r.nav, r.crashed && 'CRASHED', r.stuck && 'STUCK LOADING', r.notFound && '404',
+      const flags = [r.nav !== 'ok' && r.nav, r.crashed && 'CRASHED', r.stuck && 'STUCK LOADING', r.notFound && '404', r.bounced && `sent to ${r.landed}`,
         r.chars < 40 && `blank (${r.chars} chars)`].filter(Boolean).join(', ');
       console.log(`   ❌ ${r.route}${flags ? '  — ' + flags : ''}`);
       if (r.chars >= 40 && !r.crashed && !r.notFound) console.log(`        shows: "${r.text}"`);
@@ -230,6 +318,16 @@ async function seed(H) {
   console.log(navDead.length ? `  ❌ navigation entries with no route: ${navDead.join(', ')}` : `  ✅ all ${NAV_PATHS.length} navigation entries are real routes`);
   if (notVisited.length) console.log(`  ·  not visited (no record of that kind to open): ${notVisited.join(', ')}`);
   if (denied.length) console.log(`  ·  deliberately gated: ${denied.map(r => r.route).join(', ')}`);
+  if (process.env.LAYOUT) {
+    if (!layoutIssues.length) console.log('  ✅ layout: nothing out of place at 1440px or 390px');
+    else {
+      console.log(`  ── layout: ${layoutIssues.length} screen/width(s) with something out of place ──`);
+      for (const l of layoutIssues) {
+        console.log(`   ❌ ${l.route} @${l.width}px  (${l.file})`);
+        for (const f of l.found.slice(0, 6)) console.log(`        ${f}`);
+      }
+    }
+  }
   console.log(`\n  ${all.length - bad.length} clean, ${bad.length} with problems${removed ? ` · sweep account removed` : ''}\n`);
-  process.exit(bad.length || deadLinks.length || navDead.length ? 1 : 0);
+  process.exit(bad.length || deadLinks.length || navDead.length || layoutIssues.length ? 1 : 0);
 })().catch(e => { console.error('threw:', e.message); process.exit(1); });

@@ -116,7 +116,7 @@ export default function SmartKnowledge() {
           <input ref={searchRef} value={query} onChange={e => { setQuery(e.target.value); if (mode === 'ai') setAiResults(null); }}
             onKeyDown={e => { if (e.key === 'Enter' && mode === 'ai') runAiSearch(); }}
             placeholder="Search guides and answers…"
-            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.86rem' }} />
+            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.86rem' }} />
           <div style={{ display: 'flex', background: 'var(--bg-elevated)', borderRadius: 999, padding: 2 }}>
             <button onClick={() => setMode('keyword')} style={{ padding: '5px 11px', borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 700, background: mode === 'keyword' ? 'var(--bg-surface)' : 'transparent', color: mode === 'keyword' ? 'var(--text-primary)' : 'var(--text-muted)' }}>Keyword</button>
             <button onClick={() => setMode('ai')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 11px', borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 700, background: mode === 'ai' ? 'var(--brand-amber)' : 'transparent', color: mode === 'ai' ? '#fff' : 'var(--text-muted)' }}><Sparkles size={12} /> AI</button>

@@ -48,11 +48,19 @@ function buildListQuery({
   let n = values.length;
 
   // ── free-text search across the caller's chosen columns ──
+  /* Word by word: every word must appear in at least one column, in any
+     order. One ILIKE on the whole phrase meant "cross arm 75" found nothing
+     when the name read "Cross Arm (V-type) 75x75", and a code and a name
+     could not be searched together. Anything the phrase matched, this still
+     matches. % and _ are taken literally — "MS_10" is a code, not a
+     pattern. At most eight words, so a pasted paragraph stays one query. */
   const term = String(query.search ?? query.q ?? '').trim();
   if (term && searchColumns.length) {
-    n += 1;
-    values.push(`%${term}%`);
-    clauses.push('(' + searchColumns.map(c => `${q(c)}::text ILIKE $${n}`).join(' OR ') + ')');
+    for (const word of term.split(/\s+/).filter(Boolean).slice(0, 8)) {
+      n += 1;
+      values.push(`%${word.replace(/[\\%_]/g, '\\$&')}%`);
+      clauses.push('(' + searchColumns.map(c => `${q(c)}::text ILIKE $${n}`).join(' OR ') + ')');
+    }
   }
 
   // ── exact-match filters (status, type, category …) ──

@@ -61,7 +61,7 @@ const dlg = (page, fn, arg) => page.evaluate((f, a) => {
   await fetch(`${API}/company-profile`, {
     method: 'PUT', headers: auth,
     body: JSON.stringify({
-      name: `Kirashi ${stamp}`, phone: '9866644456',
+      name: `Kirashi ${stamp}`, phone: '9000000002',
       gstin: '33AAAAA0000A1Z5', bank_account_no: '50100123456789',
       setup_completed_at: new Date().toISOString(),
     }),
@@ -99,7 +99,7 @@ const dlg = (page, fn, arg) => page.evaluate((f, a) => {
     body: JSON.stringify({
       slug, headline: 'Fabricated galvanized materials',
       subhead: '11kV line hardware to JBVNL spec',
-      is_published: true, show_prices: true, whatsapp_number: '9866644456',
+      is_published: true, show_prices: true, whatsapp_number: '9000000002',
     }),
   });
   ok(cfg.ok, `the catalogue is configured and published (${cfg.status})`);
@@ -110,7 +110,7 @@ const dlg = (page, fn, arg) => page.evaluate((f, a) => {
   ok(taken.status === 409, `an address another business already uses is refused (${taken.status})`);
   await api('/catalogue/settings', {
     method: 'PUT',
-    body: JSON.stringify({ slug, headline: 'Fabricated galvanized materials', subhead: '11kV line hardware to JBVNL spec', is_published: true, show_prices: true, whatsapp_number: '9866644456' }),
+    body: JSON.stringify({ slug, headline: 'Fabricated galvanized materials', subhead: '11kV line hardware to JBVNL spec', is_published: true, show_prices: true, whatsapp_number: '9000000002' }),
   });
 
   await page.reload({ waitUntil: 'networkidle2' });
@@ -295,7 +295,7 @@ const dlg = (page, fn, arg) => page.evaluate((f, a) => {
     const p = (ph) => document.querySelector(`input[placeholder="${ph}"]`);
     set(p('Your name *'), 'Ramesh Kumar');
     set(p('Company'), 'Sahasra Infra');
-    set(p('Phone'), '9866644456');
+    set(p('Phone'), '9000000002');
   });
   await sleep(400);
   await guest.evaluate(() => [...document.querySelectorAll('button')]

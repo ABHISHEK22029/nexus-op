@@ -26,7 +26,10 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
    an instruction to go and find something. */
 const FIX_PATH = {
   company: '/company-profile',
-  stock_links: '/inventory',
+  /* Straight to the rows that need it, each with a Link button. Plain
+     /inventory showed every card with nothing to say which were unlinked
+     or how to link one. */
+  stock_links: '/inventory?unlinked=1',
   boms: '/items',
   vendor_links: '/vendors?tab=supplies',
   open_orders: '/customer-orders',
@@ -75,13 +78,15 @@ export default function SetupReadiness({ compact = false }) {
         <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
           {blocking.map(c => (
             <div key={c.key} style={{
-              display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 10,
+              display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: 10,
               alignItems: 'start', paddingTop: 10, borderTop: '1px solid rgba(245,158,11,0.2)',
             }}>
               <span style={{
                 fontSize: '0.72rem', fontWeight: 800, color: '#b45309',
                 background: 'rgba(245,158,11,0.15)', padding: '2px 8px', borderRadius: 6,
-                whiteSpace: 'nowrap', marginTop: 1,
+                /* "GSTIN set, bank details missing" on one line pushed the
+                   row out of the banner on a phone; it wraps instead. */
+                maxWidth: 150, marginTop: 1,
               }}>{c.have}</span>
 
               <div>

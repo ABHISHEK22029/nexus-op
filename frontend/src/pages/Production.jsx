@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { Factory, Plus, ArrowRight, TrendingUp, Recycle, AlertTriangle } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import { getToken } from '../lib/apiAuth';
@@ -127,7 +128,8 @@ export default function Production() {
         </div>
         <div style={card}>
           <div style={tileLabel}><Recycle size={13} /> Scrap Recovered</div>
-          <div style={tileValue('#10b981')}>₹{(projSummary?.scrapRecovered ?? 0).toLocaleString('en-IN')}</div>
+          {/* Compact, the exact sum on hover; a figure in the crores no longer runs out of the tile. */}
+          <div style={{ ...tileValue('#10b981'), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={fmtINR(projSummary?.scrapRecovered ?? 0)}>{fmtCompactINR(projSummary?.scrapRecovered ?? 0)}</div>
         </div>
       </div>
 

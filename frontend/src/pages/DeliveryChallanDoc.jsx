@@ -22,6 +22,7 @@ import InlineEdit from '../components/InlineEdit';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate,
 } from '../components/DocumentKit';
+import { docFileName, printAs } from '../lib/documentPdf';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const EWAY_THRESHOLD = 50000;
@@ -80,7 +81,7 @@ export default function DeliveryChallanDoc() {
           {/* The challan travels with the goods; the customer usually wants
               it ahead of the lorry. */}
           <button onClick={() => setEmailing(true)} className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Mail size={15} /> Email</button>
-          <button onClick={() => window.print()} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
+          <button onClick={() => printAs(docFileName('Delivery Challan', dc.challan_number, shipName))} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
         </div>
       </div>
 
@@ -97,6 +98,7 @@ export default function DeliveryChallanDoc() {
         </div>
       )}
 
+      <div className="doc-scroll">
       <div className="doc-sheet" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 32 }}>
         <CompanyHeader
           company={co}
@@ -143,35 +145,38 @@ export default function DeliveryChallanDoc() {
           {dc.transporter_gstin && <Meta box={metaBox} label="Transporter GSTIN" value={dc.transporter_gstin} mono />}
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div>
+          <table className="doc-items" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
               <th style={{ ...th, textAlign: 'left' }}>#</th>
               <th style={{ ...th, textAlign: 'left' }}>Description</th>
               <th style={{ ...th, textAlign: 'left' }}>HSN</th>
               <th style={{ ...th, textAlign: 'center' }}>UOM</th>
-              <th style={{ ...th, textAlign: 'right' }}>Qty</th>
-              <th style={{ ...th, textAlign: 'right' }}>Value</th>
+              <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Qty</th>
+              <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Value</th>
             </tr></thead>
             <tbody>
               {(dc.items || []).map((it, i) => (
                 <tr key={it.id}>
                   <td style={td}>{i + 1}</td>
-                  <td style={{ ...td, fontWeight: 600 }}>{it.description}</td>
+                  <td className="doc-wrap" style={{ ...td, fontWeight: 600 }}>{it.description}</td>
                   <td style={{ ...td, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{it.hsn || '—'}</td>
                   <td style={{ ...td, textAlign: 'center', color: 'var(--text-muted)' }}>{it.uom || '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{it.quantity}</td>
-                  <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>₹{rup(it.amount)}</td>
+                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{it.quantity}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>₹{rup(it.amount)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
+        {/* Total to footer: kept whole, and never on a sheet by itself
+            (print.css, .doc-closing). */}
+        <div className="doc-closing">
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Total value of goods</div>
-            <div style={{ fontSize: '1.3rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>₹{rup(value)}</div>
+            <div style={{ fontSize: '1.3rem', fontWeight: 800, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>₹{rup(value)}</div>
             {needsEway && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>above ₹50,000 — e-way bill applies</div>}
           </div>
         </div>
@@ -184,6 +189,8 @@ export default function DeliveryChallanDoc() {
 
         <SignatureBlock company={co} receiver="Received the goods in good condition (name, sign & date)" />
         <DocFooter company={co} right={dc.challan_number} note="Goods once dispatched are transported at the consignee's risk unless otherwise agreed." />
+        </div>
+      </div>
       </div>
       {/* Files that belong with this document — the signed delivery receipt, the e-way bill. Never printed. */}
       <div className="print:hidden no-print" style={{ marginTop: 16 }}>

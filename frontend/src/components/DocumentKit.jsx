@@ -43,8 +43,10 @@ export function CompanyHeader({ company = {}, title, meta = [] }) {
       </div>
       <div style={{ textAlign: 'right' }}>
         <div className="inv-po-title">{title}</div>
-        {meta.filter(Boolean).map(([label, value, tone]) => (
-          <div className="inv-meta-row" key={label}>
+        {/* A fourth element { screenOnly: true } keeps a row off the printed
+            copy — for what is the seller's business, not the customer's. */}
+        {meta.filter(Boolean).map(([label, value, tone, opts]) => (
+          <div className={`inv-meta-row${opts?.screenOnly ? ' no-print' : ''}`} key={label}>
             {label}: <strong style={tone ? { color: tone } : undefined}>{value}</strong>
           </div>
         ))}
@@ -61,7 +63,7 @@ export function Party({ title, name, address, gstin, state, note, required }) {
         {title}{note && <span style={{ fontWeight: 400, textTransform: 'none' }}> {note}</span>}
       </div>
       <div className="inv-party-name">{name || '—'}</div>
-      <div className="inv-party-detail">
+      <div className="inv-party-detail doc-wrap">
         {address || (required ? <em style={{ color: '#dc2626' }}>Address missing</em> : '—')}
         {address && <br />}
         {state && <>{state}<br /></>}
@@ -113,7 +115,7 @@ export function TermsBox({ terms, title = 'Terms & Conditions' }) {
   return (
     <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px' }}>
       <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 4 }}>{title}</div>
-      <div style={{ fontSize: '0.72rem', color: '#374151', whiteSpace: 'pre-wrap' }}>{terms}</div>
+      <div className="doc-wrap" style={{ fontSize: '0.72rem', color: '#374151', whiteSpace: 'pre-wrap' }}>{terms}</div>
     </div>
   );
 }

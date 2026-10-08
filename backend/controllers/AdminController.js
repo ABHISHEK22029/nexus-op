@@ -22,8 +22,10 @@
    is the first question asked after someone sees something they shouldn't.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { forgetAccount } = require('../middleware/auth');
 const R = require('../shared/roles');
 const { isCrossTenant } = require('../shared/roles');
+const { firstProblem, PERSON_SPEC } = require('../shared/validators');
 
 const SYSTEM_IMMUTABLE = 'Administrator';
 
@@ -472,9 +474,16 @@ exports.updateUser = async (req, res) => {
   const cols = PERSON_COLUMNS.filter(c => c in (req.body || {}));
   if (!cols.length) return res.status(400).json({ error: 'Nothing to update' });
   try {
-    const exists = { rows: (await userInOrg(req, res, id, 'id')) ? [{ id }] : [] };
-        if (!exists.rows.length) return;
-    if (!exists[0]) return res.status(404).json({ error: 'No such user' });
+    const found = await userInOrg(req, res, id, 'id, phone');
+    const exists = { rows: found ? [{ id }] : [] };
+    /* userInOrg has already answered 404. A second check here read exists[0]
+       off the wrapper object — always undefined — so every edit of a
+       person's details came back 'No such user'. */
+    if (!exists.rows.length) return;
+    /* A phone that is not a phone, refused with the field named. One already
+       stored and sent back unchanged is left alone. */
+    const problem = firstProblem(req.body, PERSON_SPEC, { existing: found });
+    if (problem) return res.status(400).json(problem);
 
     // Nobody reports to themselves, and a blank code is NULL not ''.
     const values = cols.map(c => {
@@ -614,7 +623,11 @@ exports.resetPassword = async (req, res) => {
 
     const bcrypt = require('bcryptjs');
     const hash = await bcrypt.hash(password, 10);
-    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, id]);
+    /* password_changed_at ends the person's existing sessions, as a reset
+       by email does: a new password given out by the owner should not leave
+       an old session signed in somewhere. */
+    await db.query('UPDATE users SET password_hash = $1, password_changed_at = $3 WHERE id = $2', [hash, id, new Date()]);   // the token-signing clock, see PasswordResetController
+    forgetAccount(id);
     await log(req, null, 'password_reset', { userId: id, email: user.email });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -677,6 +690,7 @@ exports.setUserActive = async (req, res) => {
     }
 
     await db.query('UPDATE users SET is_active = $1 WHERE id = $2', [active, id]);
+    forgetAccount(id);   // switched off takes effect now, not when their session runs out
     await log(req, user.role, active ? 'activated' : 'deactivated', { userId: id, email: user.email });
     res.json({ success: true, id, isActive: active });
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -16,6 +16,7 @@ export default function Customers() {
       title="Customers"
       subtitle="The companies you sell to — a customer order starts here."
       endpoint="customers"
+      pair={['gstin', 'pan']}
       attachEntity="customer"
       icon={Contact}
       fields={[
@@ -29,11 +30,12 @@ export default function Customers() {
           placeholder: 'e.g. Fire doors, Handrails, Cladding' },
         { key: 'requirement', label: 'Requirement Detail', wide: true,
           placeholder: 'e.g. 90-minute fire-rated doors for hospital projects, powder-coated, site-measured' },
-        { key: 'gstin', label: 'GSTIN', placeholder: '36AAACT1234C1Z9' },
-        { key: 'pan', label: 'PAN', placeholder: 'AAACT1234C' },
+        /* Checked as typed (lib/validators) and again by the server. */
+        { key: 'gstin', label: 'GSTIN', placeholder: '36AAACT1234C1Z9', check: 'gstin', upper: true, maxLength: 15 },
+        { key: 'pan', label: 'PAN', placeholder: 'AAACT1234C', check: 'pan', upper: true, maxLength: 10 },
         { key: 'contact_name', label: 'Contact Person', placeholder: 'GM Projects' },
-        { key: 'phone', label: 'Phone', placeholder: '98850 00000' },
-        { key: 'email', label: 'Email', type: 'email', placeholder: 'buyer@company.com' },
+        { key: 'phone', label: 'Phone', type: 'tel', placeholder: '98850 00000', check: 'phone' },
+        { key: 'email', label: 'Email', type: 'email', placeholder: 'buyer@company.com', check: 'email' },
         { key: 'billing_address', label: 'Billing Address', wide: true, placeholder: 'Registered address the invoice is billed to' },
         { key: 'state', label: 'Billing State', placeholder: 'Telangana' },
         /* Ship-to is a separate address, and it matters twice over: the goods

@@ -13,6 +13,7 @@ import { useToast } from '../context/ToastContext';
 import { useProject } from '../context/ProjectContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
+import UnitSelect from '../components/UnitSelect';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 // The only three the table ever holds (migration 008_sales_procurement.sql).
@@ -112,8 +113,8 @@ export default function Quotations() {
               There is no total here on purpose: this is a request for
               quotation, so the price is what the vendors come back with —
               it is on their reply rows below, not on the ask. */}
-          <div style={{ flex: 1, minWidth: 80 }}><label style={lbl}>Unit</label><input style={input} value={head.unit} onChange={e => setHead({ ...head, unit: e.target.value })} /></div>
-          <div style={{ flex: 1, minWidth: 90 }}><label style={lbl}>Qty</label><input style={input} type="number" placeholder="1000" value={head.quantity} onChange={e => setHead({ ...head, quantity: e.target.value })} /></div>
+          <div style={{ flex: 1, minWidth: 110 }}><label style={lbl}>Unit</label><UnitSelect style={input} value={head.unit} onChange={v => setHead({ ...head, unit: v })} /></div>
+          <div style={{ flex: 1, minWidth: 90 }}><label style={lbl}>Qty</label><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" placeholder="1000" value={head.quantity} onChange={e => setHead({ ...head, quantity: e.target.value })} /></div>
           <button type="submit" className="btn-primary btn-sm">Create</button>
         </form>
       )}

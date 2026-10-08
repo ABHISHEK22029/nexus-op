@@ -7,7 +7,7 @@
    screen would ever tell you it exists.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files, Factory } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useProject } from '../context/ProjectContext';
@@ -15,13 +15,15 @@ import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import OrderReadiness from '../components/OrderReadiness';
 import { today } from '../lib/dates';
+import UnitSelect from '../components/UnitSelect';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 /* 'Partially Delivered' is set automatically by a dispatch that ships some
    of the order, so it must be a value this dropdown can display — otherwise
    the select falls back to blank and looks like the status was lost. */
 const STATUSES = ['Open', 'In Procurement', 'Partially Delivered', 'Delivered', 'Closed'];
-const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function CustomerOrders() {
   const toast = useToast();
@@ -156,7 +158,7 @@ export default function CustomerOrders() {
           filtered set — summing q.rows would only ever total page 1. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 14, marginBottom: 18 }}>
         <Kpi card={card} label={q.isFiltered ? 'Orders (filtered)' : 'Orders'} value={s.count ?? q.total} />
-        <Kpi card={card} label="Order value" value={rupee(s.value)} />
+        <Kpi card={card} label="Order value" value={fmtCompactINR(s.value)} exact={fmtINR(s.value)} />
         <Kpi card={card} label="Open" value={s.open ?? 0} tone="#2563eb" />
         <Kpi card={card} label="In procurement" value={s.in_procurement ?? 0} tone="var(--brand-amber)" />
         {/* No lines on it — it cannot be quoted, made or invoiced. */}
@@ -165,7 +167,7 @@ export default function CustomerOrders() {
 
       {showForm && (
         <form onSubmit={create} style={{ ...card, padding: 18, marginBottom: 18 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 14 }}>
             <div><label style={lbl}>Customer *</label>
               <select style={input} value={head.customerId} onChange={e => setHead({ ...head, customerId: e.target.value })}>
                 <option value="">— Select customer —</option>
@@ -179,44 +181,57 @@ export default function CustomerOrders() {
 
           <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>Line items (parts / SKUs)</div>
           {lines.map((l, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
-              <div style={{ flex: 1.2 }}><label style={lbl}>SKU (optional)</label>
-                <select style={input} value={l.skuId} onChange={e => pickSku(i, e.target.value)}>
-                  <option value="">— free text —</option>
-                  {skus.map(sk => <option key={sk.id} value={sk.id}>{sk.name}</option>)}
-                </select>
+            <div key={i} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
+              <div style={{ flex: 1.2, minWidth: 150 }}><label style={lbl}>Product</label>
+                {skus.length ? (
+                  <select style={input} value={l.skuId} onChange={e => pickSku(i, e.target.value)} aria-label={`Line ${i + 1} product`}>
+                    <option value="">Not a saved product: type it →</option>
+                    {skus.map(sk => <option key={sk.id} value={sk.id}>{sk.name}{sk.sku_code ? ` · ${sk.sku_code}` : ''}</option>)}
+                  </select>
+                ) : (
+                  /* It was a list holding only "— free text —", which read as
+                     something to pick from and offered nothing. With no saved
+                     products, say so and say where they are added. */
+                  <div style={{ ...input, background: 'transparent', fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.3, padding: '6px 8px' }}>
+                    No saved products. Type the item, or <Link to="/skus" style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>add products</Link>.
+                  </div>
+                )}
               </div>
-              <div style={{ flex: 2 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} placeholder="Part / product" /></div>
+              <div style={{ flex: 2, minWidth: 160 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} placeholder="Part / product" aria-label={`Line ${i + 1} description`} autoComplete="off" /></div>
               {/* Unit, quantity, rate, total — in that order, matching the
                   purchase order screen, which already read this way. A person
                   entering "10539.4 Kgs at ₹62" reaches for the unit while
                   they are still thinking about what they are counting, and
                   the two numbers that multiply together sit side by side. */}
-              <div style={{ flex: 0.7 }}><label style={lbl}>Unit</label><input style={input} value={l.unit} onChange={e => setLine(i, { unit: e.target.value })} /></div>
-              <div style={{ flex: 0.8 }}><label style={lbl}>Qty</label><input style={input} type="number" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
+              {/* A choice from the standard list (lib/units), as on the
+                  quotation and invoice. It was a text box pre-filled with
+                  "nos" that looked like a hint, got a spell-check squiggle,
+                  and took any text at all. */}
+              <div style={{ flex: 0.8, minWidth: 110 }}><label style={lbl}>Unit</label><UnitSelect style={input} value={l.unit} onChange={v => setLine(i, { unit: v })} ariaLabel={`Line ${i + 1} unit`} /></div>
+              <div style={{ flex: 0.8, minWidth: 80 }}><label style={lbl}>Qty</label><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} aria-label={`Line ${i + 1} quantity`} /></div>
               {/* Was "Target ₹", which reads as an aspiration rather than a
                   price. It is the rate for one unit and every other screen
                   calls it that. */}
-              <div style={{ flex: 0.9 }}><label style={lbl}>Unit rate ₹</label><input style={input} type="number" value={l.targetPrice} onChange={e => setLine(i, { targetPrice: e.target.value })} /></div>
+              <div style={{ flex: 0.9, minWidth: 90 }}><label style={lbl}>Unit rate ₹</label><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={l.targetPrice} onChange={e => setLine(i, { targetPrice: e.target.value })} aria-label={`Line ${i + 1} unit rate`} /></div>
               {/* The line's own value. There was no total anywhere on this
                   form: you could enter ten thousand kilos at a rate and the
                   screen would never tell you what the order came to, so the
                   only way to check a decimal was in your head. Read-only —
                   it is quantity times rate, not a third thing to key in. */}
-              <div style={{ flex: 0.9 }}>
+              <div style={{ flex: 0.9, minWidth: 100 }}>
                 <label style={lbl}>Total ₹</label>
                 <div style={{
                   ...input, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
                   background: 'var(--bg-elevated)', color: 'var(--text-primary)',
-                  fontVariantNumeric: 'tabular-nums', fontWeight: 600,
-                }}>
+                  fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden',
+                }} title={lineTotal(l) ? fmtINR(lineTotal(l)) : undefined}>
                   {lineTotal(l) ? lineTotal(l).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                 </div>
               </div>
               <button type="button" onClick={() => setLines(ls => ls.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', paddingBottom: 9 }}><X size={16} /></button>
             </div>
           ))}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
             <button type="button" onClick={() => setLines([...lines, { skuId: '', description: '', quantity: '', unit: 'nos', targetPrice: '' }])} className="btn-secondary" style={{ fontSize: '0.78rem' }}><Plus size={14} /> Add line</button>
             {/* What the order comes to, before it is saved. The ORDER VALUE
                 card above only counts saved orders, so until now there was
@@ -257,6 +272,8 @@ export default function CustomerOrders() {
           <EmptyState q={q} icon={ShoppingBag} noun="customer orders"
             hint="Log the PO your customer placed with you, then drive procurement from it." />
         ) : (
+          /* On a phone the table scrolls inside its card; the page does not. */
+          <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
@@ -268,7 +285,16 @@ export default function CustomerOrders() {
                 <React.Fragment key={o.id}>
                   <tr style={{ borderTop: '1px solid var(--border-subtle)', cursor: 'pointer' }} onClick={() => toggle(o.id)}>
                     <td style={{ padding: '11px 14px', color: 'var(--text-muted)' }}>{expanded === o.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>{o.order_number}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {o.order_number}
+                      {/* The delivery the quotation promised, as the date this
+                          order must ship by (set when a quotation converts). */}
+                      {o.expected_shipment_date && (
+                        <div data-ship-by style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2, whiteSpace: 'nowrap' }}>
+                          Ship by {new Date(`${String(o.expected_shipment_date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{o.customer_name || '—'}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{o.customer_po_ref || '—'}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)' }}>{o.item_count}</td>
@@ -331,6 +357,7 @@ export default function CustomerOrders() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -339,9 +366,11 @@ export default function CustomerOrders() {
   );
 }
 
-const Kpi = ({ card, label, value, tone }) => (
-  <div style={{ ...card, padding: 18 }}>
+/* Compact in the tile (₹16.03 L), exact in the tooltip; FitNumber keeps
+   whatever is left inside the tile on a narrow screen. */
+const Kpi = ({ card, label, value, tone, exact }) => (
+  <div style={{ ...card, padding: 18, minWidth: 0 }}>
     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
-    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    <FitNumber exact={exact} style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</FitNumber>
   </div>
 );

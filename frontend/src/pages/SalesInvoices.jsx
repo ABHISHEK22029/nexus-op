@@ -17,6 +17,8 @@ import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components
 import PickOrderModal from '../components/PickOrderModal';
 
 import { getToken } from '../lib/apiAuth';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const statusColor = (s) => s === 'Paid' ? '#10b981' : s === 'Partially Paid' ? 'var(--brand-amber)' : s === 'Sent' ? '#3b82f6' : 'var(--text-muted)';
@@ -65,7 +67,8 @@ export default function SalesInvoices() {
             door is for a bill with no order behind it — a one-off job, a
             service charge, scrap sold — which used to need a fake order. */}
         {can('sales-invoices', 'write') && (
-          <div style={{ display: 'flex', gap: 8 }}>
+          /* Wraps on a phone, where the second button was cut off the edge. */
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={() => navigate('/sales-invoices/new')} className="btn-secondary btn-sm"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
               <Plus size={14} /> Invoice without an order
@@ -80,9 +83,9 @@ export default function SalesInvoices() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14, marginBottom: 18 }}>
         <Kpi card={card} label={q.isFiltered ? 'Invoices (filtered)' : 'Invoices'} value={s.count ?? q.total} />
-        <Kpi card={card} label="Total Billed" value={rup(s.billed)} />
-        <Kpi card={card} label="Received" value={rup(s.received)} tone="#10b981" />
-        <Kpi card={card} label="Outstanding" value={rup(s.outstanding)} tone={Number(s.outstanding) > 0 ? '#ef4444' : '#10b981'} />
+        <Kpi card={card} label="Total Billed" value={fmtCompactINR(s.billed)} exact={fmtINR(s.billed)} />
+        <Kpi card={card} label="Received" value={fmtCompactINR(s.received)} exact={fmtINR(s.received)} tone="#10b981" />
+        <Kpi card={card} label="Outstanding" value={fmtCompactINR(s.outstanding)} exact={fmtINR(s.outstanding)} tone={Number(s.outstanding) > 0 ? '#ef4444' : '#10b981'} />
       </div>
 
       <ListToolbar
@@ -113,7 +116,9 @@ export default function SalesInvoices() {
               </tr></thead>
               <tbody>
                 {q.rows.map(r => {
-                  const due = Math.max(0, (r.net_amount || 0) - (r.amount_paid || 0));
+                  /* To the paisa, exactly as the invoice page works it out, so
+                     the balance here and the one printed on the invoice agree. */
+                  const due = Math.max(0, Math.round(((Number(r.net_amount) || 0) - (Number(r.amount_paid) || 0)) * 100) / 100);
                   return (
                     <tr key={r.id} style={{ borderTop: '1px solid var(--border-subtle)', cursor: 'pointer' }}
                         onClick={() => navigate(`/sales-invoices/${r.id}`)}
@@ -157,9 +162,11 @@ export default function SalesInvoices() {
   );
 }
 
-const Kpi = ({ card, label, value, tone }) => (
-  <div style={{ ...card, padding: 18 }}>
+/* Compact in the tile (₹16.03 L), exact in the tooltip: ₹1,60,34,50,00,000
+   ran out of its tile. FitNumber keeps whatever is left inside on a phone. */
+const Kpi = ({ card, label, value, tone, exact }) => (
+  <div style={{ ...card, padding: 18, minWidth: 0 }}>
     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
-    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    <FitNumber exact={exact} style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</FitNumber>
   </div>
 );

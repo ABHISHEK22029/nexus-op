@@ -39,12 +39,15 @@ const call = async (path, opts = {}, token) => {
   return { status: res.status, ok: res.ok, body };
 };
 
+/* A real GSTIN shape: state code, a PAN (5 letters, 4 digits, 1 letter),
+   entity, Z, check. The PAN digits vary per run, as the company names do. */
+const FOUR = String(Date.now() % 10000).padStart(4, '0');
 /* Two states on purpose. 33 is Tamil Nadu, 29 Karnataka — so a customer in
    one is interstate to a supplier in the other, and reading the wrong
    company profile changes the TAX and not merely the letterhead. */
 const ORGS = [
-  { key: 'A', company: `Kirashi ${stamp}`, gstin: `33AAAAA${stamp.slice(-4).toUpperCase()}1Z5`, state: '33' },
-  { key: 'B', company: `Rival ${stamp}`,   gstin: `29BBBBB${stamp.slice(-4).toUpperCase()}1Z5`, state: '29' },
+  { key: 'A', company: `Kirashi ${stamp}`, gstin: `33AAAAA${FOUR}A1Z5`, state: '33' },
+  { key: 'B', company: `Rival ${stamp}`,   gstin: `29BBBBB${FOUR}B1Z5`, state: '29' },
 ];
 
 (async () => {

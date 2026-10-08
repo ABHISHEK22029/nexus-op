@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ReceiptText } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import UnitSelect from '../components/UnitSelect';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
@@ -19,7 +20,7 @@ export default function GrnBillBuilder() {
     fetch(`${API}/grn-bills/prefill/${grnId}`).then(r => r.ok ? r.json() : null).then(d => {
       if (!d) { toast.error('Could not load GRN'); return; }
       setCtx(d);
-      setItems((d.items || []).map(it => ({ ...it, quantity: it.quantity ?? '', rate: it.rate ?? '' })));
+      setItems((d.items || []).map(it => ({ ...it, uom: it.uom || 'nos', quantity: it.quantity ?? '', rate: it.rate ?? '' })));
       // Default GST rate + intra/inter from the PO (shared with the PO invoice); still editable.
       setF(prev => ({ ...prev, gstRate: d.gstRate ?? prev.gstRate, interstate: !!d.interstate }));
     });
@@ -79,7 +80,7 @@ export default function GrnBillBuilder() {
       </div>
 
       {/* Header fields */}
-      <div style={{ ...card, marginBottom: 16, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+      <div style={{ ...card, marginBottom: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
         <div><label style={lbl}>Bill Date</label><input style={input} type="date" value={f.billDate} onChange={e => setF({ ...f, billDate: e.target.value })} /></div>
         <div><label style={lbl}>Vendor Bill Ref</label><input style={input} value={f.vendorBillRef} onChange={e => setF({ ...f, vendorBillRef: e.target.value })} placeholder="INV-2026-..." /></div>
         <div><label style={lbl}>GST Rate %</label><input style={input} type="number" value={f.gstRate} onChange={e => setF({ ...f, gstRate: e.target.value })} /></div>
@@ -94,7 +95,8 @@ export default function GrnBillBuilder() {
       {/* Line items */}
       <div style={{ ...card, marginBottom: 16 }}>
         <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>Line Items</div>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
           <thead><tr>
             <th style={{ ...th, width: '38%' }}>Description</th><th style={th}>HSN</th><th style={th}>UOM</th><th style={th}>Qty</th><th style={th}>Rate</th><th style={{ ...th, textAlign: 'right' }}>Amount</th><th style={th}></th>
           </tr></thead>
@@ -103,23 +105,26 @@ export default function GrnBillBuilder() {
               <tr key={i} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                 <td style={{ padding: '5px 4px' }}><input style={input} value={it.description} onChange={e => setItem(i, { description: e.target.value })} placeholder="Item" /></td>
                 <td style={{ padding: '5px 4px', width: 80 }}><input style={input} value={it.hsn || ''} onChange={e => setItem(i, { hsn: e.target.value })} /></td>
-                <td style={{ padding: '5px 4px', width: 70 }}><input style={input} value={it.uom || ''} onChange={e => setItem(i, { uom: e.target.value })} /></td>
-                <td style={{ padding: '5px 4px', width: 80 }}><input style={input} type="number" value={it.quantity} onChange={e => setItem(i, { quantity: e.target.value })} /></td>
-                <td style={{ padding: '5px 4px', width: 90 }}><input style={input} type="number" value={it.rate} onChange={e => setItem(i, { rate: e.target.value })} /></td>
+                {/* A unit from the standard list; one the PO used that is not
+                    in it stays, marked, until somebody picks a proper one. */}
+                <td style={{ padding: '5px 4px', width: 96 }}><UnitSelect style={input} value={it.uom} onChange={v => setItem(i, { uom: v })} ariaLabel={`Line ${i + 1} unit`} /></td>
+                <td style={{ padding: '5px 4px', width: 80 }}><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={it.quantity} onChange={e => setItem(i, { quantity: e.target.value })} /></td>
+                <td style={{ padding: '5px 4px', width: 90 }}><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={it.rate} onChange={e => setItem(i, { rate: e.target.value })} /></td>
                 <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--text-primary)' }}>{rup((+it.quantity || 0) * (+it.rate || 0))}</td>
                 <td style={{ padding: '5px 4px' }}><button onClick={() => rmItem(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Trash2 size={14} /></button></td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
         <button onClick={addItem} className="btn-secondary" style={{ fontSize: '0.78rem', marginTop: 10 }}><Plus size={14} /> Add line</button>
       </div>
 
       {/* Charges + totals */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
         <div style={card}>
           <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>Charges & Adjustments</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
             <div><label style={lbl}>Freight ₹</label><input style={input} type="number" value={f.freight} onChange={e => setF({ ...f, freight: e.target.value })} /></div>
             <div><label style={lbl}>Other Charges ₹</label><input style={input} type="number" value={f.otherCharges} onChange={e => setF({ ...f, otherCharges: e.target.value })} /></div>
             <div><label style={lbl}>Discount ₹ (−)</label><input style={input} type="number" value={f.discount} onChange={e => setF({ ...f, discount: e.target.value })} /></div>

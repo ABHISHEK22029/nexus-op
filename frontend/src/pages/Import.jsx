@@ -90,7 +90,12 @@ export default function Import() {
           </label>
         </div>
         <div style={{ marginTop: 14, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          Expected columns (header row): {t.cols.map(c => <code key={c} style={{ background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: 5, marginRight: 5, fontSize: '0.78rem', color: 'var(--brand-amber)' }}>{c}</code>)}
+          {/* Wrapped, not one unbreakable run: the names sat back to back with
+              no space between them and ran off the card on a phone. */}
+          Expected columns (header row):{' '}
+          <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 5, verticalAlign: 'middle' }}>
+            {t.cols.map(c => <code key={c} style={{ background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: 5, fontSize: '0.78rem', color: 'var(--brand-amber)' }}>{c}</code>)}
+          </span>
           <div style={{ marginTop: 4 }}>Only <b>name</b> is required; extra/unknown columns are ignored.</div>
         </div>
       </div>

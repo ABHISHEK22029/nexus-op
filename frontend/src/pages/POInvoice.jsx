@@ -6,6 +6,7 @@ import { useProject } from '../context/ProjectContext';
 import { amountInWords } from '../lib/amountInWords';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
+import { docFileName, printAs } from '../lib/documentPdf';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -85,29 +86,28 @@ const POInvoice = () => {
   const total = round2(subtotal + tax);
   const halfRate = round2(gstRate / 2);
 
-  const handleDownloadPdf = () => {
-    const element = invoiceRef.current;
-    const prev = document.title;
-    document.title = (po.poNumber || `PO-${po.id}`).replace(/\//g, '_');
-    window.print();
-    setTimeout(() => { document.title = prev; }, 0);
-    return undefined;
-  };
+  /* Print-to-PDF, named for what it is: "Purchase Order PO-0012 - Vendor". */
+  const fileName = docFileName('Purchase Order', po.poNumber || `PO-${po.id}`, po.vendorName);
+  const handleDownloadPdf = () => { printAs(fileName); };
 
   const handlePrint = () => {
-    window.print();
+    printAs(fileName);
   };
 
   const poDate = new Date(po.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto pb-16">
+    /* The padding the app's own pages have (16px on a phone, 28px wider):
+       this screen is outside that frame, and .doc-scroll reaches into that
+       padding with negative margins — without it the page scrolled sideways. */
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto pb-16"
+      style={{ padding: '0 clamp(16px, 4vw, 28px) 64px' }}>
       {/* Action Bar */}
-      <div className="flex justify-between items-center mb-6 print:hidden">
+      <div className="flex flex-wrap gap-3 justify-between items-center mb-6 print:hidden">
         <button onClick={() => navigate('/purchase-orders')} className="inv-act-btn">
           <ArrowLeft size={16} /> Back to POs
         </button>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {/* This button had no onClick at all — it rendered, it looked
               like the others, and clicking it did nothing. */}
           <button onClick={() => setEmailing(true)} className="inv-act-btn">
@@ -123,6 +123,7 @@ const POInvoice = () => {
       </div>
 
       {/* Invoice Document Wrapper */}
+      <div className="doc-scroll">
       <div ref={invoiceRef} className="invoice-mock print:m-0 print:rounded-none print:shadow-none">
         
         {/* Header */}
@@ -181,28 +182,28 @@ const POInvoice = () => {
 
         {/* Items Table */}
         <div className="inv-items-table">
-          <table>
+          <table className="doc-items">
             <thead>
               <tr>
                 <th style={{width: '5%'}}>#</th>
                 <th style={{width: '40%'}}>DESCRIPTION</th>
                 <th style={{width: '10%'}}>UOM</th>
                 <th style={{width: '10%'}}>HSN/SAC</th>
-                <th style={{width: '10%'}}>QTY</th>
-                <th style={{width: '12%'}}>UNIT PRICE</th>
-                <th style={{width: '13%'}}>TOTAL</th>
+                <th style={{width: '10%', textAlign: 'right'}}>QTY</th>
+                <th style={{width: '12%', textAlign: 'right', whiteSpace: 'nowrap'}}>UNIT PRICE</th>
+                <th style={{width: '13%', textAlign: 'right'}}>TOTAL</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item, idx) => (
                 <tr key={item.id || idx}>
                   <td style={{textAlign: 'center'}}>{item.sno}</td>
-                  <td style={{fontWeight: 600}}>{item.description}</td>
+                  <td className="doc-wrap" style={{fontWeight: 600}}>{item.description}</td>
                   <td>{item.uom}</td>
                   <td>{item.hsn || '-'}</td>
-                  <td>{item.quantity}</td>
-                  <td style={{fontFamily: 'var(--font-mono)'}}>{Number(item.unitPrice).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-                  <td style={{fontFamily: 'var(--font-mono)', fontWeight: 600}}>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{item.quantity}</td>
+                  <td style={{textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)'}}>{Number(item.unitPrice).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                  <td style={{textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)', fontWeight: 600}}>
                     {(item.quantity * item.unitPrice).toLocaleString('en-IN', {minimumFractionDigits:2})}
                   </td>
                 </tr>
@@ -211,6 +212,9 @@ const POInvoice = () => {
           </table>
         </div>
 
+        {/* Totals to footer: kept whole, and never on a sheet by itself
+            (print.css, .doc-closing). */}
+        <div className="doc-closing">
         {/* Totals Section */}
         <div className="inv-totals-section">
           <div className="inv-notes">
@@ -301,7 +305,9 @@ const POInvoice = () => {
             {po.poNumber || `PO-${po.id}`} &nbsp;|&nbsp; {poDate}
           </div>
         </div>
+        </div>
 
+      </div>
       </div>
 
       {/* Files that belong with this document — the vendor's quotation behind it, their acknowledgement. Never printed. */}

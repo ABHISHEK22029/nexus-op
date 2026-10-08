@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import CategoryPicker from '../components/CategoryPicker';
+import { formProblems } from '../lib/validators';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -189,14 +190,12 @@ export default function VendorForm() {
     if (tab === 0) {
       if (!form.name.trim()) errs.name = 'Company name is required';
       if (!form.type) errs.type = 'Vendor type is required';
-      if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = 'Invalid email';
+      /* The shared rules (lib/validators) — the server applies the same. */
+      Object.assign(errs, formProblems(form, { email: 'email', mobile: 'phone', whatsapp: 'phone' }));
     }
-    if (tab === 1) {
-      if (form.gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(form.gstin))
-        errs.gstin = 'Invalid GSTIN format (e.g. 22AAAAA0000A1Z5)';
-      if (form.pan && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan))
-        errs.pan = 'Invalid PAN (e.g. AAAAA0000A)';
-    }
+    if (tab === 1) Object.assign(errs, formProblems(form, { gstin: 'gstin', pan: 'pan' }, { pair: ['gstin', 'pan'] }));
+    if (tab === 2) Object.assign(errs, formProblems(form, { pincode: 'pincode' }));
+    if (tab === 3) Object.assign(errs, formProblems(form, { accountHolder: 'accountHolder', accountNumber: 'accountNumber', ifscCode: 'ifsc' }));
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -259,7 +258,7 @@ export default function VendorForm() {
         const res = await fetch(`${API}/vendors`, { method: 'POST', headers, body: JSON.stringify(payload) });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || 'Could not save the vendor. Please try again.');
+          throw new Error(err.error || 'Could not save the vendor. Please try again.', { cause: 'server' });
         }
         const data = await res.json();
         setSavedId(data.id);
@@ -267,7 +266,7 @@ export default function VendorForm() {
         const res = await fetch(`${API}/vendors/${savedId}`, { method: 'PATCH', headers, body: JSON.stringify(payload) });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || 'Could not update the vendor. Please try again.');
+          throw new Error(err.error || 'Could not update the vendor. Please try again.', { cause: 'server' });
         }
       }
       setTabSaved(t => ({ ...t, [activeTab]: true }));
@@ -275,7 +274,9 @@ export default function VendorForm() {
       return true;
     } catch (err) {
       console.error(err);
-      showToast('Save failed — check connection', 'error');
+      /* The server's own reason (e.g. "Phone: Enter a 10-digit mobile…"),
+         not a guess about the connection. */
+      showToast(err.cause === 'server' ? err.message : 'Save failed — check connection', 'error');
       return false;
     } finally {
       setSaving(false);
@@ -439,10 +440,10 @@ export default function VendorForm() {
                 <Field label="Email" error={errors.email}>
                   <ThemeInput icon={Mail} type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="contact@company.com"/>
                 </Field>
-                <Field label="Mobile">
+                <Field label="Mobile" error={errors.mobile}>
                   <ThemeInput icon={Phone} value={form.mobile} onChange={e => set('mobile', e.target.value)} placeholder="9876543210"/>
                 </Field>
-                <Field label="WhatsApp">
+                <Field label="WhatsApp" error={errors.whatsapp}>
                   <ThemeInput value={form.whatsapp} onChange={e => set('whatsapp', e.target.value)} placeholder="Same as mobile"/>
                 </Field>
                 <Field label="Website">
@@ -571,7 +572,7 @@ export default function VendorForm() {
                     {STATES.map(s => <option key={s}>{s}</option>)}
                   </ThemeSelect>
                 </Field>
-                <Field label="Pincode">
+                <Field label="Pincode" error={errors.pincode}>
                   <ThemeInput value={form.pincode} onChange={e => set('pincode', e.target.value)} maxLength={6} placeholder="500001"/>
                 </Field>
               </div>
@@ -599,14 +600,14 @@ export default function VendorForm() {
               <SectionTitle>Primary Bank Account</SectionTitle>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <Field label="Bank Name"><ThemeInput value={form.bankName} onChange={e => set('bankName', e.target.value)} placeholder="State Bank of India"/></Field>
-                <Field label="Account Holder Name"><ThemeInput value={form.accountHolder} onChange={e => set('accountHolder', e.target.value)} placeholder="Larsen & Toubro Ltd"/></Field>
-                <Field label="Account Number"><ThemeInput value={form.accountNumber} onChange={e => set('accountNumber', e.target.value)} placeholder="XXXXXXXXXXXX"/></Field>
+                <Field label="Account Holder Name" error={errors.accountHolder}><ThemeInput value={form.accountHolder} onChange={e => set('accountHolder', e.target.value)} placeholder="Larsen & Toubro Ltd"/></Field>
+                <Field label="Account Number" error={errors.accountNumber}><ThemeInput value={form.accountNumber} onChange={e => set('accountNumber', e.target.value)} placeholder="XXXXXXXXXXXX"/></Field>
                 <Field label="Account Type">
                   <ThemeSelect value={form.accountType} onChange={e => set('accountType', e.target.value)}>
                     {['Current','Savings','CC','OD'].map(t => <option key={t}>{t}</option>)}
                   </ThemeSelect>
                 </Field>
-                <Field label="IFSC Code" hint="11-character IFSC">
+                <Field label="IFSC Code" hint="11-character IFSC" error={errors.ifscCode}>
                   <ThemeInput value={form.ifscCode} onChange={e => set('ifscCode', e.target.value.toUpperCase())} placeholder="SBIN0001234" maxLength={11}/>
                 </Field>
                 <Field label="MICR Code"><ThemeInput value={form.micrCode} onChange={e => set('micrCode', e.target.value)} placeholder="500002001" maxLength={9}/></Field>

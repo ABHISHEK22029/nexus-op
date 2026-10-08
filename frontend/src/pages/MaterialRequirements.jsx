@@ -15,6 +15,8 @@ import { Layers, AlertTriangle, Search, RefreshCw, Info, TrendingDown, PackageCh
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import ShortfallPoModal from '../components/ShortfallPoModal';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const num = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 });
@@ -141,7 +143,7 @@ export default function MaterialRequirements() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 16 }}>
           <Tile icon={<AlertTriangle size={15} />} tone="#dc2626" label="Materials short" value={data.summary.materials_short} />
           <Tile icon={<PackageCheck size={15} />} tone="#f59e0b" label="On order" value={data.summary.materials_ordered} />
-          <Tile icon={<TrendingDown size={15} />} tone="#2563eb" label="Shortfall value" value={rupee(data.summary.total_shortfall_value)} />
+          <Tile icon={<TrendingDown size={15} />} tone="#2563eb" label="Shortfall value" value={fmtCompactINR(data.summary.total_shortfall_value)} exact={fmtINR(data.summary.total_shortfall_value)} />
         </div>
       )}
 
@@ -314,12 +316,12 @@ const Pill = ({ fg, children }) => (
   <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 12, background: `${fg}20`, color: fg, fontWeight: 600, fontSize: '0.74rem', whiteSpace: 'nowrap' }}>{children}</span>
 );
 
-const Tile = ({ icon, tone, label, value }) => (
-  <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '13px 16px' }}>
+const Tile = ({ icon, tone, label, value, exact }) => (
+  <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '13px 16px', minWidth: 0 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: tone }}>
       {icon} {label}
     </div>
-    <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    <FitNumber exact={exact} style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: 4, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{value}</FitNumber>
   </div>
 );
 

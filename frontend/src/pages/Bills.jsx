@@ -14,6 +14,8 @@ import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 
 // The state machine the server actually enforces (BILL_TRANSITIONS in index.js).
 const BILL_STATUSES = ['Draft', 'Under Review', 'Approved', 'Paid', 'Rejected'];
@@ -103,7 +105,6 @@ const Bills = () => {
      now says what the number is rather than keeping a label the figure no
      longer supports. Filter to Paid and it answers the old question exactly. */
   const s = q.summary || {};
-  const money = (n) => Number(n || 0).toLocaleString();
   const canWrite = can('bills', 'write');
   const canDelete = can('bills', 'delete');
 
@@ -118,13 +119,14 @@ const Bills = () => {
       </div>
 
       {/* Financial Headers */}
+      {/* Headline figures compact (₹16.03 L), exact on hover. */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-[#111113] border border-white/5 rounded-xl p-5 flex flex-col gap-2 relative overflow-hidden">
+          <div className="bg-[#111113] border border-white/5 rounded-xl p-5 flex flex-col gap-2 relative overflow-hidden" style={{ minWidth: 0 }}>
               <div className="absolute -right-4 -top-4 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl"></div>
               <span className="text-sm font-medium text-gray-400 flex items-center gap-2">
                   <Banknote size={16} /> Cumulative Gross Billed
               </span>
-              <span className="text-2xl font-bold text-white">₹{money(s.gross)}</span>
+              <span className="text-2xl font-bold text-white"><FitNumber exact={fmtINR(s.gross)}>{fmtCompactINR(s.gross)}</FitNumber></span>
               <span className="text-xs txt-muted">
                   {q.isFiltered ? `${s.count ?? q.total} matching bill(s)` : `${s.count ?? q.total} bill(s)`}
               </span>
@@ -137,9 +139,9 @@ const Bills = () => {
               <span className="text-sm font-medium text-gray-400 flex items-center gap-2">
                   <CheckCircle size={16} /> Net Paid
               </span>
-              <span className="text-2xl font-bold text-white">₹{money(s.paid)}</span>
+              <span className="text-2xl font-bold text-white"><FitNumber exact={fmtINR(s.paid)}>{fmtCompactINR(s.paid)}</FitNumber></span>
               <span className="text-xs txt-muted">
-                  ₹{money(s.unpaid)} still owed · after ₹{money(s.deductions)} deductions
+                  {fmtCompactINR(s.unpaid)} still owed · after {fmtCompactINR(s.deductions)} deductions
               </span>
           </div>
           <div className="bg-[#111113] border border-white/5 rounded-xl p-5 flex flex-col gap-2 relative overflow-hidden">
@@ -161,7 +163,7 @@ const Bills = () => {
           </button>
         </div>
         <form onSubmit={handleGenerate} className="flex gap-4 items-end flex-wrap">
-          <div className="flex-[2] min-w-[250px]">
+          <div className="flex-[2] min-w-[min(250px,100%)]">
              <label className="block text-xs font-medium txt-muted mb-1">Target Work Order</label>
              <select required className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newWOId} onChange={e => setNewWOId(e.target.value)}>
                 <option value="">-- Select Executing Work Order --</option>

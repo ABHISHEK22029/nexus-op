@@ -6,9 +6,14 @@ import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail, P
 import { useToast } from '../context/ToastContext';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
+import { amountInWords } from '../lib/amountInWords';
+import { docFileName, downloadDocumentPdf, printAs } from '../lib/documentPdf';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* An amount on the document: right-aligned, on one line, figures of equal
+   width — ₹14,25,41,68,500.00 wrapped onto two lines reads as two numbers. */
+const num = { textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
 
 export default function SalesInvoiceDoc() {
   const { id } = useParams();
@@ -18,20 +23,12 @@ export default function SalesInvoiceDoc() {
   const [pay, setPay] = useState({ amount: '', mode: 'Bank', reference: '', paidDate: '' });
   const ref = useRef(null);
   const [emailing, setEmailing] = useState(false);
+  const [making, setMaking] = useState(false);
 
   const load = () => fetch(`${API}/sales-invoices/${id}`).then(r => r.ok ? r.json() : null).then(setInv);
   useEffect(() => { load(); }, [id]);
 
   const setStatus = async (status) => { await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); load(); };
-  const pdf = () => {
-    /* Browser print-to-PDF rather than html2canvas: the output stays real
-       text, the print stylesheet controls page breaks, and the item table
-       repeats its header. The filename comes from document.title. */
-    const prev = document.title;
-    document.title = `${inv.invoice_number}`;
-    window.print();
-    setTimeout(() => { document.title = prev; }, 0);
-  };
 
   /* Save one field from the document itself. The server decides what is
      still editable once an invoice is issued, and its answer replaces the
@@ -77,7 +74,10 @@ export default function SalesInvoiceDoc() {
   if (!inv) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading invoice…</div>;
   const co = inv.company || {};
   const date = inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-  const due = Math.max(0, (inv.net_amount || 0) - (inv.amount_paid || 0));
+  /* To the paisa: the difference of two amounts in floating point can
+     come out as …543.9999999 and print a paisa short. */
+  const paid = Number(inv.amount_paid) || 0;
+  const due = Math.max(0, Math.round(((Number(inv.net_amount) || 0) - paid) * 100) / 100);
   const input = { padding: '8px 10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 7, color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none' };
 
   const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
@@ -100,6 +100,37 @@ export default function SalesInvoiceDoc() {
   };
   const differentShipTo = (shipTo.address || '') !== (billTo.address || '');
   const hasBank = co.bank_name && co.bank_account_no && co.bank_ifsc;
+  const fileName = docFileName('Tax Invoice', inv.invoice_number, billTo.name);
+  const terms = inv.terms || co.invoice_terms;
+  /* Spelled from the total on the page, not the text stored when the
+     invoice was raised: invoices raised before the 8 Oct fix still carry
+     "Rupees undefined Hundred…" in that column. */
+  const words = amountInWords(inv.net_amount);
+
+  /* The totals block, once, for the page and the PDF. Amount received and
+     balance due appear once money has come in; an unpaid invoice reads
+     exactly as before. */
+  const half = Number(inv.gst_rate) / 2;
+  const totalRows = [
+    { label: 'SUB-TOTAL', value: rup(inv.sub_total) },
+    Number(inv.discount) ? { label: 'DISCOUNT', value: `-${rup(inv.discount)}` } : null,
+    /* Rule 46(i): the RATE of tax is a particular of the invoice, not just
+       the amount. */
+    ...(inv.interstate
+      ? [{ label: `IGST @ ${inv.gst_rate}%`, value: rup(inv.igst) }]
+      : [{ label: `CGST @ ${half}%`, value: rup(inv.cgst) }, { label: `SGST @ ${half}%`, value: rup(inv.sgst) }]),
+    Number(inv.round_off) ? { label: 'ROUND OFF', value: rup(inv.round_off) } : null,
+    { label: 'INVOICE TOTAL', value: rup(inv.net_amount), strong: true },
+    ...(paid > 0 ? [
+      { label: 'AMOUNT RECEIVED', value: `-${rup(paid)}` },
+      { label: 'BALANCE DUE', value: rup(due), strong: true },
+    ] : []),
+  ].filter(Boolean);
+  const bankRows = hasBank ? [
+    co.bank_account_name && ['Account Name', co.bank_account_name],
+    ['Bank', co.bank_name], ['Account No.', co.bank_account_no], ['IFSC', co.bank_ifsc],
+    co.bank_branch && ['Branch', co.bank_branch], co.upi_id && ['UPI', co.upi_id],
+  ].filter(Boolean) : [];
 
   /* Rule 46 requires these. A missing field can invalidate the buyer's Input
      Tax Credit claim, which means the invoice comes back unpaid. Warn here,
@@ -110,6 +141,43 @@ export default function SalesInvoiceDoc() {
     !billTo.address && "Customer's billing address",
     !hasBank && 'Your bank details (Company Profile) — the customer cannot pay without them',
   ].filter(Boolean);
+
+  /* What the PDF says — the same values as the page above it. */
+  const pdfModel = () => ({
+    fileName, title: 'TAX INVOICE', number: inv.invoice_number, framed: true, company: co,
+    meta: [['Invoice #', inv.invoice_number], ['Date', date], dueDate && ['Due', dueDate], ['Status', inv.status]],
+    parties: [
+      { title: 'Bill To', name: billTo.name, lines: [billTo.address, billTo.state], gstin: billTo.gstin || '' },
+      { title: 'Ship To', note: differentShipTo ? '' : '(same as billing)', name: shipTo.name, lines: [shipTo.address, shipTo.state], gstin: shipTo.gstin || undefined },
+    ],
+    facts: [
+      ['Place of Supply', `${inv.place_of_supply || '—'}${inv.place_of_supply_code ? ` (${inv.place_of_supply_code})` : ''}`],
+      ['Reverse Charge', inv.reverse_charge ? 'Yes' : 'No'],
+      inv.eway_bill_no && ['E-Way Bill', inv.eway_bill_no],
+      inv.customer_order_id && ['Order Ref', inv.order?.order_number || `#${inv.customer_order_id}`],
+      inv.order?.customer_po_ref && ['Your PO', inv.order.customer_po_ref],
+    ],
+    columns: [
+      { key: 'index', label: '#' }, { key: 'description', label: 'Description' }, { key: 'hsn', label: 'HSN' },
+      { key: 'uom', label: 'UOM', align: 'center' }, { key: 'quantity', label: 'Qty', align: 'right' },
+      { key: 'rate', label: 'Rate', align: 'right' }, { key: 'amount', label: 'Amount', align: 'right', strong: true },
+    ],
+    boldDescription: true,
+    rows: inv.items.map((it, i) => [String(i + 1), it.description, it.hsn || '-', it.uom || '', String(it.quantity ?? ''), rup(it.rate), rup(it.amount)]),
+    notes: inv.notes, totals: totalRows, words: `Amount in Words: ${words}`,
+    bank: bankRows.length ? { title: 'Bank Details for Payment', rows: bankRows } : null,
+    terms: terms ? { text: terms } : null, irn: inv.irn,
+    footerLeft: co.invoice_footer_note || 'This is a computer-generated invoice.',
+    footerRight: `${inv.invoice_number}  |  ${date}`,
+  });
+  /* A real file, saved in one click — lib/documentPdf.js says why it is
+     laid out there rather than printed. */
+  const pdf = async () => {
+    setMaking(true);
+    try { await downloadDocumentPdf(pdfModel()); }
+    catch (e) { toast.error(`Could not make the PDF: ${e?.message || e}`); throw e; }
+    finally { setMaking(false); }
+  };
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', paddingBottom: 40 }}>
@@ -128,28 +196,28 @@ export default function SalesInvoiceDoc() {
           <select value={inv.status} onChange={e => setStatus(e.target.value)} aria-label="Invoice status" style={{ width: 'auto', flex: 'none', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }}>
             {['Draft', 'Sent', 'Partially Paid', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <button onClick={pdf} className="inv-act-btn"><Download size={15} /> PDF</button>
+          <button onClick={() => pdf().catch(() => {})} disabled={making} className="inv-act-btn" title={`Saves ${fileName}.pdf`}><Download size={15} /> {making ? 'Making PDF…' : 'Download PDF'}</button>
           {/* Sending it was the missing step: an invoice could be produced
               and printed, and there was no way to get it to the customer
               without leaving the product. */}
           <button onClick={() => setEmailing(true)} className="inv-act-btn"><Mail size={15} /> Email</button>
-          <button onClick={() => window.print()} className="inv-act-btn primary"><Printer size={15} /> Print</button>
+          <button onClick={() => printAs(fileName)} className="inv-act-btn primary"><Printer size={15} /> Print</button>
         </div>
       </div>
 
       {/* Payment status banner */}
-      <div className="print:hidden" style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-        <div style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px' }}>
+      <div className="print:hidden" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+        <div style={{ flex: '1 1 200px', minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Invoice Total</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>₹{rup(inv.net_amount)}</div>
+          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>₹{rup(inv.net_amount)}</div>
         </div>
-        <div style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px' }}>
+        <div style={{ flex: '1 1 200px', minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Received</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)' }}>₹{rup(inv.amount_paid)}</div>
+          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>₹{rup(paid)}</div>
         </div>
-        <div style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px' }}>
+        <div style={{ flex: '1 1 200px', minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Balance Due</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: due > 0 ? '#ef4444' : '#10b981', fontFamily: 'var(--font-mono)' }}>₹{rup(due)}</div>
+          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: due > 0 ? '#ef4444' : '#10b981', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>₹{rup(due)}</div>
         </div>
       </div>
 
@@ -179,7 +247,8 @@ export default function SalesInvoiceDoc() {
         </div>
       )}
 
-      {/* Document */}
+      {/* Document. On a phone it scrolls sideways in its own box (print.css). */}
+      <div className="doc-scroll">
       <div ref={ref} className="invoice-mock">
         <div className="inv-header">
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -224,7 +293,7 @@ export default function SalesInvoiceDoc() {
           <div className="inv-party">
             <div className="inv-party-title">Bill To</div>
             <div className="inv-party-name">{billTo.name || '—'}</div>
-            <div className="inv-party-detail">
+            <div className="inv-party-detail doc-wrap">
               {billTo.address || <em style={{ color: '#dc2626' }}>Address missing</em>}{billTo.address && <br />}
               {billTo.state && <>{billTo.state}<br /></>}
               GSTIN: <strong>{billTo.gstin || 'Unregistered'}</strong>
@@ -233,7 +302,7 @@ export default function SalesInvoiceDoc() {
           <div className="inv-party">
             <div className="inv-party-title">Ship To {!differentShipTo && <span style={{ fontWeight: 400, textTransform: 'none' }}>(same as billing)</span>}</div>
             <div className="inv-party-name">{shipTo.name || '—'}</div>
-            <div className="inv-party-detail">
+            <div className="inv-party-detail doc-wrap">
               {shipTo.address || '—'}{shipTo.address && <br />}
               {shipTo.state && <>{shipTo.state}<br /></>}
               {shipTo.gstin && <>GSTIN: <strong>{shipTo.gstin}</strong></>}
@@ -252,43 +321,45 @@ export default function SalesInvoiceDoc() {
         </div>
 
         <div className="inv-items-table">
-          <table>
-            <thead><tr><th style={{ width: '6%' }}>#</th><th style={{ width: '42%' }}>DESCRIPTION</th><th>HSN</th><th>UOM</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead>
+          <table className="doc-items">
+            <thead><tr><th style={{ width: '6%' }}>#</th><th style={{ width: '42%' }}>DESCRIPTION</th><th>HSN</th><th>UOM</th><th style={num}>QTY</th><th style={num}>RATE</th><th style={num}>AMOUNT</th></tr></thead>
             <tbody>
               {inv.items.map((it, i) => (
                 <tr key={it.id}>
                   <td style={{ textAlign: 'center' }}>{i + 1}</td>
-                  <td style={{ fontWeight: 600 }}>{it.description}</td>
-                  <td>{it.hsn || '-'}</td><td>{it.uom}</td><td>{it.quantity}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)' }}>{rup(it.rate)}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{rup(it.amount)}</td>
+                  <td className="doc-wrap" style={{ fontWeight: 600 }}>{it.description}</td>
+                  <td>{it.hsn || '-'}</td><td>{it.uom}</td><td style={num}>{it.quantity}</td>
+                  <td style={{ ...num, fontFamily: 'var(--font-mono)' }}>{rup(it.rate)}</td>
+                  <td style={{ ...num, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{rup(it.amount)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
+        {/* Totals to footer: one block, never split across sheets and never
+            starting one alone (print.css, .doc-closing). */}
+        <div className="doc-closing">
         <div className="inv-totals-section">
-          <div className="inv-notes">{inv.notes && <><strong>Notes</strong>{inv.notes}</>}</div>
+          <div className="inv-notes doc-wrap">{inv.notes && <><strong>Notes</strong>{inv.notes}</>}</div>
           <table className="inv-totals-table">
             <tbody>
-              <tr><td className="tl">SUB-TOTAL</td><td className="tv">{rup(inv.sub_total)}</td></tr>
-              {inv.discount ? <tr><td className="tl">DISCOUNT</td><td className="tv">-{rup(inv.discount)}</td></tr> : null}
-              {inv.interstate
-                ? <tr><td className="tl">IGST @ {inv.gst_rate}%</td><td className="tv">{rup(inv.igst)}</td></tr>
-                /* Rule 46(i): the RATE of tax is a particular of the invoice,
-                   not just the amount. */
-                : <><tr><td className="tl">CGST @ {Number(inv.gst_rate) / 2}%</td><td className="tv">{rup(inv.cgst)}</td></tr><tr><td className="tl">SGST @ {Number(inv.gst_rate) / 2}%</td><td className="tv">{rup(inv.sgst)}</td></tr></>}
-              {inv.round_off ? <tr><td className="tl">ROUND OFF</td><td className="tv">{rup(inv.round_off)}</td></tr> : null}
-              <tr className="tf"><td className="tl" style={{ color: '#000' }}>INVOICE TOTAL</td><td className="tv" style={{ color: '#000' }}>{rup(inv.net_amount)}</td></tr>
+              {totalRows.map(r => (
+                <tr key={r.label} className={r.strong ? 'tf' : undefined}>
+                  <td className="tl" style={r.strong ? { color: '#000' } : undefined}>{r.label}</td>
+                  <td className="tv" style={r.strong ? { color: '#000' } : undefined}>{r.value}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
 
-        <div className="inv-amount-words">Amount in Words: {inv.amount_in_words || '—'}</div>
+        <div className="inv-amount-words">Amount in Words: {words}</div>
 
-        {/* Bank details — without these the customer literally cannot pay. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16, marginTop: 14 }}>
+        {/* Bank details — without these the customer literally cannot pay.
+            minmax(0, …): a long word in the terms widened its column until
+            the bank box was squeezed to a sliver. */}
+        <div className="inv-bank-terms" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', gap: 16, margin: '14px 22px 0' }}>
           <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 6 }}>Bank Details for Payment</div>
             {hasBank ? (
@@ -316,10 +387,10 @@ export default function SalesInvoiceDoc() {
                 <div style={{ fontSize: '0.62rem', wordBreak: 'break-all' }}>{inv.irn}</div>
               </div>
             )}
-            {(inv.terms || co.invoice_terms) && (
+            {terms && (
               <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px' }}>
                 <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 4 }}>Terms &amp; Conditions</div>
-                <div style={{ fontSize: '0.72rem', color: '#374151', whiteSpace: 'pre-wrap' }}>{inv.terms || co.invoice_terms}</div>
+                <div className="doc-wrap" style={{ fontSize: '0.72rem', color: '#374151', whiteSpace: 'pre-wrap' }}>{terms}</div>
               </div>
             )}
           </div>
@@ -338,6 +409,8 @@ export default function SalesInvoiceDoc() {
           </div>
           <div className="inv-footer-right">{inv.invoice_number} &nbsp;|&nbsp; {date}</div>
         </div>
+        </div>
+      </div>
       </div>
 
       {/* Anything that belongs with this invoice — the customer's PO, a
@@ -355,13 +428,15 @@ export default function SalesInvoiceDoc() {
           company={co}
           amount={inv.net_amount}
           extra={[
-            ['Already paid', Number(inv.amount_paid) > 0 ? `₹${Number(inv.amount_paid).toLocaleString('en-IN')}` : null],
+            ['Already paid', paid > 0 ? `₹${rup(paid)}` : null],
+            ['Balance due', paid > 0 ? `₹${rup(due)}` : null],
             ['Payable by', inv.due_date],
           ]}
           onClose={() => setEmailing(false)}
           /* The same PDF the toolbar produces, so what is attached is
              exactly what was on screen. */
           onDownloadPdf={pdf}
+          fileName={`${fileName}.pdf`}
         />
       )}
     </div>

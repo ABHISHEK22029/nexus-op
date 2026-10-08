@@ -2,10 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trash2, Plus, PackageMinus, PackagePlus, Recycle, Scale, ShoppingBag } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtCompactQty, fmtINR, fmtQty } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const yieldColor = (p) => (p == null ? 'var(--text-muted)' : p >= 85 ? '#10b981' : p >= 70 ? '#f59e0b' : '#ef4444');
 const rupee = (n) => (n == null ? '—' : `₹${Number(n).toLocaleString('en-IN')}`);
+
+/* One figure: its name, the number, and where the number comes from.
+   Module scope, so it is not a new component type on every render.
+   The names never showed — every call passed `l=` to a component that read
+   `label` — so the panel was eight dashes with no way to tell what any of
+   them were. When a figure cannot be worked out yet it now says what is
+   missing instead of a dash. */
+const Metric = ({ label: name, value, exact, color, how, missing, note }) => (
+  <div style={{ padding: '10px 14px', background: 'var(--bg-elevated)', borderRadius: 10, border: '1px solid var(--border-subtle)', minWidth: 0 }} data-metric={name}>
+    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>{name}</div>
+    {missing ? (
+      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.35 }}>{missing}</div>
+    ) : (
+      <FitNumber exact={exact} style={{ fontSize: '1.25rem', fontWeight: 800, color: color || 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{value}</FitNumber>
+    )}
+    {note && !missing && <div style={{ fontSize: '0.7rem', fontWeight: 600, color: color || 'var(--text-secondary)', marginTop: 1 }}>{note}</div>}
+    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.35 }}>{how}</div>
+  </div>
+);
 
 export default function ProductionOrder() {
   const { id } = useParams();
@@ -76,13 +97,14 @@ export default function ProductionOrder() {
   const label = { display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 };
   const secHead = { display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 };
 
-  const Metric = ({ label: l, value, color, sub }) => (
-    <div style={{ padding: '10px 14px', background: 'var(--bg-elevated)', borderRadius: 10, border: '1px solid var(--border-subtle)' }}>
-      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>{l}</div>
-      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: color || 'var(--text-primary)', marginTop: 2 }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 1 }}>{sub}</div>}
-    </div>
-  );
+  /* What is still needed before each figure means anything. */
+  const issued = Number(y.inputWeight) > 0;
+  const weighed = Number(y.outputWeight) > 0;
+  const pieces = Number(y.outputQty) > 0;
+  const costed = Number(y.materialCost) > 0;
+  const needYield = !issued && !weighed ? 'Issue material and record output to see yield'
+    : !issued ? 'Issue material to see yield' : !weighed ? 'Record the output weight (kg) to see yield' : null;
+  const kg = (n) => `${fmtCompactQty(n)} kg`;
 
   const lineRow = (kind, cols, lineId) => (
     <tr key={kind + lineId} style={{ borderTop: '1px solid var(--border-subtle)' }}>
@@ -109,7 +131,7 @@ export default function ProductionOrder() {
             </button>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {['Planned', 'In Progress', 'Completed'].map(s => (
             <button key={s} onClick={() => setStatus(s)} style={{ padding: '7px 13px', borderRadius: 8, fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (order.status === s ? 'var(--brand-amber)' : 'var(--border-default)'), background: order.status === s ? 'hsl(28,100%,54%,0.1)' : 'var(--bg-elevated)', color: order.status === s ? 'var(--brand-amber)' : 'var(--text-muted)' }}>{s}</button>
           ))}
@@ -118,23 +140,33 @@ export default function ProductionOrder() {
 
       {/* Yield panel */}
       <div style={{ ...card, marginBottom: 16 }}>
-        <div style={secHead}><Scale size={17} style={{ color: 'var(--brand-amber)' }} /> Yield & Material Balance</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-          <Metric l="Yield" value={y.yieldPct != null ? `${y.yieldPct}%` : '—'} color={yieldColor(y.yieldPct)} sub="finished ÷ input" />
-          <Metric l="Recovered" value={y.recoveredPct != null ? `${y.recoveredPct}%` : '—'} color={yieldColor(y.recoveredPct)} sub="incl. reusable remnant" />
-          <Metric l="Scrap" value={y.scrapPct != null ? `${y.scrapPct}%` : '—'} sub={`${rupee(y.scrapRecovery)} recovered`} />
-          <Metric l="Unaccounted Loss" value={y.unaccountedLoss != null ? `${y.unaccountedLoss} kg` : '—'} color={y.balanced ? 'var(--text-primary)' : '#ef4444'} sub={y.balanced ? 'balanced ✓' : 'check entries'} />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 12 }}>
-          <Metric l="Input" value={y.inputWeight ? `${y.inputWeight} kg` : '—'} />
-          <Metric l="Output" value={y.outputWeight ? `${y.outputWeight} kg` : '—'} sub={y.outputQty ? `${y.outputQty} pcs` : ''} />
-          <Metric l="Net Material Cost" value={rupee(y.netMaterialCost)} sub={`gross ${rupee(y.materialCost)}`} />
-          <Metric l="Cost / Unit" value={rupee(y.costPerUnit)} color="var(--brand-amber)" />
+        <div style={{ ...secHead, marginBottom: 4 }}><Scale size={17} style={{ color: 'var(--brand-amber)' }} /> Yield & Material Balance</div>
+        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 12px' }}>
+          Worked out from what you record below: material issued, finished output, and scrap or remnant. Weights are in kg.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(210px, 100%), 1fr))', gap: 12 }}>
+          <Metric label="Yield" value={`${y.yieldPct}%`} color={yieldColor(y.yieldPct)}
+            how="Finished weight ÷ material issued" missing={needYield} />
+          <Metric label="Recovered" value={`${y.recoveredPct}%`} color={yieldColor(y.recoveredPct)}
+            how="(Finished + reusable remnant) ÷ material issued" missing={needYield} />
+          <Metric label="Scrap" value={`${y.scrapPct}%`} note={Number(y.scrapRecovery) > 0 ? `${fmtCompactINR(y.scrapRecovery)} recovered from scrap sold` : null}
+            how="Sellable scrap ÷ material issued" missing={issued ? null : 'Issue material to see scrap %'} />
+          <Metric label="Unaccounted Loss" value={kg(y.unaccountedLoss)} exact={`${fmtQty(y.unaccountedLoss)} kg`}
+            color={y.balanced ? 'var(--text-primary)' : '#ef4444'} note={y.balanced ? 'Balances ✓' : 'Does not balance — check the entries'}
+            how="Issued − finished − scrap − remnant" missing={issued ? null : 'Issue material first; then this shows what is not accounted for'} />
+          <Metric label="Material issued" value={kg(y.inputWeight)} exact={`${fmtQty(y.inputWeight)} kg`}
+            how="Total of Raw Material Consumed below" missing={issued ? null : 'Nothing issued yet — add it under Raw Material Consumed'} />
+          <Metric label="Output" value={kg(y.outputWeight)} exact={`${fmtQty(y.outputWeight)} kg`} note={pieces ? `${fmtCompactQty(y.outputQty)} pcs` : null}
+            how="Total weight under Finished Output below" missing={weighed ? null : pieces ? `${fmtCompactQty(y.outputQty)} pcs recorded — add their weight (kg)` : 'No output recorded yet'} />
+          <Metric label="Net material cost" value={fmtCompactINR(y.netMaterialCost)} exact={fmtINR(y.netMaterialCost)} note={`Gross ${fmtCompactINR(y.materialCost)}`}
+            how="Qty issued × ₹/kg, less scrap sold" missing={!issued ? 'Issue material to see its cost' : costed ? null : 'Add a ₹/kg rate to the material issued'} />
+          <Metric label="Cost / Unit" value={fmtCompactINR(y.costPerUnit)} exact={fmtINR(y.costPerUnit)} color="var(--brand-amber)"
+            how="Net material cost ÷ pieces made" missing={!costed ? 'Needs a ₹/kg rate on the material issued' : !pieces ? 'Record the pieces made (Pcs) to see this' : null} />
         </div>
       </div>
 
       {/* Three entry sections */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: 16 }}>
         {/* Consumption */}
         <div style={card}>
           <div style={secHead}><PackageMinus size={17} style={{ color: '#ef4444' }} /> Raw Material Consumed</div>

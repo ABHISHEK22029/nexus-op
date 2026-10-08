@@ -21,35 +21,79 @@ function signToken(user) {
 
        A founder's organisation is their own id, so a token issued before
        this existed still resolves correctly — see the fallback below. */
-    { sub: user.id, org: user.org_id ?? user.id, email: user.email, role: user.role, name: user.name },
+    /* iatMs: when it was issued, to the millisecond. The standard iat is in
+       whole seconds, so a session started in the same second as a password
+       reset could not be told apart from one started after it. */
+    { sub: user.id, org: user.org_id ?? user.id, email: user.email, role: user.role, name: user.name, iatMs: Date.now() },
     JWT_SECRET,
     { expiresIn: TOKEN_TTL }
   );
 }
 
+/* Whether a signed token still speaks for its account.
+
+   A token was trusted for its whole 12 hours on its signature alone: a
+   password reset left every other session signed in — including a stolen
+   one — and switching a person off took effect only when their token ran
+   out. Now the account is checked: switched off, or its password changed
+   after the token was issued, and the token is refused.
+
+   Read once a minute per account, not on every request; a reset or a
+   switch-off on this server clears the entry at once (forgetAccount). If
+   the database cannot be reached the request goes on — every route behind
+   this needs the database anyway, and failing here would only add a second
+   error to the first. */
+const ACCOUNT_TTL = 60 * 1000;
+const accounts = new Map();
+async function accountState(id) {
+  const hit = accounts.get(id);
+  if (hit && Date.now() - hit.at < ACCOUNT_TTL) return hit;
+  const db = require('../db');
+  const { rows } = await db.query('SELECT is_active, password_changed_at FROM users WHERE id = $1', [id]);
+  const s = {
+    at: Date.now(),
+    exists: !!rows[0],
+    active: !!rows[0] && rows[0].is_active !== false,
+    changed: rows[0]?.password_changed_at ? new Date(rows[0].password_changed_at).getTime() : 0,   // ms
+  };
+  accounts.set(id, s);
+  if (accounts.size > 20000) accounts.clear();
+  return s;
+}
+const forgetAccount = (id) => accounts.delete(Number(id));
+
 // Express middleware — rejects requests without a valid Bearer token.
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : null;
 
   if (!token) {
     return res.status(401).json({ error: 'Authentication required' });
   }
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = {
-      id: payload.sub,
-      /* Falls back to the user's own id for tokens issued before org_id
-         existed, which is exactly right: everyone who signed in before this
-         was the sole member of their own organisation. So nobody is logged
-         out and nothing they own moves. */
-      orgId: payload.org ?? payload.sub,
-      email: payload.email, role: payload.role, name: payload.name,
-    };
-    next();
-  } catch (err) {
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch {
     return res.status(401).json({ error: 'Invalid or expired session' });
   }
+  try {
+    const s = await accountState(Number(payload.sub));
+    if (!s.exists || !s.active) return res.status(401).json({ error: 'This account has been switched off. Ask your company\'s owner.' });
+    const issued = payload.iatMs ?? payload.iat * 1000;   // a token from before iatMs: its second
+    if (s.changed && issued < s.changed) return res.status(401).json({ error: 'Your password was changed. Sign in again.' });
+  } catch (e) {
+    console.error('[auth] account check skipped:', e.message);
+  }
+  req.user = {
+    id: payload.sub,
+    /* Falls back to the user's own id for tokens issued before org_id
+       existed, which is exactly right: everyone who signed in before this
+       was the sole member of their own organisation. So nobody is logged
+       out and nothing they own moves. */
+    orgId: payload.org ?? payload.sub,
+    email: payload.email, role: payload.role, name: payload.name,
+  };
+  return next();
 }
 
 /* Optional role guard: requireRole('Admin', 'Finance')
@@ -73,4 +117,4 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { signToken, authenticate, requireRole, JWT_SECRET };
+module.exports = { signToken, authenticate, requireRole, JWT_SECRET, forgetAccount };

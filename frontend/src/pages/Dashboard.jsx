@@ -14,6 +14,8 @@ import {
 import { Link } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { useTheme } from '../context/ThemeContext';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtCompactQty, fmtINR, fmtQty } from '../lib/format';
 
 /* ── Smart number formatters ── */
 /* `n == null` means the request has not answered yet, and that is not the
@@ -21,20 +23,13 @@ import { useTheme } from '../context/ThemeContext';
    for the eight seconds this page takes to load it told you that you had
    no vendors, no purchase orders and no stock — with the numbers styled
    exactly like real ones. An em-dash says "not known yet"; 0 is a claim. */
-const fmtCrore = (n) => {
-  if (n == null) return '—';
-  const num = Number(n);
-  if (!Number.isFinite(num)) return '—';
-  if (num >= 1e7) return `₹${(num / 1e7).toFixed(2)} Cr`;
-  if (num >= 1e5) return `₹${(num / 1e5).toFixed(1)} L`;
-  if (num === 0) return '₹0';
-  return `₹${num.toLocaleString('en-IN')}`;
-};
-const fmtNum = (n) => {
-  if (n == null) return '—';
-  const num = Number(n);
-  return Number.isFinite(num) ? num.toLocaleString('en-IN') : '—';
-};
+/* Lakh and crore through lib/format, the same on every tile in the app;
+   the exact figure goes in the tile's tooltip. */
+const known = (n) => n != null && Number.isFinite(Number(n));
+const fmtCrore = (n) => (known(n) ? fmtCompactINR(n) : '—');
+const fmtNum = (n) => (known(n) ? fmtCompactQty(n) : '—');
+const exactINR = (n) => (known(n) ? fmtINR(n) : undefined);
+const exactNum = (n) => (known(n) ? fmtQty(n) : undefined);
 
 /* ── Status colours ── */
 const STATUS_COLORS = {
@@ -60,7 +55,7 @@ const TYPE_CONFIG = {
 /* ══════════════════════════════════════════════════════════
    KPI CARD — Spacious, readable, beautiful
    ══════════════════════════════════════════════════════════ */
-const KpiCard = ({ title, value, sub, icon: Icon, accent, link, trend, isCurrency }) => {
+const KpiCard = ({ title, value, exact, sub, icon: Icon, accent, link, trend, isCurrency }) => {
   const [hovered, setHovered] = useState(false);
   const card = (
     <div
@@ -139,19 +134,18 @@ const KpiCard = ({ title, value, sub, icon: Icon, accent, link, trend, isCurrenc
         {title}
       </div>
 
-      {/* Value — big and proud */}
-      <div style={{
+      {/* Value — big and proud, and never wider than the card */}
+      <FitNumber exact={exact} style={{
         fontFamily: 'var(--font-display)',
         fontSize: isCurrency ? '1.65rem' : '2.2rem',
         fontWeight: 800,
         color: 'var(--text-primary)',
-        lineHeight: 1,
+        lineHeight: 1.05,
         letterSpacing: '-0.03em',
-        wordBreak: 'break-word',
         transition: 'color 240ms',
       }}>
         {value || '—'}
-      </div>
+      </FitNumber>
 
       {sub && (
         <div style={{ fontSize: '0.72rem', color: accent, marginTop: '8px', fontWeight: 600 }}>
@@ -440,21 +434,21 @@ const Dashboard = () => {
             two periods — they were decoration drawn with an up-arrow and a
             green pill, which is the visual language of a real figure. A
             made-up number on a dashboard is worse than no number. */}
-        <KpiCard key="vendors" title="Active Vendors" value={fmtNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" />
-        <KpiCard key="pos" title="Purchase Orders" value={fmtNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po" />
-        <KpiCard key="delivered" title="POs Delivered" value={fmtNum(stats?.deliveredPOs)} icon={CheckCircle} accent="#10B981" link="/po" sub={`${deliveryRate}% delivery rate`} />
-        <KpiCard key="inv" title="Inventory SKUs" value={fmtNum(stats?.inventoryCount)} icon={Package} accent="#F59E0B" link="/inventory" />
+        <KpiCard key="vendors" title="Active Vendors" value={fmtNum(stats?.totalVendors)} exact={exactNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" />
+        <KpiCard key="pos" title="Purchase Orders" value={fmtNum(stats?.totalPOs)} exact={exactNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po" />
+        <KpiCard key="delivered" title="POs Delivered" value={fmtNum(stats?.deliveredPOs)} exact={exactNum(stats?.deliveredPOs)} icon={CheckCircle} accent="#10B981" link="/po" sub={`${deliveryRate}% delivery rate`} />
+        <KpiCard key="inv" title="Inventory SKUs" value={fmtNum(stats?.inventoryCount)} exact={exactNum(stats?.inventoryCount)} icon={Package} accent="#F59E0B" link="/inventory" />
       </div>
 
       {/* ══ 4 FINANCIAL KPI CARDS (row 2) ═══════════════ */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px', marginBottom: '28px' }}>
-        <KpiCard key="billed" title="Total Billed" value={fmtCrore(stats?.totalBilled)} icon={Receipt} accent="#EF4444" link="/bills" isCurrency sub="Gross amount raised" />
-        <KpiCard key="paid" title="Net Released" value={fmtCrore(stats?.netPaid)} icon={TrendingUp} accent="#22C55E" link="/bills" isCurrency sub={`${utilizationPct}% utilization`} />
-        <KpiCard key="indents" title="Open Indents" value={fmtNum(stats?.openIndents)} icon={AlertTriangle} accent="#F97316" link="/indent" />
+        <KpiCard key="billed" title="Total Billed" value={fmtCrore(stats?.totalBilled)} exact={exactINR(stats?.totalBilled)} icon={Receipt} accent="#EF4444" link="/bills" isCurrency sub="Gross amount raised" />
+        <KpiCard key="paid" title="Net Released" value={fmtCrore(stats?.netPaid)} exact={exactINR(stats?.netPaid)} icon={TrendingUp} accent="#22C55E" link="/bills" isCurrency sub={`${utilizationPct}% utilization`} />
+        <KpiCard key="indents" title="Open Indents" value={fmtNum(stats?.openIndents)} exact={exactNum(stats?.openIndents)} icon={AlertTriangle} accent="#F97316" link="/indent" />
         {/* "Platform Modules 15 — All modules active" was a fact about the
             software, on a board about the business. Quantity ordered is
             already computed and was going unused. */}
-        <KpiCard key="qty" title="Units Ordered" value={fmtNum(stats?.totalPOQty)} icon={Layers} accent="#06B6D4" link="/po" sub="Across all purchase orders" />
+        <KpiCard key="qty" title="Units Ordered" value={fmtNum(stats?.totalPOQty)} exact={exactNum(stats?.totalPOQty)} icon={Layers} accent="#06B6D4" link="/po" sub="Across all purchase orders" />
       </div>
 
       {/* ══ S-CURVE ════════════════════════════════════════

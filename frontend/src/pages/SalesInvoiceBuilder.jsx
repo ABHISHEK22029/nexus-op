@@ -61,7 +61,7 @@ function PartyFields({ title, value, onChange, disabled }) {
       <div style={{ ...S.lbl, marginBottom: 0, textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</div>
       <input style={S.input} placeholder="Name" value={value.name || ''} onChange={set('name')} disabled={disabled} aria-label={`${title} name`} />
       <textarea style={{ ...S.input, minHeight: 58, resize: 'vertical' }} placeholder="Address" value={value.address || ''} onChange={set('address')} disabled={disabled} aria-label={`${title} address`} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
         <input style={{ ...S.input, fontFamily: 'var(--font-mono)' }} placeholder="GSTIN (blank if unregistered)" value={value.gstin || ''}
           onChange={e => onChange({ ...value, gstin: e.target.value.toUpperCase() })} disabled={disabled} aria-label={`${title} GSTIN`} />
         <input style={S.input} placeholder="State" value={value.state || ''} onChange={set('state')} disabled={disabled} aria-label={`${title} state`} />
@@ -297,7 +297,7 @@ export default function SalesInvoiceBuilder() {
       {f && (
         <>
           {/* ── number and dates ── */}
-          <div style={{ ...S.card, marginBottom: 16, display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
+          <div style={{ ...S.card, marginBottom: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
             <Field label="Invoice number"
               hint={mode !== 'edit' && suggested && f.invoiceNumber.trim() !== suggested
                 ? <>Typed over. <button type="button" onClick={() => setF(p => ({ ...p, invoiceNumber: suggested }))}
@@ -322,7 +322,7 @@ export default function SalesInvoiceBuilder() {
 
           {/* ── parties and tax ── */}
           <div style={{ ...S.card, marginBottom: 16 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 18 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
               <PartyFields title="Bill to" value={f.billTo} onChange={v => setF(p => ({ ...p, billTo: v, shipTo: p.shipSame ? { ...v } : p.shipTo }))} />
               <div>
                 <PartyFields title="Ship to" value={f.shipSame ? f.billTo : f.shipTo} disabled={f.shipSame}
@@ -333,7 +333,7 @@ export default function SalesInvoiceBuilder() {
                 </label>
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12, marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
               <Field label="Place of supply" hint="Where the goods go — decides CGST + SGST or IGST">
                 <select style={S.input} value={f.posCode} onChange={set('posCode')} aria-label="Place of supply">
                   <option value="">Not set</option>
@@ -399,10 +399,10 @@ export default function SalesInvoiceBuilder() {
           </div>
 
           {/* ── adjustments and totals ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
             <div style={S.card}>
               <div style={S.h}>Adjustments and notes</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
                 <Field label="Discount" hint={(f.discountMode === 'pct' && Number(f.discount) > 0) ? <>= {rup(t.disc)} off the sub-total</> : null}>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <input style={{ ...S.input, borderColor: adjProblems.discount ? '#dc2626' : undefined }} type="number" min="0" step="any" inputMode="decimal" autoComplete="off"

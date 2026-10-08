@@ -25,6 +25,9 @@ import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
 import { getToken } from '../lib/apiAuth';
+import UnitSelect from '../components/UnitSelect';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
@@ -117,8 +120,8 @@ export default function CreditDebitNotes() {
         <Kpi card={card} label={q.isFiltered ? 'Notes (filtered)' : 'Notes'} value={s.count ?? q.total} />
         {/* Kept apart on purpose: opposite signs, so a combined total would
             mean nothing. */}
-        <Kpi card={card} label="Credit notes" value={rupee(s.credit_total)} tone="#10b981" note="Issued to customers" />
-        <Kpi card={card} label="Debit notes" value={rupee(s.debit_total)} tone="#f59e0b" note="Issued to vendors" />
+        <Kpi card={card} label="Credit notes" value={fmtCompactINR(s.credit_total)} exact={fmtINR(s.credit_total)} tone="#10b981" note="Issued to customers" />
+        <Kpi card={card} label="Debit notes" value={fmtCompactINR(s.debit_total)} exact={fmtINR(s.debit_total)} tone="#f59e0b" note="Issued to vendors" />
         <Kpi card={card} label="Missing invoice ref" value={s.unreferenced ?? 0}
           tone={Number(s.unreferenced) > 0 ? '#ef4444' : '#10b981'}
           note={Number(s.unreferenced) > 0 ? 'No original invoice no. / date — Section 34 requires both' : 'All notes carry their original invoice'} />
@@ -159,9 +162,11 @@ export default function CreditDebitNotes() {
                   line originally billed in kilograms is ambiguous, and under
                   section 34 this document adjusts a tax invoice — it should
                   describe the goods the same way that invoice did. */}
-              <div style={{ flex: 0.6 }}><label style={lbl}>Unit</label><input style={input} value={l.uom || ''} onChange={e => setLine(i, { uom: e.target.value })} placeholder="nos" /></div>
-              <div style={{ flex: 0.7 }}><label style={lbl}>Qty</label><input style={input} type="number" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
-              <div style={{ flex: 0.9 }}><label style={lbl}>Rate ₹</label><input style={input} type="number" value={l.rate} onChange={e => setLine(i, { rate: e.target.value })} /></div>
+              {/* Picked from the standard list (lib/units). It was a text box
+                  whose placeholder "nos" looked like a value. */}
+              <div style={{ flex: 0.8 }}><label style={lbl}>Unit</label><UnitSelect style={input} value={l.uom} onChange={v => setLine(i, { uom: v })} ariaLabel={`Line ${i + 1} unit`} /></div>
+              <div style={{ flex: 0.7 }}><label style={lbl}>Qty</label><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
+              <div style={{ flex: 0.9 }}><label style={lbl}>Rate ₹</label><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={l.rate} onChange={e => setLine(i, { rate: e.target.value })} /></div>
               <div style={{ flex: 0.9 }}>
                 <label style={lbl}>Total ₹</label>
                 <div style={{ ...input, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
@@ -207,7 +212,7 @@ export default function CreditDebitNotes() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-                  {['Note', 'Type', 'Party', 'Against', 'Total', 'Reason', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>)}
+                  {['Note', 'Type', 'Party', 'Against', 'Total', 'Reason', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', textAlign: h === 'Total' ? 'right' : undefined }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -217,7 +222,7 @@ export default function CreditDebitNotes() {
                     <td style={{ padding: '11px 14px' }}><span style={typeBadge(n.note_type)}>{n.note_type}</span></td>
                     <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{n.party_name || '—'}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{n.ref_number || '—'}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>{rupee(n.total)}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupee(n.total)}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-muted)', fontSize: '0.82rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.reason || '—'}</td>
                     <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button onClick={() => navigate(`/credit-debit-notes/${n.id}`)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 6 }}><Eye size={15} /></button>
@@ -239,10 +244,12 @@ export default function CreditDebitNotes() {
   );
 }
 
-const Kpi = ({ card, label, value, tone, note }) => (
-  <div style={{ ...card, padding: 18 }}>
+/* Compact in the tile (₹16.03 L), exact in the tooltip; FitNumber keeps
+   whatever is left inside the tile on a narrow screen. */
+const Kpi = ({ card, label, value, tone, note, exact }) => (
+  <div style={{ ...card, padding: 18, minWidth: 0 }}>
     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
-    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    <FitNumber exact={exact} style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</FitNumber>
     {note && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>{note}</div>}
   </div>
 );

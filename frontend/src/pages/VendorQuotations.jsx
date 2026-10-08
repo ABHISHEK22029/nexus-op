@@ -28,6 +28,7 @@ import {
   FileText, FileType, CheckCircle2, X, Pencil, Plus, Download, Printer, ShieldCheck, ShoppingCart,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import UnitSelect from '../components/UnitSelect';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 
@@ -374,7 +375,8 @@ function Review({ id, vendors, onClose, onOpen, onSaved }) {
                 </td>
                 <td style={{ ...S.td, padding: '5px 4px', width: 90 }}><input style={{ ...S.input, fontFamily: 'var(--font-mono)' }} value={l.hsn} onChange={e => setLine(i, { hsn: e.target.value })} aria-label={`Review line ${i + 1} HSN`} /></td>
                 <td style={{ ...S.td, padding: '5px 4px', width: 90 }}><input style={S.input} type="number" step="any" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} aria-label={`Review line ${i + 1} quantity`} /></td>
-                <td style={{ ...S.td, padding: '5px 4px', width: 76 }}><input style={S.input} value={l.uom} onChange={e => setLine(i, { uom: e.target.value })} aria-label={`Review line ${i + 1} unit`} /></td>
+                {/* What the vendor wrote stays (marked) until a standard unit is picked. */}
+                <td style={{ ...S.td, padding: '5px 4px', width: 96 }}><UnitSelect style={S.input} value={l.uom} onChange={v => setLine(i, { uom: v })} ariaLabel={`Review line ${i + 1} unit`} /></td>
                 <td style={{ ...S.td, padding: '5px 4px', width: 104 }}><input style={S.input} type="number" step="any" value={l.rate} onChange={e => setLine(i, { rate: e.target.value })} aria-label={`Review line ${i + 1} rate`} /></td>
                 <td style={S.num}>{rup(amount(l))}</td>
                 <td style={{ ...S.td, padding: '5px 4px' }}>

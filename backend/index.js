@@ -30,6 +30,7 @@ const adminController = require('./controllers/AdminController');
 const { profileFor } = require('./shared/companyProfile');
 const stockController = require('./controllers/StockController');
 const stockImportController = require('./controllers/StockImportController');
+const passwordResetController = require('./controllers/PasswordResetController');
 const setupController = require('./controllers/SetupController');
 const supplyCategoryController = require('./controllers/SupplyCategoryController');
 const shortfallController = require('./controllers/ShortfallToPoController');
@@ -47,9 +48,14 @@ const { runList } = require('./shared/listQuery');
 const { andOwner } = require('./shared/ownerScope');
 const { docNumber, loadProfile, nextSeq, allocatePoNumber } = require('./shared/docNumber');
 const { writePoLines, gatePo, poLinesProblem, notifyApproval } = require('./shared/poLines');
+const { firstProblem, VENDOR_SPEC, CUSTOMER_SPEC, COMPANY_SPEC } = require('./shared/validators');
 const grnRouter = require('./routes/grn');
 
 const app = express();
+/* On Render a request reaches us through one proxy; trusting that one hop
+   makes req.ip the visitor's address, which the password-reset limits
+   count by. Locally there is no proxy, so nothing is trusted. */
+if (process.env.RENDER) app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
@@ -166,6 +172,12 @@ app.get('/public/catalogue/:slug',                catalogueController.publicCata
 app.get('/public/catalogue/:slug/:productSlug',   catalogueController.publicProduct);
 app.post('/public/catalogue/:slug/enquiry',       catalogueController.publicEnquiry);
 
+/* A quotation the customer accepts or declines online. Same footing as the
+   catalogue: no token, and the link's own 24 random bytes are what decide
+   which quotation answers — looked up in the SQL, never by id. */
+app.get('/public/quotations/:token',               salesQuotationController.publicQuote);
+app.post('/public/quotations/:token/respond',      salesQuotationController.publicRespond);
+
 /* ══════════════════════════════════════════════════════════
    AUTHENTICATION (public: login) + GATE
    Everything registered AFTER app.use(authenticate) requires a
@@ -177,6 +189,10 @@ app.post('/auth/register', authController.register);
    yet, which is the point. The token is the credential. */
 app.get('/auth/invite/:token', authController.inviteInfo);
 app.post('/auth/accept-invite', authController.acceptInvite);
+/* "Forgot password?" — unauthenticated by necessity, like the invite. */
+app.get('/auth/reset-available',  passwordResetController.available);
+app.post('/auth/forgot-password', passwordResetController.forgot);
+app.post('/auth/reset-password',  passwordResetController.reset);
 
 app.use(authenticate); // ⬇ all routes below are protected
 
@@ -532,9 +548,30 @@ const VENDOR_COLUMNS = [
   'supply_category', 'supplies',
 ];
 
+/* Phone, email, PAN, GSTIN, pincode and bank details are checked before
+   they are stored (shared/validators). A 400 names the field. On an edit the
+   stored row is read first so an unchanged odd value from an older record
+   does not block correcting something else. If the row cannot be read the
+   real handler answers, with its own 404. */
+const checkFields = (table, spec, pair) => async (req, res, next) => {
+  try {
+    let existing = null;
+    if (req.params.id) {
+      const own = ownerClause(req, 2);
+      existing = (await db.query(`SELECT * FROM ${table} WHERE id = $1${own.sql}`, [req.params.id, ...own.params])).rows[0] || null;
+      if (!existing) return next();
+    }
+    const problem = firstProblem(req.body, spec, { existing, pair });
+    if (problem) return res.status(400).json(problem);
+    next();
+  } catch { next(); }
+};
+
 app.post('/vendors', async (req, res) => {
   const { projectId, name, type } = req.body;
   if (!name || !type) return res.status(400).json({ error: 'name and type are required' });
+  const problem = firstProblem(req.body, VENDOR_SPEC, { pair: ['gstin', 'pan'] });
+  if (problem) return res.status(400).json(problem);
   try {
     const cols = VENDOR_COLUMNS.filter(c => c in req.body);
     const values = cols.map(c => (req.body[c] === '' ? null : req.body[c]));
@@ -833,9 +870,14 @@ app.put('/company-profile', allow('company-profile', 'write'), async (req, res) 
     const ownerId = req.user?.orgId ?? null;
     const existing = await db.query(
       ownerId != null
-        ? 'SELECT id FROM company_profile WHERE owner_id = $1 LIMIT 1'
-        : 'SELECT id FROM company_profile ORDER BY id LIMIT 1',
+        ? 'SELECT * FROM company_profile WHERE owner_id = $1 LIMIT 1'
+        : 'SELECT * FROM company_profile ORDER BY id LIMIT 1',
       ownerId != null ? [ownerId] : []);
+    /* Phone, email, GSTIN, PAN and bank details are printed on every invoice;
+       a malformed IFSC or account number is a payment that bounces. Values
+       already stored and sent back unchanged are not re-checked. */
+    const problem = firstProblem(req.body, COMPANY_SPEC, { existing: existing.rows[0] || null, pair: ['gstin', 'pan'] });
+    if (problem) return res.status(400).json(problem);
     const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
     const values = sets.map(c => (req.body[c] === '' ? null : req.body[c]));
     let row;
@@ -995,6 +1037,7 @@ app.post('/sales-quotations', salesQuotationController.create);
 app.patch('/sales-quotations/:id/status', salesQuotationController.setStatus);
 app.patch('/sales-quotations/:id', salesQuotationController.update);
 app.post('/sales-quotations/:id/convert', salesQuotationController.convertToOrder);
+app.post('/sales-quotations/:id/share-link', salesQuotationController.shareLink);
 app.delete('/sales-quotations/:id', salesQuotationController.remove);
 
 // ── Delivery challans (Wave 1C) ──
@@ -1264,10 +1307,17 @@ app.get('/inventory/unmatched', async (req, res) => {
       `SELECT id, "projectId", "itemName", quantity, uom
        FROM inventory WHERE ${where.join(' AND ')} ORDER BY "itemName"`, params);
     // Offer likely candidates so linking is a click, not a search.
+    /* base_uom is the unit the shortfall engine reads this material's stock
+       in (base_uom, else unit). The Link dialog on Stock on hand refuses a
+       link whose stock is counted in a different unit. Products are offered
+       too, since a stock row can be either. */
     const { rows: materials } = await db.query(
-      `SELECT id, name, material_code, unit FROM raw_materials${scoped ? ' WHERE owner_id = $1' : ''} ORDER BY name`,
+      `SELECT id, name, material_code, unit, COALESCE(base_uom, unit) AS base_uom FROM raw_materials${scoped ? ' WHERE owner_id = $1' : ''} ORDER BY name`,
       scoped ? [owner] : []);
-    res.json({ items: rows, total: rows.length, candidates: materials });
+    const { rows: products } = await db.query(
+      `SELECT id, name, sku_code, unit FROM skus${scoped ? ' WHERE owner_id = $1' : ''} ORDER BY name`,
+      scoped ? [owner] : []);
+    res.json({ items: rows, total: rows.length, candidates: materials, products });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1567,6 +1617,9 @@ function registerOwnedCrud(route, table, cols, searchCols) {
     }
   });
 }
+/* Checked before the generic create and edit below, which would store anything. */
+app.post('/customers', checkFields('customers', CUSTOMER_SPEC, ['gstin', 'pan']));
+app.patch('/customers/:id', checkFields('customers', CUSTOMER_SPEC, ['gstin', 'pan']));
 registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'pan', 'contact_name', 'phone', 'email', 'billing_address', 'state', 'opening_balance',
   // Ship-to is separate from bill-to: goods go there, and the GST place of
   // supply (CGST+SGST vs IGST) follows it rather than the billing address.
@@ -1578,7 +1631,10 @@ registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'pan', 'con
      detail; both optional, because a customer added in a hurry should not
      be blocked on knowing. */
   'requirement_category', 'requirement']);
-registerOwnedCrud('skus',         'skus',          ['sku_code', 'name', 'description', 'unit', 'price', 'hsn']);
+/* Searched by anything a product is known by — code, name, HSN, category,
+   the catalogue's headline and use — not only the columns the form writes. */
+registerOwnedCrud('skus',         'skus',          ['sku_code', 'name', 'description', 'unit', 'price', 'hsn'],
+  ['sku_code', 'name', 'description', 'hsn', 'catalogue_category', 'headline', 'use_case']);
 /* base_uom … lead_time_days were dropped on create and edit, though the
    requirements engine reads every one of them. */
 registerOwnedCrud('raw-materials','raw_materials', ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn',
@@ -1775,6 +1831,7 @@ function registerCrud(route, table, cols, logType) {
 }
 
 registerCrud('projects', 'projects', ['name', 'clientName', 'type', 'startDate', 'endDate', 'status'], 'PROJECT_UPDATED');
+app.patch('/vendors/:id', checkFields('vendors', VENDOR_SPEC, ['gstin', 'pan']));
 registerCrud('vendors', 'vendors', VENDOR_COLUMNS, 'VENDOR_UPDATED');
 registerCrud('work-orders', 'work_orders', ['name', 'vendorId', 'boqId', 'startDate', 'endDate', 'contractValue', 'status'], 'WO_UPDATED');
 registerCrud('boq', 'boq_items', ['itemCode', 'description', 'unit', 'estimatedQuantity', 'rate'], 'BOQ_UPDATED');

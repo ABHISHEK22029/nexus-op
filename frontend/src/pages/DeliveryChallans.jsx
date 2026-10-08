@@ -19,6 +19,9 @@ import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components
 
 import { getToken } from '../lib/apiAuth';
 import { today } from '../lib/dates';
+import UnitSelect from '../components/UnitSelect';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Draft', 'Dispatched', 'Delivered'];
 const STATUS_COLOR = { Draft: '#64748b', Dispatched: '#2563eb', Delivered: '#10b981' };
@@ -129,7 +132,7 @@ export default function DeliveryChallans() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14, marginBottom: 18 }}>
         <Kpi card={card} label={q.isFiltered ? 'Challans (filtered)' : 'Challans'} value={s.count ?? q.total} />
-        <Kpi card={card} label="Value dispatched" value={rupee(s.value)} />
+        <Kpi card={card} label="Value dispatched" value={fmtCompactINR(s.value)} exact={fmtINR(s.value)} />
         <Kpi card={card} label="In transit" value={s.in_transit ?? 0} tone="#2563eb" />
         {/* Rule 138: over ₹50,000 the goods may not move without an e-way
             bill, and the number travels with them. Non-zero here means a
@@ -170,9 +173,10 @@ export default function DeliveryChallans() {
                   the taxable value of the goods being moved, and this is a
                   movement document, not a priced sale. The line total still
                   earns its place — it is what the challan declares. */}
-              <div style={{ flex: 0.6 }}><label style={lbl}>Unit</label><input style={input} value={l.uom} onChange={e => setLine(i, { uom: e.target.value })} /></div>
-              <div style={{ flex: 0.7 }}><label style={lbl}>Qty</label><input style={input} type="number" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
-              <div style={{ flex: 0.9 }}><label style={lbl}>Value ₹</label><input style={input} type="number" value={l.rate} onChange={e => setLine(i, { rate: e.target.value })} /></div>
+              {/* Picked from the standard list (lib/units), not typed. */}
+              <div style={{ flex: 0.8 }}><label style={lbl}>Unit</label><UnitSelect style={input} value={l.uom} onChange={v => setLine(i, { uom: v })} ariaLabel={`Line ${i + 1} unit`} /></div>
+              <div style={{ flex: 0.7 }}><label style={lbl}>Qty</label><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
+              <div style={{ flex: 0.9 }}><label style={lbl}>Value ₹</label><input style={input} type="number" min="0" step="any" inputMode="decimal" autoComplete="off" value={l.rate} onChange={e => setLine(i, { rate: e.target.value })} /></div>
               <div style={{ flex: 0.9 }}>
                 <label style={lbl}>Total ₹</label>
                 <div style={{ ...input, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
@@ -210,7 +214,7 @@ export default function DeliveryChallans() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-                  {['Challan', 'Customer', 'Vehicle', 'Value', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>)}
+                  {['Challan', 'Customer', 'Vehicle', 'Value', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', textAlign: h === 'Value' ? 'right' : undefined }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -219,7 +223,7 @@ export default function DeliveryChallans() {
                     <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }} onClick={() => navigate(`/delivery-challans/${dc.id}`)}>{dc.challan_number}</td>
                     <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{dc.customer_name || '—'}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{dc.vehicle_no || '—'}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{rupee(dc.total_value)}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupee(dc.total_value)}</td>
                     <td style={{ padding: '11px 14px' }}>
                       <select value={dc.status} onChange={e => setStatus(dc.id, e.target.value)} style={{ ...input, width: 'auto', padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700, color: STATUS_COLOR[dc.status] }}>
                         {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
@@ -245,10 +249,12 @@ export default function DeliveryChallans() {
   );
 }
 
-const Kpi = ({ card, label, value, tone, note }) => (
-  <div style={{ ...card, padding: 18 }}>
+/* Compact in the tile (₹16.03 L), exact in the tooltip; FitNumber keeps
+   whatever is left inside the tile on a narrow screen. */
+const Kpi = ({ card, label, value, tone, note, exact }) => (
+  <div style={{ ...card, padding: 18, minWidth: 0 }}>
     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
-    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    <FitNumber exact={exact} style={{ fontSize: '1.6rem', fontWeight: 800, color: tone || 'var(--text-primary)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</FitNumber>
     {note && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>{note}</div>}
   </div>
 );

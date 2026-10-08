@@ -95,16 +95,23 @@ exports.publicCatalogue = async (req, res) => {
       params.push(category);
       search += ` AND s.catalogue_category = $${params.length}`;
     }
-    if (q) {
-      params.push(`%${q}%`);
-      /* `+=`, not `=`. Assigning here threw the category clause away while
-         leaving its parameter in the array — Postgres then refused the
-         whole query with "could not determine data type of parameter $2",
-         so the public page answered 500 the moment somebody searched
-         inside a category. Either filter alone worked, which is why it
-         survived until the two were tried together. */
-      search += ` AND (s.name ILIKE $${params.length} OR s.headline ILIKE $${params.length}
-                       OR s.use_case ILIKE $${params.length} OR s.sku_code ILIKE $${params.length})`;
+    /* Search by anything a visitor might know the product by, word by word.
+       It read four columns for one exact phrase, so the code printed on a
+       drawing, an HSN, the category, or "cross arm 75" against a name
+       written "Cross Arm (V-type) 75x75" all found nothing — "search is
+       only considering id". Now every word must appear somewhere among the
+       name, code, category, HSN, headline, use and description, in any
+       order and any case. % and _ are taken literally.
+     *
+       `+=`, not `=`. Assigning here once threw the category clause away
+       while leaving its parameter in the array — Postgres then refused the
+       whole query with "could not determine data type of parameter $2",
+       so the public page answered 500 the moment somebody searched inside
+       a category. */
+    for (const word of q.split(/\s+/).filter(Boolean).slice(0, 8)) {
+      params.push(`%${word.replace(/[\\%_]/g, '\\$&')}%`);
+      search += ` AND concat_ws(' ', s.name, s.sku_code, s.catalogue_category, s.hsn,
+                       s.headline, s.use_case, s.description) ILIKE $${params.length}`;
     }
     const base = `FROM skus s
       WHERE s.owner_id = $1 AND s.is_published IS TRUE
@@ -256,6 +263,40 @@ exports.publicEnquiry = async (req, res) => {
         WHERE LOWER(slug) = $1 AND is_published IS TRUE`, [slug]);
     if (!cat) return res.status(404).json({ error: 'Catalogue not found' });
 
+    /* The products the lines name, read once. A sku is accepted only if it
+       belongs to this catalogue and is published — otherwise a crafted
+       request could attach an enquiry line to another organisation's
+       product. */
+    const skuIds = [...new Set(lines.map(l => Number(l.skuId)).filter(n => Number.isInteger(n) && n > 0))];
+    const { rows: skuRows } = skuIds.length ? await client.query(
+      `SELECT id, name, headline, unit, moq FROM skus
+        WHERE id = ANY($1) AND owner_id = $2 AND is_published IS TRUE`,
+      [skuIds, cat.owner_id]) : { rows: [] };
+    const skuById = new Map(skuRows.map(s => [s.id, s]));
+
+    /* Quantities: more than zero, and not below the product's minimum
+       order. The page already stops both, so this is for anything that
+       reaches the endpoint another way — and the answer names the product
+       and the minimum, rather than taking an order the business has said
+       it will not fill. A blank quantity on a product with a minimum is
+       below it: "how many" is the question the minimum answers. */
+    for (const l of lines) {
+      const sku = skuById.get(Number(l.skuId));
+      const blank = l.quantity == null || String(l.quantity).trim() === '';
+      const qty = Number(l.quantity);
+      const what = (sku?.headline || sku?.name || String(l.description)).trim().slice(0, 80);
+      if (!blank && (!Number.isFinite(qty) || qty <= 0)) {
+        return res.status(400).json({ error: `${what}: the quantity must be more than zero.` });
+      }
+      const moq = Number(sku?.moq) || 0;
+      if (moq > 0 && (blank || qty < moq)) {
+        return res.status(400).json({
+          error: `${what}: the minimum order is ${moq} ${sku.unit || 'nos'}${blank ? '' : `, and this asks for ${qty}`}. Please raise the quantity to at least ${moq}.`,
+          skuId: sku.id, moq, quantity: blank ? null : qty,
+        });
+      }
+    }
+
     await client.query('BEGIN');
     const { rows: [enq] } = await client.query(
       `INSERT INTO enquiries (owner_id, name, company, phone, email, message, status, source)
@@ -268,12 +309,7 @@ exports.publicEnquiry = async (req, res) => {
 
     let so = 0;
     for (const l of lines) {
-      /* The sku is accepted only if it belongs to this catalogue and is
-         published — otherwise a crafted request could attach an enquiry
-         line to another organisation's product. */
-      const { rows: [ok] } = await client.query(
-        `SELECT id FROM skus WHERE id = $1 AND owner_id = $2 AND is_published IS TRUE`,
-        [l.skuId || 0, cat.owner_id]);
+      const ok = skuById.get(Number(l.skuId));
       await client.query(
         `INSERT INTO enquiry_items (enquiry_id, sku_id, description, quantity, unit, note, sort_order)
          VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -371,7 +407,10 @@ exports.listProducts = async (req, res) => {
     const { rows } = await db.query(
       `SELECT id, sku_code, name, unit, price, headline, use_case, moq,
               lead_time_note, catalogue_slug, is_published, sort_order,
-              catalogue_category,
+              catalogue_category, hsn,
+              /* For the editor's search, which matches the description too.
+                 Clipped: the list needs to find a product, not print it. */
+              LEFT(description, 400) AS description,
               (SELECT COUNT(*)::int FROM catalogue_photos cp WHERE cp.sku_id = skus.id) AS photo_count,
               /* The first photograph's id, so the list can show a
                  thumbnail without one request per row. */

@@ -3,18 +3,28 @@ import CategoryPicker from './CategoryPicker';
 import { Plus, Pencil, Trash2, X, Check, Paperclip, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Attachments from './Attachments';
+import { formProblems, fixMessage } from '../lib/validators';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 /* Reusable owner-scoped master (Customers / SKUs / Raw Materials).
-   config: { title, subtitle, endpoint, icon, fields[], columns[], attachEntity } */
-export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity, summaryField, summaryLabel, rowAction }) {
+   config: { title, subtitle, endpoint, icon, fields[], columns[], attachEntity }
+   A field may carry `check` — a rule from lib/validators ('phone', 'gstin'…)
+   — and `upper` to capitalise as typed; `pair` cross-checks a GSTIN with a
+   PAN. A wrong value is marked under its field, and the save button says
+   why it will not save rather than doing nothing. */
+export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity, summaryField, summaryLabel, rowAction, pair }) {
   const toast = useToast();
   const [rows, setRows] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [attachRow, setAttachRow] = useState(null);
+  const [original, setOriginal] = useState(null);
+  const [touched, setTouched] = useState({});
+  const [tried, setTried] = useState(false);
+  const [serverErr, setServerErr] = useState({});
 
   /* Server-side search + pagination. Previously this fetched the entire table
      every time and filtered nothing — fine at 20 rows, unusable at 20,000. */
@@ -61,19 +71,39 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
   const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const showingTo = Math.min(total, (page + 1) * PAGE_SIZE);
 
-  const openNew = () => { setEditing(null); setForm(empty()); setShowForm(true); };
-  const openEdit = (row) => { setEditing(row.id); setForm({ ...empty(), ...row }); setShowForm(true); };
+  const resetChecks = () => { setTouched({}); setTried(false); setServerErr({}); };
+  const openNew = () => { setEditing(null); setOriginal(null); setForm(empty()); resetChecks(); setShowForm(true); };
+  /* The values it was opened with: an odd value an older record already
+     holds is not re-checked unless it is changed. */
+  const openEdit = (row) => { setEditing(row.id); setOriginal({ ...empty(), ...row }); setForm({ ...empty(), ...row }); resetChecks(); setShowForm(true); };
+
+  const checks = Object.fromEntries(fields.filter(f => f.check).map(f => [f.key, f.check]));
+  const problems = { ...formProblems(form, checks, { original, pair }), ...Object.fromEntries(Object.entries(serverErr).filter(([, v]) => v)) };
+  const shown = (k) => ((touched[k] || tried) ? problems[k] : null);
+  const labels = Object.fromEntries(fields.map(f => [f.key, f.label]));
+  const setField = (k, v) => { setForm(f => ({ ...f, [k]: v })); setServerErr(x => (x[k] ? { ...x, [k]: null } : x)); };
 
   const save = async (e) => {
     e.preventDefault();
     const missing = fields.filter(f => f.required && !String(form[f.key] ?? '').trim());
     if (missing.length) { toast.error(`${missing[0].label} is required`); return; }
+    if (Object.keys(problems).length) {
+      setTried(true);
+      const first = Object.keys(problems)[0];
+      setTimeout(() => document.querySelector(`[data-field="${first}"]`)?.focus(), 0);
+      return;
+    }
     const body = {};
     fields.forEach(f => { body[f.key] = form[f.key] === '' ? null : form[f.key]; });
     try {
       const url = editing ? `${API}/${endpoint}/${editing}` : `${API}/${endpoint}`;
       const res = await fetch(url, { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        /* The server names the field it refused; mark it there as well. */
+        if (d.field && labels[d.field]) { setServerErr(x => ({ ...x, [d.field]: String(d.error || '').replace(/^[^:]+:\s*/, '') })); setTried(true); }
+        throw new Error(d.error || 'Failed');
+      }
       toast.success(editing ? `${title} updated` : `${title} added`);
       setShowForm(false); setEditing(null); load();
     } catch (err) { toast.error(err.message); }
@@ -149,14 +179,27 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
                     {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 ) : (
-                  <input style={input} type={f.type || 'text'} placeholder={f.placeholder || ''} value={form[f.key] ?? ''} onChange={e => setForm({ ...form, [f.key]: e.target.value })} />
+                  /* A red ring as well as the border: the light theme forces
+                     text-input borders with !important, so the border alone
+                     never turned red. */
+                  <input style={{ ...input, ...(shown(f.key) ? { borderColor: '#dc2626', boxShadow: 'inset 0 0 0 1px #dc2626' } : {}) }}
+                    type={f.type || 'text'} placeholder={f.placeholder || ''} value={form[f.key] ?? ''}
+                    onChange={e => setField(f.key, f.upper ? e.target.value.toUpperCase() : e.target.value)}
+                    onBlur={f.check ? () => setTouched(t => ({ ...t, [f.key]: true })) : undefined}
+                    inputMode={f.type === 'tel' ? 'tel' : f.type === 'number' ? 'decimal' : undefined}
+                    autoComplete={f.check ? 'off' : undefined} maxLength={f.maxLength}
+                    data-field={f.key} aria-invalid={f.check ? !!shown(f.key) : undefined} />
                 )}
+                {shown(f.key) && <div role="alert" style={{ fontSize: '0.72rem', color: 'var(--accent-red, #dc2626)', marginTop: 4 }}>{shown(f.key)}</div>}
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
             <button type="submit" className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Check size={15} /> {editing ? 'Save' : 'Add'}</button>
             <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancel</button>
+            {tried && Object.keys(problems).length > 0 && (
+              <span role="alert" style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--accent-red, #dc2626)' }}>{fixMessage(problems, labels)}</span>
+            )}
           </div>
         </form>
       )}
@@ -164,8 +207,11 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
       {summaryField && rows.length > 0 && (
         <div style={{ ...card, padding: '14px 18px', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{summaryLabel || `Total ${title}`}</span>
-          <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--brand-amber)', fontFamily: 'var(--font-mono)' }}>
-            ₹{rows.reduce((s, r) => s + (Number(r[summaryField]) || 0), 0).toLocaleString('en-IN')}
+          {/* Compact (₹16.03 L), the exact sum in the tooltip — a full
+              figure in the crores ran off a phone screen. */}
+          <span title={fmtINR(rows.reduce((s, r) => s + (Number(r[summaryField]) || 0), 0))}
+            style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--brand-amber)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+            {fmtCompactINR(rows.reduce((s, r) => s + (Number(r[summaryField]) || 0), 0))}
           </span>
         </div>
       )}
@@ -195,17 +241,20 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
             )}
           </div>
         ) : (
+          /* On a phone the table scrolls inside its card; the page does not. */
+          <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-                {columns.map(c => <th key={c.key} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{c.label}</th>)}
+                {columns.map(c => <th key={c.key} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', textAlign: c.numeric ? 'right' : undefined }}>{c.label}</th>)}
                 <th style={{ padding: '11px 14px' }}></th>
               </tr>
             </thead>
             <tbody>
               {rows.map(row => (
                 <tr key={row.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                  {columns.map(c => <td key={c.key} style={{ padding: '11px 14px', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{c.render ? c.render(row) : (row[c.key] ?? '—')}</td>)}
+                  {/* A `numeric` column: exact, one line, right-aligned, figures in step. */}
+                  {columns.map(c => <td key={c.key} style={{ padding: '11px 14px', fontSize: '0.85rem', color: 'var(--text-primary)', ...(c.numeric ? { whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' } : {}) }}>{c.render ? c.render(row) : (row[c.key] ?? '—')}</td>)}
                   <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {rowAction && (
                       <button onClick={() => rowAction.onClick(row)} title={rowAction.title} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', cursor: 'pointer', color: 'var(--brand-amber)', padding: '5px 10px', borderRadius: 7, fontSize: '0.75rem', fontWeight: 700, marginRight: 8 }}>
@@ -220,6 +269,7 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
               ))}
             </tbody>
           </table>
+          </div>
         )}
 
         {/* Pagination — only shown when there's more than one page. */}

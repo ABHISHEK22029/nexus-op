@@ -17,6 +17,8 @@ import { Wallet, X, IndianRupee, Building2, AlertTriangle, Search, ChevronLeft, 
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -86,19 +88,21 @@ export default function Payables() {
       ) : (
         <>
           {/* summary + ageing */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14, marginBottom: 14 }}>
-            <div style={{ ...card, padding: 20, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          {/* Compact figures (₹16.03 L), exact on hover; they wrap onto
+              their own rows on a phone instead of running off it. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 14, marginBottom: 14 }}>
+            <div style={{ ...card, padding: 20, display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>Total payable</div>
-              <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--brand-amber)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{rupee(data.totalOutstanding)}</div>
+              <FitNumber exact={fmtINR(data.totalOutstanding)} style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--brand-amber)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{fmtCompactINR(data.totalOutstanding)}</FitNumber>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>across {data.billCount} bill{data.billCount === 1 ? '' : 's'}</div>
             </div>
-            <div style={{ ...card, padding: 20 }}>
+            <div style={{ ...card, padding: 20, minWidth: 0, gridColumn: 'span 2' }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', marginBottom: 12 }}>Ageing</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10 }}>
                 {AGE.map(([k, c]) => (
-                  <div key={k} style={{ textAlign: 'center', padding: '10px 6px', borderRadius: 10, background: 'var(--bg-elevated)', borderTop: `3px solid ${c}` }}>
+                  <div key={k} style={{ textAlign: 'center', padding: '10px 6px', borderRadius: 10, background: 'var(--bg-elevated)', borderTop: `3px solid ${c}`, minWidth: 0 }}>
                     <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>{k} days</div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', marginTop: 3 }}>{rupee(data.ageing[k])}</div>
+                    <FitNumber exact={fmtINR(data.ageing[k])} style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', marginTop: 3 }}>{fmtCompactINR(data.ageing[k])}</FitNumber>
                   </div>
                 ))}
               </div>
@@ -114,7 +118,7 @@ export default function Payables() {
                   <div key={v.vendorId || v.vendor} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '8px 12px' }}>
                     <Building2 size={15} style={{ color: 'var(--text-muted)' }} />
                     <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>{v.vendor}</span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--brand-amber)', fontSize: '0.85rem' }}>{rupee(v.outstanding)}</span>
+                    <span title={fmtINR(v.outstanding)} style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--brand-amber)', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{fmtCompactINR(v.outstanding)}</span>
                   </div>
                 ))}
               </div>
@@ -167,10 +171,12 @@ export default function Payables() {
                 )}
               </div>
             ) : (
+              /* Exact amounts on one line each; on a phone the table scrolls inside its card. */
+              <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-                    {['Bill', 'Vendor', 'Due', 'Net', 'Paid', 'Outstanding', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>)}
+                    {['Bill', 'Vendor', 'Due', 'Net', 'Paid', 'Outstanding', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', textAlign: i >= 3 && i <= 5 ? 'right' : undefined }}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -184,9 +190,9 @@ export default function Payables() {
                           {b.due_date ? String(b.due_date).slice(0, 10) : String(b.bill_date).slice(0, 10)}
                           {overdue && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 6, fontSize: '0.72rem', fontWeight: 700 }}><AlertTriangle size={11} /> {b.age_days}d</span>}
                         </td>
-                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{rupee(b.net_amount)}</td>
-                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{rupee(b.amount_paid)}</td>
-                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--text-primary)' }}>{rupee(b.outstanding)}</td>
+                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupee(b.net_amount)}</td>
+                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupee(b.amount_paid)}</td>
+                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupee(b.outstanding)}</td>
                         <td style={{ padding: '11px 14px' }}><span style={{ fontSize: '0.72rem', fontWeight: 700, color: PSTATUS_COLOR[b.payment_status], background: (PSTATUS_COLOR[b.payment_status] || '#888') + '1f', padding: '3px 9px', borderRadius: 999 }}>{b.payment_status}</span></td>
                         <td style={{ padding: '11px 14px', textAlign: 'right' }}>
                           {/* Recording a payment is a finance action; hidden
@@ -200,6 +206,7 @@ export default function Payables() {
                   })}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
 

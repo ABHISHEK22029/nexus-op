@@ -9,6 +9,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Building2, Phone, Mail, MapPin, TrendingUp, AlertTriangle, Clock, ShoppingBag } from 'lucide-react';
+import FitNumber from '../components/FitNumber';
+import { fmtCompactINR, fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -60,10 +62,12 @@ export default function CustomerDetail() {
 
       {/* The judgement calls, before any table */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
-        <Tile icon={<TrendingUp size={14} />} tone="#2563eb" label="Lifetime billed" value={rupee(m.lifetime_billed)} sub={`${m.orders_count} orders`} />
-        <Tile icon={<ShoppingBag size={14} />} tone="#16a34a" label="Received" value={rupee(m.received)} sub={`avg order ${rupee(m.avg_order_value)}`} />
-        <Tile icon={<AlertTriangle size={14} />} tone={m.outstanding > 0 ? '#dc2626' : '#6b7280'} label="Outstanding" value={rupee(m.outstanding)}
-          sub={m.overdue_count > 0 ? `${m.overdue_count} overdue · ${rupee(m.overdue_amount)}` : 'nothing overdue'} />
+        {/* Compact in the tile, exact on hover — a lifetime figure in the
+            crores ran out of its tile. */}
+        <Tile icon={<TrendingUp size={14} />} tone="#2563eb" label="Lifetime billed" value={fmtCompactINR(m.lifetime_billed)} exact={fmtINR(m.lifetime_billed)} sub={`${m.orders_count} orders`} />
+        <Tile icon={<ShoppingBag size={14} />} tone="#16a34a" label="Received" value={fmtCompactINR(m.received)} exact={fmtINR(m.received)} sub={`avg order ${fmtCompactINR(m.avg_order_value)}`} />
+        <Tile icon={<AlertTriangle size={14} />} tone={m.outstanding > 0 ? '#dc2626' : '#6b7280'} label="Outstanding" value={fmtCompactINR(m.outstanding)} exact={fmtINR(m.outstanding)}
+          sub={m.overdue_count > 0 ? `${m.overdue_count} overdue · ${fmtCompactINR(m.overdue_amount)}` : 'nothing overdue'} />
         <Tile icon={<Clock size={14} />} tone={m.pays_on_time === false ? '#dc2626' : m.pays_on_time ? '#16a34a' : '#6b7280'}
           label="Pays in"
           value={m.avg_days_to_pay != null ? `${m.avg_days_to_pay} days` : '—'}
@@ -109,8 +113,8 @@ export default function CustomerDetail() {
             const late = i.due_date && bal > 0 && new Date(i.due_date) < new Date();
             return (
               <Link key={i.id} to={`/sales-invoices/${i.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '7px 0', borderTop: '1px solid var(--border-subtle)', fontSize: '0.84rem', textDecoration: 'none', color: 'inherit' }}>
-                <span>{i.invoice_number}<span style={{ color: 'var(--text-muted)', fontSize: '0.76rem' }}> · {date(i.invoice_date)}</span></span>
-                <span style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{i.invoice_number}<span style={{ color: 'var(--text-muted)', fontSize: '0.76rem' }}> · {date(i.invoice_date)}</span></span>
+                <span style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                   {rupee(i.net_amount)}
                   <span style={{ display: 'block', fontSize: '0.72rem', color: late ? '#dc2626' : bal > 0 ? '#b45309' : '#16a34a' }}>
                     {bal > 0 ? `${rupee(bal)} due${late ? ' · overdue' : ''}` : 'paid'}
@@ -163,10 +167,10 @@ const Row = ({ label, children }) => (
   </div>
 );
 
-const Tile = ({ icon, tone, label, value, sub }) => (
-  <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '13px 15px' }}>
+const Tile = ({ icon, tone, label, value, sub, exact }) => (
+  <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '13px 15px', minWidth: 0 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: tone }}>{icon} {label}</div>
-    <div style={{ fontSize: '1.35rem', fontWeight: 800, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    <FitNumber exact={exact} style={{ fontSize: '1.35rem', fontWeight: 800, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>{value}</FitNumber>
     {sub && <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>{sub}</div>}
   </div>
 );

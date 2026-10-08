@@ -58,7 +58,11 @@ function yieldFrom(consRows, outRows, scrapRows) {
 
    Returns a Map of orderId -> yield. */
 async function computeYields(orderIds) {
-  const ids = [...new Set(orderIds)].filter(Boolean);
+  /* Numbers, not strings. The detail screen passes req.params.id ("5") and
+     the rows come back keyed by the integer 5, so the lookup below found no
+     rows and every production order's yield read as nothing issued, nothing
+     made — dashes everywhere and "0 kg, balanced" beside real entries. */
+  const ids = [...new Set(orderIds.map(Number))].filter(n => Number.isInteger(n) && n > 0);
   const out = new Map();
   if (!ids.length) return out;
 
@@ -86,7 +90,7 @@ async function computeYields(orderIds) {
 
 // One order's yield. Still used by the detail screen, where one is all you need.
 async function computeYield(orderId) {
-  return (await computeYields([orderId])).get(orderId)
+  return (await computeYields([orderId])).get(Number(orderId))
       || yieldFrom([], [], []);
 }
 
