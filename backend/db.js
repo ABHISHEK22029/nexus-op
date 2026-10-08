@@ -7,6 +7,13 @@ const { Pool, types } = require('pg');
 // IST users (an off-by-one). Return the raw 'YYYY-MM-DD' string instead.
 types.setTypeParser(1082, (v) => v);
 
+// NUMERIC (oid 1700) as a JS number. node-pg returns NUMERIC as a string by
+// default, so that arbitrary precision survives; money here is NUMERIC(18,2)
+// and quantities NUMERIC(18,4) (migration 066), well inside the 15 exact
+// digits a double carries. As a number, the code that did arithmetic on these
+// when they were REAL keeps working — and '0.00' no longer reads as truthy.
+types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
+
 /* ── pool sizing ──────────────────────────────────────────────────────
    These were all defaults, and the default idleTimeoutMillis is 10 SECONDS.
 
