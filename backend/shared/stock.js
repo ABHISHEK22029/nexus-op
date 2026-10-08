@@ -65,8 +65,18 @@ async function move(client, m) {
  * same owner — name last because two owners may legitimately both have
  * "MS Plate 10mm" and they are not the same stock.
  */
-async function resolveInventoryRow(client, { ownerId, skuId, rawMaterialId, itemName, uom, projectId, itemType, unitCost }) {
+async function resolveInventoryRow(client, { ownerId, skuId, rawMaterialId, itemName, uom, projectId, itemType, unitCost, stockListId = null, outbound = false }) {
   const owner = ownerId ?? null;
+  /* Goods receipts, production and dispatch move the main stock (no list).
+     A row in a named stock list — the site store, a second godown — is the
+     same item held somewhere else, and must not be what a receipt lands on
+     just because it happens to have the lower id.
+
+     Goods going OUT (`outbound`) are different: if the main stock has no
+     row for the item but a stock list holds it, the goods came from there.
+     Creating an empty main row and taking it below zero would show stock
+     you don't have in one place and hide the stock that left in another. */
+  const list = stockListId ?? null;
 
   /* Matching is `owner = mine OR owner IS NULL`, not `IS NOT DISTINCT FROM`.
      The strict version split one item into two rows and cost an afternoon:
@@ -80,9 +90,10 @@ async function resolveInventoryRow(client, { ownerId, skuId, rawMaterialId, item
      Unowned rows are pre-tenancy leftovers, so the first owner to touch one
      claims it (below) rather than forking a parallel row beside it. */
   const tries = [];
-  if (skuId) tries.push(['sku_id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [skuId, owner]]);
-  if (rawMaterialId) tries.push(['raw_material_id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [rawMaterialId, owner]]);
-  if (itemName) tries.push(['LOWER("itemName") = LOWER($1) AND (owner_id = $2 OR owner_id IS NULL)', [itemName, owner]]);
+  const inList = 'stock_list_id IS NOT DISTINCT FROM $3';
+  if (skuId) tries.push([`sku_id = $1 AND (owner_id = $2 OR owner_id IS NULL) AND ${inList}`, [skuId, owner, list]]);
+  if (rawMaterialId) tries.push([`raw_material_id = $1 AND (owner_id = $2 OR owner_id IS NULL) AND ${inList}`, [rawMaterialId, owner, list]]);
+  if (itemName) tries.push([`LOWER("itemName") = LOWER($1) AND (owner_id = $2 OR owner_id IS NULL) AND ${inList}`, [itemName, owner, list]]);
 
   for (const [where, params] of tries) {
     // Prefer an exactly-owned row over an unowned one when both exist.
@@ -97,13 +108,26 @@ async function resolveInventoryRow(client, { ownerId, skuId, rawMaterialId, item
     }
   }
 
+  if (outbound && list === null && owner != null) {
+    const any = [];
+    if (skuId) any.push(['sku_id = $1', skuId]);
+    if (rawMaterialId) any.push(['raw_material_id = $1', rawMaterialId]);
+    if (itemName) any.push(['LOWER("itemName") = LOWER($1)', itemName]);
+    for (const [cond, v] of any) {
+      const { rows } = await client.query(
+        `SELECT * FROM inventory WHERE ${cond} AND owner_id = $2 AND stock_list_id IS NOT NULL
+          ORDER BY quantity DESC, id LIMIT 1`, [v, owner]);
+      if (rows[0]) return rows[0];
+    }
+  }
+
   const { rows } = await client.query(
     `INSERT INTO inventory ("projectId", "itemName", quantity, uom, item_type,
-                            unit_cost, sku_id, raw_material_id, owner_id)
-     VALUES ($1,$2,0,$3,$4,$5,$6,$7,$8) RETURNING *`,
+                            unit_cost, sku_id, raw_material_id, owner_id, stock_list_id)
+     VALUES ($1,$2,0,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
     [projectId || null, itemName || 'Unnamed item', uom || 'nos',
      itemType || (skuId ? 'finished' : 'raw'), unitCost ?? null,
-     skuId || null, rawMaterialId || null, ownerId || null]
+     skuId || null, rawMaterialId || null, ownerId || null, list]
   );
   return rows[0];
 }

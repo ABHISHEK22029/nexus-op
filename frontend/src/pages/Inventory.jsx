@@ -25,10 +25,11 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Database, Package, Search, X, AlertTriangle, CheckCircle2, Plus, Scale } from 'lucide-react';
+import { Database, Package, Search, X, AlertTriangle, CheckCircle2, Plus, Scale, FileSpreadsheet, Pencil, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { AddStockModal, ItemStockPanel } from '../components/StockActions';
+import StockUpload from '../components/StockUpload';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -53,35 +54,87 @@ export default function Inventory() {
      through the API. See components/StockActions.jsx. */
   const [adding, setAdding] = useState(false);
   const [counting, setCounting] = useState(null);
+  /* Stock lists: the same item can be held in more than one place. 'all'
+     shows every list; 'main' the main stock; a number one list. */
+  const [lists, setLists] = useState([]);
+  const [listFilter, setListFilter] = useState('all');
+  const [uploading, setUploading] = useState(false);
   const { can } = usePermissions();
   const canWrite = can('inventory', 'write');
 
   /* No project filter. Stock is a company-level balance — see the note at
      the top of this file. */
+  /* `loading` starts true; a reload keeps the cards on screen until the
+     fresh list arrives rather than blanking them to "Loading…". */
   const load = () => {
-    setLoading(true);
     axios.get(`${API_BASE}/inventory`)
       .then(res => { setInventory(Array.isArray(res.data) ? res.data : (res.data?.items || [])); setError(''); })
       .catch(err => setError(err.response?.data?.error || err.message || 'Could not load stock'))
       .finally(() => setLoading(false));
   };
+  const loadLists = () => axios.get(`${API_BASE}/inventory/lists`)
+    .then(res => setLists(res.data?.lists || []))
+    .catch(() => setLists([]));
   useEffect(load, []);
+  useEffect(() => { loadLists(); }, []);
+  const reloadAll = () => { load(); loadLists(); };
+
+  const renameList = async (l) => {
+    const name = window.prompt('Rename the stock list', l.name);
+    if (name == null || !name.trim() || name.trim() === l.name) return;
+    try {
+      await axios.patch(`${API_BASE}/inventory/lists/${l.id}`, { name: name.trim() });
+      toast.success(`Renamed to ${name.trim()}`); reloadAll();
+    } catch (err) { toast.error(err.response?.data?.error || 'Could not rename the list'); }
+  };
+  const removeList = async (l) => {
+    if (!window.confirm(`Remove the stock list “${l.name}”? Only an empty list can be removed.`)) return;
+    try {
+      await axios.delete(`${API_BASE}/inventory/lists/${l.id}`);
+      toast.success(`“${l.name}” removed`); setListFilter('all'); reloadAll();
+    } catch (err) { toast.error(err.response?.data?.error || 'Could not remove the list'); }
+  };
+
+  /* One item held in several lists: the total across them, by the item's
+     identity (material, product, or name) — what the shortfall engine sees. */
+  const itemKey = (i) => (i.raw_material_id ? `m${i.raw_material_id}` : i.sku_id ? `p${i.sku_id}` : `n${String(i.itemName || '').trim().toLowerCase()}`);
+  const totals = useMemo(() => {
+    const m = new Map();
+    for (const i of inventory) {
+      const k = itemKey(i);
+      const t = m.get(k) || { qty: 0, rows: 0 };
+      t.qty += Number(i.quantity) || 0; t.rows++;
+      m.set(k, t);
+    }
+    return m;
+  }, [inventory]);
+  const inFilter = (i) => (listFilter === 'all' ? true
+    : listFilter === 'main' ? i.stock_list_id == null
+      : String(i.stock_list_id) === String(listFilter));
+  const mainCount = useMemo(() => inventory.filter(i => i.stock_list_id == null).length, [inventory]);
+  const activeList = lists.find(l => String(l.id) === String(listFilter)) || null;
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return inventory;
-    return inventory.filter(i =>
+    const scoped = inventory.filter(inFilter);
+    if (!q) return scoped;
+    return scoped.filter(i =>
       String(i.itemName || '').toLowerCase().includes(q) ||
+      String(i.item_code || '').toLowerCase().includes(q) ||
       String(i.category || '').toLowerCase().includes(q) ||
-      String(i.location || '').toLowerCase().includes(q));
-  }, [inventory, search]);
+      String(i.location || '').toLowerCase().includes(q) ||
+      String(i.stock_list_name || '').toLowerCase().includes(q));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inventory, search, listFilter]);
 
   /* Worth knowing before you read the cards: how much is short. */
   const summary = useMemo(() => {
-    const short = inventory.filter(i => (i.status || 'Healthy') !== 'Healthy').length;
-    const value = inventory.reduce((s, i) => s + (Number(i.stock_value) || 0), 0);
-    return { short, value };
-  }, [inventory]);
+    const scoped = inventory.filter(inFilter);
+    const short = scoped.filter(i => (i.status || 'Healthy') !== 'Healthy').length;
+    const value = scoped.reduce((s, i) => s + (Number(i.stock_value) || 0), 0);
+    return { short, value, count: scoped.length };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inventory, listFilter]);
 
   const saveReorder = async (item) => {
     const value = draft === '' ? 0 : Number(draft);
@@ -116,7 +169,7 @@ export default function Inventory() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', minWidth: 240 }}>
           <Search size={15} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input
@@ -142,6 +195,13 @@ export default function Inventory() {
         </div>
 
         {canWrite && (
+          <button onClick={() => setUploading(true)} className="btn-secondary btn-sm"
+            title="Bring stock in from an Excel or CSV sheet"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <FileSpreadsheet size={14} /> Upload sheet
+          </button>
+        )}
+        {canWrite && (
           <button onClick={() => setAdding(true)} className="btn-primary btn-sm"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
             <Plus size={14} /> Add stock
@@ -150,12 +210,43 @@ export default function Inventory() {
         </div>
       </div>
 
+      {/* Which stock list — shown once there is more than the main stock. */}
+      {lists.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 14 }} role="group" aria-label="Stock list">
+          {[['all', 'All lists', inventory.length], ['main', 'Main stock', mainCount], ...lists.map(l => [String(l.id), l.name, l.items])].map(([key, text, n]) => {
+            const on = String(listFilter) === key;
+            return (
+              <button key={key} type="button" onClick={() => setListFilter(key)} aria-pressed={on}
+                style={{
+                  border: `1px solid ${on ? 'var(--text-primary)' : 'var(--border-default)'}`, borderRadius: 999, padding: '5px 12px',
+                  cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600,
+                  background: on ? 'var(--text-primary)' : 'var(--bg-surface)', color: on ? 'var(--bg-surface)' : 'var(--text-secondary)',
+                }}>
+                {text} <span style={{ opacity: 0.7, fontVariantNumeric: 'tabular-nums' }}>{n}</span>
+              </button>
+            );
+          })}
+          {activeList && canWrite && (
+            <span style={{ display: 'inline-flex', gap: 4, marginLeft: 4 }}>
+              <button type="button" onClick={() => renameList(activeList)} title="Rename this list" aria-label={`Rename ${activeList.name}`}
+                style={{ background: 'none', border: '1px solid var(--border-default)', borderRadius: 7, padding: '4px 7px', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 0 }}>
+                <Pencil size={13} />
+              </button>
+              <button type="button" onClick={() => removeList(activeList)} title="Remove this list (only when empty)" aria-label={`Remove ${activeList.name}`}
+                style={{ background: 'none', border: '1px solid var(--border-default)', borderRadius: 7, padding: '4px 7px', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 0 }}>
+                <Trash2 size={13} />
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Two numbers worth having above the grid. */}
       {!loading && inventory.length > 0 && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
           <div style={{ ...card, padding: '12px 16px', flex: '1 1 180px' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Items held</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{inventory.length}</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{summary.count}</div>
           </div>
           <div style={{ ...card, padding: '12px 16px', flex: '1 1 180px' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Needs ordering</div>
@@ -200,7 +291,14 @@ export default function Inventory() {
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.3 }}>{item.itemName}</div>
-                    {item.category && <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>{item.category}</div>}
+                    {(item.category || item.item_code) && (
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>{[item.item_code, item.category].filter(Boolean).join(' · ')}</div>
+                    )}
+                    {lists.length > 0 && listFilter === 'all' && (
+                      <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3 }}>
+                        {item.stock_list_name || 'Main stock'}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -215,6 +313,11 @@ export default function Inventory() {
                     {alert ? <AlertTriangle size={11} /> : <CheckCircle2 size={11} />}{status}
                   </span>
                 </div>
+                {(totals.get(itemKey(item))?.rows || 0) > 1 && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 6 }}>
+                    {Number(totals.get(itemKey(item)).qty).toLocaleString('en-IN')} {item.uom || ''} across {totals.get(itemKey(item)).rows} lists
+                  </div>
+                )}
 
                 <div style={{
                   marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border-subtle)',
@@ -270,15 +373,19 @@ export default function Inventory() {
           }) : (
             <div style={{ ...card, gridColumn: '1 / -1', padding: 36, textAlign: 'center', color: 'var(--text-muted)' }}>
               {inventory.length === 0
-                ? 'Nothing in stock yet. Stock appears here when a goods receipt is recorded or production books output.'
-                : `Nothing matches “${search}”.`}
+                ? <>Nothing in stock yet. Upload your stock sheet (Excel or CSV) to bring it all in at once — or it appears as goods receipts and production are recorded.
+                  {canWrite && <div><button onClick={() => setUploading(true)} className="btn-primary btn-sm" style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileSpreadsheet size={14} /> Upload stock sheet</button></div>}</>
+                : search ? `Nothing matches “${search}”.` : 'Nothing in this list yet.'}
             </div>
           )}
         </div>
       )}
 
-      {adding && <AddStockModal onClose={() => setAdding(false)} onSaved={load} />}
-      {counting && <ItemStockPanel item={counting} onClose={() => setCounting(null)} onSaved={load} />}
+      {adding && <AddStockModal onClose={() => setAdding(false)} onSaved={reloadAll} lists={lists} held={inventory}
+        defaultList={listFilter === 'all' ? 'main' : listFilter} />}
+      {uploading && <StockUpload lists={lists} defaultTarget={listFilter === 'all' ? 'main' : listFilter} onClose={() => setUploading(false)}
+        onDone={(r) => { reloadAll(); if (r?.list?.id) setListFilter(String(r.list.id)); }} />}
+      {counting && <ItemStockPanel item={counting} onClose={() => setCounting(null)} onSaved={reloadAll} />}
     </div>
   );
 }

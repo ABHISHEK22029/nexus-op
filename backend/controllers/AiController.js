@@ -65,7 +65,9 @@ const HANDLERS = {
       db.query(`SELECT COUNT(*) c FROM customer_orders WHERE status <> 'Closed'${own}`, p),
       db.query(`SELECT COUNT(*) c FROM purchase_orders WHERE approval_status = 'Pending Approval'${proj}`, p),
       db.query(`SELECT COUNT(*) c, COALESCE(SUM(net_amount - COALESCE(amount_paid,0)),0) t FROM sales_invoices WHERE due_date < CURRENT_DATE AND status <> 'Paid' AND net_amount > COALESCE(amount_paid,0)${own}`, p),
-      db.query(`SELECT COUNT(*) c FROM inventory WHERE quantity <= 10${proj}`, p),
+      /* Stock is company-wide (projectId is NULL on almost every row, and on
+         every uploaded one), so it is scoped by owner, not by project. */
+      db.query(`SELECT COUNT(*) c FROM inventory WHERE quantity <= 10${own}`, p),
       db.query(admin ? 'SELECT COUNT(*) c FROM projects' : 'SELECT COUNT(*) c FROM projects WHERE owner_id = $1', p),
       db.query(`SELECT COALESCE(SUM(net_amount - COALESCE(amount_paid,0)),0) t FROM grn_bills gb WHERE net_amount > COALESCE(amount_paid,0)${admin ? '' : ' AND gb."projectId" IN (SELECT id FROM projects WHERE owner_id = $1)'}`, p),
     ]);
@@ -108,14 +110,18 @@ const HANDLERS = {
   async list_low_stock(args, req) {
     const admin = isAdmin(req);
     const th = Number(args?.threshold) > 0 ? Number(args.threshold) : 10;
-    const params = admin ? [th] : [req.user.id, th];
+    /* By organisation: it matched projects owned by req.user.id, so a team
+       member (whose id is not the org's) and every company-wide stock row
+       were left out — the answer was "no low stock" with shelves empty. */
+    const params = admin ? [th] : [req.user.orgId ?? req.user.id, th];
     const { rows } = await db.query(
-      `SELECT "itemName", quantity, uom FROM inventory
-        WHERE quantity <= ${admin ? '$1' : '$2'}
-        ${admin ? '' : 'AND "projectId" IN (SELECT id FROM projects WHERE owner_id = $1)'}
-        ORDER BY quantity ASC LIMIT 30`, params);
+      `SELECT i."itemName", i.quantity, i.uom, sl.name AS list
+         FROM inventory i LEFT JOIN stock_lists sl ON sl.id = i.stock_list_id
+        WHERE i.quantity <= ${admin ? '$1' : '$2'}
+        ${admin ? '' : 'AND i.owner_id = $1'}
+        ORDER BY i.quantity ASC LIMIT 30`, params);
     if (!rows.length) return { message: `No items at or below ${th}.` };
-    return rows.map(r => ({ item: r.itemName, quantity: r.quantity, uom: r.uom }));
+    return rows.map(r => ({ item: r.itemName, quantity: r.quantity, uom: r.uom, ...(r.list ? { stockList: r.list } : {}) }));
   },
 
   async find_customer_order(args, req) {

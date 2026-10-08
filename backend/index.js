@@ -29,6 +29,7 @@ const customerSummaryController = require('./controllers/CustomerSummaryControll
 const adminController = require('./controllers/AdminController');
 const { profileFor } = require('./shared/companyProfile');
 const stockController = require('./controllers/StockController');
+const stockImportController = require('./controllers/StockImportController');
 const setupController = require('./controllers/SetupController');
 const supplyCategoryController = require('./controllers/SupplyCategoryController');
 const shortfallController = require('./controllers/ShortfallToPoController');
@@ -937,8 +938,8 @@ app.put('/automation-settings', allow('automation-settings', 'write'), async (re
     const v = req.body.po_approval_threshold;
     const t = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN;
     if (!Number.isFinite(t) || t < 0) return res.status(400).json({ error: 'The PO approval threshold must be a number, 0 or more.' });
-  }
     if (t >= 1e15) return res.status(400).json({ error: 'That PO approval threshold is too large.' });
+  }
   if (has('reminders_enabled') && typeof req.body.reminders_enabled !== 'boolean') {
     return res.status(400).json({ error: 'reminders_enabled must be true or false.' });
   }
@@ -1134,17 +1135,19 @@ app.get('/inventory', async (req, res) => {
        ask for "?status=Low Stock" and let the database do the work instead of
        shipping every row to the browser to filter there. */
     const table = `(
-      SELECT *,
-             COALESCE(min_stock_level, 0)                           AS "reorderLevel",
-             ROUND((quantity * COALESCE(unit_cost, 0))::numeric, 2) AS stock_value,
+      SELECT i.*,
+             sl.name                                                    AS stock_list_name,
+             COALESCE(i.min_stock_level, 0)                             AS "reorderLevel",
+             ROUND((i.quantity * COALESCE(i.unit_cost, 0))::numeric, 2) AS stock_value,
              CASE
-               WHEN quantity <= 0                     THEN 'Out of Stock'
-               WHEN COALESCE(min_stock_level, 0) <= 0 THEN 'Healthy'
-               WHEN quantity <= min_stock_level       THEN 'Low Stock'
-               WHEN quantity <= min_stock_level * 1.2 THEN 'Near threshold'
+               WHEN i.quantity <= 0                     THEN 'Out of Stock'
+               WHEN COALESCE(i.min_stock_level, 0) <= 0 THEN 'Healthy'
+               WHEN i.quantity <= i.min_stock_level     THEN 'Low Stock'
+               WHEN i.quantity <= i.min_stock_level * 1.2 THEN 'Near threshold'
                ELSE 'Healthy'
              END AS status
-      FROM inventory
+      FROM inventory i
+      LEFT JOIN stock_lists sl ON sl.id = i.stock_list_id
     ) AS inv`;
     const where = [], params = [];
     /* Owner-scoped — see the note on /vendors. A new organisation was shown
@@ -1156,12 +1159,15 @@ app.get('/inventory', async (req, res) => {
       where.push(`owner_id = $${params.length}`);
     }
     if (req.query.projectId) { params.push(req.query.projectId); where.push(`"projectId" = $${params.length}`); }
+    /* One stock list, or the main stock; without it, every list. */
+    if (req.query.stockList === 'main') where.push('stock_list_id IS NULL');
+    else if (/^\d+$/.test(String(req.query.stockList || ''))) { params.push(Number(req.query.stockList)); where.push(`stock_list_id = $${params.length}`); }
     // Convenience flag: everything that needs attention, in one filter.
     if (String(req.query.needsAttention) === 'true') where.push(`status <> 'Healthy'`);
     const result = await runList(db, {
       table,
       query: req.query,
-      searchColumns: ['itemName', 'category', 'location', 'uom'],
+      searchColumns: ['itemName', 'category', 'location', 'uom', 'item_code', 'stock_list_name'],
       filterColumns: ['status', 'category', 'location', 'item_type'],
       allowedSort: ['itemName', 'quantity', 'status', 'category', 'stock_value'],
       defaultSort: 'itemName',
@@ -1219,6 +1225,14 @@ app.get('/customer-orders/:id/readiness', materialReqController.orderReadiness);
    swallowed by the ':id' pattern below it. */
 app.get('/inventory/movements',     stockController.movements);
 app.get('/inventory/reconcile',     stockController.reconcile);
+/* Stock from a spreadsheet, and the named lists it can go into. */
+app.get('/inventory/lists',          stockImportController.lists);
+app.post('/inventory/lists',         stockImportController.createList);
+app.patch('/inventory/lists/:id',    stockImportController.renameList);
+app.delete('/inventory/lists/:id',   stockImportController.deleteList);
+app.get('/inventory/uploads',        stockImportController.uploads);
+app.post('/inventory/import/plan',   upload.single('file'), stockImportController.plan);
+app.post('/inventory/import/commit', upload.single('file'), stockImportController.commit);
 app.get('/inventory/:id/movements', stockController.forItem);
 app.post('/inventory',              stockController.create);
 app.post('/inventory/:id/adjust',   stockController.adjust);
@@ -1237,14 +1251,22 @@ app.delete('/supply-categories/:id', allow('vendors', 'delete'), supplyCategoryC
 
 app.get('/inventory/unmatched', async (req, res) => {
   try {
+    /* Scoped to the organisation. It had no owner condition, so any signed-in
+       user was shown every company's unlinked stock — and every company's
+       raw materials as the candidates to link them to. */
+    const owner = req.user?.orgId ?? req.user?.id;
+    const scoped = !isCrossTenant(req.user?.role);
     const where = ['raw_material_id IS NULL', 'sku_id IS NULL'];
     const params = [];
+    if (scoped) { params.push(owner); where.push(`owner_id = $${params.length}`); }
     if (req.query.projectId) { params.push(req.query.projectId); where.push(`"projectId" = $${params.length}`); }
     const { rows } = await db.query(
       `SELECT id, "projectId", "itemName", quantity, uom
        FROM inventory WHERE ${where.join(' AND ')} ORDER BY "itemName"`, params);
     // Offer likely candidates so linking is a click, not a search.
-    const { rows: materials } = await db.query('SELECT id, name, material_code, unit FROM raw_materials ORDER BY name');
+    const { rows: materials } = await db.query(
+      `SELECT id, name, material_code, unit FROM raw_materials${scoped ? ' WHERE owner_id = $1' : ''} ORDER BY name`,
+      scoped ? [owner] : []);
     res.json({ items: rows, total: rows.length, candidates: materials });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1258,10 +1280,24 @@ app.patch('/inventory/:id', async (req, res) => {
   const sets = allowed.filter(c => c in req.body);
   if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
   try {
+    /* The row, and anything it is linked to, must be this organisation's.
+       There was no owner condition: any user could change any company's
+       reorder level or cost, or link its stock to their own material. */
+    const scoped = !isCrossTenant(req.user?.role);
+    const item = (await db.query(
+      `SELECT id, owner_id FROM inventory WHERE id = $1${scoped ? ' AND owner_id = $2' : ''}`,
+      scoped ? [req.params.id, req.user?.orgId ?? req.user?.id] : [req.params.id])).rows[0];
+    if (!item) return res.status(404).json({ error: 'Stock item not found' });
+    for (const [col, table] of [['raw_material_id', 'raw_materials'], ['sku_id', 'skus']]) {
+      const v = req.body[col];
+      if (v == null || v === '') continue;
+      const ok = (await db.query(`SELECT 1 FROM ${table} WHERE id = $1 AND owner_id = $2`, [v, item.owner_id])).rows[0];
+      if (!ok) return res.status(400).json({ error: col === 'sku_id' ? 'Product not found' : 'Raw material not found' });
+    }
     const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
     const { rows } = await db.query(
       `UPDATE inventory SET ${clause} WHERE id = $${sets.length + 1} RETURNING *`,
-      [...sets.map(c => (req.body[c] === '' ? null : req.body[c])), req.params.id]
+      [...sets.map(c => (req.body[c] === '' ? null : req.body[c])), item.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Stock item not found' });
     res.json(rows[0]);

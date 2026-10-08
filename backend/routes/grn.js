@@ -247,12 +247,13 @@ router.post('/', async (req, res) => {
       ? await client.query(
         `SELECT * FROM inventory
           WHERE raw_material_id = $1 AND owner_id IS NOT DISTINCT FROM $2
+            AND stock_list_id IS NULL                 -- receipts go to the main stock
           ORDER BY id LIMIT 1`,
         [materialId, ownerId])
       : await client.query(
         `SELECT * FROM inventory
           WHERE "itemName" = $1 AND raw_material_id IS NULL
-            AND owner_id IS NOT DISTINCT FROM $2
+            AND owner_id IS NOT DISTINCT FROM $2 AND stock_list_id IS NULL
           ORDER BY id LIMIT 1`,
         [receivedItemName, ownerId]);
 

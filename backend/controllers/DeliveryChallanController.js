@@ -148,7 +148,7 @@ exports.setStatus = async (req, res) => {
       for (const it of items) {
         if (!(Number(it.quantity) > 0)) continue;
         const invRow = await stock.resolveInventoryRow(client, {
-          ownerId: dc.owner_id, itemName: it.description, uom: it.uom, itemType: 'finished',
+          ownerId: dc.owner_id, itemName: it.description, uom: it.uom, itemType: 'finished', outbound: true,
         });
         await stock.stockOut(client, {
           ownerId: dc.owner_id, inventoryId: invRow.id, itemName: it.description,

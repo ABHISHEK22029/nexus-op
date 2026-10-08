@@ -25,6 +25,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Plus, Save, Scale, History, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { getToken } from '../lib/apiAuth';
+import UnitSelect from './UnitSelect';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -34,7 +35,7 @@ const authHeaders = () => {
 };
 
 /* ── shared chrome ─────────────────────────────────────────── */
-function Shell({ title, subtitle, icon, onClose, children, footer, width = 520 }) {
+export function Shell({ title, subtitle, icon, onClose, children, footer, width = 520 }) {
   useEffect(() => {
     const esc = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', esc);
@@ -96,13 +97,14 @@ const input = {
 const field = { marginBottom: 13 };
 
 /* ── Add a stock item (opening balance) ────────────────────── */
-export function AddStockModal({ onClose, onSaved }) {
+export function AddStockModal({ onClose, onSaved, lists = [], held = [], defaultList = 'main' }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [catalogue, setCatalogue] = useState({ materials: [], products: [] });
   const [f, setF] = useState({
     link: '', itemName: '', quantity: '', uom: 'nos',
     unitCost: '', minStockLevel: '', location: '', note: 'Opening stock',
+    stockList: defaultList || 'main',
   });
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
@@ -114,7 +116,7 @@ export function AddStockModal({ onClose, onSaved }) {
     (async () => {
       const get = (u) => fetch(`${API}${u}`, { headers: authHeaders() })
         .then(r => (r.ok ? r.json() : [])).then(d => (Array.isArray(d) ? d : d.items || [])).catch(() => []);
-      const [materials, products] = await Promise.all([get('/raw-materials?limit=500'), get('/skus?limit=500')]);
+      const [materials, products] = await Promise.all([get('/raw-materials'), get('/skus')]);
       setCatalogue({ materials, products });
     })();
   }, []);
@@ -130,6 +132,19 @@ export function AddStockModal({ onClose, onSaved }) {
       uom: hit?.base_uom || hit?.unit || p.uom,
     }));
   };
+
+  /* What is already held of this item in the chosen list. Adding here adds
+     to that balance — it does not start a second one — so say so, with the
+     number, before the click. */
+  const already = useMemo(() => {
+    const [kind, id] = f.link ? f.link.split(':') : [];
+    const inList = (r) => (f.stockList === 'main' ? r.stock_list_id == null : String(r.stock_list_id) === String(f.stockList));
+    const name = f.itemName.trim().toLowerCase();
+    return held.find(r => inList(r) && (
+      (kind === 'm' && String(r.raw_material_id) === id) ||
+      (kind === 'p' && String(r.sku_id) === id) ||
+      (!kind && name && String(r.itemName || '').trim().toLowerCase() === name))) || null;
+  }, [held, f.link, f.itemName, f.stockList]);
 
   const submit = async () => {
     const qty = Number(f.quantity);
@@ -151,7 +166,8 @@ export function AddStockModal({ onClose, onSaved }) {
           unitCost: f.unitCost === '' ? undefined : Number(f.unitCost),
           minStockLevel: f.minStockLevel === '' ? undefined : Number(f.minStockLevel),
           location: f.location.trim() || undefined,
-          note: f.note.trim() || 'Opening stock',
+          stockListId: f.stockList === 'main' ? undefined : Number(f.stockList),
+          note: f.note.trim() || (already ? 'Added stock' : 'Opening stock'),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -197,6 +213,27 @@ export function AddStockModal({ onClose, onSaved }) {
         </p>
       </div>
 
+      {lists.length > 0 && (
+        <div style={field}>
+          <label style={label}>Stock list</label>
+          <select value={f.stockList} onChange={e => set('stockList', e.target.value)} style={input} aria-label="Stock list">
+            <option value="main">Main stock</option>
+            {lists.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
+          </select>
+        </div>
+      )}
+
+      {already && (
+        <div role="status" style={{
+          marginBottom: 13, padding: '9px 11px', borderRadius: 8, fontSize: '0.8rem',
+          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.32)', color: 'var(--text-secondary)',
+        }}>
+          You already hold <b style={{ color: 'var(--text-primary)' }}>{Number(already.quantity).toLocaleString('en-IN')} {already.uom || ''}</b> of {already.itemName}
+          {already.stock_list_name ? <> in {already.stock_list_name}</> : null}. The quantity below is <b>added</b> to it.
+          To correct the count instead, use <b>Count</b> on the item.
+        </div>
+      )}
+
       <div style={field}>
         <label style={label}>Item name</label>
         <input value={f.itemName} onChange={e => set('itemName', e.target.value)}
@@ -205,14 +242,13 @@ export function AddStockModal({ onClose, onSaved }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={field}>
-          <label style={label}>Quantity held</label>
+          <label style={label}>{already ? 'Quantity to add' : 'Quantity held'}</label>
           <input type="number" min="0" step="any" value={f.quantity}
             onChange={e => set('quantity', e.target.value)} placeholder="0" style={input} />
         </div>
         <div style={field}>
           <label style={label}>Unit</label>
-          <input value={f.uom} onChange={e => set('uom', e.target.value)}
-            placeholder="nos, kg, sqm…" style={input} />
+          <UnitSelect style={input} value={f.uom} onChange={v => set('uom', v)} ariaLabel="Unit" />
         </div>
         <div style={field}>
           <label style={label}>Cost per unit <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>optional</span></label>

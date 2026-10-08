@@ -85,7 +85,7 @@ exports.forItem = async (req, res) => {
 exports.create = async (req, res) => {
   const {
     itemName, quantity, uom, rawMaterialId, skuId,
-    unitCost, minStockLevel, category, location, projectId, note,
+    unitCost, minStockLevel, category, location, projectId, note, stockListId,
   } = req.body || {};
 
   if (!itemName && !rawMaterialId && !skuId) {
@@ -101,14 +101,23 @@ exports.create = async (req, res) => {
     // material's stock row is always called what the material is called.
     let name = itemName;
     let baseUom = uom;
+    /* Only this organisation's materials and products — looked up by id
+       alone, any company's item master could be linked to. */
+    const owner = req.user?.orgId ?? req.user?.id;
     if (rawMaterialId) {
-      const m = (await client.query('SELECT name, base_uom FROM raw_materials WHERE id = $1', [rawMaterialId])).rows[0];
+      const m = (await client.query('SELECT name, base_uom FROM raw_materials WHERE id = $1 AND owner_id = $2', [rawMaterialId, owner])).rows[0];
       if (!m) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Raw material not found' }); }
       name = name || m.name;
       baseUom = baseUom || m.base_uom;
     }
+    let listId = null;
+    if (stockListId != null && stockListId !== '' && stockListId !== 'main') {
+      const l = (await client.query('SELECT id FROM stock_lists WHERE id = $1 AND owner_id = $2', [stockListId, owner])).rows[0];
+      if (!l) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Stock list not found' }); }
+      listId = l.id;
+    }
     if (skuId) {
-      const s = (await client.query('SELECT name, unit FROM skus WHERE id = $1', [skuId])).rows[0];
+      const s = (await client.query('SELECT name, unit FROM skus WHERE id = $1 AND owner_id = $2', [skuId, owner])).rows[0];
       if (!s) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Product not found' }); }
       name = name || s.name;
       baseUom = baseUom || s.unit;
@@ -123,6 +132,7 @@ exports.create = async (req, res) => {
       projectId: projectId || null,
       itemType: skuId ? 'finished' : 'raw',
       unitCost,
+      stockListId: listId,
     });
 
     // Optional attributes the ledger doesn't own.

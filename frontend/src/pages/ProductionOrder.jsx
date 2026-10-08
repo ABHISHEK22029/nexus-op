@@ -31,7 +31,7 @@ export default function ProductionOrder() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`${API}/inventory?limit=200`);
+        const r = await fetch(`${API}/inventory?sort=itemName`);
         const d = r.ok ? await r.json() : [];
         setStock((Array.isArray(d) ? d : d.items || []).filter(s => Number(s.quantity) > 0));
       } catch { /* the free-text field still works */ }
@@ -142,7 +142,7 @@ export default function ProductionOrder() {
             <div style={{ flex: 2, minWidth: 160 }}><label style={label}>From stock</label>
               <select style={input} value={cons.inventoryId} onChange={e => pickStock(e.target.value)} data-issue-from>
                 <option value="">— Not from stock (type it) —</option>
-                {stock.map(s => <option key={s.id} value={s.id}>{s.itemName} — {Number(s.quantity).toLocaleString('en-IN')} {s.uom || ''} on hand</option>)}
+                {stock.map(s => <option key={s.id} value={s.id}>{s.itemName}{s.stock_list_name ? ` · ${s.stock_list_name}` : ''} — {Number(s.quantity).toLocaleString('en-IN')} {s.uom || ''} on hand</option>)}
               </select>
             </div>
             {!cons.inventoryId && <div style={{ flex: 2, minWidth: 120 }}><label style={label}>Material *</label><input style={input} placeholder="MS Steel" value={cons.itemName} onChange={e => setCons({ ...cons, itemName: e.target.value })} /></div>}
@@ -154,7 +154,7 @@ export default function ProductionOrder() {
               if (await post('consumption', body, cons.inventoryId ? 'Issued from stock' : 'Consumption added')) {
                 setCons(EMPTY_CONS);
                 /* the stock it came from has moved */
-                fetch(`${API}/inventory?limit=200`).then(r => (r.ok ? r.json() : [])).then(d => setStock((Array.isArray(d) ? d : d.items || []).filter(s => Number(s.quantity) > 0))).catch(() => {});
+                fetch(`${API}/inventory?sort=itemName`).then(r => (r.ok ? r.json() : [])).then(d => setStock((Array.isArray(d) ? d : d.items || []).filter(s => Number(s.quantity) > 0))).catch(() => {});
               }
             }}><Plus size={15} /></button>
           </div>
