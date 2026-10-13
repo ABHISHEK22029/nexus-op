@@ -37,12 +37,13 @@ async function move(client, m) {
   const { rows } = await client.query(
     `INSERT INTO stock_movements
        (owner_id, inventory_id, sku_id, raw_material_id, item_name, quantity,
-        uom, unit_cost, movement_type, ref_type, ref_id, ref_number, note, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+        uom, unit_cost, movement_type, ref_type, ref_id, ref_number, note, created_by,
+        reverses_movement_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
     [m.ownerId || null, m.inventoryId, m.skuId || null, m.rawMaterialId || null,
      m.itemName || '', r2(qty), m.uom || null, m.unitCost ?? null,
      m.movementType, m.refType || null, m.refId || null, m.refNumber || null,
-     m.note || null, m.userId || null]
+     m.note || null, m.userId || null, m.reversesMovementId || null]
   );
 
   await client.query(
@@ -148,20 +149,17 @@ const stockOut = (client, m) => move(client, { ...m, quantity: -Math.abs(Number(
  * Only movements not yet reversed. This picked up EVERY earlier movement,
  * so a challan dispatched, pulled back, dispatched and pulled back again
  * put the first load back a second time — 490 on the shelf instead of 440.
- * A reversal names what it reverses ("Reversal of movement #id"), which is
- * the link back.
+ * Each reversal records the movement it undoes (reverses_movement_id,
+ * migration 072), and a unique index means a movement can be undone once
+ * only: a second attempt fails rather than double the stock.
  */
 async function reverseFor(client, { refType, refId, movementType, reversalType, userId }) {
   const { rows } = await client.query(
     `SELECT * FROM stock_movements m
      WHERE m.ref_type = $1 AND m.ref_id = $2 AND m.movement_type = $3
-       AND NOT EXISTS (
-         SELECT 1 FROM stock_movements r
-          WHERE r.ref_type = m.ref_type AND r.ref_id = m.ref_id
-            AND r.movement_type = $4
-            AND r.note = 'Reversal of movement #' || m.id)
+       AND NOT EXISTS (SELECT 1 FROM stock_movements r WHERE r.reverses_movement_id = m.id)
      ORDER BY m.id`,
-    [refType, refId, movementType, reversalType || 'adjustment']
+    [refType, refId, movementType]
   );
   for (const m of rows) {
     await move(client, {
@@ -171,7 +169,7 @@ async function reverseFor(client, { refType, refId, movementType, reversalType, 
       uom: m.uom, unitCost: m.unit_cost,
       movementType: reversalType || 'adjustment',
       refType, refId, refNumber: m.ref_number,
-      note: `Reversal of movement #${m.id}`, userId,
+      note: `Reversal of movement #${m.id}`, reversesMovementId: m.id, userId,
     });
   }
   return rows.length;

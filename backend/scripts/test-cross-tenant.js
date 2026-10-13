@@ -156,6 +156,18 @@ const rowsOf = (b) => (Array.isArray(b) ? b : b.items || []);
     for (const st of ['Dispatched', 'Draft', 'Dispatched', 'Draft']) { await setDc(st); seen.push(await held()); }
     ok(invId && JSON.stringify(seen) === '[450,500,450,500]',
       `dispatch → draft → dispatch → draft leaves the shelf where it started: ${seen.join(' → ')}`);
+    /* Each undo names the movement it reverses (migration 072), and the
+       database will not take a second reversal of the same movement. */
+    const led = await q(`SELECT id, quantity, reverses_movement_id FROM stock_movements
+                           WHERE ref_type = 'delivery_challan' AND ref_id = $1 ORDER BY id`, [dcR.body.id]);
+    const outs = led.filter((m) => Number(m.quantity) < 0 && !m.reverses_movement_id);
+    const backs = led.filter((m) => m.reverses_movement_id);
+    ok(outs.length === 2 && backs.length === 2 && backs.every((b) => outs.some((o) => o.id === b.reverses_movement_id)),
+      `two dispatches, two undos, each linked to the dispatch it undid (${backs.map((b) => '#' + b.reverses_movement_id).join(', ')})`);
+    const again = await q(`INSERT INTO stock_movements (owner_id, inventory_id, item_name, quantity, movement_type, ref_type, ref_id, reverses_movement_id)
+                           SELECT owner_id, inventory_id, item_name, 50, 'adjustment', ref_type, ref_id, $1 FROM stock_movements WHERE id = $1 RETURNING id`,
+      [outs[0]?.id]).then(() => 'taken', (e) => e.code);
+    ok(again === '23505', `the database refuses a second undo of the same dispatch (${again})`);
     const rec = (await call(A, 'GET', '/inventory/reconcile')).body;
     ok(rec.healthy === true, `and the ledger still explains every balance (${(rec.drifted || []).length} drifted)`);
     await setDc('Dispatched');
@@ -322,14 +334,23 @@ const rowsOf = (b) => (Array.isArray(b) ? b : b.items || []);
     const raNow = (await call(A, 'GET', `/bills/${raId}`)).body;
     ok(sub.status === 200 && tries.every(s => s === 404) && raDelB.status === 404 && raNow.status === 'Under Review',
       `B cannot approve, pay, reject, submit or delete it (${[...tries, raDelB.status].join(', ')}) — still ${raNow.status}`);
-    /* Not reject: the bills table's status CHECK has no 'Rejected' in it,
-       so rejecting answers 500 for everybody — a separate fault, reported. */
     const appr = await call(A, 'PATCH', `/bills/${raId}/approve`);
     await post(A, '/mb', { projectId: pA.id, workOrderId: woA.id, boqId: bqA.id, chainage: `CH2 ${stamp}`, measuredQuantity: 5 });
     const ra2 = await post(A, '/bills/generate', { projectId: pA.id, workOrderId: woA.id });
     const delA = await call(A, 'DELETE', `/bills/${ra2.body.billId}`);
     ok(appr.status === 200 && ra2.status === 200 && delA.status === 200,
       `A can approve its own, and delete its own draft (${appr.status}, ${delA.status})`);
+    /* Rejecting used to fail with a 500 for everybody: the table's CHECK
+       had no 'Rejected' (fixed by migration 072). */
+    await post(A, '/mb', { projectId: pA.id, workOrderId: woA.id, boqId: bqA.id, chainage: `CH3 ${stamp}`, measuredQuantity: 4 });
+    const ra3 = await post(A, '/bills/generate', { projectId: pA.id, workOrderId: woA.id });
+    await call(A, 'PATCH', `/bills/${ra3.body.billId}/submit`);
+    const rej = await call(A, 'PATCH', `/bills/${ra3.body.billId}/reject`);
+    const rejNow = (await call(A, 'GET', `/bills/${ra3.body.billId}`)).body;
+    const payRejected = await call(A, 'PATCH', `/bills/${ra3.body.billId}/pay`);
+    const delRejected = await call(A, 'DELETE', `/bills/${ra3.body.billId}`);
+    ok(ra3.status === 200 && rej.status === 200 && rejNow.status === 'Rejected' && payRejected.status === 409 && delRejected.status === 200,
+      `an RA bill under review can be rejected (${rej.status}, now ${rejNow.status}); a rejected bill can't be paid (${payRejected.status}) but can be deleted (${delRejected.status})`);
 
     section('indent status, milestones');
     const stB = await call(B, 'PUT', `/indent/${indA.body.id}/status`, { status: 'Approved' });

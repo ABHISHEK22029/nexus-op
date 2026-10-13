@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS bills (
   retention REAL NOT NULL,
   "netAmount" REAL NOT NULL,
   "billedQuantity" REAL NOT NULL DEFAULT 0,
-  status TEXT DEFAULT 'Draft' CHECK(status IN ('Draft', 'Under Review', 'Approved', 'Paid')),
+  status TEXT DEFAULT 'Draft' CHECK(status IN ('Draft', 'Under Review', 'Approved', 'Paid', 'Rejected')),
   date TIMESTAMPTZ DEFAULT NOW()
 );
 
