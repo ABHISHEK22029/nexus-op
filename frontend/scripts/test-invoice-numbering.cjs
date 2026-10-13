@@ -141,11 +141,11 @@ async function cleanup() {
     ok(/Due:\s*\d/.test(doc1), 'and a due date');
 
     console.log('\n  ── numbers: next, typed, duplicate, invalid');
-    const next1 = (await api('POST', '/sales-invoices', { customerId: cust.id, items: [{ description: 'Service', quantity: 1, rate: 100 }] })).body;
+    const next1 = (await api('POST', '/sales-invoices', { customerId: cust.id, items: [{ description: 'Service visit 1', quantity: 1, rate: 100 }] })).body;
     ok(next1.invoiceNumber === `KBS/${fy}/149`, `the next invoice follows on: ${next1.invoiceNumber}`);
-    const typed = await api('POST', '/sales-invoices', { customerId: cust.id, invoiceNumber: `KBS/${fy}/200`, items: [{ description: 'Service', quantity: 1, rate: 100 }] });
+    const typed = await api('POST', '/sales-invoices', { customerId: cust.id, invoiceNumber: `KBS/${fy}/200`, items: [{ description: 'Service visit 2', quantity: 1, rate: 100 }] });
     ok(typed.status === 200 && typed.body.invoiceNumber === `KBS/${fy}/200`, `any number can be typed: ${typed.body.invoiceNumber}`);
-    const after = (await api('POST', '/sales-invoices', { customerId: cust.id, items: [{ description: 'Service', quantity: 1, rate: 100 }] })).body;
+    const after = (await api('POST', '/sales-invoices', { customerId: cust.id, items: [{ description: 'Service visit 3', quantity: 1, rate: 100 }] })).body;
     ok(after.invoiceNumber === `KBS/${fy}/201`, `and the series carries on from it, not from where it was (${after.invoiceNumber})`);
     const dup = await api('POST', '/sales-invoices', { customerId: cust.id, invoiceNumber: `KBS/${fy}/200`, items: [{ description: 'x', quantity: 1, rate: 1 }] });
     ok(dup.status === 409, `a number already used is refused (${dup.body.error})`);

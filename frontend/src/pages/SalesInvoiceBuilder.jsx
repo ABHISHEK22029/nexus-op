@@ -160,7 +160,7 @@ export default function SalesInvoiceBuilder() {
         setCustomerId(inv.customer_id);
         setSupplier(stateCode(inv.company?.stateCode || inv.company?.gstin));
         setF(mapInvoiceToForm(inv));
-        setItems(inv.items.map(it => ({ description: it.description || '', hsn: it.hsn || '', uom: it.uom || 'nos', quantity: it.quantity ?? '', rate: it.rate ?? '' })));
+        setItems(inv.items.map(it => ({ description: it.description || '', hsn: it.hsn || '', uom: it.uom || 'nos', quantity: it.quantity ?? '', rate: it.rate ?? '', customerOrderItemId: it.customer_order_item_id ?? null })));
       });
     } else {
       fetch(`${API}/customers?limit=500`).then(r => (r.ok ? r.json() : [])).then(d => {
@@ -225,10 +225,11 @@ export default function SalesInvoiceBuilder() {
     setSaving(true);
     try {
       let res;
-      if (mode === 'edit') {
-        res = await fetch(`${API}/sales-invoices/${id}`, {
+      /* confirm: the person agreed to bill past the order's value (freight, an extra). */
+      const send = (confirm) => (mode === 'edit'
+        ? fetch(`${API}/sales-invoices/${id}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify({ ...(confirm ? { confirmAboveOrder: true } : {}),
             invoice_number: f.invoiceNumber.trim(), invoice_date: f.invoiceDate || null, due_date: f.dueDate || null,
             discount: t.disc, gst_rate: Number(f.gstRate) || 0, round_off: Number(f.roundOff) || 0,
             notes: f.notes || null, terms: f.terms || null,
@@ -238,11 +239,10 @@ export default function SalesInvoiceBuilder() {
             ship_to_name: shipTo.name || null, ship_to_address: shipTo.address || null, ship_to_gstin: shipTo.gstin || null, ship_to_state: shipTo.state || null,
             items: valid,
           }),
-        });
-      } else {
-        res = await fetch(`${API}/sales-invoices`, {
+        })
+        : fetch(`${API}/sales-invoices`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify({ ...(confirm ? { confirmAboveOrder: true } : {}),
             customerId, customerOrderId: mode === 'order' ? Number(coId) : null,
             /* Sent only when it was typed over: the server's own allocation
                is the safer source of the next number if two people raise
@@ -254,9 +254,13 @@ export default function SalesInvoiceBuilder() {
             placeOfSupply: f.posCode || null, reverseCharge: !!f.reverseCharge, ewayBillNo: f.ewayBillNo || null,
             billTo: f.billTo, shipTo,
           }),
-        });
+        }));
+      res = await send(false);
+      let d = await res.json().catch(() => ({}));
+      if (res.status === 409 && d.needsConfirm && window.confirm(`${d.error}\n\nBill it anyway?`)) {
+        res = await send(true);
+        d = await res.json().catch(() => ({}));
       }
-      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || 'Could not save the invoice');
       toast.success(mode === 'edit' ? `Invoice ${d.invoice_number} saved` : `Invoice ${d.invoiceNumber} created`);
       navigate(`/sales-invoices/${mode === 'edit' ? id : d.id}`);
@@ -273,6 +277,31 @@ export default function SalesInvoiceBuilder() {
 
   if (!ctx) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading…</div>;
 
+  /* Everything on the order is billed already: say so, and on which
+     invoice, instead of offering the whole order again. */
+  if (mode === 'order' && ctx.billing?.fullyInvoiced) {
+    return (
+      <div style={{ maxWidth: 760, margin: '0 auto', paddingBottom: 40 }}>
+        <button onClick={() => navigate(back)} className="inv-act-btn" style={{ marginBottom: 16 }}><ArrowLeft size={15} /> Back</button>
+        <div style={S.card} role="status" data-fully-invoiced>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+            <ReceiptIndianRupee size={22} style={{ color: 'var(--brand-amber)' }} /> Order {ctx.customerOrder?.order_number} is fully invoiced
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: 8, lineHeight: 1.55 }}>
+            Every line on it is already billed. An order is invoiced once — to bill something again, cancel the earlier invoice first.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+            {(ctx.billing.onOrder || []).map(i => (
+              <button key={i.id} onClick={() => navigate(`/sales-invoices/${i.id}`)} className="btn-secondary">
+                Open {i.invoice_number} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {i.status}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto', paddingBottom: 40 }}>
       <button onClick={() => navigate(back)} className="inv-act-btn" style={{ marginBottom: 16 }}><ArrowLeft size={15} /> Back</button>
@@ -282,6 +311,12 @@ export default function SalesInvoiceBuilder() {
           <ReceiptIndianRupee size={22} style={{ color: 'var(--brand-amber)' }} /> {title}
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', marginTop: 4 }}>{ref}</p>
+        {mode === 'order' && (ctx.billing?.invoices || []).length > 0 && (
+          <p role="status" data-part-billed style={{ display: 'flex', gap: 7, alignItems: 'flex-start', marginTop: 10, fontSize: '0.84rem', color: 'var(--text-secondary)', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.32)', borderRadius: 8, padding: '8px 11px' }}>
+            <AlertTriangle size={15} style={{ flex: 'none', color: 'var(--brand-amber)', marginTop: 2 }} />
+            <span>Part of this order is already billed on <b>{ctx.billing.invoices.join(', ')}</b>. Only what is left to bill is filled in below.</span>
+          </p>
+        )}
         {mode === 'new' && (
           <div style={{ marginTop: 12, maxWidth: 420 }}>
             <Field label="Customer">

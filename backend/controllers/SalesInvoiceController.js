@@ -15,6 +15,7 @@ const { syncOrderDelivery } = require('../shared/orderProgress');
 const { lineAmount } = require('../shared/orderTotals');
 const { prepareLines, checkAdjustments } = require('../shared/lineChecks');
 const { assertRefs } = require('../shared/ownedRefs');
+const { billedLines, checkOrderBilling, aboveOrderValue } = require('../shared/orderBilling');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
@@ -113,23 +114,40 @@ exports.prefill = async (req, res) => {
        Invoice lines carry no discount of their own, so the rate stays the
        rate the customer agreed and every discount is carried to the
        invoice's discount. Same taxable value, to the paisa. */
-    let lineDiscounts = 0;
-    const items = orderLines.map(it => {
-      const qty = Number(it.quantity) || 0;
+    /* Only what is still to be billed. The second invoice for an order used
+       to open with the whole order on it again — which is how one order on
+       the live database came to be invoiced three times over. Each line
+       carries the order line it bills, so the server can hold the total to
+       what was ordered (shared/orderBilling). */
+    const billing = await billedLines(db, co.id);
+    const left = new Map(billing.map(b => [b.id, b.left]));
+    let lineDiscounts = 0, fullSub = 0;
+    const items = [];
+    for (const it of orderLines) {
+      const ordered = Number(it.quantity) || 0;
+      const qty = left.has(it.id) ? left.get(it.id) : ordered;
       const rate = Number(it.rate ?? it.target_price) || 0;
-      const gross = r2(qty * rate);
       /* From the line's own discount, never from gross − stored amount.
          Orders typed on the Customer Orders screen were saved with an
          amount of 0, and that difference became a discount of the whole
-         line — the invoice opened at ₹0 taxable. */
-      const net = lineAmount({ quantity: qty, rate, discount: it.discount, discountType: it.discount_type });
+         line — the invoice opened at ₹0 taxable. A flat line discount is
+         shared out by quantity when only part of the line is billed. */
+      fullSub += lineAmount({ quantity: ordered, rate, discount: it.discount, discountType: it.discount_type });
+      if (qty <= 0.0001) continue;
+      const discount = it.discount_type === 'flat' && ordered > 0 ? (Number(it.discount) || 0) * (qty / ordered) : it.discount;
+      const gross = r2(qty * rate);
+      const net = lineAmount({ quantity: qty, rate, discount, discountType: it.discount_type });
       lineDiscounts += Math.max(0, gross - net);
-      return { description: it.description, hsn: it.hsn || '', uom: it.unit || 'nos', quantity: it.quantity, rate };
-    });
+      items.push({ description: it.description, hsn: it.hsn || '', uom: it.unit || 'nos', quantity: Number(qty.toFixed(4)), rate, customerOrderItemId: it.id });
+    }
     const sub = r2(items.reduce((s, l) => s + r2((Number(l.quantity) || 0) * l.rate), 0)) - r2(lineDiscounts);
+    /* A flat order discount is shared out by value when only part is billed. */
     const orderDiscount = co.discount_type === 'flat'
-      ? Math.min(Number(co.discount) || 0, sub)
+      ? Math.min(r2((Number(co.discount) || 0) * (fullSub > 0 ? Math.min(1, sub / fullSub) : 0)), sub)
       : r2(sub * ((Number(co.discount) || 0) / 100));
+    const already = [...new Set(billing.flatMap(b => b.invoices))];
+    const onOrder = (await db.query(
+      "SELECT id, invoice_number, status FROM sales_invoices WHERE customer_order_id = $1 AND status <> 'Cancelled' ORDER BY id", [co.id])).rows;
     const t = await resolveTax(db, req.user?.orgId, co.customer_id);
     const c = t.customer || {};
     const termsDays = co.payment_terms_days ?? c.payment_terms_days ?? t.company?.default_payment_terms_days ?? 30;
@@ -158,6 +176,12 @@ exports.prefill = async (req, res) => {
       terms: co.terms || t.company?.invoice_terms || null,
       reverseCharge: false,
       gstRate: co.gst_rate == null ? 18 : Number(co.gst_rate), items,
+      billing: {
+        lines: billing,
+        invoices: already,
+        onOrder,
+        fullyInvoiced: orderLines.length > 0 && items.length === 0,
+      },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
@@ -209,6 +233,25 @@ exports.checkNumber = checkNumber;
 
 const isDuplicate = (e) => e && e.code === '23505';
 
+/* An invoice for this customer (and order) with the same total and the
+   same lines, saved in the last two minutes — or null. */
+async function sameInvoiceJustSaved(client, { ownerId, customerId, customerOrderId, net, lines }) {
+  const recent = (await client.query(
+    `SELECT id, invoice_number FROM sales_invoices
+      WHERE owner_id IS NOT DISTINCT FROM $1 AND customer_id = $2
+        AND customer_order_id IS NOT DISTINCT FROM $3 AND net_amount = $4
+        AND status <> 'Cancelled' AND created_at > NOW() - INTERVAL '2 minutes'
+      ORDER BY id DESC`, [ownerId, customerId, customerOrderId, net])).rows;
+  const sig = (ls) => ls.map(l => `${String(l.description).trim().toLowerCase()}|${Number(l.quantity)}|${Number(l.rate)}`).join('¦');
+  const want = sig(lines);
+  for (const r of recent) {
+    const items = (await client.query(
+      'SELECT description, quantity, rate FROM sales_invoice_items WHERE sales_invoice_id = $1 ORDER BY sort_order, id', [r.id])).rows;
+    if (sig(items) === want) return r;
+  }
+  return null;
+}
+
 // POST /sales-invoices
 exports.create = async (req, res) => {
   const {
@@ -236,6 +279,32 @@ exports.create = async (req, res) => {
     const tax = await resolveTax(client, req.user?.orgId, customerId, placeOfSupply);
     const isInter = interstate === undefined || interstate === null ? tax.interstate : !!interstate;
     const t = compute(items, { discount, gstRate, interstate: isInter, roundOff }, { strictUnits: true });
+    /* An order is billed once: at most what is left on each line. */
+    if (customerOrderId) {
+      t.lines = await checkOrderBilling(client, { orderId: customerOrderId, lines: t.lines });
+      /* Lines not on the order that take it past its value: confirm first. */
+      const above = req.body.confirmAboveOrder ? null : await aboveOrderValue(client, { orderId: customerOrderId, lines: t.lines });
+      if (above) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: above, needsConfirm: 'above_order_value' });
+      }
+    }
+    /* The same invoice saved twice — a double click, a retried request —
+       is refused, not made twice. One save per customer at a time, then:
+       an invoice for the same customer and order, with the same lines and
+       total, saved in the last two minutes, is this one. */
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`sales_invoice:${req.user?.orgId}:${customerId}`]);
+    /* A number typed by hand is guarded already: it can be used once. */
+    const twin = typed ? null : await sameInvoiceJustSaved(client, {
+      ownerId: req.user?.orgId || null, customerId, customerOrderId: customerOrderId || null, net: t.net, lines: t.lines,
+    });
+    if (twin) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `This invoice was already saved a moment ago as ${twin.invoice_number}. Open that one instead of saving it again.`,
+        duplicateOf: twin.id,
+      });
+    }
     /* A tax invoice number must be unique within the financial year — Rule
        46. A count reissues one after any deletion, and a duplicate invoice
        number is a GSTR-1 filing error, so this is the call site that
@@ -290,9 +359,10 @@ exports.create = async (req, res) => {
     let so = 0;
     for (const l of t.lines) {
       await client.query(
-        `INSERT INTO sales_invoice_items (sales_invoice_id, description, hsn, uom, quantity, rate, amount, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [invId, l.description, l.hsn || null, l.uom || 'nos', l.quantity || 0, l.rate || 0, l.amount || 0, so++]
+        `INSERT INTO sales_invoice_items (sales_invoice_id, description, hsn, uom, quantity, rate, amount, sort_order, customer_order_item_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [invId, l.description, l.hsn || null, l.uom || 'nos', l.quantity || 0, l.rate || 0, l.amount || 0, so++,
+         customerOrderId ? (l.customerOrderItemId || null) : null]
       );
     }
     // Move the customer order forward if this closes it.
@@ -369,7 +439,32 @@ exports.getById = async (req, res) => {
       : null;
     let company = null;
     try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
-    res.json({ ...inv, items, payments, customer, company, order });
+    /* An order billed more than it was ordered — invoices from before the
+       check, raised twice. Said on the invoice, with the others it shares
+       the order with, so the owner can cancel the extra one. */
+    let overBilled = null;
+    if (inv.customer_order_id && order && inv.status !== 'Cancelled') {
+      const over = (await billedLines(db, inv.customer_order_id)).filter(l => l.billed > l.ordered + 0.0001);
+      /* By value too: a lump-sum line ("supply as per PO") is tied to no
+         order line, so only the totals show it billing the order again.
+         More than 10% over — freight and small extras stay quiet. */
+      const v = (await db.query(
+        `SELECT (SELECT COALESCE(SUM(quantity * COALESCE(rate, target_price, 0)), 0) FROM customer_order_items WHERE customer_order_id = $1) AS ordered,
+                (SELECT COALESCE(SUM(sii.quantity * sii.rate), 0) FROM sales_invoice_items sii JOIN sales_invoices si ON si.id = sii.sales_invoice_id
+                  WHERE si.customer_order_id = $1 AND si.status <> 'Cancelled') AS billed,
+                (SELECT array_agg(invoice_number ORDER BY id) FROM sales_invoices WHERE customer_order_id = $1 AND status <> 'Cancelled') AS invoices`,
+        [inv.customer_order_id])).rows[0];
+      const byValue = Number(v.ordered) > 0 && Number(v.billed) > Number(v.ordered) * 1.1;
+      if (over.length || byValue) {
+        overBilled = {
+          orderNumber: order.order_number,
+          invoices: byValue ? (v.invoices || []) : [...new Set(over.flatMap(l => l.invoices))],
+          lines: over.map(l => ({ description: l.description, ordered: l.ordered, billed: l.billed, unit: l.unit })),
+          orderedValue: Number(v.ordered), billedValue: Number(v.billed),
+        };
+      }
+    }
+    res.json({ ...inv, items, payments, customer, company, order, overBilled });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
@@ -481,7 +576,7 @@ exports.update = async (req, res) => {
 
     const draft = inv.status === 'Draft';
     const allowed = draft ? INVOICE_DRAFT_FIELDS : INVOICE_ISSUED_FIELDS;
-    const offered = Object.keys(req.body || {}).filter(k => k !== 'items');
+    const offered = Object.keys(req.body || {}).filter(k => k !== 'items' && k !== 'confirmAboveOrder');
     const refused = offered.filter(k => !allowed.includes(k));
     if (refused.length) {
       await client.query('ROLLBACK');
@@ -541,16 +636,27 @@ exports.update = async (req, res) => {
         place_of_supply_code: set.place_of_supply_code ?? tax.placeOfSupplyCode ?? inv.place_of_supply_code,
       });
       if (req.body.items) {
+        /* An order is billed once — this invoice's own earlier lines aside. */
+        if (inv.customer_order_id) {
+          t.lines = await checkOrderBilling(client, { orderId: inv.customer_order_id, lines: t.lines, exceptInvoiceId: inv.id });
+          const above = req.body.confirmAboveOrder ? null
+            : await aboveOrderValue(client, { orderId: inv.customer_order_id, lines: t.lines, exceptInvoiceId: inv.id });
+          if (above) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: above, needsConfirm: 'above_order_value' });
+          }
+        }
         await client.query('DELETE FROM sales_invoice_items WHERE sales_invoice_id = $1', [inv.id]);
         let so = 0;
         for (const l of t.lines) {
           /* Same column list as create(). sales_invoice_items has no sku_id —
              only sales_quotation_items does. */
           await client.query(
-            `INSERT INTO sales_invoice_items (sales_invoice_id, description, hsn, uom, quantity, rate, amount, sort_order)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            `INSERT INTO sales_invoice_items (sales_invoice_id, description, hsn, uom, quantity, rate, amount, sort_order, customer_order_item_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
             [inv.id, l.description, l.hsn || null, l.uom || 'nos',
-             l.quantity || 0, l.rate || 0, l.amount || 0, so++]);
+             l.quantity || 0, l.rate || 0, l.amount || 0, so++,
+             inv.customer_order_id ? (l.customerOrderItemId || null) : null]);
         }
       }
       /* A revised total can land below what has already been received. */

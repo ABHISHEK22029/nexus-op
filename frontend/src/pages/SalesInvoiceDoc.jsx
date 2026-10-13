@@ -245,6 +245,21 @@ export default function SalesInvoiceDoc() {
         </div>
       </div>
 
+      {/* The order behind this invoice is billed more than it was ordered —
+          invoices raised twice before the check existed. */}
+      {inv.overBilled && (
+        <div className="print:hidden" role="alert" data-over-billed style={{ display: 'flex', gap: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.35)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
+          <AlertTriangle size={17} style={{ flex: 'none', color: '#dc2626', marginTop: 1 }} />
+          <div>
+            <b>Order {inv.overBilled.orderNumber} is invoiced more than it was ordered</b>, on {inv.overBilled.invoices.join(', ')}:
+            {' '}₹{Math.round(inv.overBilled.billedValue).toLocaleString('en-IN')} invoiced against ₹{Math.round(inv.overBilled.orderedValue).toLocaleString('en-IN')} ordered (before tax).
+            {inv.overBilled.lines.length > 0 && ' '}{inv.overBilled.lines.slice(0, 3).map(l => `“${l.description}”: ordered ${Number(l.ordered).toLocaleString('en-IN')}, invoiced ${Number(l.billed).toLocaleString('en-IN')}`).join('; ')}
+            {inv.overBilled.lines.length > 3 ? ` and ${inv.overBilled.lines.length - 3} more` : ''}{inv.overBilled.lines.length > 0 ? '.' : ''}
+            {' '}Keep the right invoice and cancel or delete the others.
+          </div>
+        </div>
+      )}
+
       {isCancelled && (
         <div className="print:hidden" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: '0.86rem', color: 'var(--text-secondary)' }}>
           <Ban size={16} style={{ flex: 'none' }} /> This invoice is cancelled. It keeps its number, and it is not owed.

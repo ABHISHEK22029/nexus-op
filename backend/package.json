@@ -2,6 +2,9 @@
   "name": "nexus-op-backend",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
@@ -32,6 +35,7 @@
     "jsonwebtoken": "^9.0.3",
     "mammoth": "^1.12.3",
     "multer": "^1.4.5-lts.1",
+    "nodemailer": "^10.1.0",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "5.4.296",
     "pg": "^8.13.0"
