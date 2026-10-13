@@ -29,7 +29,7 @@ if (/^https:|onrender\.com|vercel\.app|maksops\.co\.in/.test(UI + API)) {
 const B = path.join(__dirname, '..', '..', 'backend');
 require(path.join(B, 'node_modules', 'dotenv')).config({ path: path.join(B, '.env') });
 const { Client } = require(path.join(B, 'node_modules', 'pg'));
-const { purgeOrg } = require(path.join(B, 'scripts', 'lib', 'purgeOrg'));
+const { purge } = require(path.join(B, 'scripts', 'lib', 'testAccounts'));
 
 const stamp = Date.now().toString(36);
 let pass = 0, fail = 0;
@@ -41,14 +41,13 @@ async function cleanup() {
   const c = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   await c.connect();
   try {
+    /* The shared purge: it sweeps every table with an owner, several times
+       over, then the user. Deleting the user after one pass failed on the
+       customers it still owned. */
     const { rows } = await c.query(`SELECT id FROM users WHERE email LIKE 'invnum-%@example.test'`);
     const ids = rows.map(r => r.id);
     if (!ids.length) return 0;
-    const r = await purgeOrg(c, ids);
-    await c.query(`DELETE FROM document_sequences WHERE owner_id = ANY($1)`, [ids]).catch(() => {});
-    const d = await c.query(`DELETE FROM users WHERE id = ANY($1) AND email LIKE '%@example.test'`, [ids]);
-    if (r.blocked.length) console.log('   (cleanup blocked on', r.blocked.join(', '), ')');
-    return d.rowCount;
+    return await purge(ids, c);
   } finally { await c.end(); }
 }
 
@@ -65,10 +64,13 @@ async function cleanup() {
   };
   let browser;
   try {
-    await api('PUT', '/company-profile', {
-      name: `Numbering Test Works ${stamp}`, address: 'Bowrampet, Hyderabad', gstin: '36AAMCK2569F1Z9', stateCode: '36',
-      bank_name: 'HDFC Bank', bank_account_no: '5020011', bank_ifsc: 'HDFC0005038', invoice_terms: 'Payment within 30 days.',
+    /* An account number is 9–18 digits since the 8 Oct checks; a refused
+       profile left the company unset and the builder bounced to /welcome. */
+    const prof = await api('PUT', '/company-profile', {
+      name: `Numbering Test Works ${stamp}`, address: 'Bowrampet, Hyderabad', gstin: '36ABCDE1234F1Z9', stateCode: '36',
+      bank_name: 'HDFC Bank', bank_account_no: '50200110000001', bank_ifsc: 'HDFC0005038', invoice_terms: 'Payment within 30 days.',
     });
+    if (prof.status !== 200) throw new Error(`company profile refused: ${prof.status} ${prof.body.error || ''}`);
 
     console.log('\n  ── Settings → Document numbering');
     const list = await api('GET', '/document-series');

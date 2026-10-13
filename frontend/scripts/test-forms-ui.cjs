@@ -99,7 +99,7 @@ function layoutProblems() {
     if (!reg.token) throw new Error('could not register');
     ids.push(reg.user?.id);
     const T = reg.token;
-    await call(T, 'PUT', '/company-profile', { name: 'Forms UI Works', gstin: '36AAMCK2569F1Z9', stateCode: '36' });
+    await call(T, 'PUT', '/company-profile', { name: 'Forms UI Works', gstin: '36ABCDE1234F1Z9', stateCode: '36' });
 
     const cust = await call(T, 'POST', '/customers', { name: `Customer Name ${stamp}`, state: 'Telangana' });
     /* ₹1,60,34,50,00,000 billed, ₹2,52,23,500 received — the tester's figures. */

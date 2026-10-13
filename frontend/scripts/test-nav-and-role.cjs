@@ -50,7 +50,7 @@ const BACKEND = path.join(__dirname, '..', '..', 'backend');
     await fetch(`${API}/company-profile`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${r.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: `${label} Co`, gstin: '36AAMCK2569F1Z9', stateCode: '36',
+      body: JSON.stringify({ name: `${label} Co`, gstin: '36ABCDE1234F1Z9', stateCode: '36',
         setup_completed_at: new Date().toISOString() }),
     });
     return { token: r.token, id: r.user.id };

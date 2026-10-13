@@ -80,7 +80,7 @@ async function cleanup() {
   try {
     await api('PUT', '/company-profile', {
       name: `Print Test Fabricators ${stamp}`, address: 'Plot 14, Phase II, IDA Bowrampet, Hyderabad, Telangana 500043',
-      gstin: '36AAMCK2569F1Z9', stateCode: '36', phone: '+91 90304 98359',
+      gstin: '36ABCDE1234F1Z9', stateCode: '36', phone: '+91 90000 00009',
       bank_name: 'HDFC Bank', bank_account_no: '50200114304016', bank_ifsc: 'HDFC0005038',
       bank_account_name: 'Print Test Fabricators', bank_branch: 'Alwal', invoice_terms: 'Payment within 30 days.',
     });

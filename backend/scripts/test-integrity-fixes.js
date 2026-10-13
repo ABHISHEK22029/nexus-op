@@ -51,7 +51,7 @@ async function cleanup() {
     return { status: r.status, body: await r.json().catch(() => ({})) };
   };
   try {
-    await api(A, 'PUT', '/company-profile', { name: 'Precision Fab Works', gstin: '36AAMCK2569F1Z9', stateCode: '36' });
+    await api(A, 'PUT', '/company-profile', { name: 'Precision Fab Works', gstin: '36ABCDE1234F1Z9', stateCode: '36' });
     const proj = (await api(A, 'POST', '/projects', { name: `Fix project ${stamp}`, clientName: 'C', type: 'Infrastructure' })).body;
     const vendor = (await api(A, 'POST', '/vendors', { name: `Fix vendor ${stamp}`, type: 'Supplier' })).body;
 

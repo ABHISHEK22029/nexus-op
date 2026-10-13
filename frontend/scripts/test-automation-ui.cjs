@@ -69,7 +69,7 @@ async function cleanup() {
   try {
     const [{ today }] = await sql('SELECT CURRENT_DATE::text AS today');
     const back = (n) => { const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
-    await api('PUT', '/company-profile', { name: 'Automation UI Works', gstin: '36AAMCK2569F1Z9', stateCode: '36' });
+    await api('PUT', '/company-profile', { name: 'Automation UI Works', gstin: '36ABCDE1234F1Z9', stateCode: '36' });
     const cust = await api('POST', '/customers', { name: `UI Buyer ${stamp}`, state: 'Telangana', gstin: '36ABCDE1234F1Z5', billing_address: 'Hyderabad' });
     const viewerEmail = `automui-view-${stamp}@example.test`;
     await api('POST', '/admin/users', { name: 'Viewer person', email: viewerEmail, password: PASS, role: 'Viewer' });

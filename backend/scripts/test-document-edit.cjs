@@ -45,7 +45,7 @@ const J = async (r) => ({ status: r.status, body: await r.json().catch(() => ({}
   const A = await reg('alpha');
   const B = await reg('beta');
   await fetch(`${API}/company-profile`, { method: 'PUT', headers: A.h,
-    body: JSON.stringify({ name: 'Edit Co', gstin: '36AAMCK2569F1Z9', stateCode: '36' }) });
+    body: JSON.stringify({ name: 'Edit Co', gstin: '36ABCDE1234F1Z9', stateCode: '36' }) });
   const cust = await (await fetch(`${API}/customers`, { method: 'POST', headers: A.h,
     body: JSON.stringify({ name: `Buyer ${stamp}`, state: 'Telangana' }) })).json();
 

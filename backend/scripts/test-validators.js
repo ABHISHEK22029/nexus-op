@@ -59,7 +59,7 @@ function unit() {
   bad('email', ['.pulupula@gmail.com', 'no-at-sign', 'a@b', 'a b@c.com', 'a..b@c.com']);
   good('pan', ['AABCN1234M', 'aabcn1234m']);
   bad('pan', ['SADSAD2323', 'AABCN1234', 'AABC1234MM']);
-  good('gstin', ['33AABCN1234M1Z7', '36AAMCK2569F1Z9', '97AABCN1234M1ZA', '01AABCN1234MAZ1']);
+  good('gstin', ['33AABCN1234M1Z7', '36ABCDE1234F1Z9', '97AABCN1234M1ZA', '01AABCN1234MAZ1']);
   bad('gstin', ['33AABCN1234M1Z', '00AABCN1234M1Z7', '39AABCN1234M1Z7', '33AABC11234M1Z7', '33AABCN1234M1X7', '33AABCN1234M0Z7']);
   good('ifsc', ['HDFC0001234', 'sbin0abc123']);
   bad('ifsc', ['XDADA1', 'HDFC1001234', 'HDF00001234', 'ea2321223']);
@@ -146,7 +146,7 @@ async function api() {
   ok(r.status === 200, `a landline with its STD code is accepted (${r.status})`);
 
   console.log('\n  Company profile');
-  r = await call(A, 'PUT', '/company-profile', { name: `Forms Works ${stamp}`, gstin: '36AAMCK2569F1Z9', stateCode: '36' });
+  r = await call(A, 'PUT', '/company-profile', { name: `Forms Works ${stamp}`, gstin: '36ABCDE1234F1Z9', stateCode: '36' });
   ok(r.status === 200, `a profile with a valid GSTIN is saved (${r.status} ${r.body.error || ''})`);
   for (const [body, field] of [
     [{ bank_ifsc: 'ea2321223' }, 'bank_ifsc'],
@@ -154,13 +154,13 @@ async function api() {
     [{ bank_account_name: 'saikumar 12345' }, 'bank_account_name'],   // a run of digits; a name may carry a short number ("Shop 12")
     [{ phone: '12345' }, 'phone'],
     [{ email: 'owner@' }, 'email'],
-    [{ gstin: '36AAMCK2569F1Z' }, 'gstin'],
+    [{ gstin: '36ABCDE1234F1Z' }, 'gstin'],
     [{ pan: 'AABCN1234M' }, 'pan'],          // disagrees with the stored GSTIN
   ]) {
     r = await call(A, 'PUT', '/company-profile', { name: `Forms Works ${stamp}`, ...body });
     ok(refused(r, field), `the profile refuses a bad ${field}, naming it (${r.status} ${r.body.error || ''})`);
   }
-  r = await call(A, 'PUT', '/company-profile', { name: `Forms Works ${stamp}`, pan: 'AAMCK2569F', bank_account_name: 'Forms Works', bank_account_no: '50100012345678', bank_ifsc: 'HDFC0001234', phone: '040 2345 6789', email: 'owner@forms.example.com' });
+  r = await call(A, 'PUT', '/company-profile', { name: `Forms Works ${stamp}`, pan: 'ABCDE1234F', bank_account_name: 'Forms Works', bank_account_no: '50100012345678', bank_ifsc: 'HDFC0001234', phone: '040 2345 6789', email: 'owner@forms.example.com' });
   ok(r.status === 200, `the profile accepts valid bank details, phone and the PAN inside its GSTIN (${r.status} ${r.body.error || ''})`);
   await sql('UPDATE company_profile SET bank_account_name = $1 WHERE owner_id = $2', ['M/S Forms (OPC) 1', A.user.id]);
   const whole = (await call(A, 'GET', '/company-profile')).body;

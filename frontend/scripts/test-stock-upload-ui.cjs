@@ -33,7 +33,7 @@ const ok = (c, m) => { c ? pass++ : fail++; console.log(`   ${c ? '✅' : '❌'}
   const ids = [reg.user?.id].filter(Boolean);
   /* A company with a name skips the first-run "Set up your workspace" page. */
   await fetch(`${API}/company-profile`, { method: 'PUT', headers: { Authorization: `Bearer ${reg.token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Upload UI Works', gstin: '36AAMCK2569F1Z9', stateCode: '36' }) });
+    body: JSON.stringify({ name: 'Upload UI Works', gstin: '36ABCDE1234F1Z9', stateCode: '36' }) });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'su-ui-'));
   const sheet = (name, text) => { const p = path.join(dir, name); fs.writeFileSync(p, text); return p; };
   const first = sheet('stock.csv', [

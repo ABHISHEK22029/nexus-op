@@ -78,7 +78,7 @@ const same = (a, b) => JSON.stringify([...a].sort((x, y) => x - y)) === JSON.str
     const A = await register('a'); accounts.push(A.user.id);
     const B = await register('b'); accounts.push(B.user.id);
     const prof = await call(A, 'PUT', '/company-profile', {
-      name: `Sales Flow Works ${stamp}`, gstin: '36AAMCK2569F1Z9', stateCode: '36',
+      name: `Sales Flow Works ${stamp}`, gstin: '36ABCDE1234F1Z9', stateCode: '36',
       address: 'Plot 7, IDA Uppal\nHyderabad 500039', phone: '040 2720 1234', email: 'accounts@example.test',
       bank_name: 'HDFC Bank', bank_account_no: '50100123456789', bank_ifsc: 'HDFC0001234',
       setup_completed_at: new Date().toISOString(),
@@ -237,7 +237,7 @@ const same = (a, b) => JSON.stringify([...a].sort((x, y) => x - y)) === JSON.str
 
     const view = await stranger('GET', `/public/quotations/${token}`);
     const v = view.body;
-    ok(view.status === 200 && v.company?.name === `Sales Flow Works ${stamp}` && v.company.gstin === '36AAMCK2569F1Z9' && /Uppal/.test(v.company.address || ''),
+    ok(view.status === 200 && v.company?.name === `Sales Flow Works ${stamp}` && v.company.gstin === '36ABCDE1234F1Z9' && /Uppal/.test(v.company.address || ''),
       'a stranger opens it: the business\'s name, GSTIN and address');
     ok(v.customer?.name && v.quotation?.number === doc1.body.quote_number && v.quotation.validUntil === validUntil && v.quotation.date,
       `the customer, number ${v.quotation?.number}, date and validity`);

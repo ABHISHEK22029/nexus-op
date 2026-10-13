@@ -85,7 +85,7 @@ const QUOTE_CSV = 'Description,Qty,Unit,Rate,Amount\nSS304 sheet 2 mm,180,kg,260
   await cleanup();
   const A = await register('a'), B = await register('b');
   try {
-    await call(A, 'PUT', '/company-profile', { name: 'Precision Fab Works', gstin: '36AAMCK2569F1Z9', stateCode: '36' });
+    await call(A, 'PUT', '/company-profile', { name: 'Precision Fab Works', gstin: '36ABCDE1234F1Z9', stateCode: '36' });
     await call(B, 'PUT', '/company-profile', { name: 'Other Works', gstin: '29AABCO1234F1Z5', stateCode: '29' });
     const FIN = await member(A, 'fin', 'Finance');
     const PROD = await member(A, 'prod', 'Production');

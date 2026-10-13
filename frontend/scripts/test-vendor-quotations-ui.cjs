@@ -45,7 +45,7 @@ const BACKEND = path.join(__dirname, '..', '..', 'backend');
   await fetch(`${API}/company-profile`, {
     method: 'PUT', headers: h,
     body: JSON.stringify({
-      name: 'VQ Test Co', gstin: '36AAMCK2569F1Z9', stateCode: '36',
+      name: 'VQ Test Co', gstin: '36ABCDE1234F1Z9', stateCode: '36',
       setup_completed_at: new Date().toISOString(),
     }),
   });

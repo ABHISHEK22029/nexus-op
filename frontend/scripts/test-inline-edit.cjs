@@ -38,7 +38,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   })).json();
   const h = { Authorization: `Bearer ${reg.token}`, 'Content-Type': 'application/json' };
   await fetch(`${API}/company-profile`, { method: 'PUT', headers: h,
-    body: JSON.stringify({ name: 'Edit UI Co', gstin: '36AAMCK2569F1Z9', stateCode: '36' }) });
+    body: JSON.stringify({ name: 'Edit UI Co', gstin: '36ABCDE1234F1Z9', stateCode: '36' }) });
   const cust = await (await fetch(`${API}/customers`, { method: 'POST', headers: h,
     body: JSON.stringify({ name: `Buyer ${stamp}`, state: 'Telangana' }) })).json();
   const q = await (await fetch(`${API}/sales-quotations`, { method: 'POST', headers: h,

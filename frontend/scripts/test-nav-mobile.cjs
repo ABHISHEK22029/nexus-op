@@ -29,7 +29,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const reg = await (await fetch(`${API}/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'Nav', email: `navm-${stamp}@example.test`, password: 'testpassword123' }) })).json();
   await fetch(`${API}/company-profile`, { method: 'PUT', headers: { Authorization: `Bearer ${reg.token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Nav Works', gstin: '36AAMCK2569F1Z9', stateCode: '36' }) });
+    body: JSON.stringify({ name: 'Nav Works', gstin: '36ABCDE1234F1Z9', stateCode: '36' }) });
   let browser;
   try {
     browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });

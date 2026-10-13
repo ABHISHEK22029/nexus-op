@@ -24,6 +24,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const stamp = Date.now().toString(36);
 const EMAIL = `signup-${stamp}@example.test`;
+const removeAccount = async () => {
+  const path = require('path');
+  const B = path.join(__dirname, '..', '..', 'backend');
+  require(path.join(B, 'node_modules', 'dotenv')).config({ path: path.join(B, '.env') });
+  const { Client } = require(path.join(B, 'node_modules', 'pg'));
+  const { purge } = require(path.join(B, 'scripts', 'lib', 'testAccounts'));
+  const c = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  await c.connect();
+  try {
+    const { rows } = await c.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [EMAIL]);
+    return rows.length ? await purge(rows.map(r => r.id), c) : 0;
+  } finally { await c.end(); }
+};
 const PASSWORD = 'testpassword123';
 const ORG = `Wayfarer Interiors ${stamp.toUpperCase()}`;
 
@@ -154,8 +167,9 @@ const setVal = `(el, v) => {
 
   await browser.close();
 
-  console.log(`\n  leaves behind: ${EMAIL} — remove with:`);
-  console.log(`    node scripts/retire-test-users.js --email ${EMAIL} --apply`);
+  /* Removed again, rather than left behind with instructions. */
+  const removed = await removeAccount();
+  ok(removed === 1, `the test account is removed (${removed})`);
   console.log(`\n  ${pass} passed, ${fail} failed\n`);
   process.exit(fail ? 1 : 0);
-})().catch(e => { console.error('threw:', e.message); process.exit(1); });
+})().catch(async (e) => { console.error('threw:', e.message); await removeAccount().catch(() => {}); process.exit(1); });

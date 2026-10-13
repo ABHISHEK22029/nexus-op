@@ -158,7 +158,7 @@ async function makeFiles(browser) {
        discount % column, a description spread over three lines around its
        figures, "Add : CGST" with its value on the next line, a GST summary
        table under the grand total ending in a bare "Total" of the tax. */
-    const busy = await pdfOf('busy-style.pdf', `<h3>QUOTATION / PROFORMA</h3><p>Party Mobile No : 9811228078<br>Quotation No. : GST-29</p>
+    const busy = await pdfOf('busy-style.pdf', `<h3>QUOTATION / PROFORMA</h3><p>Party Mobile No : 9000000011<br>Quotation No. : GST-29</p>
       <table style="${T}"><tr>${['S.N.', 'Description of Goods', 'HSN/SAC<br>Code', 'Qty.', 'Unit', 'Price', 'Discount %', 'Amt.<br>Before', 'Amount(Rs.)'].map(h => td(`<b>${h}</b>`)).join('')}</tr>
       <tr>${td('1.')}${td('MCB FP (63A 4P)')}${td('8536')}${td('6', R)}${td('Pcs.')}${td('4,837.00', R)}${td('77.00 %', R)}${td('6,675.06', R)}${td('6,675.06', R)}</tr>
       <tr>${td('2.', 'vertical-align:middle')}${td('MCB DP 16 DC<br>A9HMES02<br>2 way')}${td('8537100', 'vertical-align:middle')}${td('6', R + ';vertical-align:middle')}${td('PCS', 'vertical-align:middle')}${td('1,102.00', R + ';vertical-align:middle')}${td('67.00 %', R + ';vertical-align:middle')}${td('2,181.96', R + ';vertical-align:middle')}${td('2,181.96', R + ';vertical-align:middle')}</tr>
@@ -182,7 +182,7 @@ async function makeFiles(browser) {
     /* Tally-style (a Mumbai stationer): a heading centred over a wide
        description column, no amount column at all, two pages. */
     const items40 = Array.from({ length: 40 }, (_, i) => [`BINDER CLIP ${15 + i}MM COLOUR SET ${i + 1}`, '83059020', 10 + i * 5, 1 + (i % 3), i % 2 ? 'pkt' : 'PCS']);
-    const tally = await pdfOf('tally-style.pdf', `<h2 style="text-align:center">QUOTATION</h2><p style="text-align:center">Tel.: 022- 66366962, Cell : 9867424241</p>
+    const tally = await pdfOf('tally-style.pdf', `<h2 style="text-align:center">QUOTATION</h2><p style="text-align:center">Tel.: 022- 60000000, Cell : 9000000012</p>
       <table style="${T}"><thead><tr>${td('Sr. No.', 'width:7%')}${td('<b>Product Discription</b>', 'text-align:center;width:48%')}${td('HSN Code')}${td('Rate', R)}${td('Qty')}${td('Per')}${td('Tax')}</tr></thead>
       <tbody>${items40.map(([d, h, r, q, u], i) => `<tr>${td(i + 1, 'text-align:center')}${td(`<b>${d}</b>`)}${td(h)}${td(r.toFixed(2), R)}${td(q, 'text-align:center')}${td(u)}${td('18')}</tr>`).join('')}</tbody></table>`);
     const tl = await read(tally);
@@ -240,7 +240,7 @@ async function makeFiles(browser) {
     /* A spec sheet that calls itself a quotation: numbers, no prices. */
     const spec = await pdfOf('spec-sheet.pdf', `<h2>QUOTATION — 100 kVA SILENT DG SET</h2><table style="${T}">
       ${[['No. of Phases', 3], ['Engine Speed (rpm)', 1500], ['Power Factor', 0.8], ['Rated Power (BHP)', 125], ['Voltage (V)', 415], ['Frequency (Hz)', 50]].map(([k, v]) => `<tr>${td(k)}${td(v)}</tr>`).join('')}</table>
-      <p>Tel: 0141-4017538 &nbsp; Mob: 9829017538</p>`);
+      <p>Tel: 0141-4000000 &nbsp; Mob: 9000000013</p>`);
     const sp = await read(spec);
     ok(sp.lines.length === 0 && sp.status === 'failed', `a spec sheet yields no invented items (${sp.lines.length} lines) — Review is where they get entered`);
 
@@ -254,7 +254,7 @@ async function makeFiles(browser) {
     const H = { Authorization: `Bearer ${me.token}` };
     const J = { ...H, 'Content-Type': 'application/json' };
     /* A new account without a company name is sent to first-run set-up. */
-    await fetch(`${API}/company-profile`, { method: 'PUT', headers: J, body: JSON.stringify({ name: `VQ Fabricators ${stamp}`, gstin: '36AAMCK2569F1Z9', stateCode: '36' }) });
+    await fetch(`${API}/company-profile`, { method: 'PUT', headers: J, body: JSON.stringify({ name: `VQ Fabricators ${stamp}`, gstin: '36ABCDE1234F1Z9', stateCode: '36' }) });
     const vendor = await (await fetch(`${API}/vendors`, { method: 'POST', headers: J, body: JSON.stringify({ name: 'Deccan Metals & Alloys', type: 'Supplier' }) })).json();
     const up = async (file, extra = {}) => {
       const fd = new FormData();

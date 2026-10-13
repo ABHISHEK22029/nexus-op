@@ -39,7 +39,9 @@ export function ToastProvider({ children }) {
           const Icon = ICONS[t.type] || Info;
           const accent = ACCENT[t.type] || '#3b82f6';
           return (
-            <div key={t.id} style={{
+            /* A role, so a screen reader reads the message out: an error
+               interrupts (alert), anything else waits its turn (status). */
+            <div key={t.id} role={t.type === 'error' ? 'alert' : 'status'} style={{
               pointerEvents: 'auto', display: 'flex', alignItems: 'flex-start', gap: 11,
               background: 'var(--bg-elevated, #1a2233)', color: 'var(--text-primary, #e6eaf2)',
               border: '1px solid var(--border-default, #2a3346)', borderLeft: `3px solid ${accent}`,

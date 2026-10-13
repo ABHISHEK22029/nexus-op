@@ -72,7 +72,7 @@ const on = (page) => {
     if (!T) throw new Error('could not register the test account');
     /* A company with a name skips the first-run screen. */
     await api(T, 'PUT', '/company-profile', {
-      name: 'Precision Fab Works', gstin: '36AAMCK2569F1Z9', stateCode: '36',
+      name: 'Precision Fab Works', gstin: '36ABCDE1234F1Z9', stateCode: '36',
       address: 'Plot 7, IDA Uppal, Hyderabad 500039', phone: '040 2720 1234', email: 'sales@example.test',
     });
     const slug = `sales-ui-${stamp}`;
@@ -81,7 +81,7 @@ const on = (page) => {
     await api(T, 'PATCH', `/catalogue/products/${arm}`, { is_published: true, catalogue_category: 'Line hardware', headline: 'Cross arm for 11kV distribution', use_case: 'Carries the insulators on a distribution pole', moq: 100, lead_time_note: '2-3 weeks' });
     const pin = (await api(T, 'POST', '/skus', { sku_code: `IN-${stamp}`, name: 'Pin Insulator', hsn: '8546', price: 300, unit: 'nos' })).id;
     await api(T, 'PATCH', `/catalogue/products/${pin}`, { is_published: true, catalogue_category: 'Insulators', headline: 'Porcelain pin insulator', lead_time_note: '10 days' });
-    await api(T, 'POST', '/customers', { name: `Apollo Infra ${stamp}`, phone: '98866 44456', email: 'buyer@example.test', state: 'Telangana' });
+    await api(T, 'POST', '/customers', { name: `Apollo Infra ${stamp}`, phone: '90000 00006', email: 'buyer@example.test', state: 'Telangana' });
 
     browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
     const errs = [];
@@ -173,7 +173,7 @@ const on = (page) => {
       };
     });
     ok(new RegExp(`^${UI}/q/[A-Za-z0-9_-]{32}$`).test(shared.url), `the link is ${shared.url.replace(/[A-Za-z0-9_-]{26}$/, '…')}`);
-    ok(shared.copy && /^https:\/\/wa\.me\/919886644456\?text=/.test(shared.wa || '') && decodeURIComponent(shared.wa).includes(shared.url),
+    ok(shared.copy && /^https:\/\/wa\.me\/919000000006\?text=/.test(shared.wa || '') && decodeURIComponent(shared.wa).includes(shared.url),
       'Copy link, and WhatsApp to the customer\'s number (+91) with the link in the message');
     ok(/^mailto:buyer%40example\.test\?subject=Quotation%20QT-/.test(shared.mail || '') && decodeURIComponent(shared.mail).includes(shared.url),
       'Email: a draft to the customer, with the link in it');
@@ -191,7 +191,7 @@ const on = (page) => {
     await phone.setViewport({ width: 360, height: 780, isMobile: true, hasTouch: true });
     const C = on(phone);
     await phone.goto(shared.url, { waitUntil: 'networkidle2' });
-    ok(await C.waitText(new RegExp(`Quotation\\s*${qno}`)) && await C.hasText(/Precision Fab Works/) && await C.hasText(/36AAMCK2569F1Z9/),
+    ok(await C.waitText(new RegExp(`Quotation\\s*${qno}`)) && await C.hasText(/Precision Fab Works/) && await C.hasText(/36ABCDE1234F1Z9/),
       'it opens without a login: who it is from, their GSTIN, and the number');
     ok(await C.hasText(/V-Type Cross Arm 75x75/) && await C.hasText(/150 nos × ₹850\.00/) && await C.hasText(/Delivery within 21 days of your order/) && await C.hasText(/Ex-works Hyderabad/),
       'the line, the delivery promise and its note');

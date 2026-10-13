@@ -55,7 +55,7 @@ async function cleanup() {
   let browser;
   try {
     /* ── a company with a real shortfall ── */
-    await api('PUT', '/company-profile', { name: 'Precision Fab Works', gstin: '36AAMCK2569F1Z9', stateCode: '36' });
+    await api('PUT', '/company-profile', { name: 'Precision Fab Works', gstin: '36ABCDE1234F1Z9', stateCode: '36' });
     const cust = await api('POST', '/customers', { name: `Acme Engineering ${stamp}`, state: 'Telangana', billing_address: 'Hyderabad' });
     const vendor = await api('POST', '/vendors', { name: `Deccan Metals ${stamp}`, type: 'Supplier', gstin: '36AAACD9999K1Z2' });
     const mat = await api('POST', '/raw-materials', { name: `SS304 sheet ${stamp}`, unit: 'kg', category: 'Sheet' });

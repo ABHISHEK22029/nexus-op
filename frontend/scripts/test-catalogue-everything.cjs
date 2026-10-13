@@ -335,11 +335,10 @@ const dlg = (page, fn, arg) => page.evaluate((f, a) => {
   const { Client } = require(path.join(base, 'node_modules', 'pg'));
   const c = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   await c.connect();
+  /* The shared purge sweeps every table with an owner (an enquiry now also
+     makes quotations and notifications, which the list here missed). */
   await c.query('DELETE FROM enquiry_items WHERE enquiry_id IN (SELECT id FROM enquiries WHERE owner_id = $1)', [reg.user.id]).catch(() => {});
-  for (const t of ['enquiries', 'catalogue_photos', 'attachments', 'catalogue_settings', 'customers', 'skus', 'company_profile']) {
-    await c.query(`DELETE FROM ${t} WHERE owner_id = $1`, [reg.user.id]).catch(() => {});
-  }
-  await c.query('DELETE FROM users WHERE id = $1', [reg.user.id]).catch(() => {});
+  await require(path.join(base, 'scripts', 'lib', 'testAccounts')).purge([reg.user.id], c);
   const { rows: [left] } = await c.query('SELECT COUNT(*) c FROM users WHERE email = $1', [`all-${stamp}@example.test`]);
   await c.end();
   ok(Number(left.c) === 0, 'test organisation removed');

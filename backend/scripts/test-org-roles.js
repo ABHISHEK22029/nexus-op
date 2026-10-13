@@ -18,6 +18,7 @@
    ══════════════════════════════════════════════════════════════════════ */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const db = require('../db');
+const { purge } = require('./lib/testAccounts');
 
 const API = process.env.API_BASE || 'http://localhost:5099';
 if (/^https:|onrender\.com|vercel\.app/.test(API)) {
@@ -150,9 +151,11 @@ const signUp = async (label) => {
   for (const [t, col] of [['customers', 'name'], ['vendors', 'name'], ['inventory', '"itemName"']]) {
     await db.query(`DELETE FROM ${t} WHERE ${col} LIKE $1`, [`%${stamp}`]).catch(() => {});
   }
-  await db.query('DELETE FROM users WHERE id = ANY($1)', [made]).catch(() => {});
+  /* The shared purge: a plain DELETE of the users failed quietly on the
+     rows they still owned, and the accounts stayed on the database. */
+  await purge(made).catch(() => {});
   const { rows: [left] } = await db.query(
-    'SELECT COUNT(*) c FROM role_definitions WHERE role = $1', [ROLE]);
+    'SELECT (SELECT COUNT(*) FROM role_definitions WHERE role = $1) + (SELECT COUNT(*) FROM users WHERE id = ANY($2)) c', [ROLE, made]);
   ok(Number(left.c) === 0, 'test role and accounts removed');
 
   console.log(`\n  ${pass} passed, ${fail} failed\n`);

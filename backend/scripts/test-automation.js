@@ -118,7 +118,7 @@ let orgIds = [];
     const orgA = A.user.orgId ?? A.user.org_id ?? A.user.id;
     const orgB = B.user.orgId ?? B.user.org_id ?? B.user.id;
     orgIds = [orgA, orgB];
-    await call(A, 'PUT', '/company-profile', { name: 'Autom Fab Works', gstin: '36AAMCK2569F1Z9', stateCode: '36' });
+    await call(A, 'PUT', '/company-profile', { name: 'Autom Fab Works', gstin: '36ABCDE1234F1Z9', stateCode: '36' });
     await call(B, 'PUT', '/company-profile', { name: 'Other Works', gstin: '29AABCO1234F1Z5', stateCode: '29' });
     const cust = async (who, body) => (await call(who, 'POST', '/customers', { ...body, name: `${body.name} ${stamp}` })).body.id;
     const cLocal = await cust(A, { name: 'Local Buyer', state: 'Telangana', gstin: '36ABCDE1234F1Z5', billing_address: 'Hyderabad' });

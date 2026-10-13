@@ -75,7 +75,7 @@ async function seed(H) {
   const api = async (m, u, b) => {
     try { const r = await fetch(`${API}${u}`, { method: m, headers: J, body: b ? JSON.stringify(b) : undefined }); return await r.json(); } catch { return {}; }
   };
-  await api('PUT', '/company-profile', { name: `Sweep Fabricators ${stamp}`, address: 'Hyderabad', gstin: '36AAMCK2569F1Z9', stateCode: '36', bank_name: 'HDFC', bank_account_no: '50100123456789', bank_ifsc: 'HDFC0000001' });
+  await api('PUT', '/company-profile', { name: `Sweep Fabricators ${stamp}`, address: 'Hyderabad', gstin: '36ABCDE1234F1Z9', stateCode: '36', bank_name: 'HDFC', bank_account_no: '50100123456789', bank_ifsc: 'HDFC0000001' });
   /* A profile the server refuses leaves the company "not set up", and every
      signed-in screen then redirects to the first-run page. */
   const prof = await (await fetch(`${API}/company-profile`, { headers: J })).json().catch(() => ({}));

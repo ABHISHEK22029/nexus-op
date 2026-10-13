@@ -59,6 +59,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const u = r.url();
     if (/^https?:/.test(u) && !u.startsWith(BASE)) {
       if (FONT_HOSTS.test(u)) { fonts.push(u); return r.continue(); }
+      /* Every page pings the app's own backend at /health so a sleeping
+         server starts waking while the visitor reads (lib/reliability.js).
+         First-party, not a dependency: answered here, so the test still
+         needs no network. Any other off-box request is still caught. */
+      if (new URL(u).pathname === '/health') {
+        return r.respond({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: '{"status":"ok"}' });
+      }
       external.push(u); return r.abort();
     }
     r.continue();
