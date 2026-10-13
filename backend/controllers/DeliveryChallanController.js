@@ -12,6 +12,7 @@ const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const { syncOrderDelivery } = require('../shared/orderProgress');
+const { assertRefs } = require('../shared/ownedRefs');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
@@ -57,7 +58,8 @@ exports.prefill = async (req, res) => {
     if (!co) return res.status(404).json({ error: 'Customer order not found' });
     const items = (await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [co.id])).rows
       .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0 }));
-    const customer = co.customer_id ? (await db.query('SELECT * FROM customers WHERE id = $1', [co.customer_id])).rows[0] : null;
+    const customer = co.customer_id ? (await db.query(
+      'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [co.customer_id, co.owner_id])).rows[0] : null;
     res.json({ customerOrder: co, customerId: co.customer_id, customer, /* Ship-to first: the place of supply is where the goods GO, and a
          challan is the document that travels with them. */
       placeOfSupply: customer?.shipping_state || customer?.state || '', items });
@@ -71,7 +73,9 @@ exports.getById = async (req, res) => {
     const dc = (await db.query(`SELECT * FROM delivery_challans WHERE ${s.where}`, s.params)).rows[0];
     if (!dc) return res.status(404).json({ error: 'Delivery challan not found' });
     const items = (await db.query('SELECT * FROM delivery_challan_items WHERE delivery_challan_id = $1 ORDER BY sort_order', [req.params.id])).rows;
-    const customer = dc.customer_id ? (await db.query('SELECT * FROM customers WHERE id = $1', [dc.customer_id])).rows[0] : null;
+    /* The challan's own company's customer — never another's by id. */
+    const customer = dc.customer_id ? (await db.query(
+      'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [dc.customer_id, dc.owner_id])).rows[0] : null;
     let company = null;
     try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
     res.json({ ...dc, items, customer, company });
@@ -83,6 +87,9 @@ exports.create = async (req, res) => {
   const { customerId, customerOrderId, challanDate, dispatchThrough, vehicleNo, lrNo, placeOfSupply, items, notes } = req.body;
   if (!customerId) return res.status(400).json({ error: 'Pick a customer' });
   if (!items || !items.length) return res.status(400).json({ error: 'Add at least one item' });
+  /* Both ids are this company's. A challan against another company's
+     order, once dispatched, set THAT order to Delivered. */
+  if (!await assertRefs(db, req, res, { customers: [customerId], customer_orders: [customerOrderId] })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -195,7 +202,7 @@ exports.setStatus = async (req, res) => {
        comparison. It used to live only here, and SalesInvoiceController set
        'Delivered' unconditionally — running after this one and undoing it. */
     if (goingOut && dc.customer_order_id) {
-      orderProgress = await syncOrderDelivery(client, dc.customer_order_id);
+      orderProgress = await syncOrderDelivery(client, dc.customer_order_id, dc.owner_id);
     }
 
     await client.query('COMMIT');
@@ -211,7 +218,14 @@ exports.setStatus = async (req, res) => {
 // DELETE /delivery-challans/:id
 exports.remove = async (req, res) => {
   try {
-    if (!await assertOwned(db, req, res, 'delivery_challans', req.params.id, { columns: 'id' })) return;
+    const dc = await assertOwned(db, req, res, 'delivery_challans', req.params.id, { columns: 'id, status, stock_applied' });
+    if (!dc) return;
+    /* Deleting a dispatched challan left its goods taken out of stock with
+       no document to say where they went. Pulling it back to Draft writes
+       the reversal; after that it can go. */
+    if (dc.stock_applied || ['Dispatched', 'Delivered'].includes(dc.status)) {
+      return res.status(409).json({ error: 'This challan has been dispatched, so its goods have left stock. Pull it back to Draft first, then delete it.' });
+    }
     const r = await db.query('DELETE FROM delivery_challans WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true });

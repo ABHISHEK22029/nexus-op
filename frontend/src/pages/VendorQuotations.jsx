@@ -138,8 +138,16 @@ export default function VendorQuotations() {
     try {
       const r = await fetch(`${API}/vendor-quotations/${row.id}/file`, { headers: auth() });
       if (!r.ok) { toast.error('Could not open the file'); return; }
-      const url = URL.createObjectURL(await r.blob());
-      window.open(url, '_blank', 'noopener');
+      const blob = await r.blob();
+      /* Opened only if it is a PDF or a picture: a blob URL runs in this
+         app's own origin. A spreadsheet or Word file is saved instead. */
+      const url = URL.createObjectURL(blob);
+      if (/^(application\/pdf|image\/(png|jpeg|gif|webp))$/.test(blob.type)) window.open(url, '_blank', 'noopener');
+      else {
+        const a = document.createElement('a');
+        a.href = url; a.download = row.filename || row.file_name || 'quotation';
+        document.body.appendChild(a); a.click(); a.remove();
+      }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) { toast.error(e.message); }
   };

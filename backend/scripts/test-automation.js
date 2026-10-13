@@ -425,11 +425,14 @@ let orgIds = [];
     console.log('\n  ── 7. overdue reminders');
     const s0 = (await call(A, 'GET', '/automation-settings')).body;
     ok(s0.reminders_enabled === true, 'on by default');
-    const overdue = async (who, customerId, tag) => (await call(who, 'POST', '/sales-invoices', {
+    /* Sent, not left as drafts: a draft is not owed yet, so it is never
+       chased (test-money-rules covers that). */
+    const issue = async (who, id) => { await call(who, 'PATCH', `/sales-invoices/${id}/status`, { status: 'Sent' }); return id; };
+    const overdue = async (who, customerId, tag) => issue(who, (await call(who, 'POST', '/sales-invoices', {
       customerId, invoiceDate: ago(40), dueDate: ago(10), items: [{ description: `Overdue ${tag}`, uom: 'nos', quantity: 1, rate: 1000 }],
-    })).body.id;
+    })).body.id);
     const od1 = await overdue(A, cLocal, '1'), od2 = await overdue(A, cMh, '2');
-    const notDue = (await call(A, 'POST', '/sales-invoices', { customerId: cLocal, invoiceDate: today, dueDate: addDays(today, 5), items: [{ description: 'Not due', uom: 'nos', quantity: 1, rate: 10 }] })).body.id;
+    const notDue = await issue(A, (await call(A, 'POST', '/sales-invoices', { customerId: cLocal, invoiceDate: today, dueDate: addDays(today, 5), items: [{ description: 'Not due', uom: 'nos', quantity: 1, rate: 10 }] })).body.id);
     const paid = await overdue(A, cLocal, 'paid');
     const [{ net_amount: paidNet }] = await q1('SELECT net_amount FROM sales_invoices WHERE id = $1', [paid]);
     const pay = await call(A, 'POST', `/sales-invoices/${paid}/payment`, { amount: Number(paidNet), mode: 'Bank' });

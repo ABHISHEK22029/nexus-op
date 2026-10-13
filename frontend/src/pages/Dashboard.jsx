@@ -310,6 +310,9 @@ const Dashboard = () => {
     return stats.distribution.map(d => ({ name: d.status, value: Number(d.count) }));
   }, [stats]);
 
+  /* Sales money, from the invoices (see /dashboard). */
+  const sales = stats?.sales;
+
   /* Overall financial health */
   const utilizationPct = stats?.totalBilled && stats?.netPaid
     ? Math.round((stats.netPaid / stats.totalBilled) * 100)
@@ -440,10 +443,26 @@ const Dashboard = () => {
         <KpiCard key="inv" title="Inventory SKUs" value={fmtNum(stats?.inventoryCount)} exact={exactNum(stats?.inventoryCount)} icon={Package} accent="#F59E0B" link="/inventory" />
       </div>
 
-      {/* ══ 4 FINANCIAL KPI CARDS (row 2) ═══════════════ */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px', marginBottom: '28px' }}>
-        <KpiCard key="billed" title="Total Billed" value={fmtCrore(stats?.totalBilled)} exact={exactINR(stats?.totalBilled)} icon={Receipt} accent="#EF4444" link="/bills" isCurrency sub="Gross amount raised" />
-        <KpiCard key="paid" title="Net Released" value={fmtCrore(stats?.netPaid)} exact={exactINR(stats?.netPaid)} icon={TrendingUp} accent="#22C55E" link="/bills" isCurrency sub={`${utilizationPct}% utilization`} />
+      {/* ══ SALES MONEY (row 2) ══════════════════════════
+          From the sales invoices, issued ones only. "Total Billed" here
+          used to read the RA bills of a contracting job, so a fabricator —
+          who bills through tax invoices — saw ₹0 however much they had
+          sold. Wraps on a phone rather than squeezing four across. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '18px', marginBottom: '18px' }}>
+        <KpiCard key="s-billed" title="Billed this year" value={fmtCrore(sales?.billed)} exact={exactINR(sales?.billed)} icon={Receipt} accent="#3B82F6" link="/sales-invoices" isCurrency sub={sales ? `${sales.fyLabel} · invoices issued` : undefined} />
+        <KpiCard key="s-received" title="Received this year" value={fmtCrore(sales?.received)} exact={exactINR(sales?.received)} icon={TrendingUp} accent="#22C55E" link="/sales-invoices" isCurrency sub={sales ? `${sales.fyLabel} · payments in` : undefined} />
+        <KpiCard key="s-outstanding" title="Outstanding" value={fmtCrore(sales?.outstanding)} exact={exactINR(sales?.outstanding)} icon={IndianRupee} accent="#F59E0B" link="/sales-invoices" isCurrency sub="Owed by customers today" />
+        <KpiCard key="s-overdue" title="Overdue" value={fmtCrore(sales?.overdueAmount)} exact={exactINR(sales?.overdueAmount)} icon={Clock} accent="#EF4444" link="/sales-invoices" isCurrency
+          sub={sales ? `${sales.overdueCount} invoice${sales.overdueCount === 1 ? '' : 's'} past due` : undefined} />
+      </div>
+
+      {/* ══ RA BILLS + OPERATIONS (row 3) ════════════════
+          The RA-bill tiles only for a company that raises RA bills. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '18px', marginBottom: '28px' }}>
+        {stats?.hasRaBills && <>
+          <KpiCard key="billed" title="RA Bills Raised" value={fmtCrore(stats?.totalBilled)} exact={exactINR(stats?.totalBilled)} icon={Receipt} accent="#EF4444" link="/bills" isCurrency sub="Gross amount raised" />
+          <KpiCard key="paid" title="RA Bills Released" value={fmtCrore(stats?.netPaid)} exact={exactINR(stats?.netPaid)} icon={TrendingUp} accent="#22C55E" link="/bills" isCurrency sub={`${utilizationPct}% utilization`} />
+        </>}
         <KpiCard key="indents" title="Open Indents" value={fmtNum(stats?.openIndents)} exact={exactNum(stats?.openIndents)} icon={AlertTriangle} accent="#F97316" link="/indent" />
         {/* "Platform Modules 15 — All modules active" was a fact about the
             software, on a board about the business. Quantity ordered is

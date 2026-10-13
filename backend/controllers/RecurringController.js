@@ -388,7 +388,8 @@ async function runPass(ownerId = null) {
        UPDATE sales_invoices si SET reminder_stage = 1
         WHERE si.due_date IS NOT NULL
           AND si.due_date < ${TODAY}
-          AND si.status <> 'Paid'
+          -- Not a cancelled one. Drafts are chased: most real invoices are drafts.
+          AND si.status NOT IN ('Paid', 'Cancelled')
           AND si.net_amount > COALESCE(si.amount_paid, 0)
           AND si.reminder_stage = 0
           AND COALESCE((SELECT a.reminders_enabled FROM automation_settings a WHERE a.owner_id = si.owner_id), TRUE)

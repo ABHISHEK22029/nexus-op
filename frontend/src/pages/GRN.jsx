@@ -9,7 +9,7 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PackageCheck, AlertTriangle, Trash2, ReceiptText } from 'lucide-react';
+import { PackageCheck, AlertTriangle, ReceiptText } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
@@ -34,7 +34,6 @@ const GRN = () => {
   const [warning, setWarning] = useState('');
 
   const canWrite = can('grn', 'write');
-  const canDelete = can('grn', 'delete');
 
   // Follow the global project switcher.
   useEffect(() => {
@@ -104,16 +103,11 @@ const GRN = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this GRN record?')) return;
-    try {
-      await fetch(`${API}/grn/${id}`, { method: 'DELETE' });
-      toast.success('GRN deleted');
-      q.reload();
-    } catch (err) {
-      toast.error(err.response?.data?.error || err.message || 'Something went wrong');
-    }
-  };
+  /* No Delete here. A receipt adds the goods to stock and counts against
+     its purchase order, and deleting it touched neither — so the shelf, the
+     ledger and the PO disagreed. The server now refuses it ("record a
+     correction with a stock count instead"), and a button that can only be
+     refused is not offered. */
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 p-8 space-y-8">
@@ -198,12 +192,6 @@ const GRN = () => {
                       <button type="button" onClick={() => navigate(`/grn/${req.id}/bill`)} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.76rem', padding: '5px 11px' }}>
                         <ReceiptText size={14} /> Generate Bill
                       </button>
-                      {/* Hidden when the API would refuse it anyway. */}
-                      {canDelete && (
-                        <button type="button" onClick={() => handleDelete(req.id)} title="Delete" className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors">
-                          <Trash2 size={16} />
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>

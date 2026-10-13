@@ -23,15 +23,68 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Sun, Moon, Settings, Building2, Bell, ChevronLeft } from 'lucide-react';
+import { LogOut, Sun, Moon, Settings, Building2, Bell, ChevronLeft, KeyRound } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
+import { useToast } from '../context/ToastContext';
 import { NotificationList } from './NotificationBell';
 import useNotifications from '../hooks/useNotifications';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+/* Change password, inside the account card. The current password is asked
+   for, so an unattended session is not enough to take the account. The
+   server signs out every other session and hands this one a fresh token. */
+function PasswordForm({ onDone }) {
+  const toast = useToast();
+  const [cur, setCur] = useState('');
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const save = async (e) => {
+    e.preventDefault();
+    setErr('');
+    if (next.length < 8) return setErr('The new password must be at least 8 characters');
+    if (next !== again) return setErr("The two new passwords don't match");
+    setBusy(true);
+    try {
+      const res = await fetch(`${API}/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ currentPassword: cur, newPassword: next }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'Could not change the password');
+      if (body.token) localStorage.setItem('nexus_token', body.token);
+      toast.success('Password changed. Other devices have been signed out.');
+      onDone();
+    } catch (ex) { setErr(ex.message); }
+    finally { setBusy(false); }
+  };
+
+  const label = { fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 };
+  return (
+    <form onSubmit={save} style={{ padding: '6px 10px 10px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <label><span style={label}>Current password</span>
+        <input className="form-input" type="password" autoComplete="current-password" value={cur} onChange={e => setCur(e.target.value)} required autoFocus />
+      </label>
+      <label><span style={label}>New password</span>
+        <input className="form-input" type="password" autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)} placeholder="At least 8 characters" required />
+      </label>
+      <label><span style={label}>New password, again</span>
+        <input className="form-input" type="password" autoComplete="new-password" value={again} onChange={e => setAgain(e.target.value)} required />
+      </label>
+      {err && <div role="alert" style={{ fontSize: '0.8rem', color: 'var(--accent-red, #ef4444)' }}>{err}</div>}
+      <button type="submit" className="btn-primary" disabled={busy} style={{ justifyContent: 'center' }}>
+        {busy ? 'Saving…' : 'Change password'}
+      </button>
+    </form>
+  );
+}
 
 export default function AccountButton() {
   const { isDark, toggleTheme } = useTheme();
@@ -41,7 +94,7 @@ export default function AccountButton() {
 
   const [open, setOpen] = useState(false);
   const [org, setOrg] = useState(null);
-  /* 'menu', or 'notifications' when the list is open inside the card. */
+  /* 'menu', 'notifications' or 'password': what the card is showing. */
   const [view, setView] = useState('menu');
   const { items, unread, load: reloadNotes, openItem, readAll } = useNotifications();
   const ref = useRef(null);
@@ -121,7 +174,14 @@ export default function AccountButton() {
           borderRadius: 16, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', padding: 8,
           animation: 'dropdownFade 140ms ease-out',
         }}>
-          {view === 'notifications' ? (
+          {view === 'password' ? (
+            <>
+              <button style={{ ...row, fontWeight: 700 }} onMouseEnter={hoverIn} onMouseLeave={hoverOut} onClick={() => setView('menu')}>
+                <ChevronLeft size={15} style={{ color: 'var(--text-muted)' }} /> Back
+              </button>
+              <PasswordForm onDone={() => setView('menu')} />
+            </>
+          ) : view === 'notifications' ? (
             <>
               <button style={{ ...row, fontWeight: 700 }} onMouseEnter={hoverIn} onMouseLeave={hoverOut} onClick={() => setView('menu')}>
                 <ChevronLeft size={15} style={{ color: 'var(--text-muted)' }} /> Back
@@ -178,6 +238,10 @@ export default function AccountButton() {
           <button style={row} onMouseEnter={hoverIn} onMouseLeave={hoverOut}
             onClick={() => { setOpen(false); navigate('/company-profile'); }}>
             <Settings size={15} style={{ color: 'var(--text-muted)' }} /> Company settings
+          </button>
+
+          <button style={row} onMouseEnter={hoverIn} onMouseLeave={hoverOut} onClick={() => setView('password')}>
+            <KeyRound size={15} style={{ color: 'var(--text-muted)' }} /> Change password
           </button>
 
           <button style={row} onMouseEnter={hoverIn} onMouseLeave={hoverOut} onClick={toggleTheme}>

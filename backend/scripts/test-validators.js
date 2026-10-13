@@ -151,7 +151,7 @@ async function api() {
   for (const [body, field] of [
     [{ bank_ifsc: 'ea2321223' }, 'bank_ifsc'],
     [{ bank_account_no: '23421321A' }, 'bank_account_no'],
-    [{ bank_account_name: 'saikumar 123' }, 'bank_account_name'],
+    [{ bank_account_name: 'saikumar 12345' }, 'bank_account_name'],   // a run of digits; a name may carry a short number ("Shop 12")
     [{ phone: '12345' }, 'phone'],
     [{ email: 'owner@' }, 'email'],
     [{ gstin: '36AAMCK2569F1Z' }, 'gstin'],

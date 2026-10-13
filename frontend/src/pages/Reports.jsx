@@ -36,8 +36,11 @@ export default function Reports() {
   };
   useEffect(() => { load(); }, []);
 
-  const totalSales = d.sales.reduce((s, r) => s + (r.net_amount || 0), 0);
-  const receivable = d.sales.reduce((s, r) => s + Math.max(0, (r.net_amount || 0) - (r.amount_paid || 0)), 0);
+  /* A cancelled invoice is not a sale. Drafts stay in: nothing moves an
+     invoice out of Draft except the status menu, so most real ones are. */
+  const issued = d.sales.filter(r => r.status !== 'Cancelled');
+  const totalSales = issued.reduce((s, r) => s + (r.net_amount || 0), 0);
+  const receivable = issued.reduce((s, r) => s + Math.max(0, (r.net_amount || 0) - (r.amount_paid || 0)), 0);
   const totalPurch = d.bills.reduce((s, r) => s + (r.net_amount || 0), 0);
   const totalExp = d.expenses.reduce((s, r) => s + (r.amount || 0), 0);
   const opMargin = totalSales - totalPurch - totalExp;

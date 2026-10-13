@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import CompanyLogo from '../components/CompanyLogo';
 import InlineEdit from '../components/InlineEdit';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail, Pencil } from 'lucide-react';
+import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail, Pencil, Undo2, Ban } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
 import { amountInWords } from '../lib/amountInWords';
@@ -19,6 +20,7 @@ export default function SalesInvoiceDoc() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { can } = usePermissions();
   const [inv, setInv] = useState(null);
   const [pay, setPay] = useState({ amount: '', mode: 'Bank', reference: '', paidDate: '' });
   const ref = useRef(null);
@@ -28,7 +30,28 @@ export default function SalesInvoiceDoc() {
   const load = () => fetch(`${API}/sales-invoices/${id}`).then(r => r.ok ? r.json() : null).then(setInv);
   useEffect(() => { load(); }, [id]);
 
-  const setStatus = async (status) => { await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); load(); };
+  /* The server decides what may be set; a refusal is said, not swallowed —
+     the menu used to look as if it had worked and then snap back. */
+  const setStatus = async (status) => {
+    if (status === 'Cancelled' && !window.confirm(`Cancel ${inv.invoice_number}?\n\nIt keeps its number, is marked Cancelled, and is no longer owed. This cannot be undone.`)) return;
+    const res = await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Could not change the status'); }
+    else if (status === 'Cancelled') toast.success(`${inv.invoice_number} cancelled`);
+    load();
+  };
+
+  /* Take back a payment recorded in error, or a cheque that bounced. The
+     reason goes on the invoice's record, so it is asked for. */
+  const reversePayment = async (p) => {
+    const reason = window.prompt(`Reverse the payment of ₹${rup(p.amount)}${p.paid_date ? ` received on ${p.paid_date}` : ''}?\n\nWhy is it being reversed?`);
+    if (reason == null) return;
+    if (!reason.trim()) { toast.error('Say why the payment is being reversed'); return; }
+    const res = await fetch(`${API}/sales-invoices/${id}/payments/${p.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { toast.error(d.error || 'Could not reverse the payment'); return; }
+    toast.success(`Payment reversed — invoice ${d.status}`);
+    load();
+  };
 
   /* Save one field from the document itself. The server decides what is
      still editable once an invoice is issued, and its answer replaces the
@@ -53,11 +76,17 @@ export default function SalesInvoiceDoc() {
      nothing said so, and the padlock on the number read as "this cannot be
      done at all". Once money has come in, the correction is a credit or
      debit note, and the button says that instead. */
-  const canReopen = inv && !isDraft && !(Number(inv.amount_paid) > 0);
+  const isCancelled = inv?.status === 'Cancelled';
+  const hasPayments = !!inv && ((inv.payments || []).length > 0 || Number(inv.amount_paid) > 0);
+  const canReopen = inv && !isDraft && !isCancelled && !hasPayments;
+  /* What may be picked by hand. Paid and Partially Paid follow the
+     payments, so once money is in the status is shown, not offered; a
+     cancelled invoice stays cancelled. */
+  const statusChoices = !inv || isCancelled || hasPayments ? [] : ['Draft', 'Sent', 'Cancelled'];
   const reopen = async () => {
     if (!window.confirm(`Reopen ${inv.invoice_number} as a draft?\n\nIf it has already gone to the customer, send them the corrected copy once you have changed it.`)) return;
     const r = await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Draft' }) });
-    if (!r.ok) { toast.error('Could not reopen it'); return; }
+    if (!r.ok) { const d = await r.json().catch(() => ({})); toast.error(d.error || 'Could not reopen it'); return; }
     navigate(`/sales-invoices/${id}/edit`);
   };
 
@@ -77,7 +106,8 @@ export default function SalesInvoiceDoc() {
   /* To the paisa: the difference of two amounts in floating point can
      come out as …543.9999999 and print a paisa short. */
   const paid = Number(inv.amount_paid) || 0;
-  const due = Math.max(0, Math.round(((Number(inv.net_amount) || 0) - paid) * 100) / 100);
+  /* A cancelled invoice is owed nothing, whatever its total. */
+  const due = isCancelled ? 0 : Math.max(0, Math.round(((Number(inv.net_amount) || 0) - paid) * 100) / 100);
   const input = { padding: '8px 10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 7, color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none' };
 
   const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
@@ -193,9 +223,19 @@ export default function SalesInvoiceDoc() {
               <Pencil size={15} /> Reopen as draft
             </button>
           )}
-          <select value={inv.status} onChange={e => setStatus(e.target.value)} aria-label="Invoice status" style={{ width: 'auto', flex: 'none', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }}>
-            {['Draft', 'Sent', 'Partially Paid', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          {statusChoices.length ? (
+            <select value={inv.status} onChange={e => setStatus(e.target.value)} aria-label="Invoice status" style={{ width: 'auto', flex: 'none', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }}>
+              {/* An older invoice marked Paid by hand with nothing received
+                  still shows what it says until it is put right. */}
+              {!statusChoices.includes(inv.status) && <option value={inv.status} disabled>{inv.status}</option>}
+              {statusChoices.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          ) : (
+            <span aria-label="Invoice status" title={isCancelled ? 'Cancelled — kept for its number, no longer owed' : 'Set by the payments recorded against it'}
+              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: isCancelled ? 'var(--text-muted)' : 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }}>
+              {inv.status}
+            </span>
+          )}
           <button onClick={() => pdf().catch(() => {})} disabled={making} className="inv-act-btn" title={`Saves ${fileName}.pdf`}><Download size={15} /> {making ? 'Making PDF…' : 'Download PDF'}</button>
           {/* Sending it was the missing step: an invoice could be produced
               and printed, and there was no way to get it to the customer
@@ -204,6 +244,12 @@ export default function SalesInvoiceDoc() {
           <button onClick={() => printAs(fileName)} className="inv-act-btn primary"><Printer size={15} /> Print</button>
         </div>
       </div>
+
+      {isCancelled && (
+        <div className="print:hidden" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: '0.86rem', color: 'var(--text-secondary)' }}>
+          <Ban size={16} style={{ flex: 'none' }} /> This invoice is cancelled. It keeps its number, and it is not owed.
+        </div>
+      )}
 
       {/* Payment status banner */}
       <div className="print:hidden" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
@@ -232,6 +278,28 @@ export default function SalesInvoiceDoc() {
           <input style={{ ...input, width: 160, flex: 'none' }} placeholder="Reference / UTR" aria-label="Payment reference" value={pay.reference} onChange={e => setPay({ ...pay, reference: e.target.value })} />
           <input style={{ ...input, width: 150, flex: 'none' }} type="date" aria-label="Payment date" value={pay.paidDate} onChange={e => setPay({ ...pay, paidDate: e.target.value })} />
           <button onClick={recordPayment} className="btn-primary btn-sm"><Plus size={14} /> Add</button>
+        </div>
+      )}
+
+      {/* What has been received, one line each, and the way back for a
+          receipt typed against the wrong invoice or a cheque that bounced. */}
+      {(inv.payments || []).length > 0 && (
+        <div className="print:hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)', marginBottom: 6 }}>Payments received</div>
+          {inv.payments.map(p => (
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid var(--border-subtle)', fontSize: '0.84rem' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>₹{rup(p.amount)}</span>
+              <span style={{ color: 'var(--text-muted)', minWidth: 0, overflowWrap: 'anywhere', flex: '1 1 160px' }}>
+                {fmt(p.paid_date || p.created_at)} · {p.mode || 'Bank'}{p.reference ? ` · ${p.reference}` : ''}
+              </span>
+              {can('sales-invoices', 'delete') && (
+                <button onClick={() => reversePayment(p)} className="inv-act-btn" title="Remove this payment and put the balance back on the invoice"
+                  style={{ padding: '5px 10px', fontSize: '0.78rem' }}>
+                  <Undo2 size={13} /> Reverse
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -272,16 +340,17 @@ export default function SalesInvoiceDoc() {
                 field the server will refuse. */}
             <div className="inv-meta-row">Invoice #: <InlineEdit
               value={inv.invoice_number} field="invoice_number" canEdit={isDraft} onSave={patch}
-              title={canReopen ? 'Issued — use “Reopen as draft” above to change the number'
+              title={isCancelled ? 'Cancelled — it keeps its number' : canReopen ? 'Issued — use “Reopen as draft” above to change the number'
                 : 'Money has been received against this invoice — correct it with a credit or debit note'} /></div>
             <div className="inv-meta-row">Date: <InlineEdit
               value={inv.invoice_date?.slice(0, 10)} field="invoice_date" type="date"
               canEdit={isDraft} onSave={patch} format={fmt}
-              title={canReopen ? 'Issued — use “Reopen as draft” above to change the date' : 'An invoice with payments against it keeps its date'} /></div>
+              title={isCancelled ? 'Cancelled — it keeps its date' : canReopen ? 'Issued — use “Reopen as draft” above to change the date' : 'An invoice with payments against it keeps its date'} /></div>
             {/* The due date can move after issue — payment terms get agreed
-                late — so it stays editable whatever the status. */}
+                late — so it stays editable whatever the status, short of
+                cancelled. */}
             <div className="inv-meta-row">Due: <span style={{ color: overdue ? '#dc2626' : undefined }}><InlineEdit
-              value={inv.due_date?.slice(0, 10)} field="due_date" type="date" canEdit onSave={patch}
+              value={inv.due_date?.slice(0, 10)} field="due_date" type="date" canEdit={!isCancelled} onSave={patch}
               format={(d) => (d ? `${fmt(d)}${overdue ? ' (overdue)' : ''}` : null)} placeholder="not set" /></span></div>
             <div className="inv-meta-row">Status: <strong>{inv.status}</strong></div>
           </div>

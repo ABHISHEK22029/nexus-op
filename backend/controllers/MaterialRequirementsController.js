@@ -45,6 +45,14 @@ const OPEN_ORDER_STATES = ['Open', 'In Procurement', 'In Production', 'Ready', '
 async function computeRequirements({ ownerId, admin, orderId = null, projectId = null }) {
   const uoms = await loadUoms(db);
 
+  /* Every input below is this organisation's. Only the demand was scoped:
+     the materials, stock, open purchase orders and supplier links were read
+     across every company, so another company's same-named material, stock
+     or open PO quietly changed this one's shortfalls — and its preferred
+     vendor could be offered as the one to raise a PO with. A cross-tenant
+     Administrator still sees the whole install, as before. */
+  const own = (col, list) => (admin ? '' : ` AND ${col} = $${list.push(ownerId)}`);
+
   // ── 1. Demand: open order lines exploded through the BOM ──
   const params = [];
   const where = [];
@@ -94,6 +102,7 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
      A material that has been deleted while a BOM still points at it is
      simply absent, which is what the LEFT JOIN produced too — the loop
      already falls back to the BOM's component_name. */
+  const materialParams = [];
   const materialRows = (await db.query(
     /* base_uom falls back to unit: the materials screen and its API write
        `unit`, and a material with no base_uom made every shortfall line —
@@ -103,31 +112,39 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
             COALESCE(purchase_uom, base_uom, unit) AS purchase_uom, category, moq, lead_time_days,
             standard_rate, weight_per_piece_kg, length_mm, width_mm,
             thickness_mm, density_kg_m3, is_critical
-       FROM raw_materials`)).rows;
+       FROM raw_materials WHERE TRUE${own('owner_id', materialParams)}`, materialParams)).rows;
   const materialById = new Map(materialRows.map(r => [r.id, r]));
 
   // ── 2. Stock on hand, per material ──
   const stockParams = [];
   let stockWhere = 'raw_material_id IS NOT NULL';
   if (projectId) { stockParams.push(projectId); stockWhere += ` AND "projectId" = $${stockParams.length}`; }
+  stockWhere += own('owner_id', stockParams);
   const stockRows = (await db.query(
     `SELECT raw_material_id, SUM(quantity)::numeric AS qty, MIN(base_uom) AS base_uom
      FROM inventory WHERE ${stockWhere} GROUP BY raw_material_id`, stockParams)).rows;
   const stock = new Map(stockRows.map(r => [r.raw_material_id, Number(r.qty)]));
 
   // ── 3. Quantities already on order (not yet received) ──
+  /* Matched by name, so both sides must be the same company's: another
+     company's open PO for "MS Plate 10mm" is not on order for this one. */
+  const onOrderParams = [];
   const onOrderRows = (await db.query(`
     SELECT rm.id AS raw_material_id, SUM(po.quantity)::numeric AS qty
     FROM purchase_orders po
     JOIN raw_materials rm
       ON btrim(regexp_replace(lower(translate(rm.name, '×X', 'xx')), '[^a-z0-9]+', ' ', 'g'))
        = btrim(regexp_replace(lower(translate(po."itemName", '×X', 'xx')), '[^a-z0-9]+', ' ', 'g'))
-    WHERE po.status IN ('Pending', 'Approved', 'Dispatched')
-    GROUP BY rm.id`)).rows;
+    WHERE po.status IN ('Pending', 'Approved', 'Dispatched')${own('po.owner_id', onOrderParams)}${admin ? '' : ' AND rm.owner_id = $1'}
+    GROUP BY rm.id`, onOrderParams)).rows;
   const onOrder = new Map(onOrderRows.map(r => [r.raw_material_id, Number(r.qty)]));
 
   // ── 4. Per-item conversion factors ──
-  const itemUomRows = (await db.query('SELECT raw_material_id, uom_code, qty_in_base FROM item_uom')).rows;
+  const itemUomParams = [];
+  const itemUomRows = (await db.query(
+    `SELECT raw_material_id, uom_code, qty_in_base FROM item_uom
+      WHERE TRUE${admin ? '' : ` AND raw_material_id IN (SELECT id FROM raw_materials WHERE TRUE${own('owner_id', itemUomParams)})`}`,
+    itemUomParams)).rows;
   const itemUoms = {};
   itemUomRows.forEach(r => { (itemUoms[r.raw_material_id] ||= []).push(r); });
 
@@ -136,14 +153,18 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
      Electrosteel's. Where a preferred vendor exists we round the shortfall
      to THEIR minimum and quote THEIR price and lead time, falling back to
      the item-level defaults when nothing is linked yet. */
+  /* Your links to your vendors: this vendor is the one a shortfall PO is
+     raised against. Unowned links are seeded ones, as in /vendor-items. */
+  const supplierParams = [];
   const supplierRows = (await db.query(`
     SELECT DISTINCT ON (vi.raw_material_id)
            vi.raw_material_id, vi.vendor_id, vi.price, vi.moq, vi.lead_time_days, vi.is_preferred,
            v.name AS vendor_name
     FROM vendor_items vi
     JOIN vendors v ON v.id = vi.vendor_id
+    WHERE TRUE${own('v.owner_id', supplierParams)}${admin ? '' : ' AND (vi.owner_id = $1 OR vi.owner_id IS NULL)'}
     ORDER BY vi.raw_material_id, vi.is_preferred DESC, vi.price NULLS LAST, vi.lead_time_days NULLS LAST
-  `)).rows;
+  `, supplierParams)).rows;
   const supplier = new Map(supplierRows.map(r => [r.raw_material_id, r]));
 
   // ── 5. Roll demand up per material, converting into the base unit ──

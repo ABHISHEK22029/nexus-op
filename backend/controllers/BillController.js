@@ -245,6 +245,15 @@ exports.getBills = async (req, res) => {
 /* ── Single bill + line items (for the invoice) ───────────── */
 exports.getBillById = async (req, res) => {
   try {
+    /* Owner-scoped like the list. By id alone this handed any company an RA
+       bill — the subcontractor, their PAN and GSTIN, what they are owed and
+       every deduction — for the price of counting. */
+    const params = [req.params.id];
+    let mine = '';
+    if (!isCrossTenant(req.user?.role)) {
+      params.push(req.user?.orgId ?? req.user?.id ?? -1);
+      mine = ` AND b.owner_id = $${params.length}`;
+    }
     const billRes = await db.query(
       `SELECT b.*, v.name AS "vendorName", v.gstin AS "vendorGstin", v.pan AS "vendorPan",
               v.address AS "vendorAddress", wo.name AS "workOrderName", p.name AS "projectName"
@@ -252,7 +261,7 @@ exports.getBillById = async (req, res) => {
          LEFT JOIN vendors v ON v.id = b.vendor_id
          LEFT JOIN work_orders wo ON wo.id = b."workOrderId"
          LEFT JOIN projects p ON p.id = b."projectId"
-        WHERE b.id = $1`, [req.params.id]);
+        WHERE b.id = $1${mine}`, params);
     const bill = billRes.rows[0];
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
     const items = await db.query(

@@ -1,6 +1,7 @@
 const db = require('../db');
 const { isCrossTenant } = require('../shared/roles');
 const { runList } = require('../shared/listQuery');
+const { assertRefs } = require('../shared/ownedRefs');
 
 /* The vendor join is wrapped in a derived table so "vendorName" becomes an
    ordinary column of it — searchable and unambiguous against work_orders'
@@ -48,6 +49,9 @@ exports.getWorkOrders = async (req, res) => {
 exports.createWorkOrder = async (req, res) => {
   const { projectId, vendorId, name, boqId, startDate, endDate, contractValue, status } = req.body;
   try {
+    /* The subcontractor and BOQ line are this company's: the work-order list
+       shows the vendor's name, and an RA bill prints its GSTIN and PAN. */
+    if (!await assertRefs(db, req, res, { vendors: [vendorId], boq_items: [boqId] })) return;
     const { rows } = await db.query(
       /* owner_id, or the work order belongs to nobody: invisible in the
          creating organisation's own list, and unattached to the company

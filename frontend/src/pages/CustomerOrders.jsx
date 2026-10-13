@@ -72,7 +72,9 @@ export default function CustomerOrders() {
   const create = async (e) => {
     e.preventDefault();
     if (!head.customerId) { toast.error('Pick a customer'); return; }
-    const items = lines.filter(l => l.description.trim());
+    /* The price goes as `rate`, the name the order's arithmetic reads. Sent
+       only as targetPrice, every order typed here was saved at ₹0. */
+    const items = lines.filter(l => l.description.trim()).map(l => ({ ...l, rate: l.targetPrice }));
     if (!items.length) { toast.error('Add at least one line item'); return; }
     try {
       const res = await fetch(`${API}/customer-orders`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...head, items }) });

@@ -8,6 +8,7 @@ const { isCrossTenant } = require('../shared/roles');
 const { assertOwned } = require('../shared/ownerScope');
 const stock = require('../shared/stock');
 const { runList } = require('../shared/listQuery');
+const { assertRefs } = require('../shared/ownedRefs');
 
 const round = (n, d = 2) => (n == null ? null : Math.round(n * 10 ** d) / 10 ** d);
 
@@ -180,6 +181,8 @@ exports.createOrder = async (req, res) => {
      need a project: "make 200 brackets for Apollo" is a complete instruction. */
   if (!productName) return res.status(400).json({ error: 'productName is required' });
   try {
+    /* The production list shows the work order's name; it must be yours. */
+    if (!await assertRefs(db, req, res, { work_orders: [workOrderId] })) return;
     const prodNumber = await nextProdNumber(projectId, req.user?.orgId);
     const { rows } = await db.query(
       `INSERT INTO production_orders ("projectId", "workOrderId", prod_number, product_name, planned_qty, output_uom, notes, owner_id)

@@ -7,6 +7,7 @@ const { receiptTotals, lineProgress, syncPoReceipt, overReceiptError } = require
 const { notify } = require('../notify');
 const { runList } = require('../shared/listQuery');
 const { isCrossTenant } = require('../shared/roles');
+const { scopedById } = require('../shared/ownerScope');
 
 /* List GRN records, scoped to a project.
 
@@ -52,7 +53,10 @@ router.get('/', async (req, res) => {
  * purchase order came to receive one quantity of the first thing on it. */
 router.get('/outstanding/:poId', async (req, res) => {
   try {
-    const po = (await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.poId])).rows[0];
+    /* Yours only. By id alone this listed any company's order lines,
+       quantities and what had arrived against them. */
+    const s = scopedById(req, req.params.poId);
+    const po = (await db.query(`SELECT * FROM purchase_orders WHERE ${s.where}`, s.params)).rows[0];
     if (!po) return res.status(404).json({ error: 'PO not found' });
     const lines = await lineProgress(db, po.id);
     const totals = await receiptTotals(db, po.id);
@@ -93,7 +97,10 @@ router.post('/', async (req, res) => {
   try {
     await client.query('BEGIN');
     // Step 1: Find PO
-    const poResult = await client.query('SELECT * FROM purchase_orders WHERE id = $1', [poId]);
+    /* Yours only. Read by id alone, another company could book a receipt
+       against this PO — moving its received quantity and status. */
+    const s = scopedById(req, poId);
+    const poResult = await client.query(`SELECT * FROM purchase_orders WHERE ${s.where}`, s.params);
     const po = poResult.rows[0];
     /* Now that this runs in a transaction, a bare `return` here would leave
        it open until the pool reclaimed the connection. On a pooler capped at
@@ -190,11 +197,14 @@ router.post('/', async (req, res) => {
        Falls back to the name only for stock not yet linked to the master. */
     const norm = (s) => String(s || '').toLowerCase().replace(/[×xX]/g, 'x').replace(/[^a-z0-9]+/g, ' ').trim();
 
+    /* By name, so within this company: another company's "MS Plate 10mm"
+       is not this one, and its unit and conversions are not this one's. */
     const material = (await client.query(
       `SELECT * FROM raw_materials
        WHERE btrim(regexp_replace(lower(translate(name, '×X', 'xx')), '[^a-z0-9]+', ' ', 'g')) = $1
+         AND owner_id = $2
        LIMIT 1`,
-      [norm(receivedItemName)]
+      [norm(receivedItemName), req.user?.orgId || null]
     )).rows[0];
     const materialId = material?.id || null;
 

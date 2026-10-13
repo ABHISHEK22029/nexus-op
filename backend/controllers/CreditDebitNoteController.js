@@ -11,6 +11,7 @@ const { allocate } = require('../shared/docSeries');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
+const { assertRefs } = require('../shared/ownedRefs');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
@@ -86,7 +87,7 @@ exports.getById = async (req, res) => {
     let party = null;
     if (n.party_id) {
       const tbl = n.party_type === 'vendor' ? 'vendors' : 'customers';
-      party = (await db.query(`SELECT * FROM ${tbl} WHERE id = $1`, [n.party_id])).rows[0];
+      party = (await db.query(`SELECT * FROM ${tbl} WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)`, [n.party_id, n.owner_id])).rows[0];
     }
     let company = null;
     try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
@@ -101,6 +102,9 @@ exports.create = async (req, res) => {
   if (!['customer', 'vendor'].includes(partyType)) return res.status(400).json({ error: 'partyType must be customer or vendor' });
   if (!partyId) return res.status(400).json({ error: `Pick a ${partyType}` });
   if (!items || !items.length) return res.status(400).json({ error: 'Add at least one line' });
+  /* The party is this company's customer or vendor. Another company's id
+     was read for the tax and shown on the note as the party. */
+  if (!await assertRefs(db, req, res, { [partyType === 'vendor' ? 'vendors' : 'customers']: [partyId] })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');

@@ -3,13 +3,20 @@
    ══════════════════════════════════════════════════════════ */
 const jwt = require('jsonwebtoken');
 
-// In production a real secret MUST be provided via env. The dev fallback keeps
-// local runs working without configuration but should never reach prod.
-const JWT_SECRET = process.env.JWT_SECRET || 'nexus-op-dev-secret-change-me';
+/* The secret every session is signed with. The fallback string is in the
+   public repo, so a deployed server that fell back to it would accept a
+   session anybody could forge. Deployed without JWT_SECRET, the server
+   makes up a random one for this run instead: everyone is signed out on a
+   restart, which is a nuisance, not a hole. /health says which it is.
+   Refusing to start would have been cleaner and would take the site down. */
+const deployed = !!process.env.RENDER || process.env.NODE_ENV === 'production';
+const JWT_SECRET = process.env.JWT_SECRET
+  || (deployed ? require('crypto').randomBytes(48).toString('base64') : 'nexus-op-dev-secret-change-me');
+const SECRET_SOURCE = process.env.JWT_SECRET ? 'configured' : deployed ? 'temporary' : 'development';
 const TOKEN_TTL  = process.env.JWT_TTL || '12h';
 
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  console.warn('[auth] WARNING: JWT_SECRET is not set — using an insecure dev fallback.');
+if (SECRET_SOURCE === 'temporary') {
+  console.warn('[auth] JWT_SECRET is not set: using a random secret for this run. Everyone will be signed out on restart. Set JWT_SECRET.');
 }
 
 function signToken(user) {
@@ -49,12 +56,14 @@ async function accountState(id) {
   const hit = accounts.get(id);
   if (hit && Date.now() - hit.at < ACCOUNT_TTL) return hit;
   const db = require('../db');
-  const { rows } = await db.query('SELECT is_active, password_changed_at FROM users WHERE id = $1', [id]);
+  const { rows } = await db.query('SELECT is_active, password_changed_at, role, org_id FROM users WHERE id = $1', [id]);
   const s = {
     at: Date.now(),
     exists: !!rows[0],
     active: !!rows[0] && rows[0].is_active !== false,
     changed: rows[0]?.password_changed_at ? new Date(rows[0].password_changed_at).getTime() : 0,   // ms
+    role: rows[0]?.role ?? null,
+    org: rows[0] ? (rows[0].org_id ?? id) : null,
   };
   accounts.set(id, s);
   if (accounts.size > 20000) accounts.clear();
@@ -76,8 +85,10 @@ async function authenticate(req, res, next) {
   } catch {
     return res.status(401).json({ error: 'Invalid or expired session' });
   }
+  let account = null;
   try {
     const s = await accountState(Number(payload.sub));
+    account = s;
     if (!s.exists || !s.active) return res.status(401).json({ error: 'This account has been switched off. Ask your company\'s owner.' });
     const issued = payload.iatMs ?? payload.iat * 1000;   // a token from before iatMs: its second
     if (s.changed && issued < s.changed) return res.status(401).json({ error: 'Your password was changed. Sign in again.' });
@@ -93,6 +104,11 @@ async function authenticate(req, res, next) {
     orgId: payload.org ?? payload.sub,
     email: payload.email, role: payload.role, name: payload.name,
   };
+  /* The role and organisation as they are NOW, not as they were when the
+     token was signed: a demoted person kept their old powers for the rest
+     of a 12-hour session. Read with the account check, once a minute. */
+  if (account?.role) req.user.role = account.role;
+  if (account?.org != null) req.user.orgId = account.org;
   return next();
 }
 
@@ -117,4 +133,4 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { signToken, authenticate, requireRole, JWT_SECRET, forgetAccount };
+module.exports = { signToken, authenticate, requireRole, JWT_SECRET, SECRET_SOURCE, forgetAccount };

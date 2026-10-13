@@ -30,10 +30,18 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
  * FY2027-28. Computed rather than hardcoded, because a hardcoded year is
  * wrong for at most twelve months and then wrong forever.
  */
+/* The year and month on India's calendar. The live server runs in UTC, so
+   between midnight and 05:30 IST on 1 April getMonth() still said March
+   and a document took the old year's number. A date built from a document
+   date ("2027-04-01T00:00:00") reads the same either way. */
+const istYearMonth = (d) => {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).formatToParts(d);
+  return { y: Number(parts.find((p) => p.type === 'year').value), m: Number(parts.find((p) => p.type === 'month').value) - 1 };
+};
+
 function financialYear(date = new Date(), fyStartMonth = 'April') {
   const startIdx = Math.max(0, MONTHS.indexOf(fyStartMonth));   // 0-based; April = 3
-  const y = date.getFullYear();
-  const m = date.getMonth();
+  const { y, m } = istYearMonth(date);
   const startYear = m >= startIdx ? y : y - 1;
   /* A year starting in January is a calendar year — "FY2026-27" would be a
      lie, so it is rendered as "FY2026". */

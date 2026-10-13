@@ -139,6 +139,8 @@ const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); retur
     ok(bad.status === 400, `a negative threshold is refused (${bad.status})`);
     /* an overdue invoice: no reminder while off, one once on */
     const due = await call(a, 'POST', '/sales-invoices', { customerId, dueDate: daysAgo(5), invoiceDate: daysAgo(35), items: [{ description: 'Overdue', uom: 'nos', quantity: 1, rate: 1000 }] });
+    /* Sent: a draft is not owed yet, so it is never chased either way. */
+    await call(a, 'PATCH', `/sales-invoices/${due.body.id}/status`, { status: 'Sent' });
     await call(a, 'POST', '/recurring/run-now');
     let st = await q1('SELECT reminder_stage FROM sales_invoices WHERE id = $1', [due.body.id]);
     ok(st[0]?.reminder_stage === 0, 'with reminders off, an overdue invoice is not chased');

@@ -64,7 +64,8 @@ const HANDLERS = {
     const [orders, pos, inv, low, proj_c, pay] = await Promise.all([
       db.query(`SELECT COUNT(*) c FROM customer_orders WHERE status <> 'Closed'${own}`, p),
       db.query(`SELECT COUNT(*) c FROM purchase_orders WHERE approval_status = 'Pending Approval'${proj}`, p),
-      db.query(`SELECT COUNT(*) c, COALESCE(SUM(net_amount - COALESCE(amount_paid,0)),0) t FROM sales_invoices WHERE due_date < CURRENT_DATE AND status <> 'Paid' AND net_amount > COALESCE(amount_paid,0)${own}`, p),
+      /* Issued invoices only: a draft is not owed yet, a cancelled one never. */
+      db.query(`SELECT COUNT(*) c, COALESCE(SUM(net_amount - COALESCE(amount_paid,0)),0) t FROM sales_invoices WHERE due_date < CURRENT_DATE AND status NOT IN ('Paid','Cancelled') AND net_amount > COALESCE(amount_paid,0)${own}`, p),
       /* Stock is company-wide (projectId is NULL on almost every row, and on
          every uploaded one), so it is scoped by owner, not by project. */
       db.query(`SELECT COUNT(*) c FROM inventory WHERE quantity <= 10${own}`, p),
@@ -87,7 +88,7 @@ const HANDLERS = {
       `SELECT si.invoice_number, c.name AS customer, si.net_amount, COALESCE(si.amount_paid,0) AS paid, si.due_date,
               (CURRENT_DATE - si.due_date) AS days_overdue
          FROM sales_invoices si LEFT JOIN customers c ON c.id = si.customer_id
-        WHERE si.due_date < CURRENT_DATE AND si.status <> 'Paid' AND si.net_amount > COALESCE(si.amount_paid,0)
+        WHERE si.due_date < CURRENT_DATE AND si.status NOT IN ('Paid','Cancelled') AND si.net_amount > COALESCE(si.amount_paid,0)
         ${admin ? '' : 'AND si.owner_id = $1'}
         ORDER BY si.due_date ASC LIMIT 25`,
       admin ? [] : [req.user.orgId]);

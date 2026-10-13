@@ -184,7 +184,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const offSession = await get('/auth/me', memberLogin.body.token);
     ok(offSession.status === 401 && /switched off/.test(offSession.body.error || ''), `switching a person off ends their session at once: “${offSession.body.error}” (switch-off ${offPatch.status} ${offPatch.status === 200 ? "" : offBody.slice(0, 160)})`);
     const offAsk = await post('/auth/forgot-password', { email: memberEmail });
-    ok(offAsk.status === 200 && mails(memberEmail).length === 0, 'a switched-off account gets the same answer, and no code');
+    ok(offAsk.status === 200 && mails(memberEmail).length === 0, `a switched-off account gets the same answer, and no code (${offAsk.status} ${offAsk.body.error || ''}, ${mails(memberEmail).length} sent)`);
     await fetch(`${API}/admin/users/${memberId}/active`, { method: 'PATCH', headers: { Authorization: `Bearer ${A.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: true }) });
     const memberLogin2 = await login(memberEmail, PASS);
     /* no pause needed: tokens carry their issue time to the millisecond */

@@ -1,0 +1,63 @@
+# The static checks and the build, on every push and pull request to main.
+#
+# Nothing here needs the database or any secret: the backend checks read the
+# source (routes covered, writes scoped to a company, guards imported, no
+# customer-specific values), and the frontend checks read the source too
+# (hook order, undefined JSX names, the film's claims, every internal link
+# matching a route), then build. The suites that touch a database run
+# locally against throwaway accounts, never here.
+#
+# Lint is not run yet: older files still carry errors, and a check that is
+# always red gets ignored.
+
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      # The browser tests run locally; CI only builds.
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build

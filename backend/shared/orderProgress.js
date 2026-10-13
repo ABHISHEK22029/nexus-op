@@ -36,8 +36,14 @@
  * an order that has been invoiced but not shipped is not "Partially
  * Delivered", it is whatever it already was.
  */
-async function syncOrderDelivery(client, orderId) {
+/* `ownerId`, when given, is the company of the document doing the asking:
+   only that company's order moves, and only its own challans count. A
+   challan from one company pointing at another's order id set that order
+   to Delivered. The ids are checked when a document is created now
+   (shared/ownedRefs); this is the second lock, for rows made before. */
+async function syncOrderDelivery(client, orderId, ownerId = null) {
   if (!orderId) return null;
+  const mine = ownerId != null;
 
   const totals = (await client.query(
     `SELECT
@@ -47,8 +53,8 @@ async function syncOrderDelivery(client, orderId) {
           FROM delivery_challan_items dci
           JOIN delivery_challans d ON d.id = dci.delivery_challan_id
          WHERE d.customer_order_id = $1
-           AND d.status IN ('Dispatched','Delivered')) AS dispatched`,
-    [orderId]
+           AND d.status IN ('Dispatched','Delivered')${mine ? ' AND d.owner_id = $2' : ''}) AS dispatched`,
+    mine ? [orderId, ownerId] : [orderId]
   )).rows[0];
 
   const ordered = Number(totals.ordered) || 0;
@@ -64,8 +70,8 @@ async function syncOrderDelivery(client, orderId) {
 
   const r = await client.query(
     `UPDATE customer_orders SET status = $1
-      WHERE id = $2 AND status NOT IN ('Closed')`,
-    [status, orderId]
+      WHERE id = $2 AND status NOT IN ('Closed')${mine ? ' AND owner_id = $3' : ''}`,
+    mine ? [status, orderId, ownerId] : [status, orderId]
   );
 
   return { ordered, dispatched, status, complete, changed: r.rowCount > 0 };

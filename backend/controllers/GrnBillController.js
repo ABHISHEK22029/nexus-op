@@ -9,6 +9,7 @@ const { nextSeq } = require('../shared/docNumber');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
+const { assertRefs } = require('../shared/ownedRefs');
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -34,11 +35,16 @@ function compute(items, { freight = 0, otherCharges = 0, discount = 0, gstRate =
 // GET /grn-bills/prefill/:grnId — build a draft from the GRN's PO.
 exports.prefill = async (req, res) => {
   try {
-    const grn = (await db.query('SELECT * FROM grn WHERE id = $1', [req.params.grnId])).rows[0];
+    /* Scoped on the SOURCE receipt — see DeliveryChallanController.prefill.
+       Read by id alone, this handed any company the receipt, its purchase
+       order and the vendor row, bank account and IFSC included. The PO and
+       vendor are read as the receipt's own company's, too. */
+    const s = scopedById(req, req.params.grnId);
+    const grn = (await db.query(`SELECT * FROM grn WHERE ${s.where}`, s.params)).rows[0];
     if (!grn) return res.status(404).json({ error: 'GRN not found' });
-    const po = (await db.query('SELECT * FROM purchase_orders WHERE id = $1', [grn.poId])).rows[0];
-    const vendor = po ? (await db.query('SELECT * FROM vendors WHERE id = $1', [po.vendorId])).rows[0] : null;
-    let items = (await db.query('SELECT * FROM po_line_items WHERE "poId" = $1 ORDER BY sno', [grn.poId])).rows
+    const po = (await db.query('SELECT * FROM purchase_orders WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [grn.poId, grn.owner_id])).rows[0];
+    const vendor = po ? (await db.query('SELECT * FROM vendors WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [po.vendorId, po.owner_id])).rows[0] : null;
+    let items = (po ? (await db.query('SELECT * FROM po_line_items WHERE "poId" = $1 ORDER BY sno', [po.id])).rows : [])
       .map(li => ({ description: li.description, hsn: li.hsn || '', uom: li.uom || 'nos', quantity: li.quantity, rate: li.unitPrice }));
     // Fall back to the PO header if no line items.
     if (!items.length && po) items = [{ description: po.itemName, hsn: '', uom: 'nos', quantity: grn.receivedQuantity || po.quantity, rate: po.unitPrice || 0 }];
@@ -66,6 +72,10 @@ exports.prefill = async (req, res) => {
 exports.create = async (req, res) => {
   const { grnId, poId, vendorId, projectId, billDate, vendorBillRef, items, freight, otherCharges, discount, gstRate, interstate, roundOff, notes } = req.body;
   if (!items || !items.length) return res.status(400).json({ error: 'Add at least one line item' });
+  /* The vendor, the receipt and the PO it bills are this company's. The
+     vendor id was stored as sent, so a bill could name another company's
+     vendor and show their bank details on the bill. */
+  if (!await assertRefs(db, req, res, { vendors: [vendorId], grn: [grnId], purchase_orders: [poId] })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -144,7 +154,8 @@ exports.getById = async (req, res) => {
     const bill = (await db.query(`SELECT * FROM grn_bills WHERE ${s.where}`, s.params)).rows[0];
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
     const items = (await db.query('SELECT * FROM grn_bill_items WHERE grn_bill_id = $1 ORDER BY sort_order', [req.params.id])).rows;
-    const vendor = bill.vendor_id ? (await db.query('SELECT * FROM vendors WHERE id = $1', [bill.vendor_id])).rows[0] : null;
+    const vendor = bill.vendor_id ? (await db.query(
+      'SELECT * FROM vendors WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [bill.vendor_id, bill.owner_id])).rows[0] : null;
     const payments = (await db.query('SELECT * FROM vendor_payments WHERE grn_bill_id = $1 ORDER BY id', [req.params.id])).rows;
     let company = null;
     try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
@@ -177,10 +188,12 @@ exports.remove = async (req, res) => {
 /* ══════════════ Accounts Payable — vendor payments (Wave 1B) ══════════════ */
 const { notify } = require('../notify');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
-// grn_bills are project-scoped (no owner_id); non-admins see their projects' bills.
-const projScope = (req, alias = 'gb') => isAdmin(req)
+/* grn_bills carry owner_id (migration 031). This scoped through the bill's
+   PROJECT instead, so a bill with no project — most of them, since a PO for
+   stock belongs to none — was missing from Payables altogether. */
+const ownScope = (req, alias = 'gb') => isAdmin(req)
   ? { clause: '', params: [] }
-  : { clause: ` AND ${alias}."projectId" IN (SELECT id FROM projects WHERE owner_id = $1)`, params: [req.user.orgId] };
+  : { clause: ` AND ${alias}.owner_id = $1`, params: [req.user.orgId] };
 
 // POST /grn-bills/:id/payment — record a payment to the vendor
 exports.addPayment = async (req, res) => {
@@ -237,6 +250,8 @@ exports.addPayment = async (req, res) => {
 // GET /grn-bills/:id/payments
 exports.payments = async (req, res) => {
   try {
+    /* Yours only — this listed any bill's payments, with references, by id. */
+    if (!await assertOwned(db, req, res, 'grn_bills', req.params.id, { columns: 'id' })) return;
     const { rows } = await db.query('SELECT * FROM vendor_payments WHERE grn_bill_id = $1 ORDER BY id', [req.params.id]);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -284,7 +299,7 @@ function paginateBills(rows, query = {}) {
 
 exports.payables = async (req, res) => {
   try {
-    const s = projScope(req);
+    const s = ownScope(req);
     const { rows } = await db.query(
       `SELECT gb.id, gb.bill_number, gb.bill_date, gb.due_date, gb.net_amount,
               COALESCE(gb.amount_paid,0) AS amount_paid, gb.payment_status, v.name AS vendor_name, gb.vendor_id,

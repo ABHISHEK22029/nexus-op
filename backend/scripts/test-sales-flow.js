@@ -196,7 +196,10 @@ const same = (a, b) => JSON.stringify([...a].sort((x, y) => x - y)) === JSON.str
     const bWithA = await call(B, 'POST', '/sales-quotations', {
       customerId: (await call(B, 'POST', '/customers', { name: `B buyer ${stamp}` })).body.id,
       items: [{ skuId: arm, description: 'x', quantity: 1, uom: 'nos', rate: 1 }] });
-    ok(bWithA.status === 200 && (bWithA.body.belowMoq || []).length === 0, 'another company naming A\'s product learns nothing of its minimum');
+    /* Refused outright now (shared/ownedRefs): a product on a quotation line
+       must be the company's own. It used to be saved, minus the minimum. */
+    ok(bWithA.status === 400 && bWithA.body.error === 'Product not found' && !bWithA.body.belowMoq,
+      `another company cannot put A's product on its quotation, and learns nothing of its minimum (${bWithA.status})`);
 
     /* ── 4. the delivery promise on the quotation ────────────────── */
     console.log('\n  ── 4. delivery: within N days of order');

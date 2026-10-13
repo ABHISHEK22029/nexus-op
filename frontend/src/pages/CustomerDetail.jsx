@@ -76,6 +76,16 @@ export default function CustomerDetail() {
             : 'no terms set'} />
       </div>
 
+      {/* How the outstanding figure is made up, when it is more than
+          invoices less receipts — otherwise it does not add up on screen. */}
+      {(Number(m.opening_balance) || Number(m.credit_notes) || Number(m.debit_notes)) ? (
+        <p style={{ margin: '-4px 0 16px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          Outstanding = {Number(m.opening_balance) ? `opening balance ${rupee(m.opening_balance)} + ` : ''}billed {rupee(m.lifetime_billed)} − received {rupee(m.received)}
+          {Number(m.credit_notes) ? ` − credit notes ${rupee(m.credit_notes)}` : ''}
+          {Number(m.debit_notes) ? ` + debit notes ${rupee(m.debit_notes)}` : ''}
+        </p>
+      ) : null}
+
       {m.over_credit_limit && (
         <div style={{ background: 'rgba(220,38,38,0.10)', border: '1px solid rgba(220,38,38,0.35)', borderRadius: 10, padding: '11px 14px', marginBottom: 16, fontSize: '0.86rem', color: '#dc2626', fontWeight: 600 }}>
           Outstanding {rupee(m.outstanding)} exceeds their credit limit of {rupee(m.credit_limit)}
@@ -109,15 +119,16 @@ export default function CustomerDetail() {
 
         <Card title="Invoices" sub={`${invoices.length} most recent`}>
           {invoices.length === 0 ? <Muted>No invoices yet.</Muted> : invoices.slice(0, 8).map(i => {
-            const bal = Number(i.net_amount || 0) - Number(i.amount_paid || 0);
+            const cancelled = i.status === 'Cancelled';
+            const bal = cancelled ? 0 : Number(i.net_amount || 0) - Number(i.amount_paid || 0);
             const late = i.due_date && bal > 0 && new Date(i.due_date) < new Date();
             return (
               <Link key={i.id} to={`/sales-invoices/${i.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '7px 0', borderTop: '1px solid var(--border-subtle)', fontSize: '0.84rem', textDecoration: 'none', color: 'inherit' }}>
                 <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{i.invoice_number}<span style={{ color: 'var(--text-muted)', fontSize: '0.76rem' }}> · {date(i.invoice_date)}</span></span>
                 <span style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                   {rupee(i.net_amount)}
-                  <span style={{ display: 'block', fontSize: '0.72rem', color: late ? '#dc2626' : bal > 0 ? '#b45309' : '#16a34a' }}>
-                    {bal > 0 ? `${rupee(bal)} due${late ? ' · overdue' : ''}` : 'paid'}
+                  <span style={{ display: 'block', fontSize: '0.72rem', color: cancelled ? 'var(--text-muted)' : late ? '#dc2626' : bal > 0 ? '#b45309' : '#16a34a' }}>
+                    {cancelled ? 'cancelled' : bal > 0 ? `${rupee(bal)} due${late ? ' · overdue' : ''}` : 'paid'}
                   </span>
                 </span>
               </Link>

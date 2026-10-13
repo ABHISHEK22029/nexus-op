@@ -15,6 +15,7 @@ const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const { prepareLines, checkAdjustments } = require('../shared/lineChecks');
 const { suggestDeliveryDays } = require('../shared/leadTime');
+const { assertRefs, skuIdsOf } = require('../shared/ownedRefs');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
@@ -176,7 +177,8 @@ exports.getById = async (req, res) => {
          FROM sales_quotation_items i
          LEFT JOIN skus s ON s.id = i.sku_id AND s.owner_id = $2
         WHERE i.sales_quotation_id = $1 ORDER BY i.sort_order`, [req.params.id, q.owner_id])).rows;
-    const customer = q.customer_id ? (await db.query('SELECT * FROM customers WHERE id = $1', [q.customer_id])).rows[0] : null;
+    const customer = q.customer_id ? (await db.query(
+      'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [q.customer_id, q.owner_id])).rows[0] : null;
     let company = null;
     try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
     /* delivery_days / delivery_note are the promise as saved (SELECT *);
@@ -197,6 +199,9 @@ exports.create = async (req, res) => {
     deliveryDays = deliveryDaysOf(req.body.deliveryDays ?? req.body.delivery_days) ?? null;
     deliveryNote = deliveryNoteOf(req.body.deliveryNote ?? req.body.delivery_note) ?? null;
   } catch (e) { return res.status(400).json({ error: e.message }); }
+  /* The customer and any product on a line are this company's. Another
+     company's customerId was read here for the tax, and printed. */
+  if (!await assertRefs(db, req, res, { customers: [customerId], skus: skuIdsOf(items) })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -302,6 +307,8 @@ const QUOTE_OPEN_FIELDS = ['quote_number', 'quote_date', 'valid_until', 'discoun
 const QUOTE_SENT_FIELDS = ['valid_until', 'notes', 'terms'];
 
 exports.update = async (req, res) => {
+  /* A Draft may change its customer and lines — to this company's own. */
+  if (!await assertRefs(db, req, res, { customers: [req.body?.customer_id], skus: skuIdsOf(req.body?.items) })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');

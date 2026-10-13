@@ -89,13 +89,25 @@ function Directory() {
     q.reload();
   };
 
+  /* Sends the sheet; the server adds the good rows and says which it
+     skipped and why. This used to send no file at all and say "Import
+     queued". */
   const bulkUpload = async (e) => {
-    if (!e.target.files[0]) return;
+    const file = e.target.files[0];
+    if (!file) return;
     setBulkLoading(true);
     try {
       const token = getToken();
-      await fetch(`${API}/vendors/bulk`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      toast.success('Import queued');
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`${API}/vendors/import`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'Import failed');
+      const skipped = body.skipped || [];
+      const first = skipped.slice(0, 3).map((s) => `row ${s.row}: ${s.reason}`).join('; ');
+      const msg = `${body.added} vendor${body.added === 1 ? '' : 's'} added`
+        + (skipped.length ? `, ${skipped.length} row${skipped.length === 1 ? '' : 's'} skipped (${first}${skipped.length > 3 ? '…' : ''})` : '');
+      if (body.added) toast.success(msg); else toast.error(msg);
       q.reload();
     } catch (err) { toast.error(err.message || 'Import failed'); }
     finally { setBulkLoading(false); e.target.value = null; }

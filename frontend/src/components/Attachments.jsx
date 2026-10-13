@@ -45,8 +45,17 @@ export default function Attachments({ entityType, entityId, label = 'Attachments
       const res = await fetch(`${API}/attachments/${f.id}/download`);
       if (!res.ok) throw new Error('Could not open file');
       const blob = await res.blob();
+      /* A blob URL opens inside this app's own origin, so only a PDF or a
+         picture is opened; anything else is saved under its name. An HTML
+         or SVG file opened here could have read the signed-in session. */
+      const viewable = /^(application\/pdf|image\/(png|jpeg|gif|webp))$/.test(blob.type);
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      if (viewable) window.open(url, '_blank', 'noopener');
+      else {
+        const a = document.createElement('a');
+        a.href = url; a.download = f.filename || 'file';
+        document.body.appendChild(a); a.click(); a.remove();
+      }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err) { toast.error(err.message); }
   };

@@ -172,8 +172,13 @@ const upload = async (token, file, fields = {}) => {
   const back = Buffer.from(await fileRes.arrayBuffer());
   ok(fileRes.status === 200 && back.equals(fs.readFileSync(xlsx)),
     'the vendor’s own file comes back byte-identical, so any figure can be checked');
-  ok(/inline/.test(fileRes.headers.get('content-disposition') || ''),
-    'served inline, to open beside the parsed figures');
+  /* A spreadsheet downloads; only a PDF or a picture opens in the browser,
+     where it shares the app's origin (shared/fileSafety). */
+  ok(/^attachment/.test(fileRes.headers.get('content-disposition') || '') && fileRes.headers.get('x-content-type-options') === 'nosniff',
+    'a spreadsheet is downloaded, with nosniff, not opened in the app');
+  const pdfRes = await fetch(`${API}/vendor-quotations/${rp.body.id}/file`, { headers: A.h });
+  ok(pdfRes.headers.get('content-type') === 'application/pdf' && /^inline/.test(pdfRes.headers.get('content-disposition') || ''),
+    'a PDF quote opens inline, to read beside the parsed figures');
 
   console.log('\n  ── comparing them');
   const ids = [rx.body.id, rw.body.id, rp.body.id].join(',');

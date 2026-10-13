@@ -3,7 +3,7 @@
    ══════════════════════════════════════════════════════════ */
 const bcrypt = require('bcryptjs');
 const db = require('../db');
-const { signToken } = require('../middleware/auth');
+const { signToken, forgetAccount } = require('../middleware/auth');
 const { permissionsFor, isCrossTenant } = require('../shared/roles');
 
 // POST /auth/login  { email, password } -> { token, user }
@@ -99,8 +99,9 @@ async function register(req, res) {
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Name, email and password are required' });
   }
-  if (String(password).length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  /* 8, as everywhere else a password is set (invite, team member, reset). */
+  if (String(password).length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   if (!emailOk) {
@@ -268,4 +269,40 @@ async function me(req, res) {
   }
 }
 
-module.exports = { login, register, me, inviteInfo, acceptInvite };
+/* POST /auth/change-password  { currentPassword, newPassword } -> { token }
+   For somebody who is signed in and knows their password. The current one
+   is asked for so that a session left open on a shared computer is not
+   enough to take the account. Every other session is signed out, as after
+   a reset; this one carries on with the fresh token returned here. */
+async function changePassword(req, res) {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Enter your current password and a new one' });
+  }
+  if (String(newPassword).length < 8) {
+    return res.status(400).json({ error: 'The new password must be at least 8 characters' });
+  }
+  if (newPassword === currentPassword) {
+    return res.status(400).json({ error: 'The new password is the same as the current one' });
+  }
+  try {
+    const user = (await db.query(
+      'SELECT id, email, name, role, org_id, password_hash, is_active FROM users WHERE id = $1', [req.user?.id])).rows[0];
+    if (!user || !user.is_active) return res.status(401).json({ error: 'Sign in again' });
+    if (!user.password_hash || !(await bcrypt.compare(String(currentPassword), user.password_hash))) {
+      return res.status(400).json({ error: 'The current password is not right' });
+    }
+    const hash = await bcrypt.hash(String(newPassword), 10);
+    /* The app's clock, not the database's: sessions are compared against it
+       to the millisecond (see middleware/auth.js). */
+    await db.query('UPDATE users SET password_hash = $1, password_changed_at = $2 WHERE id = $3', [hash, new Date(), user.id]);
+    forgetAccount(user.id);
+    const safeUser = { id: user.id, email: user.email, name: user.name, role: user.role, org_id: user.org_id ?? user.id };
+    return res.json({ ok: true, token: signToken(safeUser), user: safeUser });
+  } catch (err) {
+    console.error('Change password error:', err.message);
+    return res.status(500).json({ error: 'Could not change the password' });
+  }
+}
+
+module.exports = { login, register, me, inviteInfo, acceptInvite, changePassword };

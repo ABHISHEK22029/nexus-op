@@ -16,7 +16,7 @@ export default function Signup() {
     e.preventDefault();
     setLocalErr('');
     if (!name || !email || !password) { setLocalErr('Fill in all fields'); return; }
-    if (password.length < 6)          { setLocalErr('Password must be at least 6 characters'); return; }
+    if (password.length < 8)          { setLocalErr('Password must be at least 8 characters'); return; }
     if (password !== confirm)         { setLocalErr('Passwords do not match'); return; }
     try {
       // Mark the friendly onboarding BEFORE register, so the moment the token
@@ -86,7 +86,7 @@ export default function Signup() {
             <div>
               <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Password</label>
               <div style={{ position: 'relative' }}>
-                <input type={showPass ? 'text' : 'password'} required value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" style={{ ...inputStyle, paddingRight: 44 }} onFocus={focusOn} onBlur={focusOff}/>
+                <input type={showPass ? 'text' : 'password'} required value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" style={{ ...inputStyle, paddingRight: 44 }} onFocus={focusOn} onBlur={focusOff}/>
                 <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
                   {showPass ? <EyeOff size={16}/> : <Eye size={16}/>}
                 </button>

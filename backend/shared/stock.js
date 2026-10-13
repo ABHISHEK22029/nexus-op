@@ -144,12 +144,24 @@ const stockOut = (client, m) => move(client, { ...m, quantity: -Math.abs(Number(
  * Deliberately NOT a delete. A challan dispatched in error and reversed is
  * two real events, and a stock ledger that erases its own history cannot
  * answer the question it exists to answer.
+ *
+ * Only movements not yet reversed. This picked up EVERY earlier movement,
+ * so a challan dispatched, pulled back, dispatched and pulled back again
+ * put the first load back a second time — 490 on the shelf instead of 440.
+ * A reversal names what it reverses ("Reversal of movement #id"), which is
+ * the link back.
  */
 async function reverseFor(client, { refType, refId, movementType, reversalType, userId }) {
   const { rows } = await client.query(
-    `SELECT * FROM stock_movements
-     WHERE ref_type = $1 AND ref_id = $2 AND movement_type = $3`,
-    [refType, refId, movementType]
+    `SELECT * FROM stock_movements m
+     WHERE m.ref_type = $1 AND m.ref_id = $2 AND m.movement_type = $3
+       AND NOT EXISTS (
+         SELECT 1 FROM stock_movements r
+          WHERE r.ref_type = m.ref_type AND r.ref_id = m.ref_id
+            AND r.movement_type = $4
+            AND r.note = 'Reversal of movement #' || m.id)
+     ORDER BY m.id`,
+    [refType, refId, movementType, reversalType || 'adjustment']
   );
   for (const m of rows) {
     await move(client, {

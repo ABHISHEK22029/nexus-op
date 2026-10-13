@@ -16,6 +16,7 @@
    afterwards in JavaScript, where a later edit can forget it.
    ══════════════════════════════════════════════════════════════════════ */
 const db = require('../db');
+const fileSafety = require('../shared/fileSafety');
 const { isCrossTenant } = require('../shared/roles');
 const { profileFor } = require('../shared/companyProfile');
 const { notify } = require('../notify');
@@ -225,6 +226,8 @@ exports.publicPhoto = async (req, res) => {
           AND cs.is_published IS TRUE`, [req.params.id]);
     if (!row) return res.status(404).json({ error: 'Not found' });
     res.setHeader('Content-Type', row.mime || 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     /* A catalogue photo does not change once uploaded, and this is the
        heaviest thing the page fetches. */
     res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -239,7 +242,10 @@ exports.publicPhoto = async (req, res) => {
    name the organisation — that comes from the slug — and it cannot set a
    status, a customer or a reference. */
 exports.publicEnquiry = async (req, res) => {
-  const client = await db.getClient();
+  /* No connection is taken until the enquiry has been checked and is about
+     to be written. Taking one first let a stream of junk anonymous requests
+     hold the app's four database connections while each was refused. */
+  let client = null;
   try {
     const slug = cleanSlug(req.params.slug);
     const { name, company, phone, email, message, items } = req.body || {};
@@ -258,7 +264,7 @@ exports.publicEnquiry = async (req, res) => {
       return res.status(400).json({ error: 'That is more items than we can take in one enquiry.' });
     }
 
-    const { rows: [cat] } = await client.query(
+    const { rows: [cat] } = await db.query(
       `SELECT owner_id, enquiry_email FROM catalogue_settings
         WHERE LOWER(slug) = $1 AND is_published IS TRUE`, [slug]);
     if (!cat) return res.status(404).json({ error: 'Catalogue not found' });
@@ -268,7 +274,7 @@ exports.publicEnquiry = async (req, res) => {
        request could attach an enquiry line to another organisation's
        product. */
     const skuIds = [...new Set(lines.map(l => Number(l.skuId)).filter(n => Number.isInteger(n) && n > 0))];
-    const { rows: skuRows } = skuIds.length ? await client.query(
+    const { rows: skuRows } = skuIds.length ? await db.query(
       `SELECT id, name, headline, unit, moq FROM skus
         WHERE id = ANY($1) AND owner_id = $2 AND is_published IS TRUE`,
       [skuIds, cat.owner_id]) : { rows: [] };
@@ -297,6 +303,7 @@ exports.publicEnquiry = async (req, res) => {
       }
     }
 
+    client = await db.getClient();
     await client.query('BEGIN');
     const { rows: [enq] } = await client.query(
       `INSERT INTO enquiries (owner_id, name, company, phone, email, message, status, source)
@@ -327,9 +334,9 @@ exports.publicEnquiry = async (req, res) => {
 
     res.json({ ref, message: 'Thank you — we have your enquiry and will be in touch.' });
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (client) await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: e.message });
-  } finally { client.release(); }
+  } finally { client?.release(); }
 };
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -478,9 +485,12 @@ exports.addPhoto = async (req, res) => {
   try {
     const owner = ownerOf(req);
     if (!req.file) return res.status(400).json({ error: 'No image was uploaded.' });
-    if (!/^image\//.test(req.file.mimetype || '')) {
-      return res.status(400).json({ error: 'That is not an image. JPEG, PNG or WebP.' });
+    /* A picture by its own bytes — an SVG or an HTML file named .png is not. */
+    const kind = fileSafety.detect(req.file.originalname, req.file.buffer);
+    if (!kind || !/^image\//.test(kind.mime)) {
+      return res.status(400).json({ error: 'That is not a photo. JPEG, PNG or WebP.' });
     }
+    req.file.mimetype = kind.mime;
     const { rows: [sku] } = await db.query(
       'SELECT id FROM skus WHERE id = $1 AND owner_id = $2', [req.params.id, owner]);
     if (!sku) return res.status(404).json({ error: 'Product not found' });

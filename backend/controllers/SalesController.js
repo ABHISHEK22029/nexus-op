@@ -15,6 +15,7 @@ const { amountInWords } = require('../shared/amountInWords');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { runList } = require('../shared/listQuery');
+const { assertRefs, skuIdsOf } = require('../shared/ownedRefs');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 /* ── Customer Orders ── */
@@ -61,6 +62,10 @@ exports.createOrder = async (req, res) => {
     adjustment, adjustmentLabel, roundOff, terms, status,
   } = req.body;
   if (!customerId) return res.status(400).json({ error: 'Pick a customer' });
+  /* The customer, and any product on a line, are this company's — the
+     customer read below would otherwise copy another company's terms and
+     state onto this order. */
+  if (!await assertRefs(db, req, res, { customers: [customerId], skus: skuIdsOf(items) })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -136,7 +141,8 @@ exports.getOrderById = async (req, res) => {
     const s = scopedById(req, req.params.id);
     const o = await db.query(`SELECT * FROM customer_orders WHERE ${s.where}`, s.params);
     if (!o.rows[0]) return res.status(404).json({ error: 'Order not found' });
-    const cust = await db.query('SELECT * FROM customers WHERE id = $1', [o.rows[0].customer_id]);
+    const cust = await db.query('SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)',
+      [o.rows[0].customer_id, o.rows[0].owner_id]);
     const items = await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [req.params.id]);
     res.json({ ...o.rows[0], customer: cust.rows[0] || null, items: items.rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -213,6 +219,9 @@ exports.createQuotation = async (req, res) => {
   const { partDescription, quantity, unit, customerOrderItemId } = req.body;
   if (!partDescription) return res.status(400).json({ error: 'Enter the part / material to quote' });
   try {
+    /* The order line it quotes for is this company's: the PO raised from
+       this comparison moves that line's order to In Procurement. */
+    if (!await assertRefs(db, req, res, { customer_order_items: [customerOrderItemId] })) return;
     const { rows } = await db.query(
       `INSERT INTO quotations (owner_id, customer_order_item_id, part_description, quantity, unit)
        VALUES ($1,$2,$3,$4,$5) RETURNING id`,
@@ -259,15 +268,21 @@ exports.deleteQuoteLine = async (req, res) => {
     /* A quote line has no owner of its own — it inherits from the quotation
        it hangs off. So ownership is checked one level up, through the join,
        rather than on the row being deleted. Without this, any tenant could
-       delete a competitor's vendor quote by guessing a line id. */
-    const s = scopedById(req, req.params.id);
-    const parent = await db.query(`SELECT id FROM quotations WHERE ${s.where}`, s.params);
-    if (!parent.rows[0]) return res.status(404).json({ error: 'Quotation not found' });
+       delete a competitor's vendor quote by guessing a line id.
 
+       The route is /quotations/quote/:lineId — there is no :id in it — so
+       scoping on req.params.id looked for quotation "undefined" and every
+       delete answered 404. The line names its quotation; read it from there. */
+    const line = (await db.query(
+      `SELECT ql.id, ql.quotation_id, q.owner_id FROM quote_lines ql
+         JOIN quotations q ON q.id = ql.quotation_id WHERE ql.id = $1`, [req.params.lineId])).rows[0];
+    if (!line || (!isAdmin(req) && String(line.owner_id ?? '') !== String(req.user?.orgId ?? ''))) {
+      return res.status(404).json({ error: 'Quote line not found' });
+    }
     const r = await db.query(
       'DELETE FROM quote_lines WHERE id = $1 AND quotation_id = $2',
-      [req.params.lineId, parent.rows[0].id]);
-    if (!r.rowCount) return res.status(404).json({ error: 'Quote line not found on this quotation' });
+      [line.id, line.quotation_id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'Quote line not found' });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
@@ -310,9 +325,15 @@ exports.generatePO = async (req, res) => {
     /* No project needed: the PO's context is the vendor quote it came from. */
 
     // Trace back to the customer order (quotation → order item → order).
+    /* Only to an order of the quotation's own company. The line id was
+       never checked when the quotation was made, so this could reach
+       another company's order and move it to In Procurement. */
     let customerOrderId = null;
     if (quote.customer_order_item_id) {
-      const oi = await db.query('SELECT customer_order_id FROM customer_order_items WHERE id = $1', [quote.customer_order_item_id]);
+      const oi = await db.query(
+        `SELECT coi.customer_order_id FROM customer_order_items coi
+           JOIN customer_orders co ON co.id = coi.customer_order_id
+          WHERE coi.id = $1 AND co.owner_id = $2`, [quote.customer_order_item_id, quote.owner_id]);
       customerOrderId = oi.rows[0]?.customer_order_id || null;
     }
     /* Same series as POST /po. Hardcoding one company's name into a document
@@ -342,7 +363,7 @@ exports.generatePO = async (req, res) => {
     await db.query('UPDATE quotations SET status = $1 WHERE id = $2', ['PO Raised', req.params.id]);
     // Move the customer order into procurement automatically.
     if (customerOrderId) {
-      await db.query(`UPDATE customer_orders SET status = 'In Procurement' WHERE id = $1 AND status = 'Open'`, [customerOrderId]);
+      await db.query(`UPDATE customer_orders SET status = 'In Procurement' WHERE id = $1 AND status = 'Open' AND owner_id = $2`, [customerOrderId, quote.owner_id]);
     }
     res.json({ poId: rows[0].id, poNumber, customerOrderId, approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required' });
   } catch (e) { res.status(500).json({ error: e.message }); }

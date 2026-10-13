@@ -14,6 +14,7 @@
    Nothing here calls a model. See shared/quoteParser.js for why.
    ══════════════════════════════════════════════════════════════════════ */
 const db = require('../db');
+const fileSafety = require('../shared/fileSafety');
 const { parseQuotation, matchKey, itemSignature, similarity } = require('../shared/quoteParser');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant, can, WRITE } = require('../shared/roles');
@@ -31,6 +32,9 @@ exports.upload = async (req, res) => {
   const owner = ownerOf(req);
   if (owner == null) return res.status(401).json({ error: 'Not signed in' });
   if (!req.file) return res.status(400).json({ error: 'Attach the vendor’s quotation file.' });
+  /* Kept and served later, so it must really be a document, a sheet or a picture. */
+  const kind = fileSafety.detect(req.file.originalname, req.file.buffer);
+  if (!kind) return res.status(400).json({ error: `That kind of file can't be read as a quotation — ${fileSafety.ACCEPTED}.` });
 
   /* A vendor picked from the list must be one of this business's own. */
   let vendorId = null, vendorName = req.body.vendorName || null;
@@ -54,7 +58,7 @@ exports.upload = async (req, res) => {
     const { rows: [att] } = await client.query(
       `INSERT INTO attachments (owner_id, entity_type, entity_id, filename, mime, size_bytes, data)
        VALUES ($1,'vendor_quotation',0,$2,$3,$4,$5) RETURNING id`,
-      [owner, req.file.originalname, req.file.mimetype, req.file.size, req.file.buffer]);
+      [owner, req.file.originalname, kind.mime, req.file.size, req.file.buffer]);
 
     const t = parsed.totals || {};
     const summed = r2(parsed.lines.reduce((s, l) => s + (Number(l.amount) || 0), 0));
@@ -139,13 +143,10 @@ exports.file = async (req, res) => {
         : 'SELECT mime, data, filename FROM attachments WHERE id = $1 AND owner_id = $2',
       isAdmin(req) ? [q.attachment_id] : [q.attachment_id, owner]);
     if (!a) return res.status(404).json({ error: 'Not found' });
-    res.setHeader('Content-Type', a.mime || 'application/octet-stream');
-    /* inline: a PDF opens in the browser next to the parsed figures rather
-       than landing in Downloads. A spreadsheet will still download, which
-       is the browser's decision, not ours. */
-    res.setHeader('Content-Disposition', `inline; filename="${(a.filename || 'quotation').replace(/"/g, '')}"`);
-    res.setHeader('Cache-Control', 'private, max-age=300');
-    res.send(a.data);
+    /* A PDF or a picture opens beside the parsed figures; anything else
+       downloads. The type is read from the file, with nosniff and a
+       sandbox, so a file cannot run as a page (shared/fileSafety). */
+    fileSafety.send(res, { filename: a.filename || 'quotation', data: a.data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

@@ -22,9 +22,14 @@
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-/** One line's amount, after its own discount. */
+/** One line's amount, after its own discount.
+ *
+ * `targetPrice` when there is no `rate`: the Customer Orders screen has
+ * always sent the price under that name, and reading `rate` alone saved
+ * every order typed there at ₹0 — and the invoice raised from it at ₹0. */
 function lineAmount(it) {
-  const gross = (Number(it.quantity) || 0) * (Number(it.rate) || 0);
+  const rate = it.rate != null && it.rate !== '' ? it.rate : it.targetPrice;
+  const gross = (Number(it.quantity) || 0) * (Number(rate) || 0);
   const d = Number(it.discount) || 0;
   const off = it.discountType === 'flat' ? d : gross * (d / 100);
   return r2(Math.max(gross - off, 0));

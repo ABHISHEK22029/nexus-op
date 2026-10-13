@@ -79,6 +79,7 @@ import { ProjectProvider, useProject } from './context/ProjectContext';
 import { AuthProvider } from './context/AuthContext';
 import { UiConfigProvider } from './context/UiConfigContext';
 import { ToastProvider } from './context/ToastContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
 import ProductTour from './components/ProductTour';
@@ -141,6 +142,12 @@ const NeedsSetup = ({ children }) => {
   return children;
 };
 
+/* A screen that crashes is replaced by a way out; the menu stays. */
+const ScreenBoundary = ({ children }) => {
+  const { pathname } = useLocation();
+  return <ErrorBoundary resetKey={pathname}>{children}</ErrorBoundary>;
+};
+
 const AppLayout = ({ children }) => (
   <ProtectedRoute>
     <NeedsSetup>
@@ -149,7 +156,7 @@ const AppLayout = ({ children }) => (
         <main className="app-main" style={{ position: 'relative' }}>
           <AccountButton />
           <div className="app-page">
-            <RoleRoute>{children}</RoleRoute>
+            <RoleRoute><ScreenBoundary>{children}</ScreenBoundary></RoleRoute>
           </div>
         </main>
         <ProductTour />
@@ -172,7 +179,9 @@ const AppRoutes = () => {
      before the login form can render. The fallback is deliberately quiet —
      a spinner that flashes for eighty milliseconds is worse than nothing,
      and these chunks are small now that they are separate. */
+  const { pathname } = useLocation();
   return (
+    <ErrorBoundary resetKey={pathname}>
     <Suspense fallback={<div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading…</div>}>
     <Routes>
       {/* ── Auth ── */}
@@ -282,6 +291,7 @@ const AppRoutes = () => {
       <Route path="*"                  element={<NotFound />} />
     </Routes>
     </Suspense>
+    </ErrorBoundary>
   );
 };
 

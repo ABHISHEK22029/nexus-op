@@ -298,6 +298,13 @@ function effectiveRoleNames(orgId = null) {
 
 /** Does this role see across workspaces? Only the platform role should. */
 function isCrossTenant(role) {
+  if (!role) return false;
+  /* A role an organisation defined for itself is never cross-tenant,
+     whatever it is called. Without this, an org that named a role "Admin"
+     had it resolved through LEGACY to Administrator — and everyone holding
+     it could read every other company's data. A platform role is never
+     org-defined, so a name any organisation uses is not one. */
+  for (const own of Object.values(ORG_OVERLAY || {})) if (own && own[role]) return false;
   return roleDef(normaliseRole(role))?.crossTenant === true;
 }
 

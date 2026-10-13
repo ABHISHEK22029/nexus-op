@@ -4,6 +4,7 @@
    frontend fetches with its token and turns the response into a blob.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const fileSafety = require('../shared/fileSafety');
 const { assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 
@@ -28,6 +29,11 @@ exports.create = async (req, res) => {
   if (!/^\d+$/.test(String(entityId))) return res.status(400).json({ error: 'entityId must be a record id' });
   try {
     if (!await assertOwned(db, req, res, table, entityId, { columns: 'id' })) return;
+    /* What the file really is, from its own bytes — not what the browser
+       said. An HTML or SVG "attachment" would otherwise run inside the app. */
+    const kind = fileSafety.detect(req.file.originalname, req.file.buffer);
+    if (!kind) return res.status(400).json({ error: `That kind of file can't be attached — ${fileSafety.ACCEPTED} only.` });
+    req.file.mimetype = kind.mime;
     const { rows } = await db.query(
       `INSERT INTO attachments (owner_id, entity_type, entity_id, filename, mime, size_bytes, data)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -73,9 +79,7 @@ exports.download = async (req, res) => {
     const { rows } = await db.query('SELECT filename, mime, data FROM attachments WHERE id = $1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     const f = rows[0];
-    res.setHeader('Content-Type', f.mime || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${(f.filename || 'file').replace(/"/g, '')}"`);
-    res.send(f.data);
+    fileSafety.send(res, { filename: f.filename, data: f.data, cache: null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

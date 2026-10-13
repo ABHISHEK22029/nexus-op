@@ -30,7 +30,9 @@ const adminController = require('./controllers/AdminController');
 const { profileFor } = require('./shared/companyProfile');
 const stockController = require('./controllers/StockController');
 const stockImportController = require('./controllers/StockImportController');
+const vendorImportController = require('./controllers/VendorImportController');
 const passwordResetController = require('./controllers/PasswordResetController');
+const { limit, ip: rlIp, emailOf: rlEmail } = require('./shared/rateLimit');
 const setupController = require('./controllers/SetupController');
 const supplyCategoryController = require('./controllers/SupplyCategoryController');
 const shortfallController = require('./controllers/ShortfallToPoController');
@@ -45,7 +47,8 @@ const { can, isCrossTenant, READ, WRITE, DELETE } = require('./shared/roles');
 const { ACTION_FOR_METHOD, allow } = require('./middleware/permissions');
 const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
-const { andOwner } = require('./shared/ownerScope');
+const { andOwner, assertOwned } = require('./shared/ownerScope');
+const { assertRefs } = require('./shared/ownedRefs');
 const { docNumber, loadProfile, nextSeq, allocatePoNumber } = require('./shared/docNumber');
 const { writePoLines, gatePo, poLinesProblem, notifyApproval } = require('./shared/poLines');
 const { firstProblem, VENDOR_SPEC, CUSTOMER_SPEC, COMPANY_SPEC } = require('./shared/validators');
@@ -56,6 +59,20 @@ const app = express();
    makes req.ip the visitor's address, which the password-reset limits
    count by. Locally there is no proxy, so nothing is trusted. */
 if (process.env.RENDER) app.set('trust proxy', 1);
+app.disable('x-powered-by');
+/* An API answers in JSON or files; none of it is meant to be framed, sniffed
+   into another type, or to leak its URL. A file route sets its own stricter
+   policy on top (shared/fileSafety.js). CORS stays open on purpose: sessions
+   travel in a header, not a cookie, so another site can't borrow one. */
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+  });
+  if (process.env.RENDER) res.set('Strict-Transport-Security', 'max-age=31536000');
+  next();
+});
 app.use(cors());
 app.use(express.json());
 
@@ -125,6 +142,10 @@ app.get('/health', async (req, res) => {
        different question: anything much past 15 minutes means something is
        pinging the service, because Render spins an idle one down. */
     uptimeMinutes: Math.round(process.uptime() / 60),
+    /* Whether sessions are signed with a secret set on the host, or one made
+       up for this run because none was (see middleware/auth.js). Never the
+       secret itself. */
+    sessions: require('./middleware/auth').SECRET_SOURCE,
   };
   if (req.query.db) {
     try {
@@ -167,28 +188,47 @@ app.get('/public/metal-prices', metalPricesController.get);
    Every one of them is scoped inside its SQL rather than by a check that
    follows, so there is no path where a later edit forgets the condition.
    ══════════════════════════════════════════════════════════ */
-app.get('/public/catalogue/photo/:id',            catalogueController.publicPhoto);
-app.get('/public/catalogue/:slug',                catalogueController.publicCatalogue);
-app.get('/public/catalogue/:slug/:productSlug',   catalogueController.publicProduct);
-app.post('/public/catalogue/:slug/enquiry',       catalogueController.publicEnquiry);
+/* Limits on the public doors (shared/rateLimit): reading is generous, an
+   enquiry is ten an hour from one address — each holds a database
+   connection, and the app has four. */
+const publicRead = limit([{ name: 'public-read', max: 300, windowMs: 60 * 1000, key: rlIp }]);
+app.get('/public/catalogue/photo/:id',            publicRead, catalogueController.publicPhoto);
+app.get('/public/catalogue/:slug',                publicRead, catalogueController.publicCatalogue);
+app.get('/public/catalogue/:slug/:productSlug',   publicRead, catalogueController.publicProduct);
+app.post('/public/catalogue/:slug/enquiry',
+  limit([{ name: 'enquiry', max: 10, windowMs: 60 * 60 * 1000, key: rlIp }], 'Too many enquiries from this connection. Try again in an hour, or call the business directly.'),
+  catalogueController.publicEnquiry);
 
 /* A quotation the customer accepts or declines online. Same footing as the
    catalogue: no token, and the link's own 24 random bytes are what decide
    which quotation answers — looked up in the SQL, never by id. */
-app.get('/public/quotations/:token',               salesQuotationController.publicQuote);
-app.post('/public/quotations/:token/respond',      salesQuotationController.publicRespond);
+app.get('/public/quotations/:token',               publicRead, salesQuotationController.publicQuote);
+app.post('/public/quotations/:token/respond',
+  limit([{ name: 'quote-respond', max: 20, windowMs: 60 * 60 * 1000, key: rlIp }]),
+  salesQuotationController.publicRespond);
 
 /* ══════════════════════════════════════════════════════════
    AUTHENTICATION (public: login) + GATE
    Everything registered AFTER app.use(authenticate) requires a
    valid Bearer token. /health and /auth/login stay public.
    ══════════════════════════════════════════════════════════ */
-app.post('/auth/login', authController.login);
-app.post('/auth/register', authController.register);
+/* Sign-in: 10 tries per email and 30 per address in 15 minutes — enough
+   for a person who mistyped, not for someone guessing. */
+app.post('/auth/login',
+  limit([
+    { name: 'login-email', max: 10, windowMs: 15 * 60 * 1000, key: rlEmail },
+    { name: 'login-ip', max: 30, windowMs: 15 * 60 * 1000, key: rlIp },
+  ], 'Too many sign-in attempts. Wait 15 minutes, or reset your password.'),
+  authController.login);
+app.post('/auth/register',
+  limit([{ name: 'register', max: 10, windowMs: 60 * 60 * 1000, key: rlIp }], 'Too many sign-ups from this connection. Try again in an hour.'),
+  authController.register);
 /* Both unauthenticated by necessity: an invited person has no password
    yet, which is the point. The token is the credential. */
 app.get('/auth/invite/:token', authController.inviteInfo);
-app.post('/auth/accept-invite', authController.acceptInvite);
+app.post('/auth/accept-invite',
+  limit([{ name: 'accept-invite', max: 20, windowMs: 60 * 60 * 1000, key: rlIp }]),
+  authController.acceptInvite);
 /* "Forgot password?" — unauthenticated by necessity, like the invite. */
 app.get('/auth/reset-available',  passwordResetController.available);
 app.post('/auth/forgot-password', passwordResetController.forgot);
@@ -197,24 +237,39 @@ app.post('/auth/reset-password',  passwordResetController.reset);
 app.use(authenticate); // ⬇ all routes below are protected
 
 app.get('/auth/me', authController.me);
+/* Ten tries per person in 15 minutes: an open session should not be a
+   way to guess the password behind it. */
+app.post('/auth/change-password',
+  limit([{ name: 'change-password', max: 10, windowMs: 15 * 60 * 1000, key: (req) => `u:${req.user?.id}` }],
+    'Too many tries. Wait 15 minutes and try again.'),
+  authController.changePassword);
 
 /* Per-user workspace isolation. Any request carrying a projectId (query or
    body) must reference a project the caller owns — admins bypass. This one
    guard covers every project-scoped endpoint automatically. */
 async function scopeProjectAccess(req, res, next) {
   if (isCrossTenant(req.user?.role)) return next();
-  const pid = req.query.projectId || (req.body && req.body.projectId);
-  if (!pid) return next(); // not a project-scoped request
-  /* 0 is how a screen with no project selected asks for "nothing" (so
-     the list cannot quietly widen to every project). It owns nothing and
-     matches nothing — an empty list, not a 404 that every project screen
-     reported as a failed request. */
-  if (String(pid) === '0' && req.method === 'GET') return next();
+  /* Every place a project id can ride in, not the first one found. This
+     read `query || body`, so a request with your own project in the query
+     carried another company's in the body straight past it — and the body
+     is the one that gets written. `project_id` is the spelling expenses use. */
+  const b = req.body || {};
+  const pids = [...new Set([req.query.projectId, req.query.project_id, b.projectId, b.project_id]
+    .filter(Boolean).map(String))];
+  if (!pids.length) return next(); // not a project-scoped request
   try {
-    const { rows } = await db.query('SELECT owner_id FROM projects WHERE id = $1', [pid]);
-    if (!rows[0]) return res.status(404).json({ error: 'Project not found' });
-    if (rows[0].owner_id !== req.user.orgId) {
-      return res.status(403).json({ error: 'You do not have access to this project' });
+    for (const pid of pids) {
+      /* 0 is how a screen with no project selected asks for "nothing" (so
+         the list cannot quietly widen to every project). It owns nothing and
+         matches nothing — an empty list, not a 404 that every project screen
+         reported as a failed request. */
+      if (pid === '0' && req.method === 'GET') continue;
+      if (!/^\d{1,15}$/.test(pid)) return res.status(404).json({ error: 'Project not found' });
+      const { rows } = await db.query('SELECT owner_id FROM projects WHERE id = $1', [pid]);
+      if (!rows[0]) return res.status(404).json({ error: 'Project not found' });
+      if (rows[0].owner_id !== req.user.orgId) {
+        return res.status(403).json({ error: 'You do not have access to this project' });
+      }
     }
     next();
   } catch (err) {
@@ -422,9 +477,18 @@ app.get('/users', allow('users', 'read'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.patch('/users/:id', allow('users', 'write'), async (req, res) => {
-  const allowed = ['name', 'role', 'department', 'is_active'];
-  const roles = ['Admin', 'Manager', 'Staff', 'User', 'Viewer'];
-  if (req.body.role && !roles.includes(req.body.role)) return res.status(400).json({ error: `role must be one of ${roles.join(', ')}` });
+  /* No role changes here. This legacy route accepted 'Admin' — which reads
+     as the platform Administrator — and let a founder set it on their own
+     row: any new sign-up could make itself the administrator of every
+     company. Roles are changed through /admin/users/:id/role, which checks
+     who may give what. */
+  if ('role' in (req.body || {})) return res.status(400).json({ error: 'Change roles from Team → the person → Role' });
+  const allowed = ['name', 'department', 'is_active'];
+  /* and nobody inside a company switches its founder off */
+  if ('is_active' in req.body && !isCrossTenant(req.user?.role)
+      && Number(req.params.id) === Number(req.user?.orgId ?? req.user?.id) && req.user?.id !== Number(req.params.id)) {
+    return res.status(403).json({ error: "The company's founder can't be switched off from here" });
+  }
   const sets = allowed.filter(c => c in req.body);
   if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
   try {
@@ -475,17 +539,26 @@ app.post('/milestones', allow('milestones', 'write'), workOrderController.create
 app.patch('/milestones/:id', async (req, res) => {
   const { actualPercent, remarks } = req.body;
   try {
+    /* A milestone has no owner of its own: it is its work order's, and the
+       work order is its company's (an old one with no owner, its project's).
+       By id alone, any company could move another's progress figures. */
+    const params = [req.params.id];
+    const mine = isCrossTenant(req.user?.role) ? ''
+      : ` AND COALESCE(wo.owner_id, p.owner_id) = $${params.push(req.user?.orgId ?? req.user?.id ?? -1)}`;
+    const ms = (await db.query(
+      `SELECT m.id, wo."projectId" FROM milestones m
+         JOIN work_orders wo ON wo.id = m."workOrderId"
+         LEFT JOIN projects p ON p.id = wo."projectId"
+        WHERE m.id = $1${mine}`, params)).rows[0];
+    if (!ms) return res.status(404).json({ error: 'Milestone not found' });
+
     const result = await db.query(
       `UPDATE milestones SET "actualPercent" = $1, remarks = $2 WHERE id = $3 RETURNING id`,
-      [actualPercent, remarks || null, req.params.id]
+      [actualPercent, remarks || null, ms.id]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Milestone not found' });
 
-    const woResult = await db.query(
-      `SELECT wo."projectId" FROM work_orders wo JOIN milestones m ON m."workOrderId" = wo.id WHERE m.id = $1`,
-      [req.params.id]
-    );
-    await logActivity(woResult.rows[0]?.projectId, 'MILESTONE_UPDATED',
+    await logActivity(ms.projectId, 'MILESTONE_UPDATED',
       `Milestone #${req.params.id} updated to ${actualPercent}% complete`, req.user?.orgId ?? req.user?.id ?? null);
 
     res.json({ success: true, id: Number(req.params.id), actualPercent });
@@ -647,8 +720,10 @@ app.get('/po/:id', async (req, res) => {
               v.name as "vendorName", v.address as "vendorAddress", v.gstin as "vendorGstin", v."contactName", v."contactPhone", v."contactEmail",
               p.name as "projectName", p."clientName" as "clientName"
        FROM purchase_orders po
-       LEFT JOIN vendors v ON po."vendorId" = v.id
-       LEFT JOIN projects p ON po."projectId" = p.id
+       /* The PO's own company's vendor and project: a PO raised against
+          another company's vendor id printed that vendor's details here. */
+       LEFT JOIN vendors v ON po."vendorId" = v.id AND (v.owner_id = po.owner_id OR v.owner_id IS NULL)
+       LEFT JOIN projects p ON po."projectId" = p.id AND (p.owner_id = po.owner_id OR p.owner_id IS NULL)
        WHERE po.id = $1`, [req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'PO not found' });
@@ -708,6 +783,12 @@ app.post('/po', async (req, res) => {
     return res.status(400).json({ error: 'items, when sent, must be a list of at least one line' });
   const lineProblem = items ? poLinesProblem(items) : null;
   if (lineProblem) return res.status(400).json({ error: lineProblem });
+  /* The vendor (and work order, when there is one) are this company's. The
+     vendorId was stored as sent, and the PO screen then printed another
+     company's vendor — address, GSTIN and contact — as the supplier. */
+  try {
+    if (!await assertRefs(db, req, res, { vendors: [vendorId], work_orders: [workOrderId] })) return;
+  } catch (err) { return res.status(500).json({ error: err.message }); }
 
   /* The PO and its lines in ONE transaction. They used to be two requests
      — create the PO, then post its lines — so a dropped connection or a
@@ -1126,6 +1207,10 @@ app.get('/indent', async (req, res) => {
 app.post('/indent', async (req, res) => {
   const { projectId, workOrderId, boqId, requestedQuantity, requiredDate, chainage } = req.body;
   try {
+    /* The BOQ line and work order are this company's. The indent list joins
+       the BOQ line for its code and description, so another company's
+       boqId put their item on this company's screen. */
+    if (!await assertRefs(db, req, res, { boq_items: [boqId], work_orders: [workOrderId] })) return;
     const { rows } = await db.query(
             /* owner_id, or the row is invisible to the organisation that
          created it the moment the list is scoped — the same silent hole
@@ -1148,10 +1233,13 @@ app.put('/indent/:id/status', async (req, res) => {
   if (!allowed.includes(status))
     return res.status(400).json({ error: `Status must be one of: ${allowed.join(', ')}` });
   try {
-    const indentResult = await db.query('SELECT * FROM indents WHERE id = $1', [req.params.id]);
+    /* Yours only: by id alone any company could approve or reject another's
+       indent, and the approval handed back the indent itself. */
+    const params = [req.params.id];
+    const indentResult = await db.query(`SELECT * FROM indents WHERE id = $1${andOwner(req, params)}`, params);
     const indent = indentResult.rows[0];
     if (!indent) return res.status(404).json({ error: 'Indent not found' });
-    await db.query('UPDATE indents SET status = $1 WHERE id = $2', [status, req.params.id]);
+    await db.query('UPDATE indents SET status = $1 WHERE id = $2', [status, indent.id]);
     await logActivity(indent.projectId, 'INDENT_UPDATED', `Indent #${req.params.id} status → ${status}`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({
       success: true, status,
@@ -1276,6 +1364,7 @@ app.delete('/inventory/lists/:id',   stockImportController.deleteList);
 app.get('/inventory/uploads',        stockImportController.uploads);
 app.post('/inventory/import/plan',   upload.single('file'), stockImportController.plan);
 app.post('/inventory/import/commit', upload.single('file'), stockImportController.commit);
+app.post('/vendors/import', upload.single('file'), vendorImportController.importVendors);
 app.get('/inventory/:id/movements', stockController.forItem);
 app.post('/inventory',              stockController.create);
 app.post('/inventory/:id/adjust',   stockController.adjust);
@@ -1470,6 +1559,8 @@ app.get('/mb', async (req, res) => {
 app.post('/mb', async (req, res) => {
   const { projectId, workOrderId, boqId, chainage, length, width, depth, measuredQuantity } = req.body;
   try {
+    /* Same as an indent: the BOQ line and work order are this company's. */
+    if (!await assertRefs(db, req, res, { boq_items: [boqId], work_orders: [workOrderId] })) return;
     const { rows } = await db.query(
             /* owner_id, or the row is invisible to the organisation that
          created it the moment the list is scoped — the same silent hole
@@ -1499,16 +1590,27 @@ app.get('/production',              productionController.getOrders);
 app.post('/production',             productionController.createOrder);
 
 /* ── Bill of Materials (per SKU) ── */
+/* The product must be yours. sku_bom has no owner of its own, so by id
+   alone any company could read another's recipe — or delete and replace
+   it, which changes their material requirements and production costs. */
 app.get('/skus/:id/bom', async (req, res) => {
   try {
+    const sku = await assertOwned(db, req, res, 'skus', req.params.id, { columns: 'id, owner_id' });
+    if (!sku) return;
     const { rows } = await db.query(
       `SELECT b.*, rm.name AS raw_material_name FROM sku_bom b
-         LEFT JOIN raw_materials rm ON rm.id = b.raw_material_id WHERE b.sku_id = $1 ORDER BY b.id`, [req.params.id]);
+         LEFT JOIN raw_materials rm ON rm.id = b.raw_material_id AND (rm.owner_id = $2 OR rm.owner_id IS NULL)
+        WHERE b.sku_id = $1 ORDER BY b.id`, [sku.id, sku.owner_id]);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.put('/skus/:id/bom', async (req, res) => {
-  const lines = req.body.lines || [];
+  const lines = Array.isArray(req.body.lines) ? req.body.lines : [];
+  try {
+    if (!await assertOwned(db, req, res, 'skus', req.params.id, { columns: 'id' })) return;
+    /* …and every material a line names is yours too. */
+    if (!await assertRefs(db, req, res, { raw_materials: lines.map(l => l?.rawMaterialId) })) return;
+  } catch (e) { return res.status(500).json({ error: e.message }); }
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -1698,6 +1800,8 @@ app.get('/sales-invoices',             salesInvoiceController.list);
 app.post('/sales-invoices',            salesInvoiceController.create);
 app.get('/sales-invoices/:id',         salesInvoiceController.getById);
 app.post('/sales-invoices/:id/payment', salesInvoiceController.addPayment);
+/* DELETE, so the RBAC gate above checks sales-invoices delete. */
+app.delete('/sales-invoices/:id/payments/:paymentId', salesInvoiceController.reversePayment);
 app.patch('/sales-invoices/:id/status', salesInvoiceController.setStatus);
 app.patch('/sales-invoices/:id',        salesInvoiceController.update);
 app.delete('/sales-invoices/:id',      salesInvoiceController.remove);
@@ -1724,7 +1828,10 @@ function billTransition(action) {
   return async (req, res) => {
     const tr = BILL_TRANSITIONS[action];
     try {
-      const billResult = await db.query('SELECT * FROM bills WHERE id = $1', [req.params.id]);
+      /* Yours only. Read by id alone, any company could submit, approve,
+         pay or reject another's RA bill — "Paid" on a bill nobody paid. */
+      const params = [req.params.id];
+      const billResult = await db.query(`SELECT * FROM bills WHERE id = $1${andOwner(req, params)}`, params);
       const bill = billResult.rows[0];
       if (!bill) return res.status(404).json({ error: 'Bill not found' });
       if (!tr.from.includes(bill.status)) {
@@ -1747,7 +1854,8 @@ app.patch('/bills/:id/pay', billTransition('pay'));
 app.patch('/bills/:id/reject', billTransition('reject'));
 app.delete('/bills/:id', async (req, res) => {
   try {
-    const r = await db.query('SELECT status FROM bills WHERE id = $1', [req.params.id]);
+    const params = [req.params.id];
+    const r = await db.query(`SELECT status FROM bills WHERE id = $1${andOwner(req, params)}`, params); // yours only
     if (!r.rowCount) return res.status(404).json({ error: 'Bill not found' });
     if (!['Draft', 'Rejected'].includes(r.rows[0].status))
       return res.status(409).json({ error: `Only Draft or Rejected bills can be deleted (this is '${r.rows[0].status}').` });
@@ -1830,13 +1938,47 @@ function registerCrud(route, table, cols, logType) {
   });
 }
 
+/* The generic edit stores any id it is sent. One that points at another
+   record must point at one of yours — the same check as on create
+   (shared/ownedRefs). Runs before the edit, as checkFields does. */
+const checkRefs = (map) => async (req, res, next) => {
+  const refs = {};
+  for (const [col, kind] of Object.entries(map)) if (req.body && col in req.body) (refs[kind] ||= []).push(req.body[col]);
+  try { if (await assertRefs(db, req, res, refs)) next(); } catch (e) { next(e); }
+};
+
+/* A goods receipt that has moved stock is a ledger event. The generic edit
+   could change its receivedQuantity, and delete could remove it, without
+   touching the stock it added or the purchase order it counted against —
+   so the shelf, the ledger and the PO each told a different story. Reading
+   one is unchanged; a receipt that never moved stock (older rows) can still
+   be corrected. */
+const grnMovedStock = async (req, res, next) => {
+  try {
+    const own = ownerClause(req, 2);
+    const g = (await db.query(`SELECT id FROM grn WHERE id = $1${own.sql}`, [req.params.id, ...own.params])).rows[0];
+    if (!g) return res.status(404).json({ error: 'Record not found' });
+    const moved = (await db.query(
+      `SELECT 1 FROM stock_movements WHERE ref_type = 'grn' AND ref_id = $1 LIMIT 1`, [g.id])).rows[0];
+    if (moved) {
+      return res.status(409).json({ error: "A goods receipt that has moved stock can't be edited or deleted. Record a correction with a stock count instead." });
+    }
+    next();
+  } catch (e) { next(e); }
+};
+
 registerCrud('projects', 'projects', ['name', 'clientName', 'type', 'startDate', 'endDate', 'status'], 'PROJECT_UPDATED');
 app.patch('/vendors/:id', checkFields('vendors', VENDOR_SPEC, ['gstin', 'pan']));
 registerCrud('vendors', 'vendors', VENDOR_COLUMNS, 'VENDOR_UPDATED');
+app.patch('/work-orders/:id', checkRefs({ vendorId: 'vendors', boqId: 'boq_items' }));
 registerCrud('work-orders', 'work_orders', ['name', 'vendorId', 'boqId', 'startDate', 'endDate', 'contractValue', 'status'], 'WO_UPDATED');
 registerCrud('boq', 'boq_items', ['itemCode', 'description', 'unit', 'estimatedQuantity', 'rate'], 'BOQ_UPDATED');
+app.patch('/indent/:id', checkRefs({ workOrderId: 'work_orders', boqId: 'boq_items' }));
 registerCrud('indent', 'indents', ['workOrderId', 'boqId', 'requestedQuantity', 'requiredDate', 'chainage', 'status'], 'INDENT_UPDATED');
+app.patch('/mb/:id', checkRefs({ workOrderId: 'work_orders', boqId: 'boq_items' }));
 registerCrud('mb', 'measurement_book', ['boqId', 'workOrderId', 'chainage', 'length', 'width', 'depth', 'measuredQuantity'], 'MB_UPDATED');
+app.patch('/grn/:id', grnMovedStock);
+app.delete('/grn/:id', grnMovedStock);
 registerCrud('grn', 'grn', ['vehicleNumber', 'batchNumber', 'chainage', 'receivedQuantity'], 'GRN_UPDATED');
 
 /* ══════════════════════════════════════════════════════════
@@ -1968,7 +2110,51 @@ app.get('/dashboard', async (req, res) => {
     ];
 
     const t = totals.rows[0];
+
+    /* What the business has sold, from its tax invoices. "Total Billed"
+       above reads the contracting RA `bills` table, so a fabricator — whose
+       billing is all sales invoices — saw ₹0 on the home screen.
+
+       Always the company's own, whichever project is picked: invoices are
+       not raised against projects. Cancelled invoices are out; a draft stays in: nothing moves an invoice out of Draft except the status menu, so most real invoices are drafts. "This year" is the Indian financial
+       year, April to March, by the date in India; received is the money
+       that came in this year. Outstanding and overdue are as of today. */
+    const salesParams = [];
+    const salesOwner = andOwner(req, salesParams);
+    const s = (await run(`
+      WITH fy AS (
+        SELECT make_date(EXTRACT(YEAR FROM d)::int - CASE WHEN EXTRACT(MONTH FROM d) < 4 THEN 1 ELSE 0 END, 4, 1) AS start,
+               d AS today
+          FROM (SELECT (NOW() AT TIME ZONE 'Asia/Kolkata')::date AS d) x
+      ), issued AS (
+        SELECT id, net_amount, COALESCE(amount_paid, 0) AS paid, due_date,
+               COALESCE(invoice_date, (created_at AT TIME ZONE 'Asia/Kolkata')::date) AS on_date
+          FROM sales_invoices WHERE status <> 'Cancelled' ${salesOwner}
+      )
+      SELECT fy.start AS fy_start,
+        (SELECT COALESCE(SUM(net_amount), 0) FROM issued
+          WHERE on_date >= fy.start AND on_date < fy.start + INTERVAL '1 year') AS billed,
+        (SELECT COALESCE(SUM(p.amount), 0) FROM sales_payments p JOIN issued i ON i.id = p.sales_invoice_id
+          WHERE COALESCE(p.paid_date, (p.created_at AT TIME ZONE 'Asia/Kolkata')::date) >= fy.start
+            AND COALESCE(p.paid_date, (p.created_at AT TIME ZONE 'Asia/Kolkata')::date) < fy.start + INTERVAL '1 year') AS received,
+        (SELECT COALESCE(SUM(GREATEST(net_amount - paid, 0)), 0) FROM issued) AS outstanding,
+        (SELECT COUNT(*) FROM issued WHERE due_date < fy.today AND net_amount - paid > 0.005) AS overdue_count,
+        (SELECT COALESCE(SUM(net_amount - paid), 0) FROM issued WHERE due_date < fy.today AND net_amount - paid > 0.005) AS overdue_amount,
+        (SELECT COUNT(*) FROM bills WHERE TRUE ${salesOwner}) AS ra_bills
+      FROM fy`, salesParams)).rows[0];
+    const fyFrom = Number(String(s.fy_start).slice(0, 4));
+
     res.json({
+      sales: {
+        fyStart:       s.fy_start,
+        fyLabel:       `FY ${fyFrom}-${String(fyFrom + 1).slice(2)}`,
+        billed:        Number(s.billed),
+        received:      Number(s.received),
+        outstanding:   Number(s.outstanding),
+        overdueCount:  parseInt(s.overdue_count),
+        overdueAmount: Number(s.overdue_amount),
+      },
+      hasRaBills:      parseInt(s.ra_bills) > 0,
       totalVendors:    parseInt(t.vendors),
       totalPOs:        parseInt(t.pos),
       deliveredPOs:    parseInt(t.delivered),

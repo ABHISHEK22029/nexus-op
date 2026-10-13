@@ -12,7 +12,9 @@ const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
 const { toStateCode, toStateName, isInterstate } = require('../shared/gstStates');
 const { syncOrderDelivery } = require('../shared/orderProgress');
+const { lineAmount } = require('../shared/orderTotals');
 const { prepareLines, checkAdjustments } = require('../shared/lineChecks');
+const { assertRefs } = require('../shared/ownedRefs');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
@@ -116,7 +118,11 @@ exports.prefill = async (req, res) => {
       const qty = Number(it.quantity) || 0;
       const rate = Number(it.rate ?? it.target_price) || 0;
       const gross = r2(qty * rate);
-      const net = it.amount == null ? gross : Number(it.amount);
+      /* From the line's own discount, never from gross − stored amount.
+         Orders typed on the Customer Orders screen were saved with an
+         amount of 0, and that difference became a discount of the whole
+         line — the invoice opened at ₹0 taxable. */
+      const net = lineAmount({ quantity: qty, rate, discount: it.discount, discountType: it.discount_type });
       lineDiscounts += Math.max(0, gross - net);
       return { description: it.description, hsn: it.hsn || '', uom: it.unit || 'nos', quantity: it.quantity, rate };
     });
@@ -217,6 +223,10 @@ exports.create = async (req, res) => {
     if (chk.error) return res.status(400).json({ error: chk.error });
     typed = chk.value;
   }
+  /* The customer and the order are this company's. Neither was checked, so
+     another company's customerId came back on the new invoice as their
+     name, GSTIN and address, and their order's delivery was re-synced. */
+  if (!await assertRefs(db, req, res, { customers: [customerId], customer_orders: [customerOrderId] })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -295,7 +305,7 @@ exports.create = async (req, res) => {
        Now both paths ask the same function, which only looks at what has
        actually been dispatched, and leaves the status alone when nothing
        has. */
-    if (customerOrderId) await syncOrderDelivery(client, customerOrderId);
+    if (customerOrderId) await syncOrderDelivery(client, customerOrderId, isAdmin(req) ? null : req.user?.orgId);
     await client.query('COMMIT');
     res.json({ id: invId, invoiceNumber: invNumber, net: t.net });
   } catch (e) {
@@ -325,10 +335,14 @@ exports.list = async (req, res) => {
       /* Totals over the whole filtered set, not the page. The page header
          sums these; summing the returned rows would make "Total Billed"
          silently mean "billed on page 1" once pagination kicks in. */
+      /* A cancelled invoice is owed nothing, so it is out of the money.
+         A draft stays in: nothing moves an invoice out of Draft except the
+         status menu, so most real invoices are drafts, and leaving them out
+         would empty these totals. That changes with an Issue step. */
       summary: `COUNT(*)::int AS count,
-                COALESCE(SUM(net_amount),0)::numeric AS billed,
-                COALESCE(SUM(COALESCE(amount_paid,0)),0)::numeric AS received,
-                COALESCE(SUM(GREATEST(net_amount - COALESCE(amount_paid,0), 0)),0)::numeric AS outstanding`,
+                COALESCE(SUM(net_amount) FILTER (WHERE status <> 'Cancelled'),0)::numeric AS billed,
+                COALESCE(SUM(COALESCE(amount_paid,0)) FILTER (WHERE status <> 'Cancelled'),0)::numeric AS received,
+                COALESCE(SUM(GREATEST(net_amount - COALESCE(amount_paid,0), 0)) FILTER (WHERE status <> 'Cancelled'),0)::numeric AS outstanding`,
     });
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -342,12 +356,16 @@ exports.getById = async (req, res) => {
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
     const items = (await db.query('SELECT * FROM sales_invoice_items WHERE sales_invoice_id = $1 ORDER BY sort_order', [req.params.id])).rows;
     const payments = (await db.query('SELECT * FROM sales_payments WHERE sales_invoice_id = $1 ORDER BY id', [req.params.id])).rows;
-    const customer = inv.customer_id ? (await db.query('SELECT * FROM customers WHERE id = $1', [inv.customer_id])).rows[0] : null;
+    /* The invoice's own company's customer and order only. An invoice
+       pointing at another company's customer printed that customer here. */
+    const customer = inv.customer_id ? (await db.query(
+      'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [inv.customer_id, inv.owner_id])).rows[0] : null;
     /* The order's own number and the customer's PO reference, for the
        face of the invoice — it printed "Order Ref: #2845", a database id
        that means nothing to the customer's accounts team. */
     const order = inv.customer_order_id
-      ? (await db.query('SELECT order_number, customer_po_ref FROM customer_orders WHERE id = $1', [inv.customer_order_id])).rows[0] || null
+      ? (await db.query('SELECT order_number, customer_po_ref FROM customer_orders WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)',
+        [inv.customer_order_id, inv.owner_id])).rows[0] || null
       : null;
     let company = null;
     try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
@@ -377,10 +395,15 @@ exports.addPayment = async (req, res) => {
      * Read inside the transaction and FOR UPDATE, or two payments landing
      * together each see the old total and both pass. */
     const cur = (await client.query(
-      `SELECT s.net_amount,
+      `SELECT s.net_amount, s.status,
               COALESCE((SELECT SUM(amount) FROM sales_payments WHERE sales_invoice_id = s.id), 0) AS paid
          FROM sales_invoices s WHERE s.id = $1 FOR UPDATE`,
       [req.params.id])).rows[0];
+    /* A cancelled invoice is not owed, so nothing is received against it. */
+    if (cur?.status === 'Cancelled') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This invoice is cancelled, so no payment can be recorded against it.' });
+    }
     if (cur) {
       const net = Number(cur.net_amount || 0);
       const already = Number(cur.paid || 0);
@@ -443,12 +466,18 @@ const INVOICE_DRAFT_FIELDS = ['invoice_number', 'invoice_date', 'due_date', 'dis
 const INVOICE_ISSUED_FIELDS = ['notes', 'terms', 'due_date', 'eway_bill_no'];
 
 exports.update = async (req, res) => {
+  /* A Draft may change its customer — to one of this company's. */
+  if (!await assertRefs(db, req, res, { customers: [req.body?.customer_id] })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
     const s = scopedById(req, req.params.id);
     const inv = (await client.query(`SELECT * FROM sales_invoices WHERE ${s.where}`, s.params)).rows[0];
     if (!inv) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Invoice not found' }); }
+    if (inv.status === 'Cancelled') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This invoice is cancelled and can no longer be changed.' });
+    }
 
     const draft = inv.status === 'Draft';
     const allowed = draft ? INVOICE_DRAFT_FIELDS : INVOICE_ISSUED_FIELDS;
@@ -549,23 +578,134 @@ exports.update = async (req, res) => {
   } finally { client.release(); }
 };
 
+/* PATCH /sales-invoices/:id/status — what a person may set by hand.
+ *
+ * Paid and Partially Paid are not choices. They are what the payments
+ * recorded against the invoice say, and only addPayment and reversePayment
+ * set them. Set by hand, an invoice read "Paid" with ₹0 received, and the
+ * reminders, the receivables and the dashboard all believed it.
+ *
+ *   Draft      only while nothing has been received. Once money is in, the
+ *              invoice is a fact, corrected with a credit or debit note.
+ *   Sent       issued.
+ *   Cancelled  an invoice nothing has been paid against. It keeps its
+ *              number, so the series has no gap, and drops out of
+ *              receivables, reminders and every total. Final.
+ */
+const MANUAL_STATUSES = ['Draft', 'Sent', 'Cancelled'];
+
 exports.setStatus = async (req, res) => {
-  const { status } = req.body;
-  const allowed = ['Draft', 'Sent', 'Partially Paid', 'Paid'];
-  if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
+  const { status } = req.body || {};
+  if (status === 'Paid' || status === 'Partially Paid') {
+    return res.status(400).json({ error: `${status} follows the payments recorded against the invoice. Record a payment instead.` });
+  }
+  if (!MANUAL_STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of ${MANUAL_STATUSES.join(', ')}` });
+  if (!await assertOwned(db, req, res, 'sales_invoices', req.params.id, { columns: 'id' })) return;
+  const client = await db.getClient();
   try {
-    if (!await assertOwned(db, req, res, 'sales_invoices', req.params.id, { columns: 'id' })) return;
-    const r = await db.query('UPDATE sales_invoices SET status = $1 WHERE id = $2', [status, req.params.id]);
-    if (!r.rowCount) return res.status(404).json({ error: 'not found' });
+    await client.query('BEGIN');
+    /* Locked, so a payment landing at the same moment is either seen here
+       or waits until the status has changed. */
+    const inv = (await client.query(
+      `SELECT s.id, s.status, s.invoice_number, s.owner_id, COALESCE(s.amount_paid, 0) AS amount_paid,
+              (SELECT COUNT(*)::int FROM sales_payments WHERE sales_invoice_id = s.id) AS payments
+         FROM sales_invoices s WHERE s.id = $1 FOR UPDATE`, [req.params.id])).rows[0];
+    if (!inv) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Invoice not found' }); }
+    if (inv.status === status) { await client.query('ROLLBACK'); return res.json({ success: true, status }); }
+
+    const refuse = async (error) => {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error, status: inv.status });
+    };
+    if (inv.status === 'Cancelled') {
+      return await refuse('This invoice is cancelled. It keeps its number; raise a new invoice instead.');
+    }
+    const received = inv.payments > 0 || Number(inv.amount_paid) > 0.005;
+    if (received) {
+      return await refuse(status === 'Draft'
+        ? 'Money has been received against this invoice, so it cannot go back to draft. Reverse its payments first, or correct it with a credit note.'
+        : status === 'Cancelled'
+          ? 'Money has been received against this invoice, so it cannot be cancelled. Reverse its payments first.'
+          : 'This invoice’s status follows the payments recorded against it.');
+    }
+
+    await client.query('UPDATE sales_invoices SET status = $1 WHERE id = $2', [status, inv.id]);
+    if (status === 'Cancelled') {
+      await client.query(
+        `INSERT INTO activities ("projectId", type, description, timestamp, owner_id) VALUES (NULL, 'INVOICE_CANCELLED', $1, NOW(), $2)`,
+        [`Invoice ${inv.invoice_number} cancelled — it keeps its number and is no longer owed`, inv.owner_id]);
+    }
+    await client.query('COMMIT');
     res.json({ success: true, status });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+};
+
+/* DELETE /sales-invoices/:id/payments/:paymentId — take back a payment.
+ *
+ * A receipt typed against the wrong invoice, or a cheque that bounced, had
+ * no way back: the invoice stayed Paid and the money stayed "received". The
+ * payment row goes, amount_paid and the status are worked out again from
+ * what is left (Paid → Partially Paid → Sent), and the activity log keeps
+ * what was reversed, from when, and why — so the reason is required. */
+exports.reversePayment = async (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'Say why this payment is being reversed. It goes on the invoice’s record.' });
+  if (!await assertOwned(db, req, res, 'sales_invoices', req.params.id, { columns: 'id' })) return;
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const inv = (await client.query(
+      'SELECT id, invoice_number, owner_id, net_amount FROM sales_invoices WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!inv) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Invoice not found' }); }
+    /* The payment must be one of THIS invoice's, or any payment id could be
+       deleted through an invoice the caller happens to own. */
+    const gone = (await client.query(
+      `DELETE FROM sales_payments WHERE id = $1 AND sales_invoice_id = $2
+       RETURNING amount, mode, reference, COALESCE(paid_date, created_at::date)::text AS on_date`,
+      [req.params.paymentId, inv.id])).rows[0];
+    if (!gone) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'That payment is not on this invoice' }); }
+
+    const paid = Number((await client.query(
+      'SELECT COALESCE(SUM(amount), 0) s FROM sales_payments WHERE sales_invoice_id = $1', [inv.id])).rows[0].s);
+    const status = paid <= 0 ? 'Sent' : paid >= Number(inv.net_amount || 0) ? 'Paid' : 'Partially Paid';
+    await client.query('UPDATE sales_invoices SET amount_paid = $1, status = $2 WHERE id = $3', [r2(paid), status, inv.id]);
+
+    const amt = `₹${Number(gone.amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    const via = [gone.mode, gone.reference && `ref ${gone.reference}`].filter(Boolean).join(', ');
+    await client.query(
+      `INSERT INTO activities ("projectId", type, description, timestamp, owner_id) VALUES (NULL, 'PAYMENT_REVERSED', $1, NOW(), $2)`,
+      [`Payment of ${amt} received on ${gone.on_date}${via ? ` (${via})` : ''} reversed on invoice ${inv.invoice_number} — ${reason.slice(0, 300)}`,
+       inv.owner_id]);
+    await client.query('COMMIT');
+    res.json({ success: true, reversed: r2(gone.amount), amountPaid: r2(paid), status });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 };
 
 exports.remove = async (req, res) => {
   try {
     if (!await assertOwned(db, req, res, 'sales_invoices', req.params.id, { columns: 'id' })) return;
-    const r = await db.query('DELETE FROM sales_invoices WHERE id = $1', [req.params.id]);
-    if (!r.rowCount) return res.status(404).json({ error: 'not found' });
+    /* Not while money is recorded against it. The payments went with the
+       invoice (ON DELETE CASCADE), so a paid invoice could be deleted and
+       the receipt with it — the money simply stopped existing. The check
+       is in the DELETE itself, so a payment arriving meanwhile is not
+       lost either. */
+    const r = await db.query(
+      `DELETE FROM sales_invoices s WHERE s.id = $1
+          AND COALESCE(s.amount_paid, 0) <= 0.005
+          AND NOT EXISTS (SELECT 1 FROM sales_payments p WHERE p.sales_invoice_id = s.id)`, [req.params.id]);
+    if (!r.rowCount) {
+      const still = (await db.query('SELECT COALESCE(amount_paid, 0) AS paid FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0];
+      if (!still) return res.status(404).json({ error: 'not found' });
+      return res.status(409).json({
+        error: `Reverse its payments first. ₹${Number(still.paid).toLocaleString('en-IN', { maximumFractionDigits: 2 })} has been received against this invoice.`,
+      });
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

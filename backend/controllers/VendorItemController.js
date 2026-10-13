@@ -12,6 +12,7 @@ const db = require('../db');
 const { assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { runList } = require('../shared/listQuery');
+const { assertRefs } = require('../shared/ownedRefs');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 const COLS = ['vendor_id', 'raw_material_id', 'vendor_item_code', 'price', 'price_uom', 'moq', 'lead_time_days', 'is_preferred', 'last_quoted_at', 'notes'];
@@ -64,14 +65,21 @@ exports.list = async (req, res) => {
    actually supply this material, best option first. */
 exports.vendorsForMaterial = async (req, res) => {
   try {
+    /* Your material, and your links on it — the same rule as the list
+       above. By id alone this showed any company who supplies another's
+       material, and at what price. */
+    if (!await assertOwned(db, req, res, 'raw_materials', req.params.id, { columns: 'id' })) return;
+    const params = [req.params.id];
+    let mine = '';
+    if (!isAdmin(req)) { params.push(req.user.orgId); mine = ` AND (vi.owner_id = $2 OR vi.owner_id IS NULL)`; }
     const { rows } = await db.query(`
       SELECT vi.id AS vendor_item_id, v.id AS vendor_id, v.name, v.gstin, v.city, v.state,
              vi.price, vi.price_uom, vi.moq, vi.lead_time_days, vi.is_preferred, vi.vendor_item_code
       FROM vendor_items vi
       JOIN vendors v ON v.id = vi.vendor_id
-      WHERE vi.raw_material_id = $1
+      WHERE vi.raw_material_id = $1${mine}
       ORDER BY vi.is_preferred DESC, vi.price NULLS LAST, vi.lead_time_days NULLS LAST`,
-      [req.params.id]);
+      params);
 
     // Nothing linked yet: say so plainly so the UI can offer the full list
     // rather than silently showing an empty dropdown.
@@ -89,17 +97,25 @@ exports.create = async (req, res) => {
   const { vendor_id, raw_material_id } = req.body;
   if (!vendor_id || !raw_material_id) return res.status(400).json({ error: 'Pick both a vendor and a material' });
   try {
+    /* Both ends are this company's. Neither was checked: a link could be
+       made on another company's material — and, with is_preferred, clear
+       that company's preferred supplier for it. */
+    if (!await assertRefs(db, req, res, { vendors: [vendor_id], raw_materials: [raw_material_id] })) return;
     // Only one preferred vendor per material; setting a new one clears the old.
-    if (req.body.is_preferred) {
-      await db.query('UPDATE vendor_items SET is_preferred = FALSE WHERE raw_material_id = $1', [raw_material_id]);
-    }
+    if (req.body.is_preferred) await clearPreferred(req, raw_material_id);
     const cols = COLS.filter(c => c in req.body);
     const values = cols.map(c => (req.body[c] === '' ? null : req.body[c]));
+    /* The pair is unique across the install, so the row an upsert lands on
+       may have been made by somebody else before these checks existed. The
+       vendor and the material are both yours (checked above), so the link
+       is too: it takes your owner_id. */
+    const sets = [...cols.filter(c => !['vendor_id', 'raw_material_id'].includes(c)).map(c => `"${c}" = EXCLUDED."${c}"`),
+      'owner_id = EXCLUDED.owner_id'];
     const { rows } = await db.query(
       `INSERT INTO vendor_items (owner_id, ${cols.map(c => `"${c}"`).join(', ')})
        VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')})
        ON CONFLICT (vendor_id, raw_material_id) DO UPDATE
-         SET ${cols.filter(c => !['vendor_id', 'raw_material_id'].includes(c)).map(c => `"${c}" = EXCLUDED."${c}"`).join(', ') || 'vendor_id = EXCLUDED.vendor_id'}
+         SET ${sets.join(', ')}
        RETURNING *`,
       [req.user?.orgId || null, ...values]
     );
@@ -107,16 +123,28 @@ exports.create = async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
+/* One preferred vendor per material (a unique index holds it), so setting
+   one clears the others — on that material, and only when the material is
+   the caller's. This cleared it for every company that had linked the id. */
+async function clearPreferred(req, materialId, exceptId = null) {
+  const params = [materialId, exceptId];
+  let mine = '';
+  if (!isAdmin(req)) { params.push(req.user.orgId); mine = ' AND EXISTS (SELECT 1 FROM raw_materials rm WHERE rm.id = $1 AND rm.owner_id = $3)'; }
+  await db.query(
+    `UPDATE vendor_items SET is_preferred = FALSE
+      WHERE raw_material_id = $1 AND ($2::int IS NULL OR id <> $2)${mine}`, params);
+}
+
 /* PATCH /vendor-items/:id */
 exports.update = async (req, res) => {
   const sets = COLS.filter(c => c in req.body);
   if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
   try {
-    if (!await assertOwned(db, req, res, 'vendor_items', req.params.id, { columns: 'id' })) return;
-    if (req.body.is_preferred) {
-      const cur = (await db.query('SELECT raw_material_id FROM vendor_items WHERE id = $1', [req.params.id])).rows[0];
-      if (cur) await db.query('UPDATE vendor_items SET is_preferred = FALSE WHERE raw_material_id = $1 AND id <> $2', [cur.raw_material_id, req.params.id]);
-    }
+    const cur = await assertOwned(db, req, res, 'vendor_items', req.params.id, { columns: 'id, raw_material_id' });
+    if (!cur) return;
+    /* Re-pointing a link moves it to a vendor or material of yours only. */
+    if (!await assertRefs(db, req, res, { vendors: [req.body.vendor_id], raw_materials: [req.body.raw_material_id] })) return;
+    if (req.body.is_preferred) await clearPreferred(req, req.body.raw_material_id || cur.raw_material_id, req.params.id);
     const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
     const { rows } = await db.query(
       `UPDATE vendor_items SET ${clause} WHERE id = $${sets.length + 1} RETURNING *`,

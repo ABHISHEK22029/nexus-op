@@ -283,6 +283,14 @@ exports.createRole = async (req, res) => {
      Administrator-only and why an Owner could assign the seven built-ins
      and never define an eighth. */
   const orgId = isCrossTenant(req.user?.role) ? null : (req.user?.orgId ?? req.user?.id);
+  /* Built-in and legacy names are reserved, in any case: "admin" is read as
+     Administrator by the legacy mapping, so a company role by that name
+     would have become a key to every other company. */
+  const reserved = new Set([...Object.keys(R.ROLES), ...Object.keys(R.LEGACY), 'administrator', 'superadmin', 'super admin', 'root']
+    .map((n) => n.toLowerCase()));
+  if (reserved.has(String(role).trim().toLowerCase())) {
+    return res.status(409).json({ error: `"${role}" is a reserved role name — choose another` });
+  }
 
   try {
     /* Clashing with a BUILT-IN name is refused even for a different
@@ -543,7 +551,10 @@ exports.createUser = async (req, res) => {
     if (exists.rowCount) return res.status(409).json({ error: 'An account with this email already exists' });
 
     const chosen = role || 'Viewer';
-    const known = await db.query('SELECT 1 FROM role_definitions WHERE role = $1', [chosen]);
+    /* A built-in, or one of this company's own — not another company's. */
+    const known = await db.query(
+      'SELECT 1 FROM role_definitions WHERE role = $1 AND (org_id IS NULL OR org_id = $2)',
+      [chosen, req.user?.orgId ?? req.user?.id]);
     if (!known.rowCount) return res.status(400).json({ error: `Unknown role: ${chosen}` });
 
     /* Administrator is cross_tenant — it reads every organisation on the
@@ -648,8 +659,24 @@ exports.setUserRole = async (req, res) => {
       });
     }
 
-    const def = (await db.query('SELECT role FROM role_definitions WHERE role = $1', [role])).rows[0];
+    /* A built-in role, or one the person's own company defined — not a role
+       another company made. */
+    const callerOrg = req.user?.orgId ?? req.user?.id;
+    const targetOrg = user.org_id ?? user.id;
+    const def = (await db.query(
+      `SELECT role FROM role_definitions WHERE role = $1 AND (org_id IS NULL OR org_id = $2)`, [role, targetOrg])).rows[0];
     if (!def) return res.status(400).json({ error: `Unknown role: ${role}` });
+    /* Only a platform administrator hands out a platform role. An Owner could
+       otherwise make an employee — or a second account of their own — an
+       Administrator who sees every company's data. */
+    if (isCrossTenant(role) && !isCrossTenant(req.user?.role)) {
+      return res.status(403).json({ error: 'Only a platform administrator can give that role' });
+    }
+    /* The founder's role is the founder's to change: an Owner-role employee
+       could otherwise demote the person whose company it is. */
+    if (!isCrossTenant(req.user?.role) && id === Number(callerOrg) && req.user?.id !== id) {
+      return res.status(403).json({ error: "Only the company's founder can change the founder's role" });
+    }
 
     // Never leave the installation without an administrator.
     if (R.normaliseRole(user.role) === 'Administrator' && role !== 'Administrator') {
@@ -663,6 +690,7 @@ exports.setUserRole = async (req, res) => {
     }
 
     await db.query('UPDATE users SET role = $1 WHERE id = $2', [role, id]);
+    forgetAccount(id);   // the new role applies on their next request, not when their session runs out
     await log(req, role, 'assigned', { userId: id, email: user.email, from: user.role, to: role });
     res.json({ success: true, id, role });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -682,6 +710,10 @@ exports.setUserActive = async (req, res) => {
         detail: 'You would be signed out with no way to sign back in.',
       });
     }
+    /* Nobody inside a company switches its founder off. */
+    if (!isCrossTenant(req.user?.role) && id === Number(req.user?.orgId ?? req.user?.id)) {
+      return res.status(403).json({ error: "The company's founder can't be switched off from here" });
+    }
     if (!active && R.normaliseRole(user.role) === 'Administrator') {
       const others = await otherActiveAdmins(id);
       if (others === 0) {
@@ -699,9 +731,15 @@ exports.setUserActive = async (req, res) => {
 /* ── Audit ───────────────────────────────────────────────── */
 exports.auditLog = async (req, res) => {
   try {
+    /* Platform-wide only for a platform administrator. For a company, the
+       changes its own people made — it showed every company's staff emails. */
+    const scoped = !isCrossTenant(req.user?.role);
     const { rows } = await db.query(
-      `SELECT id, actor_email, role, action, detail, created_at
-       FROM role_change_log ORDER BY id DESC LIMIT 100`
+      `SELECT l.id, l.actor_email, l.role, l.action, l.detail, l.created_at
+         FROM role_change_log l
+        ${scoped ? 'WHERE l.actor_email IN (SELECT email FROM users WHERE org_id = $1 OR id = $1)' : ''}
+        ORDER BY l.id DESC LIMIT 100`,
+      scoped ? [req.user?.orgId ?? req.user?.id] : []
     );
     res.json({ entries: rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -710,6 +748,22 @@ exports.auditLog = async (req, res) => {
 /* ── Health: does the UI agree with the server? ───────────── */
 exports.rolesHealth = async (req, res) => {
   try {
+    /* The installation's health is the platform administrator's business.
+       A company is told only about its own people. */
+    if (!isCrossTenant(req.user?.role)) {
+      const org = req.user?.orgId ?? req.user?.id;
+      const legacy = (await db.query(
+        `SELECT role, COUNT(*)::int n FROM users
+          WHERE (org_id = $1 OR id = $1) AND role IS NOT NULL
+            AND role NOT IN (SELECT role FROM role_definitions WHERE org_id IS NULL OR org_id = $1)
+          GROUP BY role`, [org])).rows;
+      return res.json({
+        source: R.overlayLoaded() ? 'database' : 'code defaults',
+        issues: [],
+        notices: legacy.map((l) => `${l.n} user(s) still hold the legacy role "${l.role}" — working correctly as "${R.normaliseRole(l.role)}", but worth reassigning on the People tab.`),
+        healthy: true,
+      });
+    }
     const issues = [];
     /* By EFFECTIVE role. The literal comparison this replaced reported
        "no active Administrator" on an installation whose only administrator

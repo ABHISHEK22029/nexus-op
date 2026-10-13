@@ -76,6 +76,10 @@ exports.get = async (req, res) => {
         ORDER BY id DESC LIMIT 1`, [owner, ENTITY]);
     if (!row) return res.status(404).json({ error: 'No logo uploaded' });
     res.setHeader('Content-Type', row.mime || 'application/octet-stream');
+    /* An SVG logo opened on its own must not run script: no sniffing, and a
+       sandbox with nothing allowed. Drawn in an <img>, it never could. */
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
     /* private: it is one organisation's mark, and the response is
        owner-scoped — a shared cache must never hand it to another tenant. */
     res.setHeader('Cache-Control', 'private, max-age=300');
