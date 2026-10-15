@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Zap } from 'lucide-react';
+import MaksOpsLogo from './brand/MaksOpsLogo';
 
 /* Every link goes somewhere a visitor can read. These columns used to point
    at the app's own screens (/dashboard, /po, /grn, /boq, /mb, /bills …),
@@ -61,33 +62,7 @@ const MarketingFooter = () => {
                 marginBottom: '16px',
               }}
             >
-              <div
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '9px',
-                  background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 0 16px hsl(28,100%,54%,0.35)',
-                }}
-              >
-                <Zap size={18} color="#fff" fill="#fff" />
-              </div>
-              <span
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontWeight: 800,
-                  fontSize: 'var(--t-xl)',
-                  letterSpacing: '-0.03em',
-                  background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--brand-amber) 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                Maks Ops
-              </span>
+              <MaksOpsLogo height={40} tagline />
             </Link>
             <p
               style={{

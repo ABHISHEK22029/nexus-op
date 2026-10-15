@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Eye, EyeOff, Loader2, AlertCircle, Building2, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertCircle, UserPlus } from 'lucide-react';
+import MaksOpsLogo from '../components/brand/MaksOpsLogo';
 
 export default function Signup() {
   const { register, loading, error, token } = useAuth();
@@ -55,12 +56,7 @@ export default function Signup() {
 
       <div style={{ width: '100%', maxWidth: 440, position: 'relative', zIndex: 1 }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 16, margin: '0 auto 16px', background: 'var(--brand-amber-muted)', border: '1px solid var(--brand-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-amber)' }}>
-            <Building2 size={28} style={{ color: 'var(--brand-amber)' }}/>
-          </div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', margin: 0 }}>
-            Maks<span style={{ color: 'var(--brand-amber)' }}>Ops</span>
-          </h1>
+          <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}><MaksOpsLogo height={46} /></h1>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 6 }}>Create your own workspace in minutes</p>
         </div>
 

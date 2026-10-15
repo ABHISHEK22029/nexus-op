@@ -17,11 +17,12 @@ import React, { useState, useEffect, useSyncExternalStore } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import ScopeBar from './ScopeBar';
 import {
-  Zap, ChevronLeft, ChevronRight, Sun, Moon, Home,
+  ChevronLeft, ChevronRight, Sun, Moon, Home,
 } from 'lucide-react';
 import { NAV_ICONS as ICONS } from '../lib/navIcons';
 import { usePermissions } from '../context/PermissionContext';
 import { useTheme } from '../context/ThemeContext';
+import { MaksAppIcon } from './brand/MaksOpsLogo';
 import { getToken } from '../lib/apiAuth';
 import {
   MODULES, moduleForPath, visibleItems, visibleLinks, visibleModules,
@@ -162,8 +163,8 @@ export default function AppNav() {
   return (
     <>
       <nav className="nav-rail" aria-label="Modules">
-        <button className="nav-rail-logo" onClick={() => navigate('/dashboard')} title="Maks Ops">
-          <Zap size={17} color="#fff" fill="#fff" />
+        <button className="nav-rail-logo" onClick={() => navigate('/dashboard')} title="Maks Ops" aria-label="Maks Ops — dashboard">
+          <MaksAppIcon size={34} radius={14} decorative />
         </button>
 
         <div className="nav-rail-items">

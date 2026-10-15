@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Eye, EyeOff, Loader2, AlertCircle, Building2, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
 import { SIGNED_OUT_KEY } from '../lib/apiAuth';
+import MaksOpsLogo from '../components/brand/MaksOpsLogo';
 
 /* The demo login used to be two string literals here, which meant a working
    administrator password was compiled into the JavaScript bundle and served
@@ -103,25 +104,10 @@ export default function Login() {
       <div style={{ width: '100%', maxWidth: 420, position: 'relative', zIndex: 1 }}>
         {/* Logo + Brand */}
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 16, margin: '0 auto 16px',
-            background: 'var(--brand-amber-muted)', border: '1px solid var(--brand-amber)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: 'var(--shadow-amber)',
-          }}>
-            <Building2 size={28} style={{ color: 'var(--brand-amber)' }}/>
-          </div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', margin: 0 }}>
-            Maks<span style={{ color: 'var(--brand-amber)' }}>Ops</span>
-          </h1>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 6 }}>
-            {/* Was "Construction Operations Intelligence Platform", which this
-                product is not — it is an ERP for fabrication and manufacturing
-                SMEs, and maksops.co.in already titles itself "Infrastructure
-                Intelligence Platform". The sign-in screen was the one surface
-                still describing a different product. */}
-            Infrastructure Intelligence Platform
-          </p>
+          {/* The logo says what the product is: "From catalogue to cash", as
+              the site's title does. The line under it used to describe an
+              infrastructure platform, which Maks Ops is not. */}
+          <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}><MaksOpsLogo height={46} tagline /></h1>
         </div>
 
         {/* Card */}

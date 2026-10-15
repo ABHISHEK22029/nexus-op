@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { Menu, X, ChevronRight, Zap, Sun, Moon, LayoutDashboard } from 'lucide-react';
+import { Menu, X, ChevronRight, Sun, Moon, LayoutDashboard } from 'lucide-react';
+import MaksOpsLogo from './brand/MaksOpsLogo';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -45,23 +46,8 @@ const MarketingNav = () => {
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '68px' }}
       >
         {/* Logo */}
-        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-          <div style={{
-            width: '34px', height: '34px', borderRadius: '8px',
-            background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 0 16px hsl(28,100%,54%,0.4)',
-          }}>
-            <Zap size={18} color="#fff" fill="#fff" />
-          </div>
-          <span style={{
-            fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'var(--t-xl)',
-            letterSpacing: '-0.03em',
-            background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--brand-amber) 100%)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          }}>
-            Maks Ops
-          </span>
+        <Link to="/" aria-label="Maks Ops — home" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
+          <MaksOpsLogo height={30} />
         </Link>
 
         {/* Desktop nav links */}

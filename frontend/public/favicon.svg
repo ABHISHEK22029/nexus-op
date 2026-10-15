@@ -1,13 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- The Maks Ops app icon: the ribbon M ending in a node, white on the
+       orange tile. Same drawing as MaksAppIcon in
+       src/components/brand/MaksOpsLogo.jsx; the PNGs and favicon.ico are
+       made from it by scripts/make-icons.cjs. -->
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FF8214"/>
-      <stop offset="1" stop-color="#F2590D"/>
+      <stop offset="0" stop-color="#FF8A1F"/>
+      <stop offset="1" stop-color="#F0520A"/>
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="15" fill="url(#g)"/>
-  <g fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round">
-    <path d="M9 47V20l9 16 9-16v27"/>
-    <ellipse cx="46.5" cy="32" rx="8.5" ry="12"/>
+  <g transform="translate(3 9.5) scale(0.485)">
+    <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="19">
+      <path d="M13 68 L31 41 Q36 33.5 41 41 L50 55"/>
+      <path d="M50 55 L67 27 Q75 13 83 27 L96 62"/>
+    </g>
+    <circle cx="97" cy="66" r="13" fill="#fff"/>
+    <circle cx="97" cy="66" r="5.4" fill="#F46A10"/>
   </g>
 </svg>

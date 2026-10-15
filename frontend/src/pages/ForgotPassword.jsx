@@ -12,7 +12,8 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, EyeOff, Loader2, AlertCircle, Building2, MailCheck, Check, X, KeyRound } from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertCircle, MailCheck, Check, X, KeyRound } from 'lucide-react';
+import MaksOpsLogo from '../components/brand/MaksOpsLogo';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const SUPPORT = import.meta.env.VITE_SUPPORT_EMAIL || '';
@@ -119,15 +120,7 @@ export default function ForgotPassword() {
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', padding: 24 }}>
       <div style={{ width: '100%', maxWidth: 420 }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 16, margin: '0 auto 16px', background: 'var(--brand-amber-muted)',
-            border: '1px solid var(--brand-amber)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-amber)',
-          }}>
-            <Building2 size={28} style={{ color: 'var(--brand-amber)' }} />
-          </div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', margin: 0 }}>
-            Maks<span style={{ color: 'var(--brand-amber)' }}>Ops</span>
-          </h1>
+          <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}><MaksOpsLogo height={46} /></h1>
         </div>
 
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 20, padding: 32, boxShadow: 'var(--shadow-md)' }}>

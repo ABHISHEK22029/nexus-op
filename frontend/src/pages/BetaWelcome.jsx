@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import '../beta.css';
+import MaksOpsLogo from '../components/brand/MaksOpsLogo';
 
 export default function BetaWelcome() {
   const navigate = useNavigate();
@@ -25,11 +26,7 @@ export default function BetaWelcome() {
           <div className="welcome-center">
             
             <div className="wc-logo">
-              <div className="wc-logo-icon">N</div>
-              <div style={{ textAlign: 'left' }}>
-                <div className="wc-logo-text">Maks Ops</div>
-                <div className="wc-logo-sub">Operational Intelligence</div>
-              </div>
+              <MaksOpsLogo height={40} tagline />
             </div>
             
             <h1 className="wc-heading">Welcome to <span>Maks Ops</span></h1>
