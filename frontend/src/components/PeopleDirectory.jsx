@@ -16,7 +16,7 @@
    change one dropdown is how a list of nine people becomes a chore.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useMemo } from 'react';
-import { Search, X, Pencil, Check, BadgeCheck, ShieldCheck } from 'lucide-react';
+import { Search, X, Pencil, Check, BadgeCheck, ShieldCheck, Send } from 'lucide-react';
 
 const LEVEL_TONE = {
   full:        { bg: 'rgba(239,68,68,0.12)',  fg: '#dc2626', label: 'Full access' },
@@ -26,7 +26,7 @@ const LEVEL_TONE = {
 };
 
 export default function PeopleDirectory({
-  users, roles, busy, onChangeRole, onToggleActive, onEditPerson, onResetPassword,
+  users, roles, busy, onChangeRole, onToggleActive, onEditPerson, onResetPassword, onReinvite,
 }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('id');
@@ -200,9 +200,11 @@ export default function PeopleDirectory({
                   </td>
 
                   <td style={{ ...td, fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                    {u.last_login
-                      ? new Date(u.last_login).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
-                      : 'never'}
+                    {u.pending
+                      ? <span style={{ color: '#b45309', fontWeight: 600 }}>invited, not joined yet</span>
+                      : u.last_login
+                        ? new Date(u.last_login).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
+                        : 'never'}
                   </td>
 
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -210,10 +212,18 @@ export default function PeopleDirectory({
                       style={{ fontSize: '0.74rem', padding: '4px 9px', marginRight: 5 }}>
                       <Pencil size={12} />
                     </button>
-                    <button onClick={() => onResetPassword(u)} title="Reset password" className="btn-secondary"
-                      style={{ fontSize: '0.74rem', padding: '4px 9px', marginRight: 5 }}>
-                      <ShieldCheck size={12} />
-                    </button>
+                    {/* Not joined yet: there is no password to reset — send the invitation again. */}
+                    {u.pending && onReinvite ? (
+                      <button onClick={() => onReinvite(u)} disabled={busy === u.id} title="Resend invite" aria-label={`Resend invite to ${u.email}`} className="btn-secondary"
+                        style={{ fontSize: '0.74rem', padding: '4px 9px', marginRight: 5 }}>
+                        <Send size={12} />
+                      </button>
+                    ) : (
+                      <button onClick={() => onResetPassword(u)} title="Reset password" className="btn-secondary"
+                        style={{ fontSize: '0.74rem', padding: '4px 9px', marginRight: 5 }}>
+                        <ShieldCheck size={12} />
+                      </button>
+                    )}
                     <button
                       onClick={() => onToggleActive(u)}
                       disabled={busy === u.id || u.isSelf}

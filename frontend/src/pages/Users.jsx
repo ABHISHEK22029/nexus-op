@@ -22,11 +22,14 @@ import { Link } from 'react-router-dom';
 import AddPersonModal from '../components/AddPersonModal';
 import { Users as UsersIcon, Lock, Settings, ShieldCheck, UserPlus } from 'lucide-react';
 import { usePermissions } from '../context/PermissionContext';
+import { useToast } from '../context/ToastContext';
+import { reinvite } from '../lib/reinvite';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
 export default function Users() {
   const { can, role } = usePermissions();
   const q = useListQuery('users', { pageSize: 25 });
+  const toast = useToast();
   const [adding, setAdding] = useState(false);
   /* The modal offers whatever roles the server will actually accept — an
      empty list would render a dropdown with nothing in it, and a hardcoded
@@ -127,14 +130,30 @@ export default function Users() {
                     </td>
                     <td style={{ ...td, color: 'var(--text-secondary)' }}>{u.department || '—'}</td>
                     <td style={td}>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: 'var(--bg-elevated)', color: u.is_active ? '#10b981' : 'var(--text-muted)' }}>
-                        {u.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      {u.pending && u.is_active ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: 'rgba(245,158,11,0.12)', color: '#b45309' }}>
+                            Invited
+                          </span>
+                          {isAdmin && (
+                            <button onClick={async () => { if (await reinvite(u, toast)) q.reload(); }} className="btn-secondary btn-sm"
+                              aria-label={`Resend invite to ${u.email}`} style={{ fontSize: '0.72rem', padding: '3px 9px' }}>
+                              Resend invite
+                            </button>
+                          )}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: 'var(--bg-elevated)', color: u.is_active ? '#10b981' : 'var(--text-muted)' }}>
+                          {u.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      )}
                     </td>
                     <td style={{ ...td, fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                      {u.last_login
-                        ? new Date(u.last_login).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                        : 'never'}
+                      {u.pending
+                        ? 'not joined yet'
+                        : u.last_login
+                          ? new Date(u.last_login).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                          : 'never'}
                     </td>
                   </tr>
                 ))}

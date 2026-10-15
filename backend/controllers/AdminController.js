@@ -26,6 +26,16 @@ const { forgetAccount } = require('../middleware/auth');
 const R = require('../shared/roles');
 const { isCrossTenant } = require('../shared/roles');
 const { firstProblem, PERSON_SPEC } = require('../shared/validators');
+const { sendInvite } = require('../shared/inviteEmail');
+
+/* What the invitation email says: the company's name and the role's. */
+async function inviteContext(orgId, role) {
+  const [co, rd] = await Promise.all([
+    db.query('SELECT name FROM company_profile WHERE owner_id = $1 LIMIT 1', [orgId]).catch(() => ({ rows: [] })),
+    db.query('SELECT label FROM role_definitions WHERE role = $1 AND (org_id IS NULL OR org_id = $2) LIMIT 1', [role, orgId]).catch(() => ({ rows: [] })),
+  ]);
+  return { companyName: co.rows[0]?.name || null, roleLabel: rd.rows[0]?.label || role || null };
+}
 
 const SYSTEM_IMMUTABLE = 'Administrator';
 
@@ -445,6 +455,7 @@ exports.listUsers = async (req, res) => {
     }
     const { rows } = await db.query(
       `SELECT u.id, u.name, u.email, u.role, u.is_active, u.created_at, u.last_login,
+              (u.password_hash IS NULL) AS pending, u.invite_expires_at,
               u.employee_code, u.job_title, u.department, u.phone, u.reports_to, u.notes,
               u.org_id,
               m.name AS reports_to_name,
@@ -599,18 +610,69 @@ exports.createUser = async (req, res) => {
       userId: rows[0].id, email: rows[0].email, created: true, invited: inviting,
     });
 
+    /* The invitation goes to them by email when the server can send one.
+       Not sending never undoes the invitation: the owner is told, and the
+       link below still works. */
+    const mailed = inviting
+      ? await sendInvite({
+        to: rows[0].email, name, inviterName: req.user?.name || null,
+        ...(await inviteContext(req.user?.orgId ?? req.user?.id, chosen)),
+        token: inviteToken, expiresAt: inviteExpiry,
+      })
+      : null;
+
     /* The token is returned exactly once, here, and never stored in a form
        it could be read back from. If the owner loses the link they reissue
-       it rather than recovering it. */
+       it rather than recovering it (POST /admin/users/:id/invite). */
     res.status(201).json({
       user: { ...rows[0], pending: inviting },
       ...(inviting ? {
         invite: {
+          emailed: mailed.emailed,
+          ...(mailed.error ? { emailError: mailed.error } : {}),
           token: inviteToken,
           expiresAt: inviteExpiry,
           path: `/accept-invite?token=${inviteToken}`,
         },
       } : {}),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* POST /admin/users/:id/invite — send the invitation again.
+
+   For somebody who has not set a password yet: the email went to spam, the
+   link was lost, or the seven days ran out. A new link replaces the old one
+   (which stops working), is emailed to them, and is shown to the owner once.
+   Somebody who has already joined is reset instead, not re-invited. */
+exports.reinvite = async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const user = await userInOrg(req, res, id, 'id, email, name, role, is_active, org_id, password_hash');
+    if (!user) return;
+    if (user.password_hash) {
+      return res.status(409).json({ error: `${user.name || user.email} has already joined. If they are locked out, use Reset password.` });
+    }
+    if (!user.is_active) {
+      return res.status(409).json({ error: `${user.name || user.email} is switched off. Switch them on first.` });
+    }
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    await db.query(
+      'UPDATE users SET invite_token_hash = $1, invite_expires_at = $2, invited_by = $3 WHERE id = $4',
+      [crypto.createHash('sha256').update(token).digest('hex'), expiresAt, req.user?.id ?? null, id]);
+    const mailed = await sendInvite({
+      to: user.email, name: user.name, inviterName: req.user?.name || null,
+      ...(await inviteContext(user.org_id ?? user.id, user.role)),
+      token, expiresAt,
+    });
+    await log(req, user.role, 'reinvited', { userId: id, email: user.email, emailed: mailed.emailed });
+    res.json({
+      invite: {
+        emailed: mailed.emailed, ...(mailed.error ? { emailError: mailed.error } : {}),
+        expiresAt, path: `/accept-invite?token=${token}`,
+      },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

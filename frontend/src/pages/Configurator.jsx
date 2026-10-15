@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
+import { reinvite } from '../lib/reinvite';
 import TileHome from '../components/ConfiguratorTiles';
 import PeopleDirectory from '../components/PeopleDirectory';
 import AddPersonModal from '../components/AddPersonModal';
@@ -317,6 +318,7 @@ function People() {
         onToggleActive={toggleActive}
         onEditPerson={setEditing}
         onResetPassword={resetPassword}
+        onReinvite={async (u) => { if (await reinvite(u, toast)) load(); }}
       />
       {editing && (
         <PersonEditor person={editing} people={users} onCancel={() => setEditing(null)} onSave={savePerson} />

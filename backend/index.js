@@ -459,7 +459,8 @@ app.get('/users', allow('users', 'read'), async (req, res) => {
     }
     const result = await runList(db, {
       table: 'users',
-      select: 'id, email, name, role, department, is_active, last_login, created_at',
+      /* pending: invited, no password chosen yet — whether one is set, never the hash. */
+      select: 'id, email, name, role, department, is_active, last_login, created_at, (password_hash IS NULL) AS pending, invite_expires_at',
       where, params,
       query: req.query,
       searchColumns: ["name", "email", "role", "department"],
@@ -1342,6 +1343,7 @@ app.delete('/admin/roles/:role',   adminController.deleteRole);
 app.get('/admin/users',            adminController.listUsers);
 app.post('/admin/users',           adminController.createUser);
 app.post('/admin/users/:id/reset-password', adminController.resetPassword);
+app.post('/admin/users/:id/invite', adminController.reinvite);
 app.patch('/admin/users/:id',      adminController.updateUser);
 app.patch('/admin/users/:id/role', adminController.setUserRole);
 app.patch('/admin/users/:id/active', adminController.setUserActive);

@@ -31,6 +31,7 @@ export default function AddPersonModal({ roles = [], onClose, onSaved }) {
      so the alternative is offered, not led with. */
   const [mode, setMode] = useState('invite');       // 'invite' | 'password'
   const [invite, setInvite] = useState(null);       // the link, shown once
+  const [emailed, setEmailed] = useState(false);    // the server emailed it to them
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -81,7 +82,9 @@ export default function AddPersonModal({ roles = [], onClose, onSaved }) {
            So the dialog stays open holding it rather than closing and
            leaving the owner with nothing to send. */
         setInvite(`${window.location.origin}${body.invite.path}`);
-        toast.success(`${f.name.trim()} invited — send them the link`);
+        setEmailed(!!body.invite.emailed);
+        if (body.invite.emailed) toast.success(`${f.name.trim()} invited — an email with their link is on its way to ${f.email.trim()}`);
+        else toast.success(`${f.name.trim()} invited — send them the link`);
       } else {
         toast.success(`${f.name.trim()} can now sign in`);
         onClose();
@@ -226,8 +229,13 @@ export default function AddPersonModal({ roles = [], onClose, onSaved }) {
               background: 'hsl(28,100%,54%,0.10)', border: '1px solid var(--brand-amber)',
             }}>
               <div style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--text-primary)', marginBottom: 6 }}>
-                Send {f.name.trim()} this link
+                {emailed ? `Invitation emailed to ${f.email.trim()}` : `Send ${f.name.trim()} this link`}
               </div>
+              {emailed && (
+                <p data-invite-emailed style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 8px' }}>
+                  They'll get an email from Maks Ops with a button to set their password. If it doesn't arrive (check spam), send them this link yourself:
+                </p>
+              )}
               <div style={{
                 padding: '8px 10px', borderRadius: 7, marginBottom: 9,
                 background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
@@ -245,7 +253,7 @@ export default function AddPersonModal({ roles = [], onClose, onSaved }) {
               </div>
               <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', margin: '9px 0 0' }}>
                 Works once, expires in seven days. It is not stored anywhere you can read it
-                back — if it's lost, invite them again.
+                back — if it's lost, use Resend invite on the Team page.
               </p>
             </div>
           )}
