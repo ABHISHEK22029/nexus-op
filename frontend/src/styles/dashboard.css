@@ -1,0 +1,167 @@
+/* ══════════════════════════════════════════════════════════
+   The dashboard's layout.
+
+   Sized by the space the dashboard actually has (a container query), not
+   the window: with the module rail and the menu panel open, a 1180px
+   laptop leaves it about 850px, and the cards have to know that.
+
+     wide     four cards to a row, the PO mix beside Recent Activity
+     narrow   two cards to a row, everything else stacked
+
+   Every card in a row is the same height: the label, the figure, the line
+   under it and "View details" sit at the same height across the row, so
+   the eye can run along it.
+   ══════════════════════════════════════════════════════════ */
+
+.dash {
+  container-type: inline-size;
+  max-width: 1400px;
+  margin: 0 auto;
+  animation: fade-in 0.4s ease;
+}
+
+/* ── header ── */
+.dash-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 28px; padding: 20px 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle); border-radius: 18px;
+  box-shadow: var(--shadow-sm);
+  position: relative; overflow: hidden;
+}
+.dash-head::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--brand-amber), hsl(38,95%,58%), var(--brand-amber));
+}
+.dash-head-main { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.dash-head-icon {
+  width: 44px; height: 44px; border-radius: 12px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--brand-amber-muted); color: var(--brand-amber);
+  border: 1px solid hsl(28 100% 54% / 0.3);
+}
+.dash-eyebrow {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--brand-amber); margin-bottom: 2px;
+}
+.dash-title {
+  font-size: 1.45rem; font-weight: 800; color: var(--text-primary);
+  letter-spacing: -0.025em; margin: 0; line-height: 1.2;
+}
+.dash-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 3px; }
+.dash-head-side { display: flex; align-items: center; gap: 12px; }
+.dash-refreshed { font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap; }
+.dash-refresh {
+  padding: 9px 16px; border-radius: 10px; cursor: pointer;
+  background: var(--brand-amber-muted); color: var(--brand-amber);
+  border: 1px solid hsl(28 100% 54% / 0.3);
+  font: 600 0.8rem var(--font-body);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.dash-refresh:disabled { cursor: wait; opacity: 0.7; }
+
+/* ── a group of cards, with its heading ── */
+.dash-group { margin-bottom: 28px; }
+.dash-group-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin: 0 2px 12px;
+}
+.dash-group-title {
+  font-size: 0.78rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-secondary); margin: 0;
+}
+.dash-group-note { font-size: 0.75rem; color: var(--text-muted); }
+
+.dash-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.dash-kpi-link { display: block; height: 100%; text-decoration: none; color: inherit; border-radius: 16px; }
+.dash-kpi-link:focus-visible { outline: 2px solid var(--brand-amber); outline-offset: 2px; }
+
+.dash-kpi {
+  --accent: var(--brand-amber);
+  height: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column;
+  padding: 18px 18px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle); border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  position: relative; overflow: hidden;
+  transition: border-color 200ms, box-shadow 200ms, transform 200ms;
+}
+.dash-kpi::after {   /* the accent, quietly, along the top edge */
+  content: ''; position: absolute; top: 0; left: 18px; right: 18px; height: 2px;
+  background: var(--accent); opacity: 0.55; border-radius: 0 0 2px 2px;
+}
+.dash-kpi-link:hover .dash-kpi {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--accent) 14%, transparent);
+  transform: translateY(-2px);
+}
+@media (prefers-reduced-motion: reduce) { .dash-kpi-link:hover .dash-kpi { transform: none; } }
+
+.dash-kpi-top { display: flex; align-items: center; gap: 10px; min-height: 34px; margin-bottom: 12px; }
+.dash-kpi-icon {
+  width: 34px; height: 34px; border-radius: 10px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.dash-kpi-label {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--text-muted); line-height: 1.3;
+}
+.dash-kpi-value {
+  font-family: var(--font-display); font-size: 1.85rem; font-weight: 800;
+  color: var(--text-primary); line-height: 1.1; letter-spacing: -0.03em;
+}
+/* Always present, one line, so a card without a note lines up with one that has one. */
+.dash-kpi-sub {
+  min-height: 1.35em; margin-top: 6px;
+  font-size: 0.74rem; font-weight: 600; color: var(--accent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dash-kpi-foot {
+  margin-top: auto; padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex; align-items: center; gap: 4px;
+  font-size: 0.72rem; font-weight: 600; color: var(--text-muted);
+}
+.dash-kpi-link:hover .dash-kpi-foot { color: var(--accent); }
+
+/* ── panels: the charts and the feed ── */
+.dash-panel {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: 18px; padding: 20px; box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+.dash-bottom {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 16px; margin-bottom: 20px; align-items: stretch;
+}
+.dash-curve { height: 420px; display: flex; flex-direction: column; margin-bottom: 20px; }
+
+/* ── narrow: two cards across, the rest stacked ── */
+@container (max-width: 820px) {
+  .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .dash-bottom { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 520px) {
+  .dash-head { padding: 16px; margin-bottom: 20px; }
+  .dash-head-icon { width: 38px; height: 38px; }
+  .dash-title { font-size: 1.2rem; }
+  .dash-head-side { width: 100%; justify-content: space-between; }
+  .dash-kpi { padding: 14px 14px 12px; }
+  .dash-kpi-top { gap: 8px; margin-bottom: 10px; }
+  .dash-kpi-icon { width: 30px; height: 30px; }
+  .dash-kpi-label { font-size: 0.64rem; letter-spacing: 0.05em; }
+  .dash-kpi-value { font-size: 1.45rem; }
+  .dash-kpi-sub { font-size: 0.68rem; white-space: normal; min-height: 2.7em; }
+  .dash-group { margin-bottom: 22px; }
+  .dash-curve { height: 340px; }
+}

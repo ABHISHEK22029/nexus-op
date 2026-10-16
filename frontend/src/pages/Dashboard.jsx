@@ -2,20 +2,20 @@ import React, { useState, useEffect, useCallback } from 'react';
 import SetupReadiness from '../components/SetupReadiness';
 import axios from 'axios';
 import {
-  Users, ShoppingCart, CheckCircle, Package, TrendingUp, Receipt,
-  AlertTriangle, Activity, ArrowUpRight, ArrowDownRight,
-  BarChart3, Layers, ChevronRight, RefreshCw, Clock, Zap, IndianRupee
+  Users, ShoppingCart, Package, TrendingUp, Receipt,
+  AlertTriangle, Activity, BarChart3, Layers, ChevronRight, RefreshCw, Clock,
+  IndianRupee, LayoutDashboard,
 } from 'lucide-react';
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip, Legend, ReferenceLine,
-  PieChart, Pie, Cell, AreaChart, Area
+  ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
+  PieChart, Pie, Cell, AreaChart, Area,
 } from 'recharts';
 import { Link } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { useTheme } from '../context/ThemeContext';
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtCompactQty, fmtINR, fmtQty } from '../lib/format';
+import '../styles/dashboard.css';
 
 /* ── Smart number formatters ── */
 /* `n == null` means the request has not answered yet, and that is not the
@@ -53,122 +53,43 @@ const TYPE_CONFIG = {
 };
 
 /* ══════════════════════════════════════════════════════════
-   KPI CARD — Spacious, readable, beautiful
+   KPI CARD
+
+   One shape for every figure on the page: icon and label, the figure, one
+   line about it, and "View details" at the foot. The line is always there
+   (empty if there is nothing to say) and the foot is pinned to the bottom,
+   so every card in a row lines up with its neighbours — the figures on one
+   line, the notes on the next, the links along the bottom. They used to
+   step up and down wherever one card had a note and the next did not.
+   Layout and hover: styles/dashboard.css.
    ══════════════════════════════════════════════════════════ */
-const KpiCard = ({ title, value, exact, sub, icon: Icon, accent, link, trend, isCurrency }) => {
-  const [hovered, setHovered] = useState(false);
+const KpiCard = ({ title, value, exact, sub, icon: Icon, accent, link }) => {
   const card = (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '24px',
-        background: 'var(--bg-surface)',
-        border: `1px solid ${hovered ? accent + '55' : 'var(--border-subtle)'}`,
-        borderRadius: '18px',
-        textDecoration: 'none',
-        transition: 'all 240ms cubic-bezier(0.34,1.1,0.64,1)',
-        position: 'relative',
-        overflow: 'hidden',
-        cursor: link ? 'pointer' : 'default',
-        transform: hovered ? 'translateY(-4px)' : 'translateY(0)',
-        boxShadow: hovered ? `0 12px 40px ${accent}22` : 'var(--shadow-sm)',
-        gap: '0',
-      }}
-    >
-      {/* Corner glow */}
-      <div style={{
-        position: 'absolute', top: 0, right: 0,
-        width: '120px', height: '120px',
-        background: `radial-gradient(circle at top right, ${accent}22, transparent 65%)`,
-        pointerEvents: 'none',
-        transition: 'opacity 240ms',
-        opacity: hovered ? 1 : 0.6,
-      }} />
-
-      {/* Bottom accent bar */}
-      <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, height: '3px',
-        background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
-        opacity: hovered ? 1 : 0,
-        transition: 'opacity 240ms',
-      }} />
-
-      {/* Top row: icon + trend */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-        <div style={{
-          padding: '12px',
-          background: `${accent}18`,
-          border: `1px solid ${accent}35`,
-          borderRadius: '14px',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'all 240ms',
-          transform: hovered ? 'scale(1.08)' : 'scale(1)',
-        }}>
-          <Icon size={22} style={{ color: accent }} />
-        </div>
-        {trend !== undefined && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '3px',
-            fontSize: '0.78rem', fontWeight: 700,
-            color: trend >= 0 ? '#22C55E' : '#EF4444',
-            background: trend >= 0 ? '#22C55E18' : '#EF444418',
-            border: `1px solid ${trend >= 0 ? '#22C55E35' : '#EF444435'}`,
-            padding: '3px 10px', borderRadius: '99px',
-          }}>
-            {trend >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-            {Math.abs(trend)}%
-          </div>
-        )}
+    <div className="dash-kpi" style={{ '--accent': accent }}>
+      <div className="dash-kpi-top">
+        <span className="dash-kpi-icon"><Icon size={17} /></span>
+        <span className="dash-kpi-label">{title}</span>
       </div>
-
-      {/* Label */}
-      <div style={{
-        fontSize: '0.73rem', fontWeight: 700,
-        color: 'var(--text-muted)',
-        marginBottom: '8px',
-        textTransform: 'uppercase', letterSpacing: '0.08em',
-      }}>
-        {title}
+      <div className="dash-kpi-value">
+        <FitNumber exact={exact}>{value || '—'}</FitNumber>
       </div>
-
-      {/* Value — big and proud, and never wider than the card */}
-      <FitNumber exact={exact} style={{
-        fontFamily: 'var(--font-display)',
-        fontSize: isCurrency ? '1.65rem' : '2.2rem',
-        fontWeight: 800,
-        color: 'var(--text-primary)',
-        lineHeight: 1.05,
-        letterSpacing: '-0.03em',
-        transition: 'color 240ms',
-      }}>
-        {value || '—'}
-      </FitNumber>
-
-      {sub && (
-        <div style={{ fontSize: '0.72rem', color: accent, marginTop: '8px', fontWeight: 600 }}>
-          {sub}
-        </div>
-      )}
-
-      {link && (
-        <div style={{
-          marginTop: '14px',
-          paddingTop: '12px',
-          borderTop: `1px solid ${hovered ? accent + '25' : 'var(--border-subtle)'}`,
-          display: 'flex', alignItems: 'center', gap: '4px',
-          fontSize: '0.72rem', fontWeight: 600, color: hovered ? accent : 'var(--text-muted)',
-          transition: 'color 200ms',
-        }}>
-          View details <ChevronRight size={11} />
-        </div>
-      )}
+      <div className="dash-kpi-sub">{sub || '\u00A0'}</div>
+      {link && <div className="dash-kpi-foot">View details <ChevronRight size={12} /></div>}
     </div>
   );
-  return link ? <Link to={link} style={{ textDecoration: 'none' }}>{card}</Link> : card;
+  return link ? <Link to={link} className="dash-kpi-link">{card}</Link> : card;
 };
+
+/* A row of cards under its own heading. */
+const Group = ({ title, note, children }) => (
+  <section className="dash-group" aria-label={title}>
+    <div className="dash-group-head">
+      <h2 className="dash-group-title">{title}</h2>
+      {note && <span className="dash-group-note">{note}</span>}
+    </div>
+    <div className="dash-kpis">{children}</div>
+  </section>
+);
 
 /* ══════════════════════════════════════════════════════════
    SECTION HEADER — consistent card title style
@@ -288,15 +209,13 @@ const Dashboard = () => {
     return () => clearInterval(iv);
   }, [fetchStats]);
 
-  /* S-Curve data */
+  /* S-curve, from the project's milestones only. With none it used to draw
+     an invented curve — twelve months of "planned" and "actual" that were
+     a formula, not the business — under a note asking for milestones. A
+     fabricator has no milestones, so it was a 460px picture of nothing.
+     Now the chart is there when there is something real to draw. */
   const sCurveData = React.useMemo(() => {
-    if (!stats?.milestones?.length) {
-      return Array.from({ length: 12 }, (_, i) => ({
-        label: `M${i + 1}`,
-        Planned: Math.round(100 / (1 + Math.exp(-((i - 5) / 2)))),
-        Actual: i < 8 ? Math.round(100 / (1 + Math.exp(-((i - 5.5) / 2)))) : null,
-      }));
-    }
+    if (!stats?.milestones?.length) return [];
     return stats.milestones.map((m, i) => ({
       label: m.name?.substring(0, 8) || `MS-${i + 1}`,
       Planned: Number(m.plannedPercent || 0),
@@ -332,7 +251,7 @@ const Dashboard = () => {
   const axisStroke = isDark ? '#555' : '#aaa';
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', animation: 'fade-in 0.4s ease' }}>
+    <div className="dash">
 
       {/* The banner used to live only in the !activeProject branch above, so
           it showed on the "select a project" screen and nowhere else — i.e.
@@ -340,160 +259,84 @@ const Dashboard = () => {
           screen people actually open. */}
       <SetupReadiness />
 
-      {/* ══ PROJECT HEADER ══════════════════════════════════ */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: '32px', padding: '24px 28px',
-        background: isDark
-          ? 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(255,122,0,0.06) 100%)'
-          : 'linear-gradient(135deg, #fff 0%, hsl(36,60%,96%) 100%)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: '20px', position: 'relative', overflow: 'hidden',
-        boxShadow: 'var(--shadow-sm)',
-      }}>
-        {/* Amber top stripe */}
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
-          background: 'linear-gradient(90deg, var(--brand-amber), hsl(38,95%,58%), var(--brand-amber))',
-        }} />
-        {/* Left glow blob */}
-        <div style={{
-          position: 'absolute', top: '-20px', right: '-20px',
-          width: '200px', height: '200px',
-          background: 'radial-gradient(circle, hsl(28,100%,54%,0.12), transparent 70%)',
-          pointerEvents: 'none',
-        }} />
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-          <div style={{
-            width: '52px', height: '52px', borderRadius: '14px', flexShrink: 0,
-            background: 'linear-gradient(135deg, var(--brand-amber), hsl(20,90%,50%))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 16px hsl(28,100%,54%,0.35)',
-          }}>
-            <Zap size={24} color="#fff" fill="#fff" />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--brand-amber)', marginBottom: '4px' }}>
-              Executive Dashboard
-            </div>
-            <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.025em', margin: '0 0 4px' }}>
-              {activeProject ? activeProject.name : 'Everything at a glance'}
-            </h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              {/* The whole client / type / status strip describes a project.
-                  With none selected there is nothing true to put here, so it
-                  is replaced rather than filled with blanks. */}
-              {!activeProject && (
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Every order, purchase and job across the business
-                </span>
-              )}
-              {activeProject && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Client: <strong style={{ color: 'var(--text-secondary)' }}>{activeProject?.clientName}</strong>
-              </span>}
-              {activeProject && <>
-              <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'var(--border-emphasis)', flexShrink: 0 }} />
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
-                {activeProject?.type}
-              </span>
-              <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'var(--border-emphasis)', flexShrink: 0 }} />
-              <span style={{
-                fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: '99px',
-                background: 'hsl(158,64%,52%,0.12)', color: 'var(--accent-emerald)',
-                border: '1px solid hsl(158,64%,52%,0.3)',
-              }}>
-                {activeProject?.status}
-              </span></>}
-            </div>
+      {/* ══ HEADER ══════════════════════════════════════════
+          A neutral dashboard mark: the orange lightning-bolt tile read as
+          the old logo now that the brand is the ribbon M. */}
+      <header className="dash-head">
+        <div className="dash-head-main">
+          <span className="dash-head-icon" aria-hidden="true"><LayoutDashboard size={21} /></span>
+          <div style={{ minWidth: 0 }}>
+            <div className="dash-eyebrow">Dashboard</div>
+            <h1 className="dash-title">{activeProject ? activeProject.name : 'Everything at a glance'}</h1>
+            {/* The client / type / status strip describes a project. With none
+                selected there is nothing true to put there. */}
+            {!activeProject ? (
+              <div className="dash-sub">Sales, purchases and stock across the business</div>
+            ) : (
+              <div className="dash-sub" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span>Client: <strong style={{ color: 'var(--text-secondary)' }}>{activeProject?.clientName}</strong></span>
+                <span style={{ textTransform: 'capitalize' }}>· {activeProject?.type}</span>
+                <span style={{
+                  fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: '99px',
+                  background: 'hsl(158,64%,52%,0.12)', color: 'var(--accent-emerald)', border: '1px solid hsl(158,64%,52%,0.3)',
+                }}>{activeProject?.status}</span>
+              </div>
+            )}
           </div>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-          {lastRefresh && (
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              ↻ {lastRefresh.toLocaleTimeString()}
-            </span>
-          )}
-          <button onClick={fetchStats} disabled={loading} style={{
-            padding: '10px 18px',
-            background: loading ? 'var(--bg-elevated)' : 'hsl(28,100%,54%,0.12)',
-            border: '1px solid hsl(28,100%,54%,0.3)',
-            borderRadius: '10px', color: 'var(--brand-amber)',
-            fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '7px',
-            fontFamily: 'var(--font-body)', transition: 'all 200ms',
-          }}>
+        <div className="dash-head-side">
+          {lastRefresh && <span className="dash-refreshed">Updated {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+          <button onClick={fetchStats} disabled={loading} className="dash-refresh">
             <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
             {loading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* ══ 4 PRIMARY KPI CARDS (row 1) ═══════════════════ */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px', marginBottom: '18px' }}>
-        {/* The +12% and +5% that used to sit on these two cards were
-            literals in the source. Nothing measured them, nothing compared
-            two periods — they were decoration drawn with an up-arrow and a
-            green pill, which is the visual language of a real figure. A
-            made-up number on a dashboard is worse than no number. */}
-        <KpiCard key="vendors" title="Active Vendors" value={fmtNum(stats?.totalVendors)} exact={exactNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" />
-        <KpiCard key="pos" title="Purchase Orders" value={fmtNum(stats?.totalPOs)} exact={exactNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po" />
-        <KpiCard key="delivered" title="POs Delivered" value={fmtNum(stats?.deliveredPOs)} exact={exactNum(stats?.deliveredPOs)} icon={CheckCircle} accent="#10B981" link="/po" sub={`${deliveryRate}% delivery rate`} />
-        <KpiCard key="inv" title="Inventory SKUs" value={fmtNum(stats?.inventoryCount)} exact={exactNum(stats?.inventoryCount)} icon={Package} accent="#F59E0B" link="/inventory" />
-      </div>
-
-      {/* ══ SALES MONEY (row 2) ══════════════════════════
-          From the sales invoices, issued ones only. "Total Billed" here
-          used to read the RA bills of a contracting job, so a fabricator —
-          who bills through tax invoices — saw ₹0 however much they had
-          sold. Wraps on a phone rather than squeezing four across. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '18px', marginBottom: '18px' }}>
-        <KpiCard key="s-billed" title="Billed this year" value={fmtCrore(sales?.billed)} exact={exactINR(sales?.billed)} icon={Receipt} accent="#3B82F6" link="/sales-invoices" isCurrency sub={sales ? `${sales.fyLabel} · invoices issued` : undefined} />
-        <KpiCard key="s-received" title="Received this year" value={fmtCrore(sales?.received)} exact={exactINR(sales?.received)} icon={TrendingUp} accent="#22C55E" link="/sales-invoices" isCurrency sub={sales ? `${sales.fyLabel} · payments in` : undefined} />
-        <KpiCard key="s-outstanding" title="Outstanding" value={fmtCrore(sales?.outstanding)} exact={exactINR(sales?.outstanding)} icon={IndianRupee} accent="#F59E0B" link="/sales-invoices" isCurrency sub="Owed by customers today" />
-        <KpiCard key="s-overdue" title="Overdue" value={fmtCrore(sales?.overdueAmount)} exact={exactINR(sales?.overdueAmount)} icon={Clock} accent="#EF4444" link="/sales-invoices" isCurrency
+      {/* ══ MONEY ═══════════════════════════════════════════
+          First, because it is the first question. From the sales invoices;
+          "Total Billed" used to read a contracting job's RA bills, so a
+          fabricator saw ₹0 however much they had sold. */}
+      <Group title="Money" note={sales ? `${sales.fyLabel}, April to March` : undefined}>
+        <KpiCard title="Billed this year" value={fmtCrore(sales?.billed)} exact={exactINR(sales?.billed)} icon={Receipt} accent="#3B82F6" link="/sales-invoices" sub="Invoices issued" />
+        <KpiCard title="Received this year" value={fmtCrore(sales?.received)} exact={exactINR(sales?.received)} icon={TrendingUp} accent="#16A34A" link="/sales-invoices" sub="Payments in" />
+        <KpiCard title="Outstanding" value={fmtCrore(sales?.outstanding)} exact={exactINR(sales?.outstanding)} icon={IndianRupee} accent="#D97706" link="/sales-invoices" sub="Owed by customers today" />
+        <KpiCard title="Overdue" value={fmtCrore(sales?.overdueAmount)} exact={exactINR(sales?.overdueAmount)} icon={Clock} accent="#DC2626" link="/sales-invoices"
           sub={sales ? `${sales.overdueCount} invoice${sales.overdueCount === 1 ? '' : 's'} past due` : undefined} />
-      </div>
+      </Group>
 
-      {/* ══ RA BILLS + OPERATIONS (row 3) ════════════════
-          The RA-bill tiles only for a company that raises RA bills. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '18px', marginBottom: '28px' }}>
-        {stats?.hasRaBills && <>
-          <KpiCard key="billed" title="RA Bills Raised" value={fmtCrore(stats?.totalBilled)} exact={exactINR(stats?.totalBilled)} icon={Receipt} accent="#EF4444" link="/bills" isCurrency sub="Gross amount raised" />
-          <KpiCard key="paid" title="RA Bills Released" value={fmtCrore(stats?.netPaid)} exact={exactINR(stats?.netPaid)} icon={TrendingUp} accent="#22C55E" link="/bills" isCurrency sub={`${utilizationPct}% utilization`} />
-        </>}
-        <KpiCard key="indents" title="Open Indents" value={fmtNum(stats?.openIndents)} exact={exactNum(stats?.openIndents)} icon={AlertTriangle} accent="#F97316" link="/indent" />
-        {/* "Platform Modules 15 — All modules active" was a fact about the
-            software, on a board about the business. Quantity ordered is
-            already computed and was going unused. */}
-        <KpiCard key="qty" title="Units Ordered" value={fmtNum(stats?.totalPOQty)} exact={exactNum(stats?.totalPOQty)} icon={Layers} accent="#06B6D4" link="/po" sub="Across all purchase orders" />
-      </div>
+      {/* ══ PURCHASING AND STOCK ═════════════════════════════
+          "POs Delivered" had a card of its own; it is the purchase-order
+          card's note now, which keeps the row at four. */}
+      <Group title="Purchasing and stock">
+        <KpiCard title="Active vendors" value={fmtNum(stats?.totalVendors)} exact={exactNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" sub="Who you buy from" />
+        <KpiCard title="Purchase orders" value={fmtNum(stats?.totalPOs)} exact={exactNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po"
+          sub={known(stats?.totalPOs) ? `${fmtNum(stats?.deliveredPOs ?? 0)} delivered · ${deliveryRate}%` : undefined} />
+        <KpiCard title="Units ordered" value={fmtNum(stats?.totalPOQty)} exact={exactNum(stats?.totalPOQty)} icon={Layers} accent="#0891B2" link="/po" sub="Across all purchase orders" />
+        <KpiCard title="Stock items" value={fmtNum(stats?.inventoryCount)} exact={exactNum(stats?.inventoryCount)} icon={Package} accent="#D97706" link="/inventory" sub="Rows on Stock on hand" />
+      </Group>
 
-      {/* ══ S-CURVE ════════════════════════════════════════
+      {/* ══ CONTRACTS ═══════════════════════════════════════
+          RA bills and indents belong to contracting work. Only for a company
+          that has them; a fabricator saw "Open Indents 0" on every visit. */}
+      {(stats?.hasRaBills || Number(stats?.openIndents) > 0) && (
+        <Group title="Contracts">
+          {stats?.hasRaBills && <>
+            <KpiCard title="RA bills raised" value={fmtCrore(stats?.totalBilled)} exact={exactINR(stats?.totalBilled)} icon={Receipt} accent="#DC2626" link="/bills" sub="Gross amount raised" />
+            <KpiCard title="RA bills released" value={fmtCrore(stats?.netPaid)} exact={exactINR(stats?.netPaid)} icon={TrendingUp} accent="#16A34A" link="/bills" sub={`${utilizationPct}% of the amount raised`} />
+          </>}
+          <KpiCard title="Open indents" value={fmtNum(stats?.openIndents)} exact={exactNum(stats?.openIndents)} icon={AlertTriangle} accent="#EA580C" link="/indent" sub="Waiting to be ordered" />
+        </Group>
+      )}
+
+      {/* ══ S-CURVE, from real milestones only ════════════════
 
          The "ORR Live Deployment Map" that used to sit beside this is gone.
          It drew Hyderabad's Outer Ring Road from coordinates hardcoded in
-         the component, with four invented work packages (SW/SE/NE/NW) and
-         three invented depots — Narsingi, Adibatla, Kompally. Not one value
-         came from the database, and it carried a pulsing "LIVE · ESRI
-         Satellite" badge, which is the strongest claim to real-time truth
-         this interface can make.
-
-         It was also the single most org-specific thing in the product: a
-         road contractor's map on the home screen of a business that makes
-         furniture. Half the dashboard's width for a picture that could
-         never say anything about the company reading it. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px', marginBottom: '20px' }}>
-
-        {/* S-Curve */}
-        <div style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: '20px', padding: '22px',
-          height: '460px', display: 'flex', flexDirection: 'column',
-          boxShadow: 'var(--shadow-sm)',
-        }}>
+         the component, with invented work packages and depots, under a
+         pulsing "LIVE" badge. Not one value came from the database. */}
+      {sCurveData.length > 0 && (
+        <div className="dash-panel dash-curve">
           <SectionHeader
             icon={BarChart3} iconColor="#3B82F6"
             title="S-Curve: Progress vs Plan"
@@ -549,22 +392,16 @@ const Dashboard = () => {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          {!stats?.milestones?.length && (
-            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '8px', fontStyle: 'italic' }}>
-              💡 Add milestones to see real project S-curve data
-            </p>
-          )}
         </div>
-      </div>
+      )}
 
-      {/* ══ BOTTOM ROW: PO Pie + Activity Feed ═══════════ */}
-      <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '20px', marginBottom: '20px' }}>
+      {/* ══ PO MIX + RECENT ACTIVITY ═════════════════════════
+          Side by side when there is room, stacked when there is not; the
+          fixed 360px column used to push the page sideways on a phone. */}
+      <div className="dash-bottom">
 
         {/* PO Distribution */}
-        <div style={{
-          background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
-          borderRadius: '20px', padding: '22px', boxShadow: 'var(--shadow-sm)',
-        }}>
+        <div className="dash-panel">
           <SectionHeader icon={ShoppingCart} iconColor="#8B5CF6" title="PO Status Mix" />
           {pieData.length > 0 ? (
             <>
@@ -610,11 +447,7 @@ const Dashboard = () => {
         </div>
 
         {/* Live Activity Feed */}
-        <div style={{
-          background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
-          borderRadius: '20px', padding: '22px', boxShadow: 'var(--shadow-sm)',
-          display: 'flex', flexDirection: 'column',
-        }}>
+        <div className="dash-panel" style={{ display: 'flex', flexDirection: 'column' }}>
           <SectionHeader
             icon={Activity} iconColor="#EC4899"
             title="Recent Activity"

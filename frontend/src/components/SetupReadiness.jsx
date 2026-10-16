@@ -53,7 +53,7 @@ export default function SetupReadiness({ compact = false }) {
   const blocking = data.checks.filter(c => !c.ok);
 
   return (
-    <div style={{
+    <div className="setup-ready" style={{
       background: 'rgba(245,158,11,0.08)',
       border: '1px solid rgba(245,158,11,0.35)',
       borderRadius: 12, padding: '14px 16px', marginBottom: 18,
@@ -77,11 +77,11 @@ export default function SetupReadiness({ compact = false }) {
       {open && (
         <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
           {blocking.map(c => (
-            <div key={c.key} style={{
-              display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: 10,
-              alignItems: 'start', paddingTop: 10, borderTop: '1px solid rgba(245,158,11,0.2)',
-            }}>
-              <span style={{
+            /* Layout in index.css (.setup-row): badge, explanation and Fix
+               this side by side; on a narrow screen the badge takes its own
+               line, so the explanation is not squeezed to a word a line. */
+            <div key={c.key} className="setup-row">
+              <span className="setup-row-have" style={{
                 fontSize: '0.72rem', fontWeight: 800, color: '#b45309',
                 background: 'rgba(245,158,11,0.15)', padding: '2px 8px', borderRadius: 6,
                 /* "GSTIN set, bank details missing" on one line pushed the
