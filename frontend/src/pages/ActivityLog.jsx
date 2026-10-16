@@ -70,7 +70,7 @@ const ActivityLog = () => {
     const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'nexus_activity_log.csv'; a.click();
+    a.href = url; a.download = 'maks-ops-activity-log.csv'; a.click();
   };
 
   return (

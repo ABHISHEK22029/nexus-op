@@ -22,7 +22,7 @@ function buildBody(s) {
 const A = [
   // ═══════════ ORIENTATION / MINDSET (observed: fragmented tools → one system) ═══════════
   {
-    slug: 'why-nexus-op', title: 'Why Maks Ops: from scattered tools to one connected flow', category: 'Overview', article_type: 'Guide',
+    slug: 'why-maks-ops', title: 'Why Maks Ops: from scattered tools to one connected flow', category: 'Overview', article_type: 'Guide',
     summary: 'The real problem for a growing SME isn\'t missing software — it\'s that Excel, Tally and per-department logs don\'t talk to each other.',
     keywords: 'why, benefits, connected, single source of truth, excel, tally, silos, integration, transformation',
     tags: ['overview', 'adoption'],

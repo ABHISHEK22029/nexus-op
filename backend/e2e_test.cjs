@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════════════════
-   Nexus-OP — Deep End-to-End lifecycle test
+   Maks Ops — Deep End-to-End lifecycle test
    Drives the FULL flow against the running backend (:5000) and
    asserts correctness at every step, then cleans up its own data.
 
@@ -38,7 +38,7 @@ const approx = (a, b, e = 0.5) => Math.abs(a - b) <= e;
 
 (async () => {
   const ids = {};
-  console.log('\n\x1b[1m═══ Nexus-OP DEEP E2E LIFECYCLE TEST ═══\x1b[0m');
+  console.log('\n\x1b[1m═══ Maks Ops DEEP E2E LIFECYCLE TEST ═══\x1b[0m');
 
   // 0 · Health
   section('0 · Health & environment');

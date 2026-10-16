@@ -229,7 +229,7 @@ async function callOnce(messages, useTools) {
     headers: {
       'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.OPENROUTER_REFERRER || 'https://nexus-op.app',
+      'HTTP-Referer': process.env.OPENROUTER_REFERRER || 'https://www.maksops.co.in',
       'X-Title': 'Maks Ops Ask AI',
     },
     body: JSON.stringify(body),

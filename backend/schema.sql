@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
--- Nexus-OP: PostgreSQL Schema for Supabase
+-- Maks Ops: PostgreSQL Schema for Supabase
 -- Run this ONCE in Supabase SQL Editor (or via psql)
 -- ═══════════════════════════════════════════════════════════
 

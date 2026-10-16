@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════════════════
-   Nexus-OP — Demo seeder (PostgreSQL, via the running API)
+   Maks Ops — Demo seeder (PostgreSQL, via the running API)
    Creates one complete, coherent demo project exercising the
    whole chain: Project → Vendors → BOQ → Work Order → Indent →
    PO (+items) → GRN → Measurements → a Draft RA Bill.
