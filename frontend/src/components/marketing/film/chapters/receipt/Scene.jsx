@@ -5,8 +5,9 @@ import { MATERIAL, STOCK, PO_VALUE, makeIds, FILM_DATE } from '../../../data/tra
 import { ScreenHead, Tiles } from '../../shell/screen';
 import { rupee } from '../../shell/format';
 
-/* 11 — GRN.jsx ("Inward New Material": Select PO, Vehicle No., Batch
-   Number, Chainage, Weighbridge Weight → Generate GRN), Stock on hand,
+/* 11 — GRN.jsx ("Inward New Material": Purchase order, Vehicle No., Batch
+   Number, Quantity received → Generate GRN; Chainage only on a construction
+   project, so not here), Stock on hand,
    GrnBillBuilder ("New GRN Bill") and Payables (Total payable, Ageing,
    Top vendors owed, Record payment). */
 export const Icon = PackageCheck;
@@ -19,15 +20,14 @@ function Inward({ t }) {
   const done = t >= 6700;
   return (
     <div className="fm-screen">
-      <ScreenHead icon={PackageCheck} title="Goods Receipt Note (GRN)" sub="Record inward material deliveries against Purchase Orders." />
+      <ScreenHead icon={PackageCheck} title="Goods received" sub="Book what arrived at the gate against its purchase order. Stock goes up as you save." />
       <div className="fm-card">
         <b className="fm-card-h">Inward New Material</b>
         <div className="fm-grn-form">
-          <label className="fm-pf-field is-wide"><small>Select PO</small><span className="fm-input is-app is-select">{t >= 900 ? `${IDS.po} — ${MATERIAL.name}` : '— Select —'}</span></label>
+          <label className="fm-pf-field is-wide"><small>Purchase order</small><span className="fm-input is-app is-select">{t >= 900 ? `${IDS.po} · ${MATERIAL.name}` : 'Choose a purchase order'}</span></label>
           <label className="fm-pf-field"><small>Vehicle No.</small><span className="fm-input is-app"><Typed text="TS 09 UB 4521" t={t} start={1800} cps={14} ph="TS 09 EU 1234" /></span></label>
           <label className="fm-pf-field"><small>Batch Number</small><span className="fm-input is-app"><Typed text="DM-0931" t={t} start={3000} cps={12} ph="B-2026" /></span></label>
-          <label className="fm-pf-field"><small>Chainage</small><span className="fm-input is-app"><span className="fm-ph">CH 12+500</span></span></label>
-          <label className="fm-pf-field"><small>Weighbridge Weight</small><span className="fm-input is-app"><Typed text={String(STOCK.short)} t={t} start={3900} cps={8} /></span></label>
+          <label className="fm-pf-field"><small>Quantity received</small><span className="fm-input is-app"><Typed text={String(STOCK.short)} t={t} start={3900} cps={8} ph="e.g. 180" /></span></label>
           <span className="fl-cursor-host is-inline fm-grn-go">
             <span className={`fl-btn primary${t >= 6300 && t < 6550 ? ' is-pressed' : ''}`}>Generate GRN</span>
             <Cursor on={t >= 5400 && t < 6900} click={t >= 6300 && t < 6550} />
@@ -35,7 +35,7 @@ function Inward({ t }) {
         </div>
       </div>
       <div className="fm-table">
-        <div className="fm-tr is-head fm-tr-grn"><span>Receipt ID</span><span>PO Ref</span><span>Vehicle</span><span>Net Quantity</span></div>
+        <div className="fm-tr is-head fm-tr-grn"><span>Receipt</span><span>Purchase order</span><span>Vehicle</span><span>Quantity</span></div>
         {done && <Show on className="fm-tr fm-tr-grn is-new"><span className="fm-mono-b">{IDS.grn}</span><span className="fm-mono-b">{IDS.po}</span><span>TS 09 UB 4521</span><span><b>{STOCK.short} kg</b></span></Show>}
         <div className="fm-tr fm-tr-grn"><span className="fm-mono-b">GRN-00030</span><span className="fm-mono-b">PFW/FY2026-27/017</span><span>TS 07 HB 0098</span><span>500 nos</span></div>
       </div>

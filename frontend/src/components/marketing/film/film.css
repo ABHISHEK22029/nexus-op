@@ -796,9 +796,9 @@
 .fm-terms small { display: block; font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
 
 /* goods receipt */
-.fm-grn-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
-.fm-grn-form .fm-pf-field.is-wide { grid-column: span 4; }
-.fm-grn-go { grid-column: span 4; justify-self: start; }
+.fm-grn-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
+.fm-grn-form .fm-pf-field.is-wide { grid-column: span 3; }
+.fm-grn-go { grid-column: span 3; justify-self: start; }
 .fm-tr.fm-tr-grn { grid-template-columns: 1fr 1.6fr 1fr 1fr; }
 .fm-tr.fm-tr-stk { grid-template-columns: 1.8fr 0.8fr 0.9fr 0.8fr 1.3fr; }
 .fm-held b { font-family: var(--font-mono); font-size: 14px; }
@@ -840,7 +840,7 @@
 .is-narrow .fm-terms { grid-template-columns: 1fr 1fr; }
 .is-narrow .fm-grn-form { grid-template-columns: 1fr 1fr; }
 .is-narrow .fm-grn-form .fm-pf-field.is-wide, .is-narrow .fm-grn-go { grid-column: span 2; }
-.is-narrow .fm-grn-form > :nth-child(4) { display: none; }
+.is-narrow .fm-grn-form > :nth-child(3) { display: none; }
 .is-narrow .fm-bill, .is-narrow .fm-pay-top { grid-template-columns: 1fr; }
 .is-narrow .fm-bill > .fm-card:first-child { display: none; }
 .is-narrow .fm-pay-top > :nth-child(3) { display: none; }

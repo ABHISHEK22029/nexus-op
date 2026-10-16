@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import VendorPicker from '../components/VendorPicker';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2, ShieldCheck } from 'lucide-react';
+import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2, ShieldCheck, ShoppingCart } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
@@ -176,33 +176,29 @@ const PurchaseOrders = () => {
       .catch(err => toast.error(err.response?.data?.error || 'Failed to record decision'));
   };
 
+  /* Same pill as a quotation's or an invoice's status: sentence case, tinted.
+     The marketing .pill is uppercase and wide, and looked shouted here. */
   const StatusBadge = ({ status }) => {
-    switch(status) {
-      case 'Pending': return <span className="pill pill-neutral">Pending</span>;
-      case 'Approved': return <span className="pill pill-info">Approved</span>;
-      case 'Dispatched': return <span className="pill pill-warn">Dispatched</span>;
-      case 'Delivered': return <span className="pill pill-good">Delivered</span>;
-      default: return null;
-    }
+    const c = { Pending: '#64748b', Approved: '#2563eb', Dispatched: '#d97706', Delivered: '#10b981' }[status];
+    if (!c) return null;
+    return <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap', color: c, background: `${c}1f` }}>{status}</span>;
   };
 
   const s = q.summary || {};
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-6xl mx-auto pb-16">
-      <div className="flex justify-between items-center mb-8">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
-          <h1 className="text-2xl font-semibold text-white/90 tracking-tight">Purchase Orders</h1>
-          <p className="text-gray-500 text-sm mt-1">Create orders with detailed line items and GST.</p>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+            <ShoppingCart size={24} style={{ color: 'var(--brand-amber)' }} /> Purchase Orders
+          </h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>Order from your vendors, line by line, with GST worked out.</p>
         </div>
         {/* Hidden when the API would refuse it anyway. */}
         {canWrite && (
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-white text-black px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-gray-100 transition-colors"
-          >
-            <FilePlus size={18} />
-            Create PO
+          <button onClick={() => setShowForm(!showForm)} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <FilePlus size={16} /> Create PO
           </button>
         )}
       </div>
@@ -418,7 +414,7 @@ const PurchaseOrders = () => {
           <tbody className="divide-y divide-white/5">
             {q.rows.length > 0 ? q.rows.map((po) => (
               <tr key={po.id} className="table-row-animate hover:bg-white/[0.01]">
-                <td className="px-6 py-4 text-sm text-gray-400 font-mono">PO-{po.id.toString().padStart(4, '0')}</td>
+                <td className="px-6 py-4 font-mono" style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{po.poNumber || `PO-${po.id.toString().padStart(4, '0')}`}</td>
                 <td className="px-6 py-4 text-sm font-medium text-white">{po.vendorName}</td>
                 <td className="px-6 py-4 text-sm">
                   <span className="text-gray-300">{po.quantity}</span><span className="text-gray-500 mx-1">×</span><span>{po.itemName}</span>

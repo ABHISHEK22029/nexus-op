@@ -57,7 +57,7 @@ function Lists({ t, beat }) {
   const role = beat.role || 'Owner';
   return (
     <div className="fm-screen">
-      <ScreenHead icon={ShoppingCart} title="Purchase Orders" sub="Create orders with detailed line items and GST." />
+      <ScreenHead icon={ShoppingCart} title="Purchase Orders" sub="Order from your vendors, line by line, with GST worked out." />
       {beat.key === 'held' && (
         <Show on={t >= 1600} className="fm-card fm-auto">
           <span className="fm-auto-ico"><Zap size={15} /></span>

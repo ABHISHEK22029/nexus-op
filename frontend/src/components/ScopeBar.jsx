@@ -15,6 +15,7 @@ import { Building2, Layers, ChevronDown, Check, Globe } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
+import { orgNameFor, rememberOrgName } from '../lib/orgName';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -22,7 +23,7 @@ export default function ScopeBar() {
   const { projects, activeProject, setActiveProject, usesProjects } = useProject();
   const { user } = usePermissions();
   const crossTenant = user?.crossTenant === true;
-  const [org, setOrg] = useState(null);
+  const [org, setOrg] = useState(undefined);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -30,8 +31,10 @@ export default function ScopeBar() {
     const t = getToken();
     if (!t) return;
     fetch(`${API}/company-profile`, { headers: { Authorization: `Bearer ${t}` } })
-      .then(r => (r.ok ? r.json() : null)).then(setOrg).catch(() => {});
-  }, []);
+      .then(r => (r.ok ? r.json() : null))
+      .then(o => { setOrg(o); rememberOrgName(user, o); })
+      .catch(() => setOrg(null));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return;
@@ -42,7 +45,7 @@ export default function ScopeBar() {
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
   }, [open]);
 
-  const orgName = org?.tradeName || org?.name || 'Your organisation';
+  const orgName = orgNameFor(org, user);
 
   return (
     <div ref={ref} className="nav-scope">

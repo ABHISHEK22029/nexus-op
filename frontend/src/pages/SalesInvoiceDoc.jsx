@@ -270,29 +270,31 @@ export default function SalesInvoiceDoc() {
       <div className="print:hidden" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
         <div style={{ flex: '1 1 200px', minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Invoice Total</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>₹{rup(inv.net_amount)}</div>
+          <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>₹{rup(inv.net_amount)}</div>
         </div>
         <div style={{ flex: '1 1 200px', minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Received</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>₹{rup(paid)}</div>
+          <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-display)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>₹{rup(paid)}</div>
         </div>
         <div style={{ flex: '1 1 200px', minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Balance Due</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: due > 0 ? '#ef4444' : '#10b981', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>₹{rup(due)}</div>
+          <div style={{ fontSize: '1.3rem', fontWeight: 800, color: due > 0 ? '#ef4444' : '#10b981', fontFamily: 'var(--font-display)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>₹{rup(due)}</div>
         </div>
       </div>
 
       {/* Record payment */}
       {due > 0 && (
-        <div className="print:hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 14, marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)', marginRight: 6 }}><IndianRupee size={16} style={{ color: 'var(--brand-amber)' }} /> Record payment</div>
+        <div className="print:hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 14, marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)', flexBasis: '100%' }}><IndianRupee size={16} style={{ color: 'var(--brand-amber)' }} /> Record payment</div>
           {/* Explicit widths: the global form styles make a bare select or
               date input fill the row, which stacked this line into four. */}
           <input style={{ ...input, width: 120, flex: 'none' }} type="number" placeholder="Amount" aria-label="Payment amount" value={pay.amount} onChange={e => setPay({ ...pay, amount: e.target.value })} />
           <select style={{ ...input, width: 110, flex: 'none' }} aria-label="Payment mode" value={pay.mode} onChange={e => setPay({ ...pay, mode: e.target.value })}>{['Bank', 'Cash', 'UPI', 'Cheque'].map(m => <option key={m}>{m}</option>)}</select>
-          <input style={{ ...input, width: 160, flex: 'none' }} placeholder="Reference / UTR" aria-label="Payment reference" value={pay.reference} onChange={e => setPay({ ...pay, reference: e.target.value })} />
-          <input style={{ ...input, width: 150, flex: 'none' }} type="date" aria-label="Payment date" value={pay.paidDate} onChange={e => setPay({ ...pay, paidDate: e.target.value })} />
-          <button onClick={recordPayment} className="btn-primary btn-sm"><Plus size={14} /> Add</button>
+          <input style={{ ...input, width: 'auto', flex: '1 1 140px', minWidth: 120 }} placeholder="Reference / UTR" aria-label="Payment reference" value={pay.reference} onChange={e => setPay({ ...pay, reference: e.target.value })} />
+          <span style={{ display: 'flex', gap: 10, flex: 'none' }}>
+            <input style={{ ...input, width: 150, flex: 'none' }} type="date" aria-label="Payment date" value={pay.paidDate} onChange={e => setPay({ ...pay, paidDate: e.target.value })} />
+            <button onClick={recordPayment} className="btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} /> Add</button>
+          </span>
         </div>
       )}
 
@@ -378,7 +380,9 @@ export default function SalesInvoiceDoc() {
             <div className="inv-party-title">Bill To</div>
             <div className="inv-party-name">{billTo.name || '—'}</div>
             <div className="inv-party-detail doc-wrap">
-              {billTo.address || <em style={{ color: '#dc2626' }}>Address missing</em>}{billTo.address && <br />}
+              {/* The line break comes either way: without it the warning ran into the
+                  state ("Address missingTelangana"). */}
+              {billTo.address || <em style={{ color: '#dc2626' }}>Address missing</em>}<br />
               {billTo.state && <>{billTo.state}<br /></>}
               GSTIN: <strong>{billTo.gstin || 'Unregistered'}</strong>
             </div>
@@ -387,7 +391,8 @@ export default function SalesInvoiceDoc() {
             <div className="inv-party-title">Ship To {!differentShipTo && <span style={{ fontWeight: 400, textTransform: 'none' }}>(same as billing)</span>}</div>
             <div className="inv-party-name">{shipTo.name || '—'}</div>
             <div className="inv-party-detail doc-wrap">
-              {shipTo.address || '—'}{shipTo.address && <br />}
+              {shipTo.address && <>{shipTo.address}<br /></>}
+              {!shipTo.address && !shipTo.state && '—'}
               {shipTo.state && <>{shipTo.state}<br /></>}
               {shipTo.gstin && <>GSTIN: <strong>{shipTo.gstin}</strong></>}
             </div>

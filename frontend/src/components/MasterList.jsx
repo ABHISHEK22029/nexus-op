@@ -227,7 +227,7 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
           <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
         ) : rows.length === 0 ? (
           <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>
-            {Icon && <Icon size={38} style={{ opacity: 0.35, marginBottom: 10 }} />}
+            {Icon && <Icon size={38} style={{ opacity: 0.35, display: 'block', margin: '0 auto 10px' }} />}
             {debounced.trim() ? (
               <>
                 <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No {title.toLowerCase()} match “{debounced}”</div>

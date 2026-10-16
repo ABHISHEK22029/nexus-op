@@ -4,9 +4,11 @@ import { Workflow, ShieldCheck, Bell, Save, Repeat, Plus, Trash2, Play, Pause, X
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { today } from '../lib/dates';
+import { fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+/* Paise always as two digits (lib/format). */
+const rupee = (n) => fmtINR(n);
 const FREQ_LABEL = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
 const fmtDay = (d) => (d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 /* A body that is not JSON (a proxy's error page) must not throw past the

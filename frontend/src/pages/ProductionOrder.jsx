@@ -7,7 +7,8 @@ import { fmtCompactINR, fmtCompactQty, fmtINR, fmtQty } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const yieldColor = (p) => (p == null ? 'var(--text-muted)' : p >= 85 ? '#10b981' : p >= 70 ? '#f59e0b' : '#ef4444');
-const rupee = (n) => (n == null ? '—' : `₹${Number(n).toLocaleString('en-IN')}`);
+/* Paise always as two digits (lib/format). */
+const rupee = (n) => (n == null ? '—' : fmtINR(n));
 
 /* One figure: its name, the number, and where the number comes from.
    Module scope, so it is not a new component type on every render.

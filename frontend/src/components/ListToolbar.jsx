@@ -289,7 +289,7 @@ export function EmptyState({ q, icon: Icon, noun = 'records', hint }) {
 
   if (q.isFiltered) return (
     <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-      {Icon && <Icon size={34} style={{ opacity: 0.3, marginBottom: 8 }} />}
+      {Icon && <Icon size={34} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />}
       <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
         No {noun} match {q.search ? `“${q.search}”` : 'these filters'}
       </div>
@@ -299,7 +299,7 @@ export function EmptyState({ q, icon: Icon, noun = 'records', hint }) {
 
   return (
     <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>
-      {Icon && <Icon size={38} style={{ opacity: 0.35, marginBottom: 10 }} />}
+      {Icon && <Icon size={38} style={{ opacity: 0.35, display: 'block', margin: '0 auto 10px' }} />}
       <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No {noun} yet</div>
       {hint && <div style={{ fontSize: '0.85rem', marginTop: 4 }}>{hint}</div>}
     </div>

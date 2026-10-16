@@ -17,6 +17,7 @@ import OrderReadiness from '../components/OrderReadiness';
 import { today } from '../lib/dates';
 import UnitSelect from '../components/UnitSelect';
 import FitNumber from '../components/FitNumber';
+import StatusSelect from '../components/StatusSelect';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -24,6 +25,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
    of the order, so it must be a value this dropdown can display — otherwise
    the select falls back to blank and looks like the status was lost. */
 const STATUSES = ['Open', 'In Procurement', 'Partially Delivered', 'Delivered', 'Closed'];
+const STATUS_COLOR = { Open: '#2563eb', 'In Procurement': '#d97706', 'Partially Delivered': '#8b5cf6', Delivered: '#10b981', Closed: '#64748b' };
 
 export default function CustomerOrders() {
   const toast = useToast();
@@ -305,11 +307,10 @@ export default function CustomerOrders() {
                           read-only otherwise rather than hidden, because the
                           status is information as well as a control. */}
                       {canWrite ? (
-                        <select value={o.status} onChange={e => setStatus(o.id, e.target.value)} style={{ ...input, width: 'auto', padding: '5px 8px', fontSize: '0.76rem', fontWeight: 700 }}>
-                          {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
-                        </select>
+                        <StatusSelect value={o.status} onChange={v => setStatus(o.id, v)} label={`Status of ${o.order_number}`}
+                          color={STATUS_COLOR[o.status]} options={STATUSES} />
                       ) : (
-                        <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>{o.status}</span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 99, whiteSpace: 'nowrap', color: STATUS_COLOR[o.status] || 'var(--text-secondary)', background: `${STATUS_COLOR[o.status] || '#64748b'}1f` }}>{o.status}</span>
                       )}
                     </td>
                     <td style={{ padding: '11px 14px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>

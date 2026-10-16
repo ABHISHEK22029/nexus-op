@@ -29,7 +29,8 @@ import UnitSelect from '../components/UnitSelect';
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+/* Paise always as two digits (lib/format). */
+const rupee = (n) => fmtINR(n);
 
 export default function CreditDebitNotes() {
   const toast = useToast();

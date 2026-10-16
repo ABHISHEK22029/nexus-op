@@ -21,11 +21,13 @@ import { getToken } from '../lib/apiAuth';
 import { today } from '../lib/dates';
 import UnitSelect from '../components/UnitSelect';
 import FitNumber from '../components/FitNumber';
+import StatusSelect from '../components/StatusSelect';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Draft', 'Dispatched', 'Delivered'];
 const STATUS_COLOR = { Draft: '#64748b', Dispatched: '#2563eb', Delivered: '#10b981' };
-const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+/* Paise always as two digits (lib/format). */
+const rupee = (n) => fmtINR(n);
 
 export default function DeliveryChallans() {
   const toast = useToast();
@@ -225,9 +227,8 @@ export default function DeliveryChallans() {
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{dc.vehicle_no || '—'}</td>
                     <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupee(dc.total_value)}</td>
                     <td style={{ padding: '11px 14px' }}>
-                      <select value={dc.status} onChange={e => setStatus(dc.id, e.target.value)} style={{ ...input, width: 'auto', padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700, color: STATUS_COLOR[dc.status] }}>
-                        {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
-                      </select>
+                      <StatusSelect value={dc.status} onChange={v => setStatus(dc.id, v)} label={`Status of ${dc.challan_number}`}
+                        color={STATUS_COLOR[dc.status]} options={STATUSES} />
                     </td>
                     <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button onClick={() => navigate(`/delivery-challans/${dc.id}`)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 6 }}><Eye size={15} /></button>

@@ -21,9 +21,11 @@
 import React, { useState, useEffect } from 'react';
 import { Star, Clock, Package, Info } from 'lucide-react';
 import { getToken } from '../lib/apiAuth';
+import { fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rup = (n) => (n == null || n === '' ? null : `₹${Number(n).toLocaleString('en-IN')}`);
+/* Paise always as two digits (lib/format). */
+const rup = (n) => (n == null || n === '' ? null : fmtINR(n));
 
 export default function VendorPicker({
   vendors = [],

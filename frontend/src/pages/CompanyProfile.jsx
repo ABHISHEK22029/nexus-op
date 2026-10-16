@@ -184,8 +184,10 @@ export default function CompanyProfile() {
     <Shell>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h1 style={{ fontSize: '1.35rem', fontWeight: 700, margin: 0 }}>Company Profile</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: 4, maxWidth: '60ch' }}>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+            <Building2 size={24} style={{ color: 'var(--brand-amber)' }} /> Company Profile
+          </h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4, maxWidth: '60ch' }}>
             These details are printed on every invoice, quotation, challan and purchase order you generate.
           </p>
         </div>
@@ -225,12 +227,15 @@ export default function CompanyProfile() {
         <Field label="Registered business name" required value={form.name} onChange={set('name')} />
         <Field label="Trade name" value={form.tradeName} onChange={set('tradeName')} hint="Shown if different from the registered name" />
         <Field label="Registered address" required value={form.address} onChange={set('address')} textarea />
+        <div style={{ gridColumn: '1 / -1' }}>
+          <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: 5, color: 'var(--text-secondary)' }}>Logo</span>
+          <LogoUploader />
+        </div>
         <Field label="Phone" k="phone" value={form.phone} onChange={set('phone')} onBlur={touch('phone')} error={errorFor('phone')} type="tel" />
         <Field label="Email" k="email" value={form.email} onChange={set('email')} onBlur={touch('email')} error={errorFor('email')} type="email" />
         <Field label="Website" value={form.website} onChange={set('website')} />
-        {/* The file upload leads; the URL field stays underneath for anyone
-            already using one, and as the fallback when nothing is uploaded. */}
-        <LogoUploader />
+        {/* The file upload leads (above); the URL stays for anyone already
+            using one, and as the fallback when nothing is uploaded. */}
         <Field label="Logo URL" value={form.logo_url} onChange={set('logo_url')}
           hint="Optional fallback — used only when no logo file has been uploaded" />
       </Section>
@@ -310,7 +315,7 @@ export default function CompanyProfile() {
 }
 
 /* ── small presentational helpers ─────────────────────────── */
-const Shell = ({ children }) => <div style={{ maxWidth: 900 }}>{children}</div>;
+const Shell = ({ children }) => <div style={{ maxWidth: 900, margin: '0 auto' }}>{children}</div>;
 
 function Banner({ tone, icon, title, body }) {
   const tones = {

@@ -111,7 +111,10 @@ const istDay = (offset = 0) => new Date(Date.now() + 5.5 * 3600e3 + offset * 864
     let reloads = 0;
     page.on('framenavigated', (f) => { if (f === page.mainFrame()) reloads++; });
     await page.evaluate(() => { history.pushState({}, '', '/vendors'); dispatchEvent(new PopStateEvent('popstate')); });
-    const recovered = await waitText(/Who you buy from/, 20000);
+    /* The Vendors page's own sentence: the dashboard's vendor tile also says
+       "Who you buy from", so waiting on that passed before the reload had
+       happened, and the reload then landed in the middle of the next check. */
+    const recovered = await waitText(/Who you buy from, and what each one sells you/, 20000);
     page.off('request', onReq);
     await page.setRequestInterception(false);
     ok(failed === 1 && recovered && reloads >= 1 && new URL(page.url()).pathname === '/vendors',

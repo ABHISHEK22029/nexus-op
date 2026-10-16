@@ -18,10 +18,11 @@ import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
 import FitNumber from '../components/FitNumber';
-import { fmtCompactINR, fmtINR } from '../lib/format';
+import { fmtCompactINR, fmtINR, fmtDate } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+/* Paise always as two digits (lib/format). */
+const rupee = (n) => fmtINR(n);
 const AGE = [['0-30', '#10b981'], ['31-60', '#f59e0b'], ['61-90', '#f97316'], ['90+', '#ef4444']];
 const PSTATUS_COLOR = { Unpaid: '#ef4444', 'Partially Paid': '#f59e0b', Paid: '#10b981' };
 const PAGE = 25;
@@ -93,7 +94,7 @@ export default function Payables() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 14, marginBottom: 14 }}>
             <div style={{ ...card, padding: 20, display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>Total payable</div>
-              <FitNumber exact={fmtINR(data.totalOutstanding)} style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--brand-amber)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{fmtCompactINR(data.totalOutstanding)}</FitNumber>
+              <FitNumber exact={fmtINR(data.totalOutstanding)} style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--brand-amber)', fontFamily: 'var(--font-display)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', marginTop: 2 }}>{fmtCompactINR(data.totalOutstanding)}</FitNumber>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>across {data.billCount} bill{data.billCount === 1 ? '' : 's'}</div>
             </div>
             <div style={{ ...card, padding: 20, minWidth: 0, gridColumn: 'span 2' }}>
@@ -102,7 +103,7 @@ export default function Payables() {
                 {AGE.map(([k, c]) => (
                   <div key={k} style={{ textAlign: 'center', padding: '10px 6px', borderRadius: 10, background: 'var(--bg-elevated)', borderTop: `3px solid ${c}`, minWidth: 0 }}>
                     <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>{k} days</div>
-                    <FitNumber exact={fmtINR(data.ageing[k])} style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', marginTop: 3 }}>{fmtCompactINR(data.ageing[k])}</FitNumber>
+                    <FitNumber exact={fmtINR(data.ageing[k])} style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', marginTop: 3 }}>{fmtCompactINR(data.ageing[k])}</FitNumber>
                   </div>
                 ))}
               </div>
@@ -187,7 +188,7 @@ export default function Payables() {
                         <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>{b.bill_number}</td>
                         <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{b.vendor_name || '—'}</td>
                         <td style={{ padding: '11px 14px', fontSize: '0.82rem', color: overdue ? 'var(--accent-red)' : 'var(--text-secondary)' }}>
-                          {b.due_date ? String(b.due_date).slice(0, 10) : String(b.bill_date).slice(0, 10)}
+                          {fmtDate(b.due_date || b.bill_date)}
                           {overdue && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 6, fontSize: '0.72rem', fontWeight: 700 }}><AlertTriangle size={11} /> {b.age_days}d</span>}
                         </td>
                         <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupee(b.net_amount)}</td>

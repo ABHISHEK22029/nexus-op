@@ -11,7 +11,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const Tile = ({ icon: Icon, label, amount, color }) => (
   <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 18, minWidth: 0 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>{Icon && <Icon size={13} />} {label}</div>
-    <FitNumber exact={fmtINR(amount)} style={{ fontSize: '1.6rem', fontWeight: 800, color: color || 'var(--text-primary)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>{fmtCompactINR(amount)}</FitNumber>
+    <FitNumber exact={fmtINR(amount)} style={{ fontSize: '1.6rem', fontWeight: 800, color: color || 'var(--text-primary)', marginTop: 4, fontFamily: 'var(--font-display)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>{fmtCompactINR(amount)}</FitNumber>
   </div>
 );
 
@@ -88,7 +88,7 @@ export default function Reports() {
       </div>
       <div style={{ ...card, marginBottom: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-muted)' }}>Operational Margin <span style={{ fontWeight: 500, textTransform: 'none' }}>(sales − purchases − expenses)</span></span>
-        <span title={fmtINR(opMargin)} style={{ fontSize: '1.5rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: opMargin >= 0 ? '#10b981' : '#ef4444', whiteSpace: 'nowrap' }}>{fmtCompactINR(opMargin)}</span>
+        <span title={fmtINR(opMargin)} style={{ fontSize: '1.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', color: opMargin >= 0 ? '#10b981' : '#ef4444', whiteSpace: 'nowrap' }}>{fmtCompactINR(opMargin)}</span>
       </div>
 
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
@@ -97,7 +97,7 @@ export default function Reports() {
           <div key={reg.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--border-subtle)' }}>
             <div>
               <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{reg.label}</div>
-              {reg.count != null && <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{reg.count} records</div>}
+              {reg.count != null && <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{reg.count} record{Number(reg.count) === 1 ? '' : 's'}</div>}
             </div>
             <button onClick={() => download(reg.name, reg.path, reg.transform)} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
               <Download size={14} /> Download CSV

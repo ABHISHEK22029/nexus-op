@@ -30,9 +30,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, Trash2, Image as ImageIcon, Eye, EyeOff, Package, Loader } from 'lucide-react';
 import CatalogueThumb from './CatalogueThumb';
+import { fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+/* Paise always as two digits (lib/format). */
+const rupee = (n) => fmtINR(n);
 
 export default function CatalogueProductEditor({ product, api, toast, onClose, onSaved }) {
   const [form, setForm] = useState({

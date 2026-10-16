@@ -34,6 +34,7 @@ import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
 import QuickCreateModal from './QuickCreateModal';
 import NotificationBell from './NotificationBell';
+import { orgNameFor, rememberOrgName } from '../lib/orgName';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -81,7 +82,7 @@ export default function TopBar() {
   const { roleLabel } = usePermissions();
   const navigate = useNavigate();
 
-  const [org, setOrg] = useState(null);
+  const [org, setOrg] = useState(undefined);
   const [createOpen, setCreateOpen] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
@@ -98,11 +99,11 @@ export default function TopBar() {
     const t = getToken();
     fetch(`${API}/company-profile`, { headers: t ? { Authorization: `Bearer ${t}` } : {} })
       .then(r => (r.ok ? r.json() : null))
-      .then(setOrg)
-      .catch(() => {});
-  }, []);
+      .then(o => { setOrg(o); rememberOrgName(user, o); })
+      .catch(() => setOrg(null));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const orgName = org?.tradeName || org?.name || 'Your organisation';
+  const orgName = orgNameFor(org, user);
   const scopeLabel = activeProject ? activeProject.name : 'All work';
 
   return (

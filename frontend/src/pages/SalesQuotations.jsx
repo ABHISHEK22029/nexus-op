@@ -23,11 +23,13 @@ import UnitSelect from '../components/UnitSelect';
 import { lineProblems, discountAmount, adjustmentProblems, money } from '../lib/lineChecks';
 import { suggestDeliveryDays } from '../lib/leadTime';
 import FitNumber from '../components/FitNumber';
+import StatusSelect from '../components/StatusSelect';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Draft', 'Sent', 'Accepted', 'Rejected', 'Converted'];
 const STATUS_COLOR = { Draft: '#64748b', Sent: '#2563eb', Accepted: '#10b981', Rejected: '#ef4444', Converted: '#8b5cf6' };
-const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+/* Paise always as two digits (lib/format). */
+const rupee = (n) => fmtINR(n);
 /* "8 Oct 2026" — for a date column ("2026-10-08") or a timestamp. */
 const onDate = (v) => {
   if (!v) return '';
@@ -402,7 +404,7 @@ export default function SalesQuotations() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-                  {['Quote', 'Customer', 'Valid until', 'Amount', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>)}
+                  {['Quote', 'Customer', 'Valid until', 'Amount', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', whiteSpace: 'nowrap', textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -411,13 +413,12 @@ export default function SalesQuotations() {
                     <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => navigate(`/sales-quotations/${qt.id}`)}>{qt.quote_number}</td>
                     <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{qt.customer_name || '—'}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{qt.valid_until ? new Date(`${String(qt.valid_until).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>{rupee(qt.net_amount)}</td>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{rupee(qt.net_amount)}</td>
                     <td style={{ padding: '11px 14px' }}>
                       {qt.status === 'Converted'
                         ? <span style={{ fontSize: '0.72rem', fontWeight: 700, color: STATUS_COLOR.Converted, background: STATUS_COLOR.Converted + '1f', padding: '3px 9px', borderRadius: 999 }}>Converted</span>
-                        : <select value={qt.status} onChange={e => setStatus(qt.id, e.target.value)} aria-label={`Status of ${qt.quote_number}`} style={{ ...input, width: 'auto', padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700, color: STATUS_COLOR[qt.status] }}>
-                            {STATUSES.filter(st => st !== 'Converted').map(st => <option key={st} value={st}>{st}</option>)}
-                          </select>}
+                        : <StatusSelect value={qt.status} onChange={v => setStatus(qt.id, v)} label={`Status of ${qt.quote_number}`}
+                            color={STATUS_COLOR[qt.status]} options={STATUSES.filter(st => st !== 'Converted')} />}
                       <OnlineAnswer qt={qt} />
                     </td>
                     <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>

@@ -89,13 +89,13 @@ export default function LogoUploader({ onChange }) {
 
       <div style={{ flex: 1, minWidth: 220 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" className="btn-sm secondary" disabled={busy}
+          <button type="button" className="btn-secondary" style={{ fontSize: '0.83rem' }} disabled={busy}
             onClick={() => fileRef.current?.click()}>
             {busy ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
             {src ? 'Replace logo' : 'Upload logo'}
           </button>
           {src && (
-            <button type="button" className="btn-sm secondary" disabled={busy} onClick={remove}>
+            <button type="button" className="btn-secondary" style={{ fontSize: '0.83rem' }} disabled={busy} onClick={remove}>
               <Trash2 size={14} /> Remove
             </button>
           )}

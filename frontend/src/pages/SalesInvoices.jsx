@@ -20,7 +20,8 @@ import { getToken } from '../lib/apiAuth';
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rup = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+/* Paise always as two digits (lib/format). */
+const rup = n => fmtINR(n);
 const statusColor = (s) => s === 'Paid' ? '#10b981' : s === 'Partially Paid' ? 'var(--brand-amber)' : s === 'Sent' ? '#3b82f6' : 'var(--text-muted)';
 
 export default function SalesInvoices() {
@@ -113,7 +114,8 @@ export default function SalesInvoices() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
                 {['Invoice', 'Customer', 'Total', 'Received', 'Balance', 'Status', ''].map(h =>
-                  <th key={h} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>)}
+                  /* Amounts line up on the right, headings with them. */
+                  <th key={h} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', textAlign: ['Total', 'Received', 'Balance'].includes(h) ? 'right' : 'left' }}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {q.rows.map(r => {
@@ -127,9 +129,9 @@ export default function SalesInvoices() {
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>{r.invoice_number}</td>
                       <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{r.customer_name || '—'}</td>
-                      <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontVariantNumeric: 'tabular-nums' }}>{rup(r.net_amount)}</td>
-                      <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: '#10b981', fontVariantNumeric: 'tabular-nums' }}>{rup(r.amount_paid)}</td>
-                      <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: due > 0 ? '#ef4444' : 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{rup(due)}</td>
+                      <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontVariantNumeric: 'tabular-nums', textAlign: 'right', whiteSpace: 'nowrap' }}>{rup(r.net_amount)}</td>
+                      <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: '#10b981', fontVariantNumeric: 'tabular-nums', textAlign: 'right', whiteSpace: 'nowrap' }}>{rup(r.amount_paid)}</td>
+                      <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: due > 0 ? '#ef4444' : 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', textAlign: 'right', whiteSpace: 'nowrap' }}>{rup(due)}</td>
                       <td style={{ padding: '12px 14px' }}>
                         <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: 'var(--bg-elevated)', color: statusColor(r.status) }}>{r.status}</span>
                       </td>

@@ -22,7 +22,7 @@ export default {
   },
   truth: [
     ['pages/GRN.jsx', 'Inward New Material'],
-    ['pages/GRN.jsx', 'Weighbridge Weight'],
+    ['pages/GRN.jsx', 'Quantity received'],
     ['pages/GRN.jsx', 'Generate GRN'],
     ['pages/Inventory.jsx', 'Items held'],
     ['pages/GrnBillBuilder.jsx', 'Vendor Bill Ref'],

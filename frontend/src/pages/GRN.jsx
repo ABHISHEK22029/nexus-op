@@ -18,7 +18,7 @@ import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const GRN = () => {
-  const { activeProject, projectQuery } = useProject();
+  const { activeProject, projectQuery, enabledModules } = useProject();
   const toast = useToast();
   const navigate = useNavigate();
   const { can } = usePermissions();
@@ -30,6 +30,9 @@ const GRN = () => {
   const scope = activeProject?.id ? String(activeProject.id) : '';
   const q = useListQuery('grn', { pageSize: 25, initialFilters: scope ? { projectId: scope } : {} });
   const [pos, setPos] = useState([]);
+  /* PO id → its number (PFW/FY2026-27/018), for the list: a receipt shown
+     against "PO-12" meant nothing to anyone who had not seen the database. */
+  const [poNo, setPoNo] = useState({});
   const [newItem, setNewItem] = useState({ poId: '', vehicleNumber: '', batchNumber: '', chainage: '', receivedQuantity: '' });
   const [warning, setWarning] = useState('');
 
@@ -52,6 +55,7 @@ const GRN = () => {
       .then(d => {
         const rows = Array.isArray(d) ? d : (d.items || []);
         setPos(rows.filter(p => p.status !== 'Delivered'));
+        setPoNo(Object.fromEntries(rows.map(p => [p.id, p.poNumber])));
       })
       .catch(err => toast.error(err.message || 'Something went wrong'));
   }, [activeProject]);
@@ -110,13 +114,12 @@ const GRN = () => {
      refused is not offered. */
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 p-8 space-y-8">
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8" style={{ maxWidth: 1100, margin: '0 auto' }}>
       <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-          <PackageCheck className="text-emerald-400" />
-          Goods Receipt Note (GRN)
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+          <PackageCheck size={24} style={{ color: 'var(--brand-amber)' }} /> Goods received
         </h1>
-        <p className="text-gray-500 mt-1">Record inward material deliveries against Purchase Orders.</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>Book what arrived at the gate against its purchase order. Stock goes up as you save.</p>
       </div>
 
       {canWrite && (
@@ -131,10 +134,10 @@ const GRN = () => {
 
           <form onSubmit={handleAdd} className="flex gap-4 items-end flex-wrap">
             <div className="flex-[2] min-w-[200px]">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Select PO</label>
-              <select className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newItem.poId} onChange={e => setNewItem({...newItem, poId: e.target.value})}>
-                <option value="">-- Choose PO --</option>
-                {pos.map(p => <option key={p.id} value={p.id}>PO-{p.id} ({p.itemName}) - Qty: {p.quantity}</option>)}
+              <label className="block text-xs font-medium text-gray-500 mb-1">Purchase order</label>
+              <select className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" style={{ padding: '10px 14px' }} value={newItem.poId} onChange={e => setNewItem({...newItem, poId: e.target.value})}>
+                <option value="">Choose a purchase order</option>
+                {pos.map(p => <option key={p.id} value={p.id}>{p.poNumber || `PO-${p.id}`} · {p.itemName} · Qty {p.quantity}</option>)}
               </select>
             </div>
             <div className="flex-1 min-w-[150px]">
@@ -145,13 +148,13 @@ const GRN = () => {
                <label className="block text-xs font-medium text-gray-500 mb-1">Batch Number</label>
                <input type="text" className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newItem.batchNumber} onChange={e => setNewItem({...newItem, batchNumber: e.target.value})} placeholder="B-2026" />
             </div>
-            <div className="flex-1 min-w-[150px]">
+            {enabledModules.includes('Chainage') && <div className="flex-1 min-w-[150px]">
                <label className="block text-xs font-medium text-gray-500 mb-1">Chainage</label>
                <input type="text" className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newItem.chainage} onChange={e => setNewItem({...newItem, chainage: e.target.value})} placeholder="CH 12+500" />
-            </div>
+            </div>}
             <div className="flex-1 min-w-[150px]">
-               <label className="block text-xs font-medium text-emerald-400 mb-1">Weighbridge Weight</label>
-               <input type="number" className="w-full bg-black/50 border border-emerald-500/30 rounded-lg px-3 py-2 text-white text-sm" value={newItem.receivedQuantity} onChange={handleQtyChange} />
+               <label className="block text-xs font-medium text-gray-500 mb-1">Quantity received</label>
+               <input type="number" className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newItem.receivedQuantity} onChange={handleQtyChange} placeholder="e.g. 180" />
             </div>
 
             <button type="submit" className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -162,7 +165,7 @@ const GRN = () => {
       )}
 
       <div className="mt-8">
-        <ListToolbar q={q} placeholder="Search vehicle no., batch number, chainage…" />
+        <ListToolbar q={q} placeholder={enabledModules.includes('Chainage') ? 'Search vehicle no., batch number, chainage…' : 'Search vehicle no. or batch number…'} />
       </div>
 
       <div className="bg-[#111113] border border-white/5 rounded-xl overflow-hidden">
@@ -173,10 +176,10 @@ const GRN = () => {
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-gray-400 bg-black/40 uppercase">
               <tr>
-                <th className="px-6 py-4 font-medium">Receipt ID</th>
-                <th className="px-6 py-4 font-medium">PO Ref</th>
+                <th className="px-6 py-4 font-medium">Receipt</th>
+                <th className="px-6 py-4 font-medium">Purchase order</th>
                 <th className="px-6 py-4 font-medium">Vehicle</th>
-                <th className="px-6 py-4 font-medium text-emerald-400">Net Quantity</th>
+                <th className="px-6 py-4 font-medium text-right">Quantity</th>
                 <th className="px-6 py-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
@@ -184,9 +187,9 @@ const GRN = () => {
               {q.rows.map((req) => (
                 <tr key={req.id} className="hover:bg-white/[0.02] transition-colors text-gray-300">
                   <td className="px-6 py-4 font-medium text-gray-400">GRN-{req.id.toString().padStart(5, '0')}</td>
-                  <td className="px-6 py-4">PO-{req.poId}</td>
-                  <td className="px-6 py-4">{req.vehicleNumber}</td>
-                  <td className="px-6 py-4 font-bold text-emerald-400">{req.receivedQuantity}</td>
+                  <td className="px-6 py-4" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{poNo[req.poId] || `PO-${req.poId}`}</td>
+                  <td className="px-6 py-4">{req.vehicleNumber || '—'}</td>
+                  <td className="px-6 py-4 font-bold text-right" style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{Number(req.receivedQuantity).toLocaleString('en-IN')}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
                       <button type="button" onClick={() => navigate(`/grn/${req.id}/bill`)} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.76rem', padding: '5px 11px' }}>

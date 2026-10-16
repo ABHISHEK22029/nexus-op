@@ -33,7 +33,7 @@ const ACTIVITY = [
 function Badges({ t }) {
   return (
     <div className="fm-screen">
-      <ScreenHead icon={ShoppingCart} title="Purchase Orders" sub="Create orders with detailed line items and GST." />
+      <ScreenHead icon={ShoppingCart} title="Purchase Orders" sub="Order from your vendors, line by line, with GST worked out." />
       <div className="fm-card">
         <b className="fm-card-h"><Bell size={15} /> Where the menu counts what is waiting</b>
         <div className="fm-badge-list">

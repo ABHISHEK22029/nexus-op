@@ -43,6 +43,7 @@
    ══════════════════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { fmtINR } from '../lib/format';
 import {
   ShoppingBag, Send, X, Phone, Globe, Mail, ArrowLeft, Check, Package, Search,
   ChevronLeft, ChevronRight, MessageCircle, Clock, Layers, Share2,
@@ -50,7 +51,8 @@ import {
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const PAGE = 24;
-const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+/* Paise always as two digits (lib/format). */
+const rupee = (n) => fmtINR(n);
 
 export default function PublicCatalogue() {
   const { slug, productSlug } = useParams();

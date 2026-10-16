@@ -197,7 +197,7 @@ export default function BetaOnboarding() {
             <div className="ob-footer">
               <span className="ob-progress">Step 2 of 6 — Org Setup</span>
               <div className="ob-btns">
-                <button className="btn-sm secondary" onClick={() => navigate('/beta-welcome')}>&larr; Back</button>
+                <button className="btn-secondary" onClick={() => navigate('/beta-welcome')}>&larr; Back</button>
                 <button className="btn-sm primary" onClick={handleNext}>Save & Continue &rarr;</button>
               </div>
             </div>
@@ -229,7 +229,7 @@ export default function BetaOnboarding() {
               ))}
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: '32px', gap: '12px' }}>
-              <button className="btn-sm secondary" style={{ padding: '12px 24px', fontSize: '14px' }} onClick={() => setStep(2)}>&larr; Back</button>
+              <button className="btn-secondary" style={{ padding: '12px 24px', fontSize: '14px' }} onClick={() => setStep(2)}>&larr; Back</button>
               <button className="btn-sm primary" style={{ padding: '12px 24px', fontSize: '14px' }} onClick={handleNext}>Confirm Role & Continue &rarr;</button>
             </div>
           </div>
@@ -322,8 +322,8 @@ export default function BetaOnboarding() {
             <div className="proj-footer">
               <span style={{ fontSize: '12px', color: 'var(--text-disabled)' }}>Fields marked <span style={{ color: 'var(--accent-red)' }}>*</span> are required</span>
               <div className="ob-btns">
-                <button className="btn-sm secondary" onClick={() => setStep(3)}>&larr; Back</button>
-                <button className="btn-sm secondary">Skip for now</button>
+                <button className="btn-secondary" onClick={() => setStep(3)}>&larr; Back</button>
+                <button className="btn-secondary">Skip for now</button>
                 <button className="btn-sm primary" onClick={handleNext} disabled={saving}>
                   {saving ? 'Creating...' : 'Create Project \u2192'}
                 </button>
