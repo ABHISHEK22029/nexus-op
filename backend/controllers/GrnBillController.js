@@ -25,12 +25,35 @@ function compute(items, { freight = 0, otherCharges = 0, discount = 0, gstRate =
   const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
   const taxable = r2(subTotal + Number(freight || 0) + Number(otherCharges || 0) - Number(discount || 0));
   const gstTotal = r2(taxable * (Number(gstRate) || 0) / 100);
+  /* CGST + SGST = GST exactly. Halving and rounding each on its own gave
+     1263.11 + 1263.11 against a GST of 2526.21, so the printed lines added
+     up to a paisa more than the net payable. Same rule as sales invoices. */
   const cgst = interstate ? 0 : r2(gstTotal / 2);
-  const sgst = interstate ? 0 : r2(gstTotal / 2);
+  const sgst = interstate ? 0 : r2(gstTotal - cgst);
   const igst = interstate ? gstTotal : 0;
   const net = r2(taxable + gstTotal + Number(roundOff || 0));
   return { lines, subTotal, taxable, gstTotal, cgst, sgst, igst, net };
 }
+
+/* Days to pay, from what the PO or the vendor says. Only a figure that is
+   plainly a number of days counts: "Net 30", "30 days", or a vendor's bare
+   "30". "50% advance, 50% before delivery" is not 50 days. */
+function termDays(poTerms, vendorTerms) {
+  const po = String(poTerms || '');
+  const m = po.match(/net\s*(\d{1,3})\b/i) || po.match(/\b(\d{1,3})\s*days?\b/i);
+  if (m) return Number(m[1]);
+  const v = String(vendorTerms || '').match(/^\s*(\d{1,3})\s*(days?)?\s*$/i);
+  return v ? Number(v[1]) : null;
+}
+const addDays = (iso, n) => {
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/* The bill a receipt already has, if any. */
+const billFor = async (q, grnId) => (await q.query(
+  'SELECT id, bill_number FROM grn_bills WHERE grn_id = $1 ORDER BY id LIMIT 1', [grnId])).rows[0] || null;
 
 // GET /grn-bills/prefill/:grnId — build a draft from the GRN's PO.
 exports.prefill = async (req, res) => {
@@ -44,10 +67,22 @@ exports.prefill = async (req, res) => {
     if (!grn) return res.status(404).json({ error: 'GRN not found' });
     const po = (await db.query('SELECT * FROM purchase_orders WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [grn.poId, grn.owner_id])).rows[0];
     const vendor = po ? (await db.query('SELECT * FROM vendors WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [po.vendorId, po.owner_id])).rows[0] : null;
-    let items = (po ? (await db.query('SELECT * FROM po_line_items WHERE "poId" = $1 ORDER BY sno', [po.id])).rows : [])
-      .map(li => ({ description: li.description, hsn: li.hsn || '', uom: li.uom || 'nos', quantity: li.quantity, rate: li.unitPrice }));
+    const poLines = po ? (await db.query('SELECT * FROM po_line_items WHERE "poId" = $1 ORDER BY sno, id', [po.id])).rows : [];
+    /* What ARRIVED, not what was ordered. A part-load of 30 of 50 opened the
+       bill at 50, so the vendor was billed for goods still on the road
+       unless somebody noticed. A receipt is booked against one line of the
+       PO (grn.po_line_item_id, or the only line); the bill is for that line,
+       at the quantity received. An older receipt against a several-line PO,
+       booked before receipts named their line, still offers every line. */
+    const received = Number(grn.receivedQuantity) || 0;
+    const line = poLines.find(l => String(l.id) === String(grn.po_line_item_id)) || (poLines.length === 1 ? poLines[0] : null);
+    const asItem = (li, qty) => ({ description: li.description, hsn: li.hsn || '', uom: li.uom || 'nos', quantity: qty, rate: li.unitPrice });
+    let items = line ? [asItem(line, received || line.quantity)]
+      : poLines.map(li => asItem(li, li.quantity));
     // Fall back to the PO header if no line items.
-    if (!items.length && po) items = [{ description: po.itemName, hsn: '', uom: 'nos', quantity: grn.receivedQuantity || po.quantity, rate: po.unitPrice || 0 }];
+    if (!items.length && po) items = [{ description: po.itemName, hsn: '', uom: 'nos', quantity: received || po.quantity, rate: po.unitPrice || 0 }];
+    const days = termDays(po?.paymentTerms, vendor?.payment_terms);
+    const existing = await billFor(db, grn.id);
 
     // Shared intra/inter rule: derive from vendor vs company state code (GSTIN
     // first two digits). Same logic the PO invoice uses. The bill can override.
@@ -64,13 +99,18 @@ exports.prefill = async (req, res) => {
       interstate,                        // auto-derived, overridable in the builder
       gstRate: po?.gst_rate ?? 18,       // default to the PO's GST rate for consistency
       items,
+      /* the due date the terms give, from today's bill date; editable */
+      termDays: days,
+      dueDate: days != null ? addDays(new Date(Date.now() + 5.5 * 3600e3).toISOString(), days) : null,
+      /* a receipt is billed once — the builder says so instead of a form */
+      existingBill: existing ? { id: existing.id, billNumber: existing.bill_number } : null,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
 // POST /grn-bills — create the customizable bill.
 exports.create = async (req, res) => {
-  const { grnId, poId, vendorId, projectId, billDate, vendorBillRef, items, freight, otherCharges, discount, gstRate, interstate, roundOff, notes } = req.body;
+  const { grnId, poId, vendorId, projectId, billDate, dueDate, vendorBillRef, items, freight, otherCharges, discount, gstRate, interstate, roundOff, notes } = req.body;
   if (!items || !items.length) return res.status(400).json({ error: 'Add at least one line item' });
   /* The vendor, the receipt and the PO it bills are this company's. The
      vendor id was stored as sent, so a bill could name another company's
@@ -79,17 +119,39 @@ exports.create = async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+    /* One bill per receipt. Nothing stopped a second: Generate Bill stayed
+       on the receipt's row, and a second Create Bill made GB-0002 beside
+       GB-0001 for the same goods — two payables for one delivery. The
+       receipt row is locked first, so two clicks at once cannot both pass. */
+    if (grnId) {
+      await client.query('SELECT id FROM grn WHERE id = $1 FOR UPDATE', [grnId]);
+      const existing = await billFor(client, grnId);
+      if (existing) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `This receipt is already billed as ${existing.bill_number}. Open that bill to change it.`, billId: existing.id, billNumber: existing.bill_number });
+      }
+    }
+    /* Due date: as entered; else from the PO's or the vendor's terms; else
+       none (Payables then counts from the bill date, as before). */
+    let due = dueDate || null;
+    if (!due && poId) {
+      const po = (await client.query('SELECT "paymentTerms", "vendorId" FROM purchase_orders WHERE id = $1', [poId])).rows[0];
+      const vendor = vendorId || po?.vendorId
+        ? (await client.query('SELECT payment_terms FROM vendors WHERE id = $1', [vendorId || po?.vendorId])).rows[0] : null;
+      const days = termDays(po?.paymentTerms, vendor?.payment_terms);
+      if (days != null) due = addDays(billDate || new Date(Date.now() + 5.5 * 3600e3).toISOString(), days);
+    }
     const t = compute(items, { freight, otherCharges, discount, gstRate, interstate, roundOff });
     const billNumber = `GB-${String(await nextSeq(client, {
       ownerId: req.user?.orgId, docType: 'grn_bill',
     })).padStart(4, '0')}`;
     const { rows } = await client.query(
       `INSERT INTO grn_bills ("projectId", grn_id, po_id, vendor_id, bill_number, vendor_bill_ref, bill_date,
-         sub_total, freight, other_charges, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes, owner_id)
-       VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7::date, CURRENT_DATE),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id`,
+         sub_total, freight, other_charges, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes, owner_id, due_date)
+       VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7::date, CURRENT_DATE),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::date) RETURNING id`,
       [projectId || null, grnId || null, poId || null, vendorId || null, billNumber, vendorBillRef || null, billDate || null,
        t.subTotal, freight || 0, otherCharges || 0, discount || 0, gstRate ?? 18, !!interstate, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null,
-       req.user?.orgId ?? req.user?.id ?? null]
+       req.user?.orgId ?? req.user?.id ?? null, due]
     );
     const billId = rows[0].id;
     let so = 0;
@@ -159,7 +221,10 @@ exports.getById = async (req, res) => {
     const payments = (await db.query('SELECT * FROM vendor_payments WHERE grn_bill_id = $1 ORDER BY id', [req.params.id])).rows;
     let company = null;
     try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
-    res.json({ ...bill, items, vendor, payments, company });
+    /* The PO by its number, for the printed bill ("PO #5355" was the row id). */
+    const poNumber = bill.po_id ? (await db.query(
+      'SELECT "poNumber" FROM purchase_orders WHERE id = $1 AND owner_id IS NOT DISTINCT FROM $2', [bill.po_id, bill.owner_id])).rows[0]?.poNumber : null;
+    res.json({ ...bill, items, vendor, payments, company, po_number: poNumber || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

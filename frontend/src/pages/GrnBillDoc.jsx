@@ -76,7 +76,7 @@ export default function GrnBillDoc() {
           </div>
           <div className="inv-party">
             <div className="inv-party-title">Against</div>
-            <div className="inv-party-detail">GRN #{bill.grn_id} · PO #{bill.po_id}</div>
+            <div className="inv-party-detail">{bill.grn_id ? `GRN-${String(bill.grn_id).padStart(5, '0')}` : '—'} · PO {bill.po_number || (bill.po_id ? `#${bill.po_id}` : '—')}</div>
           </div>
         </div>
 
@@ -115,8 +115,8 @@ export default function GrnBillDoc() {
               {bill.interstate
                 ? <tr><td className="tl">IGST @ {bill.gst_rate}%</td><td className="tv">{rup(bill.igst)}</td></tr>
                 : <>
-                    <tr><td className="tl">CGST</td><td className="tv">{rup(bill.cgst)}</td></tr>
-                    <tr><td className="tl">SGST</td><td className="tv">{rup(bill.sgst)}</td></tr>
+                    <tr><td className="tl">CGST @ {Number(bill.gst_rate) / 2}%</td><td className="tv">{rup(bill.cgst)}</td></tr>
+                    <tr><td className="tl">SGST @ {Number(bill.gst_rate) / 2}%</td><td className="tv">{rup(bill.sgst)}</td></tr>
                   </>}
               {bill.round_off ? <tr><td className="tl">ROUND OFF</td><td className="tv">{rup(bill.round_off)}</td></tr> : null}
               <tr className="tf"><td className="tl" style={{ color: '#000' }}>NET PAYABLE</td><td className="tv" style={{ color: '#000' }}>{rup(bill.net_amount)}</td></tr>

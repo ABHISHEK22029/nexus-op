@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Tags, Layers } from 'lucide-react';
 import MasterList from '../components/MasterList';
 import BomModal from '../components/BomModal';
+import { fmtINR } from '../lib/format';
 
 export default function SKUs() {
   const [bomSku, setBomSku] = useState(null);
@@ -25,14 +26,14 @@ export default function SKUs() {
           { key: 'name', label: 'Name', required: true, placeholder: 'V-Type Cross Arm' },
           { key: 'unit', label: 'Unit', type: 'select', options: ['nos', 'kg', 'set', 'mtr', 'units'] },
           { key: 'price', label: 'Price (₹)', type: 'number', placeholder: '850' },
-          { key: 'hsn', label: 'HSN', placeholder: '7308' },
+          { key: 'hsn', label: 'HSN', placeholder: '7308', digits: true, maxLength: 8 },
           { key: 'description', label: 'Description', wide: true, placeholder: 'Optional details / specification' },
         ]}
         columns={[
           { key: 'sku_code', label: 'Code' },
           { key: 'name', label: 'Name' },
           { key: 'unit', label: 'Unit' },
-          { key: 'price', label: 'Price', render: r => (r.price != null ? `₹${Number(r.price).toLocaleString('en-IN')}` : '—') },
+          { key: 'price', label: 'Price', render: r => (r.price != null ? `${fmtINR(r.price)}` : '—') },
           { key: 'hsn', label: 'HSN' },
         ]}
       />

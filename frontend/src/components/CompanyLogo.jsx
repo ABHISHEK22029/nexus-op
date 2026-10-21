@@ -31,8 +31,8 @@ export default function CompanyLogo({ fallbackUrl = null, height = 44, alt = '',
         const r = await fetch(`${API}/company-profile/logo`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
-        /* 404 simply means none uploaded — expected, not an error. */
-        if (!r.ok) { if (alive && fallbackUrl) setSrc(fallbackUrl); return; }
+        /* 204: none uploaded — expected, not an error. */
+        if (!r.ok || r.status === 204) { if (alive && fallbackUrl) setSrc(fallbackUrl); return; }
         const blob = await r.blob();
         if (!alive) return;
         url = URL.createObjectURL(blob);

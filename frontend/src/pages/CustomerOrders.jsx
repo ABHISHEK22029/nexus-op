@@ -335,7 +335,7 @@ export default function CustomerOrders() {
                             <tr key={it.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                               <td style={{ padding: '7px 4px', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.84rem' }}>{it.description}</td>
                               <td style={{ padding: '7px 4px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{it.quantity} {it.unit}</td>
-                              <td style={{ padding: '7px 4px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{it.target_price ? `target ₹${Number(it.target_price).toLocaleString('en-IN')}` : ''}</td>
+                              <td style={{ padding: '7px 4px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{it.target_price ? `target ${fmtINR(it.target_price)}` : ''}</td>
                               <td style={{ padding: '7px 4px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                                 <button onClick={() => makeProduction(it)} disabled={making === it.id} title="Fabricate this line in-house" className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 6, opacity: making === it.id ? 0.6 : 1 }}>
                                   <Factory size={13} /> {making === it.id ? 'Making…' : 'Make'}

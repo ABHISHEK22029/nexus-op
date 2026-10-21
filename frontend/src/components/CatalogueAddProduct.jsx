@@ -272,7 +272,7 @@ export default function CatalogueAddProduct({ open, api, toast, onClose, onCreat
                 <div>
                   <label style={lbl}>HSN</label>
                   <input style={input} value={form.hsn} aria-label="HSN" placeholder="7308"
-                    onChange={e => set('hsn', e.target.value)} />
+                    inputMode="numeric" maxLength={8} onChange={e => set('hsn', e.target.value.replace(/\D/g, ''))} />
                 </div>
               </div>
             </div>

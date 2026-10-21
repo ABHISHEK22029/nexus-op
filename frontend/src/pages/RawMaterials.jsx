@@ -1,6 +1,7 @@
 import React from 'react';
 import { Boxes } from 'lucide-react';
 import MasterList from '../components/MasterList';
+import { fmtINR } from '../lib/format';
 
 export default function RawMaterials() {
   return (
@@ -16,14 +17,14 @@ export default function RawMaterials() {
         { key: 'grade', label: 'Grade', placeholder: 'IS 2062' },
         { key: 'unit', label: 'Unit', type: 'select', options: ['kg', 'nos', 'mtr', 'ton', 'sqm'] },
         { key: 'standard_rate', label: 'Standard Rate (₹)', type: 'number', placeholder: '62' },
-        { key: 'hsn', label: 'HSN', placeholder: '7216' },
+        { key: 'hsn', label: 'HSN', placeholder: '7216', digits: true, maxLength: 8 },
       ]}
       columns={[
         { key: 'material_code', label: 'Code' },
         { key: 'name', label: 'Material' },
         { key: 'grade', label: 'Grade' },
         { key: 'unit', label: 'Unit' },
-        { key: 'standard_rate', label: 'Rate', render: r => (r.standard_rate != null ? `₹${Number(r.standard_rate).toLocaleString('en-IN')}` : '—') },
+        { key: 'standard_rate', label: 'Rate', render: r => (r.standard_rate != null ? `${fmtINR(r.standard_rate)}` : '—') },
       ]}
     />
   );

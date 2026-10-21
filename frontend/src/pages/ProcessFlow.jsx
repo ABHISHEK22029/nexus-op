@@ -11,6 +11,7 @@ import {
   Package, TrendingUp, RefreshCw, Info, Workflow
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { fmtINR } from '../lib/format';
 
 /* ── Dagre layout ── */
 const dagreGraph = new dagre.graphlib.Graph();
@@ -221,7 +222,7 @@ const ProcessFlow = () => {
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>RA Bill-{bill.id}</span>
               </div>
             ),
-            details: { type: 'RA Bill', id: `BILL-${String(bill.id).padStart(4,'0')}`, gross: `₹${Number(bill.grossAmount||0).toLocaleString('en-IN')}`, net: `₹${Number(bill.netAmount||0).toLocaleString('en-IN')}`, status: bill.status || 'Draft' }
+            details: { type: 'RA Bill', id: `BILL-${String(bill.id).padStart(4,'0')}`, gross: `${fmtINR(bill.grossAmount||0)}`, net: `${fmtINR(bill.netAmount||0)}`, status: bill.status || 'Draft' }
           },
           style: makeNodeStyle('bill', isDark),
         });

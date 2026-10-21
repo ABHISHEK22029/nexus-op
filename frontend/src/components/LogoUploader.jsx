@@ -37,7 +37,7 @@ export default function LogoUploader({ onChange }) {
       if (!s.exists) { revoke(); setSrc(null); setMeta(null); return; }
       setMeta(s);
       const r = await fetch(`${API}/company-profile/logo`, { headers: auth() });
-      if (!r.ok) return;
+      if (!r.ok || r.status === 204) return;
       const blob = await r.blob();
       revoke();
       urlRef.current = URL.createObjectURL(blob);

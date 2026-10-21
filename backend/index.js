@@ -691,20 +691,27 @@ app.get('/po', async (req, res) => {
       where.push(`owner_id = $${params.length}`);
     }
     const result = await runList(db, {
-      table: `(SELECT po.*, v.name AS "vendorName", wo.name AS "workOrderName"
+      /* order_value: the lines' total when the PO has lines (a PO raised
+         from the screen carries its prices there, and its header price is
+         empty), the header's qty × price otherwise. */
+      table: `(SELECT po.*, v.name AS "vendorName", wo.name AS "workOrderName",
+                      COALESCE(li.lines_value, COALESCE(po.quantity,0) * COALESCE(po."unitPrice",0)) AS order_value
                  FROM purchase_orders po
                  LEFT JOIN vendors v ON po."vendorId" = v.id
-                 LEFT JOIN work_orders wo ON po."workOrderId" = wo.id) AS po`,
+                 LEFT JOIN work_orders wo ON po."workOrderId" = wo.id
+                 LEFT JOIN (SELECT "poId", SUM(COALESCE(quantity,0) * COALESCE("unitPrice",0)) AS lines_value
+                              FROM po_line_items GROUP BY "poId") li ON li."poId" = po.id) AS po`,
       where, params,
       query: req.query,
       searchColumns: ["poNumber", "vendorName", "itemName", "workOrderName", "status", "quoteRef"],
       filterColumns: ["status", "approval_status", "projectId", "vendorId", "workOrderId"],
       allowedSort: ["id", "poNumber", "itemName", "quantity", "unitPrice", "status", "approval_status", "createdAt"],
       defaultSort: 'id', defaultDir: 'DESC',
-      /* Order value is qty × price (there is no stored total on the header).
+      /* Order value from the lines (above). It was qty × header price, and
+         a PO raised from the screen has no header price, so the tile read ₹0.
          `awaiting_approval` is the queue the page exists to clear. */
       summary: `COUNT(*)::int AS count,
-                COALESCE(SUM(COALESCE(quantity,0) * COALESCE("unitPrice",0)),0)::numeric AS value,
+                COALESCE(SUM(order_value),0)::numeric AS value,
                 COUNT(*) FILTER (WHERE COALESCE(approval_status,'Pending') = 'Pending')::int AS awaiting_approval,
                 COUNT(*) FILTER (WHERE status = 'Delivered')::int AS delivered`,
     });
@@ -810,7 +817,10 @@ app.post('/po', async (req, res) => {
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'Pending', $17) RETURNING id`,
       [
-        projectId || null, vendorId, workOrderId || null, itemName, quantity, unitPrice || null,
+        /* A one-line PO keeps its price on the header too — what the
+           receipt and the older screens read; several lines keep theirs. */
+        projectId || null, vendorId, workOrderId || null, itemName, quantity,
+        unitPrice || (Array.isArray(items) && items.length === 1 ? Number(items[0].unitPrice) || null : null),
         poNumber, quoteRef || null, paymentTerms || null, priceBasis || 'Ex Works',
         pnfInsurance || 'Vendor Scope', loadingScope || 'Buyer Scope', warranty || '12 months',
         amountInWords || null, indentId || null, (gstRate === undefined || gstRate === '' ? 18 : Number(gstRate)),
@@ -1617,7 +1627,15 @@ app.put('/skus/:id/bom', async (req, res) => {
   try {
     await client.query('BEGIN');
     await client.query('DELETE FROM sku_bom WHERE sku_id = $1', [req.params.id]);
-    for (const l of lines) {
+    /* A line that names its material but not a component name takes the
+       material's name. It was skipped, and the reply still said success —
+       so a recipe sent from anywhere but this app's own screen came back
+       empty with no word why. */
+    const ids = lines.filter(l => !l?.componentName && l?.rawMaterialId).map(l => l.rawMaterialId);
+    const names = ids.length ? Object.fromEntries((await client.query(
+      'SELECT id, name FROM raw_materials WHERE id = ANY($1::int[])', [ids])).rows.map(r => [String(r.id), r.name])) : {};
+    for (const l0 of lines) {
+      const l = { ...l0, componentName: l0?.componentName || names[String(l0?.rawMaterialId)] };
       if (!l.componentName) continue;
       await client.query(
         `INSERT INTO sku_bom (sku_id, raw_material_id, component_name, qty_per_unit, uom) VALUES ($1,$2,$3,$4,$5)`,
@@ -2142,7 +2160,12 @@ app.get('/dashboard', async (req, res) => {
         (SELECT COALESCE(SUM(GREATEST(net_amount - paid, 0)), 0) FROM issued) AS outstanding,
         (SELECT COUNT(*) FROM issued WHERE due_date < fy.today AND net_amount - paid > 0.005) AS overdue_count,
         (SELECT COALESCE(SUM(net_amount - paid), 0) FROM issued WHERE due_date < fy.today AND net_amount - paid > 0.005) AS overdue_amount,
-        (SELECT COUNT(*) FROM bills WHERE TRUE ${salesOwner}) AS ra_bills
+        (SELECT COUNT(*) FROM bills WHERE TRUE ${salesOwner}) AS ra_bills,
+        /* what the business owes its vendors today: unpaid vendor bills,
+           the same rows and arithmetic as Payables */
+        (SELECT COALESCE(SUM(net_amount - COALESCE(amount_paid, 0)), 0) FROM grn_bills
+          WHERE net_amount > COALESCE(amount_paid, 0) ${salesOwner}) AS payable,
+        (SELECT COUNT(*) FROM grn_bills WHERE net_amount > COALESCE(amount_paid, 0) ${salesOwner}) AS payable_count
       FROM fy`, salesParams)).rows[0];
     const fyFrom = Number(String(s.fy_start).slice(0, 4));
 
@@ -2156,6 +2179,7 @@ app.get('/dashboard', async (req, res) => {
         overdueCount:  parseInt(s.overdue_count),
         overdueAmount: Number(s.overdue_amount),
       },
+      payables: { outstanding: Number(s.payable), count: parseInt(s.payable_count) },
       hasRaBills:      parseInt(s.ra_bills) > 0,
       totalVendors:    parseInt(t.vendors),
       totalPOs:        parseInt(t.pos),

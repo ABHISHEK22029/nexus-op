@@ -3,8 +3,8 @@ import SetupReadiness from '../components/SetupReadiness';
 import axios from 'axios';
 import {
   Users, ShoppingCart, Package, TrendingUp, Receipt,
-  AlertTriangle, Activity, BarChart3, Layers, ChevronRight, RefreshCw, Clock,
-  IndianRupee, LayoutDashboard,
+  AlertTriangle, Activity, BarChart3, ChevronRight, RefreshCw, Clock,
+  IndianRupee, LayoutDashboard, Wallet,
 } from 'lucide-react';
 import {
   ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
@@ -312,7 +312,10 @@ const Dashboard = () => {
         <KpiCard title="Active vendors" value={fmtNum(stats?.totalVendors)} exact={exactNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" sub="Who you buy from" />
         <KpiCard title="Purchase orders" value={fmtNum(stats?.totalPOs)} exact={exactNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po"
           sub={known(stats?.totalPOs) ? `${fmtNum(stats?.deliveredPOs ?? 0)} delivered · ${deliveryRate}%` : undefined} />
-        <KpiCard title="Units ordered" value={fmtNum(stats?.totalPOQty)} exact={exactNum(stats?.totalPOQty)} icon={Layers} accent="#0891B2" link="/po" sub="Across all purchase orders" />
+        {/* What is owed to vendors. It replaces "Units ordered", which added
+            kilos to pieces to metres — a number with no unit. */}
+        <KpiCard title="Owed to vendors" value={fmtCrore(stats?.payables?.outstanding)} exact={exactINR(stats?.payables?.outstanding)} icon={Wallet} accent="#0891B2" link="/payables"
+          sub={known(stats?.payables?.count) ? `${stats.payables.count} unpaid bill${stats.payables.count === 1 ? '' : 's'}` : undefined} />
         <KpiCard title="Stock items" value={fmtNum(stats?.inventoryCount)} exact={exactNum(stats?.inventoryCount)} icon={Package} accent="#D97706" link="/inventory" sub="Rows on Stock on hand" />
       </Group>
 

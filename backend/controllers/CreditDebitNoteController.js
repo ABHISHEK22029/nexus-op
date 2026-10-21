@@ -97,7 +97,7 @@ exports.getById = async (req, res) => {
 
 // POST /credit-debit-notes
 exports.create = async (req, res) => {
-  const { noteType, partyType, partyId, refType, refId, refNumber, noteDate, reason, gstRate, items, notes } = req.body;
+  const { noteType, partyType, partyId, refType, refId, refNumber, refDate, noteDate, reason, gstRate, items, notes } = req.body;
   if (!['credit', 'debit'].includes(noteType)) return res.status(400).json({ error: 'noteType must be credit or debit' });
   if (!['customer', 'vendor'].includes(partyType)) return res.status(400).json({ error: 'partyType must be customer or vendor' });
   if (!partyId) return res.status(400).json({ error: `Pick a ${partyType}` });
@@ -109,6 +109,24 @@ exports.create = async (req, res) => {
   try {
     await client.query('BEGIN');
     const interstate = await deriveInterstate(client, partyType, partyId, req.user?.orgId);
+    /* The original's number AND date (Section 34). There was nowhere to give
+       the date, so every note counted as "missing invoice ref" for good.
+       Now it is asked for; and when the number is one of this company's own
+       invoices or vendor bills, its date and link are filled in from it. */
+    let ref = { type: refType || null, id: refId || null, date: refDate || null };
+    const refNo = String(refNumber || '').trim();
+    if (refNo && (!ref.date || !ref.id)) {
+      const own = req.user?.orgId ?? null;
+      const found = partyType === 'customer'
+        ? (await client.query(
+            `SELECT id, COALESCE(invoice_date, created_at::date) AS d FROM sales_invoices
+              WHERE LOWER(invoice_number) = LOWER($1) AND owner_id IS NOT DISTINCT FROM $2 ORDER BY id DESC LIMIT 1`, [refNo, own])).rows[0]
+        : (await client.query(
+            `SELECT id, bill_date AS d FROM grn_bills
+              WHERE (LOWER(bill_number) = LOWER($1) OR LOWER(vendor_bill_ref) = LOWER($1)) AND owner_id IS NOT DISTINCT FROM $2
+              ORDER BY id DESC LIMIT 1`, [refNo, own])).rows[0];
+      if (found) ref = { type: ref.type || (partyType === 'customer' ? 'sales_invoice' : 'grn_bill'), id: ref.id || found.id, date: ref.date || found.d };
+    }
     const lines = items.map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
     const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
     const gstTotal = r2(subTotal * (Number(gstRate) || 0) / 100);
@@ -121,10 +139,10 @@ exports.create = async (req, res) => {
     const num = await allocate(client, { ownerId: req.user?.orgId, docType: `note_${noteType}` });
     const { rows } = await client.query(
       `INSERT INTO credit_debit_notes (owner_id, note_type, party_type, party_id, ref_type, ref_id, ref_number, note_number, note_date, reason,
-         sub_total, gst_rate, interstate, cgst, sgst, igst, gst_total, total, amount_in_words, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::date, CURRENT_DATE),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
-      [req.user?.orgId || null, noteType, partyType, partyId, refType || null, refId || null, refNumber || null, num, noteDate || null, reason || null,
-       subTotal, gstRate || 0, interstate, cgst, sgst, igst, gstTotal, total, amountInWords(total), notes || null]);
+         sub_total, gst_rate, interstate, cgst, sgst, igst, gst_total, total, amount_in_words, notes, ref_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::date, CURRENT_DATE),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::date) RETURNING id`,
+      [req.user?.orgId || null, noteType, partyType, partyId, ref.type, ref.id, refNo || null, num, noteDate || null, reason || null,
+       subTotal, gstRate || 0, interstate, cgst, sgst, igst, gstTotal, total, amountInWords(total), notes || null, ref.date || null]);
     const nid = rows[0].id;
     let so = 0;
     for (const l of lines) {

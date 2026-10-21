@@ -12,6 +12,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import { Link2, Plus, Trash2, Star, Search, Package, Info } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 3 }));
@@ -309,7 +310,7 @@ function AllLinks() {
                   <td style={{ padding: '10px 14px' }}>{r.material_name || '—'}</td>
                   <td style={{ padding: '10px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
                     {r.price != null
-                      ? `₹${Number(r.price).toLocaleString('en-IN')}${r.price_uom ? '/' + r.price_uom : ''}`
+                      ? `${fmtINR(r.price)}${r.price_uom ? '/' + r.price_uom : ''}`
                       : <em style={{ color: '#dc2626', fontFamily: 'inherit', fontSize: '0.78rem' }}>not agreed</em>}
                   </td>
                   <td style={{ padding: '10px 14px', fontVariantNumeric: 'tabular-nums' }}>{r.moq ?? '—'}</td>

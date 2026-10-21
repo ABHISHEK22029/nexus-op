@@ -100,7 +100,7 @@ async function uploadLogo(token, bytes, filename, type = 'image/png') {
   r = await fetch(`${API}/company-profile/logo`, { method: 'DELETE', headers: auth(A.token) });
   ok(r.status === 200, 'org A removes its logo');
   r = await fetch(`${API}/company-profile/logo`, { headers: auth(A.token) });
-  ok(r.status === 404, 'and then there is none');
+  ok(r.status === 204, `and then there is none (${r.status}, nothing to draw)`);
   r = await fetch(`${API}/company-profile/logo`, { headers: auth(B.token) });
   ok(r.status === 200, 'org B’s logo is untouched by org A deleting theirs');
 

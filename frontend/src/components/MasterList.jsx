@@ -36,7 +36,16 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const empty = () => Object.fromEntries(fields.map(f => [f.key, '']));
+  /* A dropdown starts on the option it shows. It started empty, so the
+     browser showed the first option ("Cash") while the record saved none:
+     an expense left as it looked was stored with no payment mode. */
+  const startOf = (f) => (f.type === 'select' ? (f.default ?? f.options?.[0] ?? '') : '');
+  const empty = () => Object.fromEntries(fields.map(f => [f.key, startOf(f)]));
+  const filled = (row) => {
+    const out = { ...empty(), ...row };
+    for (const f of fields) if (f.type === 'select' && (out[f.key] == null || out[f.key] === '')) out[f.key] = startOf(f);
+    return out;
+  };
 
   // Don't fire a request on every keystroke.
   useEffect(() => {
@@ -75,7 +84,7 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
   const openNew = () => { setEditing(null); setOriginal(null); setForm(empty()); resetChecks(); setShowForm(true); };
   /* The values it was opened with: an odd value an older record already
      holds is not re-checked unless it is changed. */
-  const openEdit = (row) => { setEditing(row.id); setOriginal({ ...empty(), ...row }); setForm({ ...empty(), ...row }); resetChecks(); setShowForm(true); };
+  const openEdit = (row) => { setEditing(row.id); setOriginal({ ...empty(), ...row }); setForm(filled(row)); resetChecks(); setShowForm(true); };
 
   const checks = Object.fromEntries(fields.filter(f => f.check).map(f => [f.key, f.check]));
   const problems = { ...formProblems(form, checks, { original, pair }), ...Object.fromEntries(Object.entries(serverErr).filter(([, v]) => v)) };
@@ -184,9 +193,9 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
                      never turned red. */
                   <input style={{ ...input, ...(shown(f.key) ? { borderColor: '#dc2626', boxShadow: 'inset 0 0 0 1px #dc2626' } : {}) }}
                     type={f.type || 'text'} placeholder={f.placeholder || ''} value={form[f.key] ?? ''}
-                    onChange={e => setField(f.key, f.upper ? e.target.value.toUpperCase() : e.target.value)}
+                    onChange={e => setField(f.key, f.upper ? e.target.value.toUpperCase() : f.digits ? e.target.value.replace(/\D/g, '') : e.target.value)}
                     onBlur={f.check ? () => setTouched(t => ({ ...t, [f.key]: true })) : undefined}
-                    inputMode={f.type === 'tel' ? 'tel' : f.type === 'number' ? 'decimal' : undefined}
+                    inputMode={f.type === 'tel' ? 'tel' : f.type === 'number' ? 'decimal' : f.digits ? 'numeric' : undefined}
                     autoComplete={f.check ? 'off' : undefined} maxLength={f.maxLength}
                     data-field={f.key} aria-invalid={f.check ? !!shown(f.key) : undefined} />
                 )}

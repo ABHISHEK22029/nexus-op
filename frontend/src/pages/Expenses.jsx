@@ -1,6 +1,7 @@
 import React from 'react';
 import { Wallet } from 'lucide-react';
 import MasterList from '../components/MasterList';
+import { fmtINR } from '../lib/format';
 
 export default function Expenses() {
   return (
@@ -27,7 +28,7 @@ export default function Expenses() {
         { key: 'description', label: 'Description' },
         { key: 'paid_to', label: 'Paid To' },
         { key: 'payment_mode', label: 'Mode' },
-        { key: 'amount', label: 'Amount', numeric: true, render: r => `₹${Number(r.amount || 0).toLocaleString('en-IN')}` },
+        { key: 'amount', label: 'Amount', numeric: true, render: r => `${fmtINR(r.amount || 0)}` },
       ]}
     />
   );

@@ -169,7 +169,7 @@ export default function DeliveryChallans() {
           {lines.map((l, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
               <div style={{ flex: 2.5 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} /></div>
-              <div style={{ flex: 0.9 }}><label style={lbl}>HSN</label><input style={input} value={l.hsn} onChange={e => setLine(i, { hsn: e.target.value })} /></div>
+              <div style={{ flex: 0.9 }}><label style={lbl}>HSN</label><input style={input} value={l.hsn} inputMode="numeric" maxLength={8} onChange={e => setLine(i, { hsn: e.target.value.replace(/\D/g, '') })} /></div>
               {/* Unit before quantity, as everywhere else. The money column
                   stays "Value" and not "Rate": rule 55 asks a challan for
                   the taxable value of the goods being moved, and this is a

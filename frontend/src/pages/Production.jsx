@@ -200,8 +200,8 @@ export default function Production() {
                         </td>
                         <td style={{ padding: '12px 14px', fontWeight: 800, color: yieldColor(o.yield?.yieldPct) }}>{o.yield?.yieldPct != null ? `${o.yield.yieldPct}%` : '—'}</td>
                         <td style={{ padding: '12px 14px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{o.yield?.inputWeight ? `${o.yield.inputWeight} kg` : '—'}</td>
-                        <td style={{ padding: '12px 14px', color: '#10b981', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{o.yield?.scrapRecovery ? `₹${o.yield.scrapRecovery.toLocaleString('en-IN')}` : '—'}</td>
-                        <td style={{ padding: '12px 14px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{o.yield?.costPerUnit != null ? `₹${o.yield.costPerUnit.toLocaleString('en-IN')}` : '—'}</td>
+                        <td style={{ padding: '12px 14px', color: '#10b981', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{o.yield?.scrapRecovery ? `${fmtINR(o.yield.scrapRecovery)}` : '—'}</td>
+                        <td style={{ padding: '12px 14px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>{o.yield?.costPerUnit != null ? `${fmtINR(o.yield.costPerUnit)}` : '—'}</td>
                         <td style={{ padding: '12px 14px', textAlign: 'right', color: 'var(--text-muted)' }}><ArrowRight size={16} /></td>
                       </tr>
                     ))}

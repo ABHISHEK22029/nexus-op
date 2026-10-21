@@ -381,7 +381,7 @@ function Review({ id, vendors, onClose, onOpen, onSaved }) {
                     <input style={S.input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} aria-label={`Review line ${i + 1} item`} />
                   </div>
                 </td>
-                <td style={{ ...S.td, padding: '5px 4px', width: 90 }}><input style={{ ...S.input, fontFamily: 'var(--font-mono)' }} value={l.hsn} onChange={e => setLine(i, { hsn: e.target.value })} aria-label={`Review line ${i + 1} HSN`} /></td>
+                <td style={{ ...S.td, padding: '5px 4px', width: 90 }}><input style={{ ...S.input, fontFamily: 'var(--font-mono)' }} value={l.hsn} inputMode="numeric" maxLength={8} onChange={e => setLine(i, { hsn: e.target.value.replace(/\D/g, '') })} aria-label={`Review line ${i + 1} HSN`} /></td>
                 <td style={{ ...S.td, padding: '5px 4px', width: 90 }}><input style={S.input} type="number" step="any" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} aria-label={`Review line ${i + 1} quantity`} /></td>
                 {/* What the vendor wrote stays (marked) until a standard unit is picked. */}
                 <td style={{ ...S.td, padding: '5px 4px', width: 96 }}><UnitSelect style={S.input} value={l.uom} onChange={v => setLine(i, { uom: v })} ariaLabel={`Review line ${i + 1} unit`} /></td>

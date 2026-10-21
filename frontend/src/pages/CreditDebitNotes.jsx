@@ -40,7 +40,7 @@ export default function CreditDebitNotes() {
   const [customers, setCustomers] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [head, setHead] = useState({ noteType: 'credit', partyType: 'customer', partyId: '', noteDate: '', refNumber: '', gstRate: '18', reason: '' });
+  const [head, setHead] = useState({ noteType: 'credit', partyType: 'customer', partyId: '', noteDate: '', refNumber: '', refDate: '', gstRate: '18', reason: '' });
   const [lines, setLines] = useState([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
 
   // Only the pick-lists for the form load here; the list itself is q's job.
@@ -79,7 +79,7 @@ export default function CreditDebitNotes() {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.detail || d.error || 'Could not create the note');
     toast.success(`${d.noteNumber} created`);
-    setShowForm(false); setHead({ noteType: 'credit', partyType: 'customer', partyId: '', noteDate: '', refNumber: '', gstRate: '18', reason: '' });
+    setShowForm(false); setHead({ noteType: 'credit', partyType: 'customer', partyId: '', noteDate: '', refNumber: '', refDate: '', gstRate: '18', reason: '' });
     setLines([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
     q.reload();
   };
@@ -149,7 +149,11 @@ export default function CreditDebitNotes() {
               </select>
             </div>
             <div><label style={lbl}>Against (invoice/bill)</label><input style={input} value={head.refNumber} onChange={e => setHead({ ...head, refNumber: e.target.value })} placeholder="INV-0007 / GB-0003" /></div>
-            <div><label style={lbl}>Date</label><input style={input} type="date" value={head.noteDate} onChange={e => setHead({ ...head, noteDate: e.target.value })} /></div>
+            {/* The original's date is required on a note (GST Section 34).
+                Left blank, it is taken from your own invoice or bill when the
+                number above is one of them. */}
+            <div><label style={lbl}>Original's date</label><input style={input} type="date" value={head.refDate} onChange={e => setHead({ ...head, refDate: e.target.value })} aria-label="Date of the original invoice or bill" title="Filled in for you when the number is one of your own invoices or bills" /></div>
+            <div><label style={lbl}>Note date</label><input style={input} type="date" value={head.noteDate} onChange={e => setHead({ ...head, noteDate: e.target.value })} /></div>
             <div><label style={lbl}>GST %</label><input style={input} type="number" value={head.gstRate} onChange={e => setHead({ ...head, gstRate: e.target.value })} /></div>
           </div>
           <div style={{ marginBottom: 12 }}><label style={lbl}>Reason</label><input style={input} value={head.reason} onChange={e => setHead({ ...head, reason: e.target.value })} placeholder="e.g. 1 unit returned — damaged in transit" /></div>
@@ -158,7 +162,7 @@ export default function CreditDebitNotes() {
           {lines.map((l, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
               <div style={{ flex: 2.5 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} /></div>
-              <div style={{ flex: 0.9 }}><label style={lbl}>HSN</label><input style={input} value={l.hsn} onChange={e => setLine(i, { hsn: e.target.value })} /></div>
+              <div style={{ flex: 0.9 }}><label style={lbl}>HSN</label><input style={input} value={l.hsn} inputMode="numeric" maxLength={8} onChange={e => setLine(i, { hsn: e.target.value.replace(/\D/g, '') })} /></div>
               {/* A credit note has to name the unit. "3 returned" against a
                   line originally billed in kilograms is ambiguous, and under
                   section 34 this document adjusts a tax invoice — it should

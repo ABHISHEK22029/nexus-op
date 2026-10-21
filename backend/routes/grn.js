@@ -31,7 +31,12 @@ router.get('/', async (req, res) => {
       where.push(`"projectId" = $${params.length}`);
     }
     const result = await runList(db, {
-      table: 'grn',
+      /* With its bill, when it has one: the row then opens that bill, and
+         "Generate Bill" is offered only to a receipt not yet billed. */
+      table: `(SELECT g.*, b.id AS bill_id, b.bill_number
+                 FROM grn g
+                 LEFT JOIN LATERAL (SELECT id, bill_number FROM grn_bills
+                                     WHERE grn_id = g.id ORDER BY id LIMIT 1) b ON TRUE) AS grn`,
       query: req.query,
       searchColumns: ['vehicleNumber', 'batchNumber', 'chainage'],
       allowedSort: ['id', 'date', 'receivedQuantity', 'vehicleNumber'],
@@ -154,6 +159,13 @@ router.post('/', async (req, res) => {
 
     /* What arrived, named by the line when there is one. */
     const receivedItemName = line?.description || po.itemName;
+    /* Its cost, from the line's own price. The header price is empty on a PO
+       raised from the screen (its lines carry the prices), so received stock
+       came in at no cost and Stock value stayed at ₹0. Per stocking unit:
+       5 MT bought at ₹60,000 a tonne and stocked as 168 sheets is
+       ₹1,785.71 a sheet. Worked out once stockQty is known, below. */
+    const price = line?.unitPrice ?? po.unitPrice ?? null;
+    const poLabel = po.poNumber || `PO-${String(poId).padStart(4, '0')}`;
 
     const totals = await receiptTotals(client, poId, line?.id ?? null);
     if (totals.complete) {
@@ -214,7 +226,10 @@ router.post('/', async (req, res) => {
     let stockQty = Number(receivedQuantity);
     let uomNote = null;
     if (material) {
-      const poLine = (await client.query(
+      /* The unit of the line being received — it read the PO's first line,
+         so on a two-line order the second material was converted in the
+         first one's unit. */
+      const poLine = line || (await client.query(
         `SELECT uom, uom_code FROM po_line_items WHERE "poId" = $1 ORDER BY sno LIMIT 1`, [poId]
       )).rows[0];
       const receivedUom = String(
@@ -238,6 +253,9 @@ router.post('/', async (req, res) => {
         }
       }
     }
+
+    const unitCostOf = () => (price == null || !stockQty ? null
+      : Math.round(((Number(receivedQuantity) * Number(price)) / stockQty) * 10000) / 10000);
 
     /* Find the stock row this receipt belongs to.
 
@@ -284,7 +302,7 @@ router.post('/', async (req, res) => {
         `INSERT INTO inventory ("projectId", "itemName", quantity, raw_material_id, uom, unit_cost, owner_id)
          VALUES ($1, $2, 0, $3, $4, $5, $6) RETURNING id`,
         [resolvedProjectId, receivedItemName, materialId,
-         material?.base_uom || material?.unit || null, po.unitPrice ?? null, ownerId]
+         material?.base_uom || material?.unit || null, unitCostOf(), ownerId]
       )).rows[0].id;
     }
 
@@ -302,7 +320,7 @@ router.post('/', async (req, res) => {
       itemName: receivedItemName,
       quantity: stockQty,              // positive: goods coming in
       uom: material?.base_uom || material?.unit || null,
-      unitCost: po.unitPrice ?? null,
+      unitCost: unitCostOf(),
       movementType: 'grn',
       refType: 'grn',
       refId: grnId,
@@ -319,12 +337,12 @@ router.post('/', async (req, res) => {
     // Step 5: Log activity
     await client.query(
       `INSERT INTO activities ("projectId", description, type, owner_id) VALUES ($1, $2, $3, $4)`,
-      [resolvedProjectId, `GRN-${String(grnId).padStart(5, '0')} received for PO-${String(poId).padStart(4, '0')} (${receivedQuantity} units of ${po.itemName})`, 'GRN',
+      [resolvedProjectId, `GRN-${String(grnId).padStart(5, '0')} received against ${poLabel} (${receivedQuantity} ${line?.uom || 'units'} of ${receivedItemName})`, 'GRN',
        req.user?.orgId ?? req.user?.id ?? null]
     );
 
     await client.query('COMMIT');
-    notify({ org: po.owner_id ?? req.user?.orgId ?? req.user?.id }, { type: 'GRN_RECEIVED', title: `Goods received · GRN-${String(grnId).padStart(5, '0')}`, message: `${receivedQuantity} of ${po.itemName} received against PO-${poId}`, entityType: 'grn', entityId: grnId, link: `/grn/${grnId}/bill` });
+    notify({ org: po.owner_id ?? req.user?.orgId ?? req.user?.id }, { type: 'GRN_RECEIVED', title: `Goods received · GRN-${String(grnId).padStart(5, '0')}`, message: `${receivedQuantity} ${line?.uom || ''} of ${receivedItemName} received against ${poLabel}`.replace(/\s+/g, ' '), entityType: 'grn', entityId: grnId, link: `/grn/${grnId}/bill` });
     /* The caller needs to know whether the order is finished or still owed
        something — that is the question a receipt raises. */
     res.json({

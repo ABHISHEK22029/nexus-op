@@ -83,7 +83,10 @@ const FIELD_HELPERS = `
   function findField(pattern, kind) {
     const re = new RegExp(pattern, 'i');
     const all = [...document.querySelectorAll(kind || 'input, select, textarea')];
-    return all.find(el => re.test((labelOf(el) || '') + ' ' + (el.placeholder || ''))) || null;
+    /* By its visible label and placeholder, or by the name it gives itself
+       (aria-label): the quotation's Discount box sits beside a ₹/% switch,
+       and its nearest text was the switch's. */
+    return all.find(el => re.test((labelOf(el) || '') + ' ' + (el.placeholder || '')) || re.test(el.getAttribute('aria-label') || '')) || null;
   }
   function setNative(el, value) {
     const proto = el.tagName === 'SELECT' ? window.HTMLSelectElement.prototype
@@ -109,7 +112,7 @@ async function setField(page, pattern, value) {
    /\w/ matched "— Select —" first, so the form submitted with no customer
    and the whole chain reported "quotation not created" when the real fault
    was one option too high in the list. */
-const PLACEHOLDER = /^\s*[—-]|^\s*(select|choose|none|free text)\b/i;
+const PLACEHOLDER = /^\s*[—-]|^\s*(select|choose|none|free text|not a saved product)\b/i;
 
 async function pickOption(page, pattern, optionRe) {
   return page.evaluate((p, o, H, ph) => {
@@ -202,7 +205,7 @@ const settle = (ms = 1500) => new Promise(r => setTimeout(r, ms));
      the product sits idle. Testing the free-text path only would have hidden
      that the SKU path works. The description is set AFTER the SKU because
      choosing one overwrites it. */
-  const sku = await pickOption(page, '^SKU', bomSku ? escapeRe(bomSku.name) : '\\w');
+  const sku = await pickOption(page, '^SKU|product$', bomSku ? escapeRe(bomSku.name) : '\\w');
   await settle(500);
   await setField(page, 'GST %', GST);
   await setField(page, 'Description', DESC);

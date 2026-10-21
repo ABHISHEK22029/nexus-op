@@ -110,8 +110,13 @@ const call = async (path, opts = {}) => {
     `tax was charged on the discounted value, not the gross → taxable ${taxable}`);
 
   const shipState = one.customer.shipping_state || one.customer.state;
-  const interstate = homeState && shipState &&
-    String(shipState).trim().toLowerCase() !== String(homeState).trim().toLowerCase();
+  /* By state CODE on both sides: the company's state is often a code
+     ("36") and the customer's a name ("Telangana"), and compared as text
+     the same state read as interstate. */
+  const { toStateCode } = require('../shared/gstStates');
+  const interstate = homeState && shipState && toStateCode(shipState) && toStateCode(homeState)
+    ? toStateCode(shipState) !== toStateCode(homeState)
+    : homeState && shipState && String(shipState).trim().toLowerCase() !== String(homeState).trim().toLowerCase();
   if (interstate) {
     ok(igst > 0 && cgst === 0 && sgst === 0,
       `${shipState} vs ${homeState} is interstate → IGST only (cgst=${cgst} sgst=${sgst} igst=${igst})`);

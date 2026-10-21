@@ -89,8 +89,9 @@ async function logoDataUrl(fallbackUrl) {
   try {
     const token = localStorage.getItem('nexus_token');
     let r = await fetch(`${API}/company-profile/logo`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-    if (!r.ok && fallbackUrl) r = await fetch(fallbackUrl);
-    if (!r.ok) return null;
+    /* 204: no logo uploaded; the URL from the profile, if any, instead */
+    if ((!r.ok || r.status === 204) && fallbackUrl) r = await fetch(fallbackUrl);
+    if (!r.ok || r.status === 204) return null;
     const url = URL.createObjectURL(await r.blob());
     try {
       const img = await new Promise((resolve, reject) => {

@@ -16,9 +16,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { X, Search, FileText, ArrowRight } from 'lucide-react';
 import { getToken } from '../lib/apiAuth';
+import { fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const rup = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+const rup = n => `${fmtINR(n || 0)}`;
 
 export default function PickOrderModal({ onClose, onPick }) {
   const [orders, setOrders] = useState(null);

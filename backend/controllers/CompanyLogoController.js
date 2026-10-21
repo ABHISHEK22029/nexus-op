@@ -74,7 +74,10 @@ exports.get = async (req, res) => {
       `SELECT mime, data FROM attachments
         WHERE owner_id = $1 AND entity_type = $2
         ORDER BY id DESC LIMIT 1`, [owner, ENTITY]);
-    if (!row) return res.status(404).json({ error: 'No logo uploaded' });
+    /* No logo is an answer, not an error: 204, nothing to draw. A 404 here
+       was logged in red in the browser console on every document page of a
+       company that had not uploaded one. */
+    if (!row) return res.status(204).end();
     res.setHeader('Content-Type', row.mime || 'application/octet-stream');
     /* An SVG logo opened on its own must not run script: no sniffing, and a
        sandbox with nothing allowed. Drawn in an <img>, it never could. */

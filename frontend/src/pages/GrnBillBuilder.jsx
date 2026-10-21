@@ -14,7 +14,7 @@ export default function GrnBillBuilder() {
   const toast = useToast();
   const [ctx, setCtx] = useState(null);
   const [items, setItems] = useState([]);
-  const [f, setF] = useState({ billDate: '', vendorBillRef: '', freight: '', otherCharges: '', discount: '', gstRate: 18, interstate: false, roundOff: '', notes: '' });
+  const [f, setF] = useState({ billDate: '', dueDate: '', vendorBillRef: '', freight: '', otherCharges: '', discount: '', gstRate: 18, interstate: false, roundOff: '', notes: '' });
 
   useEffect(() => {
     fetch(`${API}/grn-bills/prefill/${grnId}`).then(r => r.ok ? r.json() : null).then(d => {
@@ -22,7 +22,8 @@ export default function GrnBillBuilder() {
       setCtx(d);
       setItems((d.items || []).map(it => ({ ...it, uom: it.uom || 'nos', quantity: it.quantity ?? '', rate: it.rate ?? '' })));
       // Default GST rate + intra/inter from the PO (shared with the PO invoice); still editable.
-      setF(prev => ({ ...prev, gstRate: d.gstRate ?? prev.gstRate, interstate: !!d.interstate }));
+      /* The due date the PO's or vendor's terms give; editable. */
+      setF(prev => ({ ...prev, gstRate: d.gstRate ?? prev.gstRate, interstate: !!d.interstate, dueDate: d.dueDate || '' }));
     });
   }, [grnId]);
 
@@ -35,7 +36,9 @@ export default function GrnBillBuilder() {
   const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
   const taxable = r2(subTotal + (+f.freight || 0) + (+f.otherCharges || 0) - (+f.discount || 0));
   const gstTotal = r2(taxable * (+f.gstRate || 0) / 100);
+  /* CGST + SGST = GST exactly, as the server stores it. */
   const cgst = f.interstate ? 0 : r2(gstTotal / 2);
+  const sgst = f.interstate ? 0 : r2(gstTotal - cgst);
   const igst = f.interstate ? gstTotal : 0;
   const net = r2(taxable + gstTotal + (+f.roundOff || 0));
 
@@ -47,12 +50,14 @@ export default function GrnBillBuilder() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           grnId: Number(grnId), poId: ctx?.po?.id, vendorId: ctx?.vendor?.id, projectId: ctx?.projectId,
-          billDate: f.billDate || null, vendorBillRef: f.vendorBillRef, items: valid,
+          billDate: f.billDate || null, dueDate: f.dueDate || null, vendorBillRef: f.vendorBillRef, items: valid,
           freight: +f.freight || 0, otherCharges: +f.otherCharges || 0, discount: +f.discount || 0,
           gstRate: +f.gstRate || 0, interstate: f.interstate, roundOff: +f.roundOff || 0, notes: f.notes,
         }),
       });
       const d = await res.json();
+      /* Already billed (by someone else, or a second tab): go to that bill. */
+      if (res.status === 409 && d.billId) { toast.error(d.error); navigate(`/grn-bills/${d.billId}`); return; }
       if (!res.ok) throw new Error(d.error || 'Failed');
       toast.success(`Bill ${d.billNumber} created`);
       navigate(`/grn-bills/${d.id}`);
@@ -66,22 +71,42 @@ export default function GrnBillBuilder() {
 
   if (!ctx) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading GRN…</div>;
 
+  const grnNo = `GRN-${String(ctx.grn?.id ?? '').padStart(5, '0')}`;
+  /* A receipt is billed once. "Generate Bill" stayed on the receipt's row
+     and made a second bill (a second payable) for the same goods. */
+  if (ctx.existingBill) {
+    return (
+      <div style={{ maxWidth: 640, margin: '40px auto', ...card, textAlign: 'center' }}>
+        <ReceiptText size={28} style={{ color: 'var(--brand-amber)' }} />
+        <h1 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', margin: '10px 0 6px' }}>{grnNo} is already billed</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '0 0 16px' }}>
+          Its bill is <b>{ctx.existingBill.billNumber}</b>. One receipt has one bill, so the vendor is not paid twice for the same goods.
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button className="btn-primary btn-sm" onClick={() => navigate(`/grn-bills/${ctx.existingBill.id}`)}>Open {ctx.existingBill.billNumber}</button>
+          <button className="btn-secondary" onClick={() => navigate('/grn')}>Back to Goods received</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-      <button onClick={() => navigate('/grn')} className="inv-act-btn" style={{ marginBottom: 16 }}><ArrowLeft size={15} /> Back to GRN</button>
+      <button onClick={() => navigate('/grn')} className="inv-act-btn" style={{ marginBottom: 16 }}><ArrowLeft size={15} /> Back to Goods received</button>
 
       <div style={{ ...card, marginBottom: 16 }}>
         <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
-          <ReceiptText size={22} style={{ color: 'var(--brand-amber)' }} /> New GRN Bill
+          <ReceiptText size={22} style={{ color: 'var(--brand-amber)' }} /> Vendor bill
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', marginTop: 4 }}>
-          From GRN #{ctx.grn?.id} · PO {ctx.po?.poNumber || ctx.po?.id} · Vendor <b>{ctx.vendor?.name || '—'}</b> — everything below is editable.
+          For {grnNo} · PO {ctx.po?.poNumber || ctx.po?.id} · Vendor <b>{ctx.vendor?.name || '—'}</b>. Filled in with what was received; everything below is editable.
         </p>
       </div>
 
       {/* Header fields */}
       <div style={{ ...card, marginBottom: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
         <div><label style={lbl}>Bill Date</label><input style={input} type="date" value={f.billDate} onChange={e => setF({ ...f, billDate: e.target.value })} /></div>
+        <div><label style={lbl}>Due date{ctx.termDays != null && <span style={{ fontWeight: 400 }}> ({ctx.termDays} days)</span>}</label><input style={input} type="date" value={f.dueDate} onChange={e => setF({ ...f, dueDate: e.target.value })} aria-label="Due date" /></div>
         <div><label style={lbl}>Vendor Bill Ref</label><input style={input} value={f.vendorBillRef} onChange={e => setF({ ...f, vendorBillRef: e.target.value })} placeholder="INV-2026-..." /></div>
         <div><label style={lbl}>GST Rate %</label><input style={input} type="number" value={f.gstRate} onChange={e => setF({ ...f, gstRate: e.target.value })} /></div>
         <div><label style={lbl}>GST Type</label>
@@ -104,7 +129,7 @@ export default function GrnBillBuilder() {
             {items.map((it, i) => (
               <tr key={i} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                 <td style={{ padding: '5px 4px' }}><input style={input} value={it.description} onChange={e => setItem(i, { description: e.target.value })} placeholder="Item" /></td>
-                <td style={{ padding: '5px 4px', width: 80 }}><input style={input} value={it.hsn || ''} onChange={e => setItem(i, { hsn: e.target.value })} /></td>
+                <td style={{ padding: '5px 4px', width: 80 }}><input style={input} value={it.hsn || ''} inputMode="numeric" maxLength={8} aria-label={`Line ${i + 1} HSN`} onChange={e => setItem(i, { hsn: e.target.value.replace(/\D/g, '') })} /></td>
                 {/* A unit from the standard list; one the PO used that is not
                     in it stays, marked, until somebody picks a proper one. */}
                 <td style={{ padding: '5px 4px', width: 96 }}><UnitSelect style={input} value={it.uom} onChange={v => setItem(i, { uom: v })} ariaLabel={`Line ${i + 1} unit`} /></td>
@@ -138,7 +163,7 @@ export default function GrnBillBuilder() {
           {[
             ['Sub-total', subTotal], ['+ Freight', +f.freight || 0], ['+ Other charges', +f.otherCharges || 0], ['− Discount', -(+f.discount || 0)],
             ['Taxable value', taxable],
-            ...(f.interstate ? [[`IGST @ ${f.gstRate}%`, igst]] : [[`CGST @ ${r2((+f.gstRate) / 2)}%`, cgst], [`SGST @ ${r2((+f.gstRate) / 2)}%`, cgst]]),
+            ...(f.interstate ? [[`IGST @ ${f.gstRate}%`, igst]] : [[`CGST @ ${r2((+f.gstRate) / 2)}%`, cgst], [`SGST @ ${r2((+f.gstRate) / 2)}%`, sgst]]),
             ['Round off', +f.roundOff || 0],
           ].map(([k, v], i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: '0.84rem', color: k === 'Taxable value' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: k === 'Taxable value' ? 700 : 500, borderTop: k === 'Taxable value' ? '1px solid var(--border-subtle)' : 'none' }}>

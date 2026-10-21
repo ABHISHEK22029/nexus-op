@@ -14,6 +14,7 @@ import { useProject } from '../context/ProjectContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import UnitSelect from '../components/UnitSelect';
+import { fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 // The only three the table ever holds (migration 008_sales_procurement.sql).
@@ -171,7 +172,7 @@ export default function Quotations() {
                             <td style={{ padding: '8px', fontWeight: 800, color: 'var(--brand-amber)', fontSize: '0.78rem' }}>Q{l.slot}</td>
                             <td style={{ padding: '8px', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>{l.vendor_name || `Vendor #${l.vendor_id}`}</td>
                             <td style={{ padding: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.83rem', color: isLow ? '#10b981' : 'var(--text-primary)', fontWeight: isLow ? 800 : 500 }}>
-                              ₹{Number(l.unit_price ?? 0).toLocaleString('en-IN')}{isLow && <span style={{ fontSize: '0.62rem', marginLeft: 5 }}>lowest</span>}
+                              {fmtINR(l.unit_price ?? 0)}{isLow && <span style={{ fontSize: '0.62rem', marginLeft: 5 }}>lowest</span>}
                             </td>
                             <td style={{ padding: '8px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{l.lead_time_days != null ? `${l.lead_time_days} days` : '—'}</td>
                             <td style={{ padding: '8px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{l.terms || '—'}</td>

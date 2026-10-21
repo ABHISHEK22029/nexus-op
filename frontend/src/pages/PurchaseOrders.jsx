@@ -113,9 +113,14 @@ const PurchaseOrders = () => {
   };
 
   const gstRatePct = Number(formData.gstRate) || 0;
-  const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-  const tax = subtotal * gstRatePct / 100;
-  const totalValue = subtotal + tax;
+  /* To the paisa, as the printed PO works it out: CGST is half the GST
+     rounded, SGST the rest, so the two always add up to the GST. */
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const subtotal = r2(items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0));
+  const tax = r2(subtotal * gstRatePct / 100);
+  const gstPreview = tax;
+  const cgstPreview = r2(tax / 2);
+  const totalValue = r2(subtotal + tax);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -164,7 +169,8 @@ const PurchaseOrders = () => {
     const payload = action === 'grn' ? { poId, selectedAction: action, ...extraPayload } : {};
 
     axios[action === 'grn' ? 'post' : 'patch'](`${API}/${endpoint}`, payload)
-      .then(() => { fetchData(); toast.success(`PO ${action === 'grn' ? 'received' : action + 'd'}`); })
+      /* "PO dispatchd": the past tense was action + 'd'. */
+      .then(() => { fetchData(); toast.success({ grn: 'PO received', approve: 'PO approved', dispatch: 'PO dispatched' }[action] || 'Done'); })
       .catch(err => toast.error(`Failed to ${action} PO: ` + (err.response?.data?.error || err.message)));
   };
 
@@ -172,14 +178,17 @@ const PurchaseOrders = () => {
   const signOff = (poId, decision) => {
     const remark = decision === 'Rejected' ? (window.prompt('Reason for rejection (optional):') || '') : '';
     axios.patch(`${API}/po/${poId}/approval`, { decision, remark })
-      .then(() => { fetchData(); toast.success(`PO ${decision.toLowerCase()}`); })
+      /* Sign-off is not approval: the PO stays Pending until Approve is
+         pressed, and the message said "PO approved" either way. */
+      .then(() => { fetchData(); toast.success(decision === 'Approved' ? 'Signed off. It can now be approved and sent.' : 'Rejected in sign-off'); })
       .catch(err => toast.error(err.response?.data?.error || 'Failed to record decision'));
   };
 
   /* Same pill as a quotation's or an invoice's status: sentence case, tinted.
      The marketing .pill is uppercase and wide, and looked shouted here. */
   const StatusBadge = ({ status }) => {
-    const c = { Pending: '#64748b', Approved: '#2563eb', Dispatched: '#d97706', Delivered: '#10b981' }[status];
+    /* "Partially Received" had no colour, so the cell was blank. */
+    const c = { Pending: '#64748b', Approved: '#2563eb', Dispatched: '#d97706', 'Partially Received': '#8b5cf6', Delivered: '#10b981' }[status];
     if (!c) return null;
     return <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap', color: c, background: `${c}1f` }}>{status}</span>;
   };
@@ -302,7 +311,7 @@ const PurchaseOrders = () => {
                         className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-1 py-1 text-white outline-none appearance-none" />
                     </td>
                     <td className="p-2">
-                      <input type="text" value={item.hsn} onChange={e => handleItemChange(idx, 'hsn', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="HSN" />
+                      <input type="text" value={item.hsn} inputMode="numeric" maxLength={8} onChange={e => handleItemChange(idx, 'hsn', e.target.value.replace(/\D/g, ''))} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="HSN" />
                     </td>
                     <td className="p-2">
                       <input type="number" required min="0.01" step="0.01" value={item.quantity} onChange={e => handleItemChange(idx, 'quantity', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" />
@@ -327,16 +336,16 @@ const PurchaseOrders = () => {
           <div className="flex justify-between items-start mb-8">
             <button type="button" onClick={handleAddItem} className="text-amber-500 hover:text-amber-400 text-sm font-medium flex items-center gap-1"><Plus size={16}/> Add Line Item</button>
             <div className="w-64">
-              <div className="flex justify-between text-sm text-gray-400 mb-1"><span>Subtotal:</span><span>₹{subtotal.toLocaleString('en-IN')}</span></div>
+              <div className="flex justify-between text-sm text-gray-400 mb-1"><span>Subtotal:</span><span>{fmtINR(subtotal)}</span></div>
               {gstType === 'intra' ? (
                 <>
-                  <div className="flex justify-between text-sm text-gray-400 mb-1"><span>CGST ({gstRatePct / 2}%):</span><span>₹{(subtotal * gstRatePct / 200).toLocaleString('en-IN')}</span></div>
-                  <div className="flex justify-between text-sm text-gray-400 mb-2"><span>SGST ({gstRatePct / 2}%):</span><span>₹{(subtotal * gstRatePct / 200).toLocaleString('en-IN')}</span></div>
+                  <div className="flex justify-between text-sm text-gray-400 mb-1"><span>CGST ({gstRatePct / 2}%):</span><span>{fmtINR(cgstPreview)}</span></div>
+                  <div className="flex justify-between text-sm text-gray-400 mb-2"><span>SGST ({gstRatePct / 2}%):</span><span>{fmtINR(gstPreview - cgstPreview)}</span></div>
                 </>
               ) : (
-                <div className="flex justify-between text-sm text-gray-400 mb-2"><span>IGST ({gstRatePct}%):</span><span>₹{(subtotal * gstRatePct / 100).toLocaleString('en-IN')}</span></div>
+                <div className="flex justify-between text-sm text-gray-400 mb-2"><span>IGST ({gstRatePct}%):</span><span>{fmtINR(tax)}</span></div>
               )}
-              <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-white/10"><span>PO Value:</span><span>₹{totalValue.toLocaleString('en-IN')}</span></div>
+              <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-white/10"><span>PO Value:</span><span>{fmtINR(totalValue)}</span></div>
             </div>
           </div>
 
@@ -386,6 +395,7 @@ const PurchaseOrders = () => {
               { value: 'Pending', label: 'Pending' },
               { value: 'Approved', label: 'Approved' },
               { value: 'Dispatched', label: 'Dispatched' },
+              { value: 'Partially Received', label: 'Part received' },
               { value: 'Delivered', label: 'Delivered' },
             ],
           },
