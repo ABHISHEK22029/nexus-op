@@ -167,8 +167,9 @@ exports.readiness = async (req, res) => {
 
 /* GET /setup/first-steps — how far this company has got through its first
    order, for the getting-started tutorial (frontend context/Tutorial).
-   Counts only, and only this company's: the tutorial ticks a step off when
-   the thing it asked for exists, whichever screen it was made on. One
+   Counts (and the ids of the latest order and invoice), only this
+   company's: the tutorial ticks a step off when the thing it asked for
+   exists, whichever screen it was made on. One
    statement, for the same reason as readiness above. */
 exports.firstSteps = async (req, res) => {
   try {
@@ -189,7 +190,12 @@ exports.firstSteps = async (req, res) => {
         (SELECT COUNT(*) FROM vendors WHERE owner_id = $1)                                              AS vendors,
         (SELECT COUNT(*) FROM purchase_orders WHERE owner_id = $1)                                      AS pos,
         (SELECT COUNT(*) FROM grn WHERE owner_id = $1)                                                  AS grns,
-        (SELECT COUNT(*) FROM users WHERE org_id = $1 OR id = $1)                                       AS team
+        (SELECT COUNT(*) FROM users WHERE org_id = $1 OR id = $1)                                       AS team,
+        /* Where the next step happens: the order to invoice, the invoice to
+           be paid. The tutorial opens them directly instead of a list. */
+        (SELECT id FROM customer_orders WHERE owner_id = $1 ORDER BY id DESC LIMIT 1)                   AS latest_order_id,
+        (SELECT id FROM sales_invoices WHERE status <> 'Cancelled' AND owner_id = $1
+          ORDER BY id DESC LIMIT 1)                                                                     AS latest_invoice_id
     `, [owner]);
     res.json(Object.fromEntries(Object.entries(c).map(([k, v]) => [k, Number(v) || 0])));
   } catch (e) { res.status(500).json({ error: e.message }); }

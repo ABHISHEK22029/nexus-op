@@ -18,7 +18,7 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { getToken } from '../lib/apiAuth';
-import { STEPS } from '../lib/tutorial';
+import { STEPS, CORE } from '../lib/tutorial';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const PENDING = 'nexus_tour_pending';
@@ -33,7 +33,7 @@ const session = {
 
 export function TutorialProvider({ children }) {
   const { user } = useAuth();
-  const { can } = usePermissions();
+  const { can, loading: permsLoading } = usePermissions();
   const { pathname } = useLocation();
   const activeKey = `maks.tutorial.active.${user?.id ?? 'me'}`;
 
@@ -46,9 +46,17 @@ export function TutorialProvider({ children }) {
   /* Only the steps this person's role can do. */
   const steps = useMemo(() => STEPS
     .filter(s => !s.resource || can(s.resource, 'write'))
-    .map(s => ({ ...s, isDone: !!counts && s.done(counts) })), [can, counts]);
+    .map(s => ({ ...s, isDone: !!counts && s.done(counts), href: (counts && s.to?.(counts)) || s.path })), [can, counts]);
   const doneCount = steps.filter(s => s.isDone).length;
   const next = steps.find(s => !s.isDone) || null;
+  /* The first sale is what the tutorial asks of everyone; the rest waits.
+     A role with no selling steps (a buyer, a store keeper) has its own
+     steps as its first chapter instead. */
+  const coreSteps = steps.filter(s => CORE.has(s.chapter));
+  const core = coreSteps.length
+    ? { total: coreSteps.length, done: coreSteps.filter(s => s.isDone).length }
+    : { total: steps.length, done: doneCount };
+  const coreComplete = core.total > 0 && core.done === core.total;
 
   const refresh = useCallback(async () => {
     try {
@@ -69,16 +77,20 @@ export function TutorialProvider({ children }) {
   }, [pathname, open, refresh]);
   useEffect(() => {
     if (!active) return undefined;
-    const id = setInterval(refresh, 5000);
+    const id = setInterval(refresh, 3000);
     return () => clearInterval(id);
   }, [active, refresh]);
 
   const setActive = useCallback((key) => { setActiveState(key); session.set(activeKey, key); }, [activeKey]);
 
+  /* Ready once both are in: the progress, and the role that decides which
+     steps there are (before it loads, every step is filtered out). */
+  const ready = !!counts && !permsLoading;
   const value = useMemo(() => ({
     open, setOpen, intro, setIntro, steps, doneCount, total: steps.length, next,
-    active, setActive, refresh, ready: !!counts,
-  }), [open, intro, steps, doneCount, next, active, setActive, refresh, counts]);
+    core, coreComplete, hasSale: coreSteps.length > 0,
+    active, setActive, refresh, ready,
+  }), [open, intro, steps, doneCount, next, core.done, core.total, coreComplete, coreSteps.length, active, setActive, refresh, ready]);   // eslint-disable-line react-hooks/exhaustive-deps
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

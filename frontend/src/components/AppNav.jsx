@@ -256,17 +256,23 @@ export default function AppNav() {
 }
 
 /* ▶ Guide — the getting-started tutorial, at the top of the rail under the
-   logo, always. The ring fills as the first-order steps get done. */
+   logo, always. The ring fills as the first sale's steps get done, and is
+   green once it is; the steps for later are counted after that. */
 function GuideButton() {
   const tut = useTutorial();
   if (!tut) return null;
-  const pct = tut.total ? tut.doneCount / tut.total : 0;
+  const known = tut.ready && tut.total > 0;
+  const complete = known && tut.coreComplete;
+  const pct = !known ? 0 : complete ? tut.doneCount / tut.total : tut.core.done / tut.core.total;
   const C = 2 * Math.PI * 15;
-  const complete = tut.ready && tut.total > 0 && tut.doneCount === tut.total;
+  const status = !known ? ''
+    : !complete ? `${tut.core.done} of ${tut.core.total} steps done`
+    : tut.doneCount === tut.total ? `all ${tut.total} steps done`
+    : `${tut.hasSale ? 'first sale' : 'first steps'} done, ${tut.total - tut.doneCount} more when you are ready`;
   return (
     <button className="nav-rail-guide" onClick={() => tut.setOpen(o => !o)} aria-expanded={tut.open}
-      aria-label={`Getting started tutorial: ${tut.doneCount} of ${tut.total} steps done`}
-      title={`Getting started: ${tut.doneCount} of ${tut.total} done`}>
+      aria-label={status ? `Getting started tutorial: ${status}` : 'Getting started tutorial'}
+      title={status ? `Getting started: ${status}` : 'Getting started'}>
       <span className="nav-rail-guide-ring">
         <svg className="nav-rail-guide-track" width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
           <circle cx="17" cy="17" r="15" fill="none" stroke="currentColor" strokeOpacity="0.28" strokeWidth="2.5" />

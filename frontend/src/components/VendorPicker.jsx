@@ -74,6 +74,7 @@ export default function VendorPicker({
       <select
         value={materialId}
         onChange={e => setMaterialId(e.target.value)}
+        aria-label="Buying which material"
         className={selectClassName || 'w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500 mb-3'}
       >
         <option value="">All vendors</option>
@@ -95,6 +96,7 @@ export default function VendorPicker({
         required
         value={value || ''}
         onChange={e => onChange(e.target.value)}
+        aria-label="Vendor"
         className={selectClassName || 'w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500'}
       >
         <option value="" disabled>{loading ? 'Loading…' : 'Select Vendor...'}</option>

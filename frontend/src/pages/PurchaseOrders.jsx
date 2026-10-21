@@ -373,13 +373,13 @@ const PurchaseOrders = () => {
                         className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-1 py-1 text-white outline-none appearance-none" />
                     </td>
                     <td className="p-2">
-                      <input type="text" value={item.hsn} inputMode="numeric" maxLength={8} onChange={e => handleItemChange(idx, 'hsn', e.target.value.replace(/\D/g, ''))} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="HSN" />
+                      <input type="text" value={item.hsn} aria-label={`Line ${idx + 1} HSN`} inputMode="numeric" maxLength={8} onChange={e => handleItemChange(idx, 'hsn', e.target.value.replace(/\D/g, ''))} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="HSN" />
                     </td>
                     <td className="p-2">
-                      <input type="number" required min="0.01" step="0.01" value={item.quantity} onChange={e => handleItemChange(idx, 'quantity', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" />
+                      <input type="number" required min="0.01" step="0.01" value={item.quantity} aria-label={`Line ${idx + 1} quantity`} onChange={e => handleItemChange(idx, 'quantity', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" />
                     </td>
                     <td className="p-2">
-                      <input type="number" required min="0" step="0.01" value={item.unitPrice} onChange={e => handleItemChange(idx, 'unitPrice', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" />
+                      <input type="number" required min="0" step="0.01" value={item.unitPrice} aria-label={`Line ${idx + 1} unit price`} onChange={e => handleItemChange(idx, 'unitPrice', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" />
                     </td>
                     <td className="p-3 text-right text-gray-300">
                       {(item.quantity * item.unitPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}

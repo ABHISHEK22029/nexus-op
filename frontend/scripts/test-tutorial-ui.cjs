@@ -2,13 +2,15 @@
 /* ══════════════════════════════════════════════════════════════════════
    The getting-started tutorial, as a new person meets it.
 
-   1. On the first sign-in it opens by itself, with the welcome and the
-      steps of a first order; on the next sign-in it does not.
+   1. On the first sign-in it opens by itself, with the welcome and the six
+      steps of a first sale; on the next sign-in it does not.
    2. The ▶ Guide button sits at the top left under the logo, says how many
       steps are done, and opens the tutorial again.
-   3. Start opens the first step's screen; a card says what to do there.
-   4. Steps tick themselves off from the company's real data, the card
-      offers the next step, and Show me points at the button to press.
+   3. Show me opens the first step's screen; a card says what to do there.
+   4. Steps tick themselves off from the company's real data, the first
+      sale moves on to the next step by itself, and Show me points at the
+      button to press. (scripts/test-tutorial-walkthrough.cjs does every
+      step by hand.)
    5. An invited Sales person sees only the steps their role can do.
    6. On a phone: the button is there, and the panel fits the screen.
    No page errors along the way.
@@ -61,9 +63,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     ok(await waitFor(() => !!document.querySelector('.tut-panel')), 'on the first sign-in the tutorial opens by itself');
     await waitFor(() => /of \d+ done/.test(document.querySelector('.tut-progress')?.innerText || ''));
     const panel = await text('.tut-panel');
-    ok(/Welcome to Maks Ops/.test(panel) && /Start/.test(panel), 'with the welcome and a Start button');
-    ok(/0 of 11 done/.test(panel), `an owner has 11 steps, none done yet (“${(panel.match(/\d+ of \d+ done/) || [''])[0]}”)`);
-    ok(['Sell and get paid', 'Buy and receive', 'Bring your team'].every(c => panel.toUpperCase().includes(c.toUpperCase())), 'in three chapters: sell, buy, team');
+    ok(/Make your first sale in about 3 minutes/.test(panel) && /Start/.test(panel), 'with the welcome (“Make your first sale in about 3 minutes”) and a Start button');
+    ok(/0 of 6 done/.test(panel), `the first sale is 6 steps, none done yet (“${(panel.match(/\d+ of \d+ done/) || [''])[0]}”)`);
+    ok(['Your first sale', 'When you are ready'].every(c => panel.toUpperCase().includes(c.toUpperCase())) && panel.split('Show me').length - 1 === 11,
+      'the first sale, then the rest under “When you are ready”: 11 steps in all');
     await page.click('.tut-panel .tut-x');
     ok(!(await panelOpen()), 'it closes');
     await page.reload({ waitUntil: 'networkidle2' }); await sleep(1500);
@@ -75,41 +78,44 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       const r = b.getBoundingClientRect(); return { x: r.left, y: r.top, label: b.getAttribute('aria-label') };
     });
     ok(btn && btn.x < 80 && btn.y < 120, `it sits at the top left, under the logo (${btn ? `${Math.round(btn.x)}, ${Math.round(btn.y)}` : 'missing'})`);
-    ok(/0 of 11 steps done/.test(btn?.label || ''), `and says how far you have got (“${btn?.label}”)`);
+    ok(/0 of 6 steps done/.test(btn?.label || ''), `and says how far you have got (“${btn?.label}”)`);
     await page.click('.nav-rail-guide');
     ok(await waitFor(() => !!document.querySelector('.tut-panel')), 'pressing it opens the tutorial again');
 
-    console.log('\n  ── 3. Start');
+    console.log('\n  ── 3. Show me');
     const started = await page.evaluate(() => {
       const b = [...document.querySelectorAll('.tut-panel button')].find(x => /Show me/.test(x.textContent));
       b?.click(); return !!b;
     });
-    ok(started && await waitFor(() => location.pathname === '/company-profile'), 'Show me on the first step opens Company profile');
-    ok(await waitFor(() => /Step 1 of 11 · Add your business details/.test(document.querySelector('.tut-coach')?.innerText || '')),
+    ok(started && await waitFor(() => location.pathname === '/customers'), 'Show me on the first step opens Customers');
+    ok(await waitFor(() => /Step 1 of 6 · Add a customer/.test(document.querySelector('.tut-coach')?.innerText || '')),
       'a card in the corner says which step this is and what to do');
+    ok(await waitFor(() => { const s = document.querySelector('.tut-spot'); return !!s && /Add Customer/.test(s.textContent); }, 8000),
+      'and points at Add Customer with a pulse');
 
     console.log('\n  ── 4. steps tick themselves off');
-    await api('PUT', '/company-profile', { name: `Tutor Fab ${stamp}`, address: 'Hyderabad', gstin: '36ABCDE1234F1Z5', stateCode: '36',
-      bank_name: 'Test Bank', bank_account_no: '123456789012', bank_ifsc: 'HDFC0001234', bank_account_name: 'Tutor Fab' });
-    ok(await waitFor(() => /Done: Add your business details/.test(document.querySelector('.tut-coach')?.innerText || ''), 15000),
-      'saving the business details turns the card to Done');
-    ok(/Next: Add your first customer/.test(await text('.tut-coach')), 'and it offers the next step');
-    await page.evaluate(() => [...document.querySelectorAll('.tut-coach button')].find(b => /Next:/.test(b.textContent))?.click());
-    ok(await waitFor(() => location.pathname === '/customers'), 'Next opens Customers');
-    ok(await waitFor(() => { const s = document.querySelector('.tut-spot'); return !!s && /Add/.test(s.textContent); }, 8000),
-      'and points at the Add button with a pulse');
     await api('POST', '/customers', { name: `BuildRight ${stamp}`, state: 'Telangana', address: 'Hyderabad' });
-    ok(await waitFor(() => /Done: Add your first customer/.test(document.querySelector('.tut-coach')?.innerText || ''), 15000),
-      'adding a customer ticks that step off too');
-    ok(await waitFor(() => /2 of 11 steps done/.test(document.querySelector('.nav-rail-guide')?.getAttribute('aria-label') || '')),
-      'and the Guide button now says 2 of 11');
+    ok(await waitFor(() => /Done: Add a customer/.test(document.querySelector('.tut-coach')?.innerText || ''), 15000),
+      'adding a customer turns the card to Done');
+    ok(/Next: Add a product/.test(await text('.tut-coach')) && /Moving on in a moment/.test(await text('.tut-coach')),
+      'it names the next step and says it is moving on');
+    ok(await waitFor(() => location.pathname === '/items', 6000), 'and moves on to Items by itself');
+    ok(await waitFor(() => { const s = document.querySelector('.tut-spot'); return !!s && /Add SKU/.test(s.textContent); }, 8000),
+      'pointing at Add SKU');
+    await api('POST', '/skus', { name: `Bracket ${stamp}`, unit: 'nos', price: 1500 });
+    ok(await waitFor(() => /Done: Add a product/.test(document.querySelector('.tut-coach')?.innerText || ''), 15000),
+      'adding a product ticks that step off too');
+    ok(await waitFor(() => /2 of 6 steps done/.test(document.querySelector('.nav-rail-guide')?.getAttribute('aria-label') || '')),
+      'and the Guide button now says 2 of 6');
+    await waitFor(() => location.pathname === '/sales-quotations', 6000);
     await page.click('.nav-rail-guide');
     await waitFor(() => !!document.querySelector('.tut-panel'));
     const doneRows = await page.evaluate(() => [...document.querySelectorAll('.tut-step.is-done .tut-step-title')].map(e => e.textContent));
     ok(doneRows.length === 2 && doneRows.some(t => /customer/i.test(t)), `the panel shows both ticked (${doneRows.join(', ')})`);
-    await page.evaluate(() => [...document.querySelectorAll('.tut-step')].find(r => /Send your first quotation/.test(r.querySelector('.tut-step-title')?.textContent || ''))?.querySelector('button')?.click());
-    ok(await waitFor(() => location.pathname === '/sales-quotations'), 'Show me on a later step goes straight to it');
-    ok(await waitFor(() => /New Quotation/.test(document.querySelector('.tut-spot')?.textContent || ''), 8000), 'pointing at New Quotation');
+    await page.evaluate(() => [...document.querySelectorAll('.tut-step')].find(r => /Add a vendor/.test(r.querySelector('.tut-step-title')?.textContent || ''))?.querySelector('button')?.click());
+    ok(await waitFor(() => location.pathname === '/vendors'), 'Show me on a later step goes straight to it');
+    ok(await waitFor(() => /Add vendor/.test(document.querySelector('.tut-spot')?.textContent || ''), 8000), 'pointing at Add vendor');
+    ok(/When you are ready · 2 of 5 · Add a vendor/.test(await text('.tut-coach')), 'its card counts it among the steps for later');
     await page.evaluate(() => document.querySelector('.tut-coach .tut-coach-x')?.click());
     ok(!(await page.evaluate(() => !!document.querySelector('.tut-coach'))), 'the card can be put away');
 
