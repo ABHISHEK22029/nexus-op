@@ -1384,6 +1384,7 @@ app.post('/inventory/:id/adjust',   stockController.adjust);
 /* Is the data spine populated enough for the engine to work? Ungated —
    every role benefits from knowing why a screen is empty. */
 app.get('/setup/readiness',         setupController.readiness);
+app.get('/setup/first-steps',       setupController.firstSteps);
 
 /* The organisation's own vocabulary for what it buys and sells. Read by
    anyone who can see a vendor or a customer; changed by whoever can change

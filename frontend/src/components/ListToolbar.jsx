@@ -233,7 +233,7 @@ export function ListToolbar({ q, placeholder = 'Search…', filters = [], right 
         </button>
       )}
 
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 10, maxWidth: '100%' }}>
         {/* Always visible: a filtered list that looks like an unfiltered one
             is how people conclude records have vanished. */}
         <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>

@@ -17,8 +17,9 @@ import React, { useState, useEffect, useSyncExternalStore } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import ScopeBar from './ScopeBar';
 import {
-  ChevronLeft, ChevronRight, Sun, Moon, Home,
+  ChevronLeft, ChevronRight, Sun, Moon, Home, Play,
 } from 'lucide-react';
+import { useTutorial } from '../context/TutorialContext';
 import { NAV_ICONS as ICONS } from '../lib/navIcons';
 import { usePermissions } from '../context/PermissionContext';
 import { useTheme } from '../context/ThemeContext';
@@ -166,6 +167,7 @@ export default function AppNav() {
         <button className="nav-rail-logo" onClick={() => navigate('/dashboard')} title="Maks Ops" aria-label="Maks Ops — dashboard">
           <MaksAppIcon size={34} radius={14} decorative />
         </button>
+        <GuideButton />
 
         <div className="nav-rail-items">
           {modules.map(m => {
@@ -250,5 +252,30 @@ export default function AppNav() {
         </button>
       )}
     </>
+  );
+}
+
+/* ▶ Guide — the getting-started tutorial, at the top of the rail under the
+   logo, always. The ring fills as the first-order steps get done. */
+function GuideButton() {
+  const tut = useTutorial();
+  if (!tut) return null;
+  const pct = tut.total ? tut.doneCount / tut.total : 0;
+  const C = 2 * Math.PI * 15;
+  const complete = tut.ready && tut.total > 0 && tut.doneCount === tut.total;
+  return (
+    <button className="nav-rail-guide" onClick={() => tut.setOpen(o => !o)} aria-expanded={tut.open}
+      aria-label={`Getting started tutorial: ${tut.doneCount} of ${tut.total} steps done`}
+      title={`Getting started: ${tut.doneCount} of ${tut.total} done`}>
+      <span className="nav-rail-guide-ring">
+        <svg className="nav-rail-guide-track" width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+          <circle cx="17" cy="17" r="15" fill="none" stroke="currentColor" strokeOpacity="0.28" strokeWidth="2.5" />
+          <circle cx="17" cy="17" r="15" fill="none" stroke={complete ? '#22c55e' : 'var(--brand-amber)'} strokeWidth="2.5"
+            strokeLinecap="round" strokeDasharray={`${(C * pct).toFixed(1)} ${C.toFixed(1)}`} />
+        </svg>
+        <Play size={13} fill="currentColor" className="nav-rail-guide-play" />
+      </span>
+      <span className="nav-rail-guide-label">Guide</span>
+    </button>
   );
 }

@@ -53,6 +53,8 @@ export default function AcceptInvite() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Could not accept the invitation');
       localStorage.setItem('nexus_token', body.token);
+      /* Their first sign-in: the getting-started tutorial opens once. */
+      try { localStorage.setItem('nexus_tour_pending', '1'); } catch { /* storage blocked */ }
       /* Hard navigation so every context provider starts with the token
          present, the same as after a normal sign-in. */
       window.location.assign('/dashboard');

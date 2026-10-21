@@ -82,7 +82,8 @@ import { ToastProvider } from './context/ToastContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
-import ProductTour from './components/ProductTour';
+import Tutorial from './components/Tutorial';
+import { TutorialProvider } from './context/TutorialContext';
 import AskAi from './components/AskAi';
 import AccountButton from './components/AccountButton';
 
@@ -151,6 +152,7 @@ const ScreenBoundary = ({ children }) => {
 const AppLayout = ({ children }) => (
   <ProtectedRoute>
     <NeedsSetup>
+      <TutorialProvider>
       <div className="app-layout">
         <AppNav />
         <main className="app-main" style={{ position: 'relative' }}>
@@ -159,9 +161,11 @@ const AppLayout = ({ children }) => (
             <RoleRoute><ScreenBoundary>{children}</ScreenBoundary></RoleRoute>
           </div>
         </main>
-        <ProductTour />
+        {/* The getting-started tutorial, opened from the ▶ in the rail. */}
+        <Tutorial />
         <AskAi />
       </div>
+      </TutorialProvider>
     </NeedsSetup>
   </ProtectedRoute>
 );

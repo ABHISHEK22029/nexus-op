@@ -164,3 +164,33 @@ exports.readiness = async (req, res) => {
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
+
+/* GET /setup/first-steps — how far this company has got through its first
+   order, for the getting-started tutorial (frontend context/Tutorial).
+   Counts only, and only this company's: the tutorial ticks a step off when
+   the thing it asked for exists, whichever screen it was made on. One
+   statement, for the same reason as readiness above. */
+exports.firstSteps = async (req, res) => {
+  try {
+    const owner = Number(req.user?.orgId ?? req.user?.id) || -1;
+    const { rows: [c] } = await db.query(`
+      SELECT
+        (SELECT COUNT(*) FROM company_profile WHERE COALESCE(TRIM(name), '') <> '' AND owner_id = $1)    AS company_name,
+        (SELECT COUNT(*) FROM company_profile WHERE gstin IS NOT NULL AND gstin <> '' AND owner_id = $1) AS company_gstin,
+        (SELECT COUNT(*) FROM company_profile WHERE bank_name IS NOT NULL AND bank_account_no IS NOT NULL
+            AND bank_ifsc IS NOT NULL AND owner_id = $1)                                                AS company_bank,
+        (SELECT COUNT(*) FROM customers WHERE owner_id = $1)                                            AS customers,
+        (SELECT COUNT(*) FROM skus WHERE owner_id = $1)                                                 AS products,
+        (SELECT COUNT(*) FROM sales_quotations WHERE owner_id = $1)                                     AS quotations,
+        (SELECT COUNT(*) FROM customer_orders WHERE owner_id = $1)                                      AS orders,
+        (SELECT COUNT(*) FROM sales_invoices WHERE status <> 'Cancelled' AND owner_id = $1)             AS invoices,
+        (SELECT COUNT(*) FROM sales_payments p JOIN sales_invoices i ON i.id = p.sales_invoice_id
+          WHERE i.owner_id = $1)                                                                        AS payments,
+        (SELECT COUNT(*) FROM vendors WHERE owner_id = $1)                                              AS vendors,
+        (SELECT COUNT(*) FROM purchase_orders WHERE owner_id = $1)                                      AS pos,
+        (SELECT COUNT(*) FROM grn WHERE owner_id = $1)                                                  AS grns,
+        (SELECT COUNT(*) FROM users WHERE org_id = $1 OR id = $1)                                       AS team
+    `, [owner]);
+    res.json(Object.fromEntries(Object.entries(c).map(([k, v]) => [k, Number(v) || 0])));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
