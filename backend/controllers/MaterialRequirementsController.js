@@ -280,9 +280,15 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
     const effectiveMoq = sup?.moq != null ? Number(sup.moq) : m.moq;
     const rate = sup?.price != null ? Number(sup.price) : m.standard_rate;
 
-    const suggested = shortfall > 0 && effectiveMoq > 0
-      ? r4(Math.ceil(shortfall / effectiveMoq) * effectiveMoq)
-      : shortfall;
+    /* To ORDER: what neither the stock nor the orders already placed will
+       cover — not the whole shortfall. It was the shortfall, so "Raise
+       purchase orders" ordered again what was already on its way: 1,110 kg
+       of angle with 100 kg of it on order, where 1,010 kg was needed.
+       Rounded up to the minimum order the supplier will take. */
+    const uncovered = r4(Math.max(0, -net));
+    const suggested = uncovered > 0 && effectiveMoq > 0
+      ? r4(Math.ceil(uncovered / effectiveMoq) * effectiveMoq)
+      : uncovered;
 
     return {
       ...m,
@@ -291,7 +297,9 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
       moq: effectiveMoq,
       moq_source: sup?.moq != null ? 'vendor' : (m.moq != null ? 'item' : null),
       lead_time_days: sup?.lead_time_days ?? m.lead_time_days,
+      uncovered,
       suggested_order_qty: suggested,
+      order_value: rate != null ? r4(suggested * rate) : null,
       // Who to actually buy this from, so a shortfall is one click from a PO.
       preferred_vendor: sup ? { id: sup.vendor_id, name: sup.vendor_name, price: sup.price != null ? Number(sup.price) : null } : null,
       shortfall_value: rate != null ? r4(shortfall * rate) : null,

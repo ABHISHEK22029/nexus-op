@@ -245,15 +245,18 @@ export default function MaterialRequirements() {
                       </td>
                       <td style={td}><Pill fg={s.fg}>{s.label}</Pill></td>
                       <td style={tdNum}>
-                        {m.shortfall > 0 ? (
+                        {/* What is left to order once stock AND the orders
+                            already placed are counted; "—" when what is on
+                            order covers the shortfall. */}
+                        {m.suggested_order_qty > 0 ? (
                           <>
                             <div style={{ fontWeight: 700 }}>{num(m.suggested_order_qty)} <U>{m.base_uom}</U></div>
-                            {m.suggested_order_qty > m.shortfall && (
+                            {m.suggested_order_qty > (m.uncovered ?? m.shortfall) && (
                               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                                 MOQ {num(m.moq)}{m.moq_source === 'vendor' ? ' (vendor)' : ''}
                               </div>
                             )}
-                            {m.shortfall_value != null && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{rupee(m.shortfall_value)}</div>}
+                            {(m.order_value ?? m.shortfall_value) != null && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{rupee(m.order_value ?? m.shortfall_value)}</div>}
                           </>
                         ) : '—'}
                       </td>

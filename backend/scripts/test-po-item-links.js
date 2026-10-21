@@ -140,6 +140,9 @@ const list = (b) => (Array.isArray(b) ? b : b.items || []);
     const plan = await call(A, 'POST', '/material-requirements/to-po', { materialIds: [angle.id] });
     const madeId = plan.body?.created?.[0]?.id ?? plan.body?.purchaseOrders?.[0]?.id ?? plan.body?.pos?.[0]?.id;
     const pl = madeId ? list(await must(A, 'GET', `/po/${madeId}/items`)) : [];
+    /* 800 kg needed, none in stock, 200 kg (0.2 t) already on order: 600 kg
+       to order, not the 800 kg shortfall. */
+    ok(pl.length === 1 && near(pl[0].quantity, 600), `and only what is not already on order: 800 needed − 200 on order = 600 kg (ordered ${pl[0]?.quantity})`);
     ok(plan.status === 200 && pl.length && pl.every(l => l.raw_material_id === angle.id),
       `the angle shortfall is ordered with its material linked (${plan.status}, ${pl.map(l => `${l.description}→${l.raw_material_id}`).join(', ') || JSON.stringify(plan.body).slice(0, 160)})`);
   } catch (e) {
