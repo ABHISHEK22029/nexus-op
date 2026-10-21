@@ -8,13 +8,24 @@ const { notify } = require('../notify');
    the PO, then sets its approval status from the owner's threshold. */
 async function writePoLines(client, poId, items, orgId) {
   await client.query('DELETE FROM po_line_items WHERE "poId" = $1', [poId]);
+  /* Which material or product a line is (migration 075), when the caller
+     knows: the PO screen's picker, the shortage planner. Kept only when it
+     is this company's own — another company's id is dropped, not linked. */
+  const idsOf = (a, b) => [...new Set(items.map(i => Number(i?.[a] ?? i?.[b])).filter(n => Number.isInteger(n) && n > 0))];
+  const owned = async (table, ids) => (ids.length ? new Set((await client.query(
+    `SELECT id FROM ${table} WHERE id = ANY($1::int[]) AND owner_id IS NOT DISTINCT FROM $2`, [ids, orgId ?? null])).rows.map(r => r.id)) : new Set());
+  const mats = await owned('raw_materials', idsOf('rawMaterialId', 'raw_material_id'));
+  const skus = await owned('skus', idsOf('skuId', 'sku_id'));
   let subtotal = 0;
   for (const item of items) {
     subtotal += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+    const mat = Number(item.rawMaterialId ?? item.raw_material_id);
+    const sku = Number(item.skuId ?? item.sku_id);
     await client.query(
-      `INSERT INTO po_line_items ("poId", sno, description, uom, hsn, quantity, "unitPrice")
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [poId, item.sno, item.description, item.uom || "No's", item.hsn || null, item.quantity, item.unitPrice]
+      `INSERT INTO po_line_items ("poId", sno, description, uom, hsn, quantity, "unitPrice", raw_material_id, sku_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [poId, item.sno, item.description, item.uom || "No's", item.hsn || null, item.quantity, item.unitPrice,
+       mats.has(mat) ? mat : null, mats.has(mat) ? null : (skus.has(sku) ? sku : null)]
     );
   }
   return gatePo(client, poId, subtotal, orgId);

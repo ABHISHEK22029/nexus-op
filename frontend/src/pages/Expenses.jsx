@@ -2,6 +2,7 @@ import React from 'react';
 import { Wallet } from 'lucide-react';
 import MasterList from '../components/MasterList';
 import { fmtINR } from '../lib/format';
+import { PAYMENT_MODES } from '../lib/paymentModes';
 
 export default function Expenses() {
   return (
@@ -18,7 +19,7 @@ export default function Expenses() {
         { key: 'category', label: 'Category', type: 'select', options: ['Diesel / Fuel', 'Labour / Wages', 'Freight / Transport', 'Equipment Hire', 'Consumables', 'Petty Cash', 'Utilities', 'Repairs', 'Other'] },
         { key: 'amount', label: 'Amount (₹)', type: 'number', required: true },
         { key: 'paid_to', label: 'Paid To' },
-        { key: 'payment_mode', label: 'Mode', type: 'select', options: ['Cash', 'Bank', 'UPI', 'Cheque', 'Card'] },
+        { key: 'payment_mode', label: 'Mode', type: 'select', options: PAYMENT_MODES, default: 'Cash' },
         { key: 'reference', label: 'Reference' },
         { key: 'description', label: 'Description', wide: true, required: true, placeholder: 'What was this for?' },
       ]}

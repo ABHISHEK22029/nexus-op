@@ -444,7 +444,7 @@ const until = async (fn, ms = 15000) => {
       await setValue(await page.$('input[aria-label="Payment date"]'), istDay());
       await click('button.btn-primary', /^\s*Add\s*$/);
     };
-    await pay(100000, 'Bank', 'UTR-HDFC-771');
+    await pay(100000, 'Bank transfer', 'UTR-HDFC-771');
     ok(await waitToast(/Payment recorded — Partially Paid/), 'Add records ₹1,00,000 and says “Partially Paid”');
     await waitFor(() => /1,00,000\.00/.test(document.body.innerText));
     t0 = await tiles();
@@ -453,7 +453,7 @@ const until = async (fn, ms = 15000) => {
     ok(t0.status === 'Partially Paid', `the status reads ${t0.status}`);
     const invP = await api('GET', `/sales-invoices/${invId}`);
     const p1 = (invP.payments || [])[0] || {};
-    ok(invP.status === 'Partially Paid' && r2(invP.amount_paid) === 100000 && p1.mode === 'Bank' && p1.reference === 'UTR-HDFC-771' && p1.paid_date === istDay(),
+    ok(invP.status === 'Partially Paid' && r2(invP.amount_paid) === 100000 && p1.mode === 'Bank transfer' && p1.reference === 'UTR-HDFC-771' && p1.paid_date === istDay(),
       `stored: ${invP.status}, ₹${invP.amount_paid} received, ${p1.mode} ${p1.reference} on ${p1.paid_date}`);
     await shot('04-invoice-part-paid');
 
@@ -494,7 +494,7 @@ const until = async (fn, ms = 15000) => {
       await click('[data-bp="paymodal"] button', /^\s*Record payment\s*$/);
       return prefilled;
     };
-    const pre1 = await payBill(10000, 'NEFT', 'UTR-NEFT-0001');
+    const pre1 = await payBill(10000, 'Bank transfer', 'UTR-NEFT-0001');
     ok(Number(pre1) === 16560.71, `Pay opens with the outstanding amount filled in (${pre1})`);
     ok(await waitToast(/bill is now Partially Paid/), 'paying ₹10,000 says “bill is now Partially Paid”');
     const b1 = await until(async () => { const b = await api('GET', `/grn-bills/${billId}`); return b.payment_status === 'Partially Paid' ? b : null; });
@@ -507,7 +507,7 @@ const until = async (fn, ms = 15000) => {
     ok(Number(pre2) === 6560.71, `Pay again opens with the ₹6,560.71 left (${pre2})`);
     ok(await waitToast(/bill is now Paid/), 'paying it says “bill is now Paid”');
     const b2 = await until(async () => { const b = await api('GET', `/grn-bills/${billId}`); return b.payment_status === 'Paid' ? b : null; });
-    ok(b2 && r2(b2.amount_paid) === 16560.71 && (b2.payments || []).map(p => `${p.mode}:${p.amount}`).join() === 'NEFT:10000,Cheque:6560.71',
+    ok(b2 && r2(b2.amount_paid) === 16560.71 && (b2.payments || []).map(p => `${p.mode}:${p.amount}`).join() === 'Bank transfer:10000,Cheque:6560.71',
       `stored: Paid, ₹${b2?.amount_paid}, payments ${(b2?.payments || []).map(p => `${p.mode} ₹${p.amount}`).join(' + ')}`);
     ok(await waitText(/Nothing outstanding/), 'and Payables has nothing outstanding');
     await shot('06-payables-paid');

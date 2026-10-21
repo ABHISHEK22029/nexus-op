@@ -215,14 +215,25 @@ router.post('/', async (req, res) => {
 
     /* By name, so within this company: another company's "MS Plate 10mm"
        is not this one, and its unit and conversions are not this one's. */
-    const material = (await client.query(
+    /* The line says which material it is when it was picked on the PO
+       (migration 075); only an unlinked line is matched by its name. */
+    const material = (line?.raw_material_id ? (await client.query(
+      'SELECT * FROM raw_materials WHERE id = $1 AND owner_id IS NOT DISTINCT FROM $2',
+      [line.raw_material_id, req.user?.orgId || null])).rows[0] : null) || (line?.sku_id ? null : (await client.query(
       `SELECT * FROM raw_materials
        WHERE btrim(regexp_replace(lower(translate(name, '×X', 'xx')), '[^a-z0-9]+', ' ', 'g')) = $1
          AND owner_id = $2
        LIMIT 1`,
       [norm(receivedItemName), req.user?.orgId || null]
-    )).rows[0];
+    )).rows[0]);
     const materialId = material?.id || null;
+    /* A bought-in product (a line linked to a product, not a material) is
+       stocked on the product's own row. */
+    const skuId = !materialId && line?.sku_id ? line.sku_id : null;
+    /* A new stock row is named after the item, not the PO line's wording
+       ("MS Plate 10 mm (cut to size)" is still the MS Plate 10mm row). */
+    const skuRow = skuId ? (await client.query('SELECT name FROM skus WHERE id = $1', [skuId])).rows[0] : null;
+    const stockName = material?.name || skuRow?.name || receivedItemName;
 
     /* Convert the received quantity into the unit stock is actually held in.
        A vendor invoices 5 MT; the warehouse counts 168 sheets. Adding 5 to a
@@ -275,6 +286,11 @@ router.post('/', async (req, res) => {
        Matched on owner and material instead — the two things that actually
        identify a stock balance. */
     const ownerId = req.user?.orgId || null;
+    const bySku = skuId ? await client.query(
+        `SELECT * FROM inventory
+          WHERE sku_id = $1 AND owner_id IS NOT DISTINCT FROM $2 AND stock_list_id IS NULL
+          ORDER BY id LIMIT 1`,
+        [skuId, ownerId]) : { rows: [] };
     const invResult = materialId
       ? await client.query(
         `SELECT * FROM inventory
@@ -282,6 +298,7 @@ router.post('/', async (req, res) => {
             AND stock_list_id IS NULL                 -- receipts go to the main stock
           ORDER BY id LIMIT 1`,
         [materialId, ownerId])
+      : bySku.rows.length ? bySku
       : await client.query(
         `SELECT * FROM inventory
           WHERE "itemName" = $1 AND raw_material_id IS NULL
@@ -294,8 +311,8 @@ router.post('/', async (req, res) => {
       inventoryId = invResult.rows[0].id;
       // Backfill the link opportunistically if this row predates the master.
       await client.query(
-        `UPDATE inventory SET raw_material_id = COALESCE(raw_material_id, $2) WHERE id = $1`,
-        [inventoryId, materialId]);
+        `UPDATE inventory SET raw_material_id = COALESCE(raw_material_id, $2), sku_id = COALESCE(sku_id, $3) WHERE id = $1`,
+        [inventoryId, materialId, skuId]);
     } else {
       /* owner_id was not set here. Once the stock list became owner-scoped,
          a row without one is invisible to everybody — so goods you had just
@@ -303,10 +320,10 @@ router.post('/', async (req, res) => {
          not see them either, which is why it reported a clean database while
          a drifting row sat right there. */
       inventoryId = (await client.query(
-        `INSERT INTO inventory ("projectId", "itemName", quantity, raw_material_id, uom, unit_cost, owner_id)
-         VALUES ($1, $2, 0, $3, $4, $5, $6) RETURNING id`,
-        [resolvedProjectId, receivedItemName, materialId,
-         material?.base_uom || material?.unit || null, unitCostOf(), ownerId]
+        `INSERT INTO inventory ("projectId", "itemName", quantity, raw_material_id, sku_id, uom, unit_cost, owner_id)
+         VALUES ($1, $2, 0, $3, $4, $5, $6, $7) RETURNING id`,
+        [resolvedProjectId, stockName, materialId, skuId,
+         material?.base_uom || material?.unit || line?.uom || null, unitCostOf(), ownerId]
       )).rows[0].id;
     }
 

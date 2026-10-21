@@ -19,6 +19,7 @@ import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtINR, fmtDate } from '../lib/format';
+import { PAYMENT_MODES, DEFAULT_PAYMENT_MODE } from '../lib/paymentModes';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 /* Paise always as two digits (lib/format). */
@@ -33,7 +34,7 @@ export default function Payables() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [payBill, setPayBill] = useState(null);
-  const [form, setForm] = useState({ amount: '', mode: 'Bank', reference: '', paidDate: '' });
+  const [form, setForm] = useState({ amount: '', mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' });
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [offset, setOffset] = useState(0);
@@ -57,7 +58,7 @@ export default function Payables() {
   }, [debounced, offset]);
   useEffect(() => { load(); }, [load]);
 
-  const openPay = (b) => { setPayBill(b); setForm({ amount: String(b.outstanding), mode: 'Bank', reference: '', paidDate: '' }); };
+  const openPay = (b) => { setPayBill(b); setForm({ amount: String(b.outstanding), mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' }); };
   const submitPay = async () => {
     if (!(Number(form.amount) > 0)) { toast.error('Enter an amount'); return; }
     try {
@@ -245,7 +246,7 @@ export default function Payables() {
               <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>Amount ₹ *</label><input style={input} type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
               <div><label style={lbl}>Mode</label>
                 <select style={input} value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })}>
-                  {['Bank', 'NEFT', 'UPI', 'Cheque', 'Cash'].map(m => <option key={m} value={m}>{m}</option>)}
+                  {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
               <div><label style={lbl}>Date</label><input style={input} type="date" value={form.paidDate} onChange={e => setForm({ ...form, paidDate: e.target.value })} /></div>

@@ -519,7 +519,7 @@ exports.addPayment = async (req, res) => {
 
     await client.query(
       `INSERT INTO sales_payments (sales_invoice_id, amount, mode, reference, paid_date) VALUES ($1,$2,$3,$4,$5)`,
-      [req.params.id, Number(amount), mode || 'Bank', reference || null, paidDate || null]
+      [req.params.id, Number(amount), mode || 'Bank transfer', reference || null, paidDate || null]
     );
     const paid = (await client.query('SELECT COALESCE(SUM(amount),0) s FROM sales_payments WHERE sales_invoice_id = $1', [req.params.id])).rows[0].s;
     const inv = (await client.query('SELECT net_amount FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0];
@@ -527,7 +527,7 @@ exports.addPayment = async (req, res) => {
     await client.query('UPDATE sales_invoices SET amount_paid = $1, status = $2 WHERE id = $3', [r2(paid), status, req.params.id]);
     const { invoice_number: invNo, owner_id: invOwner } = (await client.query('SELECT invoice_number, owner_id FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0] || {};
     await client.query('COMMIT');
-    notify({ org: invOwner }, { type: 'PAYMENT_RECEIVED', title: `Payment received · ${invNo}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank'} — invoice ${status}`, entityType: 'sales_invoice', entityId: Number(req.params.id), link: `/sales-invoices/${req.params.id}` });
+    notify({ org: invOwner }, { type: 'PAYMENT_RECEIVED', title: `Payment received · ${invNo}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank transfer'} — invoice ${status}`, entityType: 'sales_invoice', entityId: Number(req.params.id), link: `/sales-invoices/${req.params.id}` });
     res.json({ success: true, amountPaid: r2(paid), status });
   } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
   finally { client.release(); }

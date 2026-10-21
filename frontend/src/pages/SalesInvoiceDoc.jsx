@@ -9,6 +9,7 @@ import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
 import { amountInWords } from '../lib/amountInWords';
 import { docFileName, downloadDocumentPdf, printAs } from '../lib/documentPdf';
+import { PAYMENT_MODES, DEFAULT_PAYMENT_MODE } from '../lib/paymentModes';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -22,7 +23,7 @@ export default function SalesInvoiceDoc() {
   const toast = useToast();
   const { can } = usePermissions();
   const [inv, setInv] = useState(null);
-  const [pay, setPay] = useState({ amount: '', mode: 'Bank', reference: '', paidDate: '' });
+  const [pay, setPay] = useState({ amount: '', mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' });
   const ref = useRef(null);
   const [emailing, setEmailing] = useState(false);
   const [making, setMaking] = useState(false);
@@ -96,7 +97,7 @@ export default function SalesInvoiceDoc() {
     const d = await res.json();
     if (!res.ok) { toast.error(d.error || 'Failed'); return; }
     toast.success(`Payment recorded — ${d.status}`);
-    setPay({ amount: '', mode: 'Bank', reference: '', paidDate: '' });
+    setPay({ amount: '', mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' });
     load();
   };
 
@@ -289,7 +290,7 @@ export default function SalesInvoiceDoc() {
           {/* Explicit widths: the global form styles make a bare select or
               date input fill the row, which stacked this line into four. */}
           <input style={{ ...input, width: 120, flex: 'none' }} type="number" placeholder="Amount" aria-label="Payment amount" value={pay.amount} onChange={e => setPay({ ...pay, amount: e.target.value })} />
-          <select style={{ ...input, width: 110, flex: 'none' }} aria-label="Payment mode" value={pay.mode} onChange={e => setPay({ ...pay, mode: e.target.value })}>{['Bank', 'Cash', 'UPI', 'Cheque'].map(m => <option key={m}>{m}</option>)}</select>
+          <select style={{ ...input, width: 145, flex: 'none' }} aria-label="Payment mode" value={pay.mode} onChange={e => setPay({ ...pay, mode: e.target.value })}>{PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}</select>
           <input style={{ ...input, width: 'auto', flex: '1 1 140px', minWidth: 120 }} placeholder="Reference / UTR" aria-label="Payment reference" value={pay.reference} onChange={e => setPay({ ...pay, reference: e.target.value })} />
           <span style={{ display: 'flex', gap: 10, flex: 'none' }}>
             <input style={{ ...input, width: 150, flex: 'none' }} type="date" aria-label="Payment date" value={pay.paidDate} onChange={e => setPay({ ...pay, paidDate: e.target.value })} />

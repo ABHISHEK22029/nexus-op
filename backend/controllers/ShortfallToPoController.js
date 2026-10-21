@@ -124,7 +124,7 @@ exports.create = async (req, res) => {
          skipped the gate: the largest automatic orders were the ones that
          went out unapproved. */
       const gate = await writePoLines(client, poId, v.lines.map((l, i) => ({
-        sno: i + 1, description: l.material, uom: l.uom || 'nos', quantity: l.qty, unitPrice: l.rate || 0,
+        sno: i + 1, description: l.material, uom: l.uom || 'nos', quantity: l.qty, unitPrice: l.rate || 0, rawMaterialId: l.raw_material_id,
       })), req.user?.orgId);
       gates.push([poId, poNumber, gate, v.vendorName]);
 

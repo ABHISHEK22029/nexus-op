@@ -126,18 +126,36 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
   const stock = new Map(stockRows.map(r => [r.raw_material_id, Number(r.qty)]));
 
   // ── 3. Quantities already on order (not yet received) ──
-  /* Matched by name, so both sides must be the same company's: another
-     company's open PO for "MS Plate 10mm" is not on order for this one. */
+  /* Per LINE, and only what is still to come. This read the PO header —
+     its first line's name, and every line's quantity added together — so a
+     two-line PO counted all of it against one material, and a part-received
+     PO dropped out of "on order" altogether although half of it was still on
+     the road. A line linked to its material (migration 075) counts against
+     that material; an unlinked one is matched by name, within the company
+     (another company's open PO for "MS Plate 10mm" is not on order for this
+     one). Converted into each material's stock unit in 4a, below. */
   const onOrderParams = [];
+  const normed = (col) => `btrim(regexp_replace(lower(translate(${col}, '×X', 'xx')), '[^a-z0-9]+', ' ', 'g'))`;
+  const OPEN = `('Pending', 'Approved', 'Dispatched', 'Partially Received')`;
   const onOrderRows = (await db.query(`
-    SELECT rm.id AS raw_material_id, SUM(po.quantity)::numeric AS qty
-    FROM purchase_orders po
-    JOIN raw_materials rm
-      ON btrim(regexp_replace(lower(translate(rm.name, '×X', 'xx')), '[^a-z0-9]+', ' ', 'g'))
-       = btrim(regexp_replace(lower(translate(po."itemName", '×X', 'xx')), '[^a-z0-9]+', ' ', 'g'))
-    WHERE po.status IN ('Pending', 'Approved', 'Dispatched')${own('po.owner_id', onOrderParams)}${admin ? '' : ' AND rm.owner_id = $1'}
-    GROUP BY rm.id`, onOrderParams)).rows;
-  const onOrder = new Map(onOrderRows.map(r => [r.raw_material_id, Number(r.qty)]));
+    SELECT COALESCE(li.raw_material_id, rm.id) AS raw_material_id, li.uom,
+           GREATEST(COALESCE(li.quantity, 0) - COALESCE(li.received_quantity, 0), 0)::numeric AS qty
+      FROM purchase_orders po
+      JOIN po_line_items li ON li."poId" = po.id
+      LEFT JOIN raw_materials rm
+        ON li.raw_material_id IS NULL AND li.sku_id IS NULL
+       AND rm.owner_id IS NOT DISTINCT FROM po.owner_id
+       AND ${normed('rm.name')} = ${normed('li.description')}
+     WHERE po.status IN ${OPEN}${own('po.owner_id', onOrderParams)}
+       AND COALESCE(li.raw_material_id, rm.id) IS NOT NULL
+    UNION ALL
+    SELECT rm.id, NULL, GREATEST(COALESCE(po.quantity, 0) - COALESCE(po.received_quantity, 0), 0)::numeric
+      FROM purchase_orders po
+      JOIN raw_materials rm
+        ON rm.owner_id IS NOT DISTINCT FROM po.owner_id
+       AND ${normed('rm.name')} = ${normed('po."itemName"')}
+     WHERE po.status IN ${OPEN}${own('po.owner_id', onOrderParams)}
+       AND NOT EXISTS (SELECT 1 FROM po_line_items x WHERE x."poId" = po.id)`, onOrderParams)).rows;
 
   // ── 4. Per-item conversion factors ──
   const itemUomParams = [];
@@ -147,6 +165,22 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
     itemUomParams)).rows;
   const itemUoms = {};
   itemUomRows.forEach(r => { (itemUoms[r.raw_material_id] ||= []).push(r); });
+
+  /* ── 4a. On order, in each material's stock unit ──
+     5 MT on order and a shortfall in kg are compared in kg. A line whose
+     unit cannot be converted is counted as written, as it always was. */
+  const onOrder = new Map();
+  for (const r of onOrderRows) {
+    let qty = Number(r.qty) || 0;
+    if (!qty) continue;
+    const rm = materialById.get(r.raw_material_id);
+    const from = String(r.uom || '').toLowerCase(), to = String(rm?.base_uom || '').toLowerCase();
+    if (rm && from && to && from !== to) {
+      const c = convert(qty, from, to, { uoms, item: rm, itemUoms: itemUoms[r.raw_material_id] || [] });
+      if (c.ok) qty = c.qty;
+    }
+    onOrder.set(r.raw_material_id, (onOrder.get(r.raw_material_id) || 0) + qty);
+  }
 
   /* ── 4b. Preferred supplier per material ──
      MOQ belongs to the vendor, not the item: Jindal's minimum is not

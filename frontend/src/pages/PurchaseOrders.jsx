@@ -54,8 +54,15 @@ const PurchaseOrders = () => {
   };
   const [formData, setFormData] = useState(initialForm);
   
-  const [items, setItems] = useState([{ sno: 1, description: '', uom: 'nos', hsn: '', quantity: 1, unitPrice: 0 }]);
+  const [items, setItems] = useState([{ sno: 1, description: '', uom: 'nos', hsn: '', quantity: 1, unitPrice: 0, pick: '', rawMaterialId: null, skuId: null }]);
   const [gstType, setGstType] = useState(null);
+  /* What a line can be picked from: the company's materials and products,
+     and the chosen vendor's own prices for them. A line was typed text, and
+     received stock only found its row when the text matched exactly — "MS
+     Plate 10 mm" against "MS Plate 10mm" opened a second stock row that the
+     shortage check could not see. A picked line carries its item (075). */
+  const [catalog, setCatalog] = useState({ materials: [], products: [] });
+  const [vendorPrices, setVendorPrices] = useState({});
 
   /* Vendors and the company profile stay whole loads — they are form
      controls, not lists, and a dropdown that paginates is a dropdown nobody
@@ -72,6 +79,45 @@ const PurchaseOrders = () => {
     axios.get(`${API}/company-profile`)
       .then(res => setCompany(res.data))
       .catch(err => console.error("Failed to fetch company profile", err));
+
+    const rows = (d) => (Array.isArray(d) ? d : (d?.items || []));
+    Promise.all([axios.get(`${API}/raw-materials`), axios.get(`${API}/skus`)])
+      .then(([m, p]) => setCatalog({ materials: rows(m.data), products: rows(p.data) }))
+      .catch(() => { /* the line can still be typed */ });
+  };
+
+  /* The vendor's own price for each material, from Vendors → What they supply. */
+  useEffect(() => {
+    if (!formData.vendorId) { setVendorPrices({}); return; }
+    axios.get(`${API}/vendor-items?vendorId=${formData.vendorId}&limit=500`)
+      .then(res => {
+        const list = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+        setVendorPrices(Object.fromEntries(list.map(v => [v.raw_material_id, { price: v.price, uom: v.price_uom }])));
+      })
+      .catch(() => setVendorPrices({}));
+  }, [formData.vendorId]);
+
+  /* Picking an item fills the line from it: name, unit, HSN, and the price
+     this vendor charges for it (else the material's standard rate). Every
+     field stays editable; the name can carry a spec as well. */
+  const pickItem = (index, value) => {
+    setItems(list => list.map((it, i) => {
+      if (i !== index) return it;
+      if (!value) return { ...it, pick: '', rawMaterialId: null, skuId: null };
+      const [kind, id] = value.split(':');
+      if (kind === 'm') {
+        const m = catalog.materials.find(x => String(x.id) === id);
+        if (!m) return it;
+        const vp = vendorPrices[m.id];
+        const price = Number(vp?.price) > 0 ? Number(vp.price) : Number(m.standard_rate) || 0;
+        return { ...it, pick: value, rawMaterialId: m.id, skuId: null, description: m.name,
+          uom: vp?.uom || m.purchase_uom || m.base_uom || m.unit || it.uom, hsn: m.hsn || it.hsn,
+          unitPrice: price > 0 ? price : it.unitPrice };
+      }
+      const p = catalog.products.find(x => String(x.id) === id);
+      if (!p) return it;
+      return { ...it, pick: value, skuId: p.id, rawMaterialId: null, description: p.name, uom: p.unit || it.uom, hsn: p.hsn || it.hsn };
+    }));
   };
 
   const fetchData = () => { fetchRefs(); q.reload(); };
@@ -98,7 +144,7 @@ const PurchaseOrders = () => {
   }, [formData.vendorId, company, vendors]);
 
   const handleAddItem = () => {
-    setItems([...items, { sno: items.length + 1, description: '', uom: 'nos', hsn: '', quantity: 1, unitPrice: 0 }]);
+    setItems([...items, { ...{ sno: 1, description: '', uom: 'nos', hsn: '', quantity: 1, unitPrice: 0, pick: '', rawMaterialId: null, skuId: null }, sno: items.length + 1 }]);
   };
 
   const handleRemoveItem = (index) => {
@@ -154,7 +200,7 @@ const PurchaseOrders = () => {
       if (!poRes.data.linesSaved) await axios.post(`${API}/po/${poRes.data.id}/items`, items);
 
       setFormData(initialForm);
-      setItems([{ sno: 1, description: '', uom: 'nos', hsn: '', quantity: 1, unitPrice: 0 }]);
+      setItems([{ sno: 1, description: '', uom: 'nos', hsn: '', quantity: 1, unitPrice: 0, pick: '', rawMaterialId: null, skuId: null }]);
       setShowForm(false);
       fetchData();
       toast.success('Purchase Order created');
@@ -300,7 +346,23 @@ const PurchaseOrders = () => {
                   <tr key={idx} className="bg-[#111113]">
                     <td className="p-3 text-center text-gray-500">{item.sno}</td>
                     <td className="p-2">
-                      <input type="text" required value={item.description} onChange={e => handleItemChange(idx, 'description', e.target.value)} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="Item description" />
+                      {(catalog.materials.length > 0 || catalog.products.length > 0) && (
+                        <select value={item.pick || ''} onChange={e => pickItem(idx, e.target.value)} aria-label={`Line ${idx + 1} item`}
+                          className="w-full bg-transparent border border-white/10 hover:border-white/20 focus:border-amber-500 rounded px-1 py-1 text-white outline-none" style={{ marginBottom: 4, fontSize: '0.8rem' }}>
+                          <option value="">Not a saved item: type it below</option>
+                          {catalog.materials.length > 0 && (
+                            <optgroup label="Materials">
+                              {catalog.materials.map(m => <option key={`m${m.id}`} value={`m:${m.id}`}>{m.name}{m.material_code ? ` · ${m.material_code}` : ''}{vendorPrices[m.id] ? ' · this vendor\'s price' : ''}</option>)}
+                            </optgroup>
+                          )}
+                          {catalog.products.length > 0 && (
+                            <optgroup label="Products">
+                              {catalog.products.map(p => <option key={`s${p.id}`} value={`s:${p.id}`}>{p.name}{p.sku_code ? ` · ${p.sku_code}` : ''}</option>)}
+                            </optgroup>
+                          )}
+                        </select>
+                      )}
+                      <input type="text" required value={item.description} onChange={e => handleItemChange(idx, 'description', e.target.value)} aria-label={`Line ${idx + 1} description`} className="w-full bg-transparent border border-transparent hover:border-white/20 focus:border-amber-500 rounded px-2 py-1 text-white outline-none" placeholder="Item description" />
                     </td>
                     <td className="p-2">
                       {/* The standard unit list (lib/units) every other document

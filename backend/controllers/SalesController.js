@@ -16,6 +16,7 @@ const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { runList } = require('../shared/listQuery');
 const { assertRefs, skuIdsOf } = require('../shared/ownedRefs');
+const { prepareLines } = require('../shared/lineChecks');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 /* ── Customer Orders ── */
@@ -66,6 +67,35 @@ exports.createOrder = async (req, res) => {
      customer read below would otherwise copy another company's terms and
      state onto this order. */
   if (!await assertRefs(db, req, res, { customers: [customerId], skus: skuIdsOf(items) })) return;
+
+  /* The lines, checked as a quotation's and an invoice's are (shared/
+     lineChecks). A line with a quantity and a rate but no description was
+     skipped when the lines were written — yet still counted in the total,
+     so an order could be stored at ₹2,00,600 with no lines at all, and the
+     shortage check then saw nothing to make. A line naming a product takes
+     the product's name; one with nothing to describe it is refused; a
+     wholly blank row is still the form's spare line and is dropped. */
+  let lines;
+  try {
+    const ids = skuIdsOf(items).filter(x => x != null && x !== '');
+    const names = ids.length ? Object.fromEntries((await db.query(
+      'SELECT id, name FROM skus WHERE id = ANY($1::int[])', [ids])).rows.map(r => [String(r.id), r.name])) : {};
+    const named = (items || []).map(it => {
+      const withName = !String(it?.description ?? '').trim() && names[String(it?.skuId ?? it?.sku_id)]
+        ? { ...it, description: names[String(it.skuId ?? it.sku_id)] } : it;
+      /* a line priced as a target price keeps it as its rate */
+      return (withName?.rate === '' || withName?.rate == null) && withName?.targetPrice != null
+        ? { ...withName, rate: withName.targetPrice } : withName;
+    });
+    /* An order with no lines yet is allowed (the Orders page counts them):
+       nothing typed is not an error, only a half-typed line is. */
+    lines = named.length ? prepareLines(named) : [];
+  } catch (e) {
+    if (e.message === 'Add at least one line item.') lines = [];
+    else if (e.status === 400) return res.status(400).json({ error: e.message });
+    else return res.status(500).json({ error: e.message });
+  }
+
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -80,7 +110,7 @@ exports.createOrder = async (req, res) => {
     const supplyState = cust?.shipping_state || cust?.state || null;
     const inter = isInterstate(company?.stateCode || company?.gstin, supplyState);
 
-    const t = computeOrder(items, {
+    const t = computeOrder(lines, {
       discount, discountType, gstRate: gstRate ?? 18, interstate: inter === true,
       taxDeductionType, taxDeductionRate, adjustment, roundOff,
     });
