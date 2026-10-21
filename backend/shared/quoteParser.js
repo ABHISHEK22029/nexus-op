@@ -452,7 +452,10 @@ function parseCsvText(text) {
 function parseCsv(buffer) {
   const text = buffer.toString('utf8');
   const g = parseGrid(parseCsvText(text));
-  return { lines: g.lines, totals: g.totals, text, note: g.lines.length ? null : 'No item table was recognised in this file.' };
+  /* writtenSum too, as the Excel, Word and PDF readers pass it: without it
+     a CSV whose amounts include GST was checked pre-tax against its own
+     GST-inclusive sub-total, and told a row was missing. */
+  return { lines: g.lines, totals: g.totals, writtenSum: g.writtenSum, text, note: g.lines.length ? null : 'No item table was recognised in this file.' };
 }
 
 /* ── text: PDF, and Word paragraphs ──────────────────────────────────────
@@ -969,13 +972,24 @@ async function parseQuotation(buffer, mime = '', filename = '') {
      "Sub Total" adds up. */
   const written = out.writtenSum || summed;
   const fits = (x) => x && (close(x, target, 0.02) || close(x - (t.discount || 0), target, 0.02));
-  let mismatch = false;
-  if (summed && target != null) mismatch = !fits(summed) && !fits(written);
-  else if (summed && t.grand != null) {
-    mismatch = ![0, 5, 12, 18, 28].some(g => close((summed - (t.discount || 0)) * (1 + g / 100), t.grand, 0.02)
+  const fitsGrand = t.grand != null && (
+    [0, 5, 12, 18, 28].some(g => close((summed - (t.discount || 0)) * (1 + g / 100), t.grand, 0.02)
       || close(summed * (1 + g / 100) - (t.discount || 0), t.grand, 0.02))
-      && !close(written - (t.discount || 0), t.grand, 0.02) && !close(written, t.grand, 0.02);
-  }
+    || close(written - (t.discount || 0), t.grand, 0.02) || close(written, t.grand, 0.02));
+  let mismatch = false;
+  /* Freight or packing written BELOW the sub-total ("Sub Total · Freight ·
+     Grand Total", the usual Indian layout) is read as a line, so the lines
+     came to more than the sub-total and every such file was told "a row was
+     probably missed" although nothing was. When the lines account for the
+     grand total, nothing was missed. */
+  /* Exactly, though: with a sub-total to go by, guessing the GST rate within
+     2% would wave through lines ₹8,000 short (81,900 × 1.28 is "close to"
+     1,06,200). Only the lines as written, or the lines plus the tax the
+     file states, may account for the grand total. */
+  const exactGrand = t.grand != null && (close(written, t.grand, 0.002) || close(written - (t.discount || 0), t.grand, 0.002)
+    || (t.tax != null && close(summed + t.tax - (t.discount || 0) + (t.roundOff || 0), t.grand, 0.002)));
+  if (summed && target != null) mismatch = !fits(summed) && !fits(written) && !exactGrand;
+  else if (summed && t.grand != null) mismatch = !fitsGrand;
   if (mismatch) {
     out.note = (out.note ? out.note + ' ' : '')
       + `The lines read add up to ${summed.toFixed(2)}, but the document says ${Number(target ?? t.grand).toFixed(2)} — `
