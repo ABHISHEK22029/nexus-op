@@ -8,6 +8,7 @@ const { notify } = require('../notify');
 const { runList } = require('../shared/listQuery');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById } = require('../shared/ownerScope');
+const { allocate: allocateNumber } = require('../shared/docSeries');
 
 /* List GRN records, scoped to a project.
 
@@ -38,8 +39,8 @@ router.get('/', async (req, res) => {
                  LEFT JOIN LATERAL (SELECT id, bill_number FROM grn_bills
                                      WHERE grn_id = g.id ORDER BY id LIMIT 1) b ON TRUE) AS grn`,
       query: req.query,
-      searchColumns: ['vehicleNumber', 'batchNumber', 'chainage'],
-      allowedSort: ['id', 'date', 'receivedQuantity', 'vehicleNumber'],
+      searchColumns: ['grn_number', 'vehicleNumber', 'batchNumber', 'chainage', 'bill_number'],
+      allowedSort: ['id', 'grn_number', 'date', 'receivedQuantity', 'vehicleNumber'],
       defaultSort: 'date',
       defaultDir: 'DESC',
       where, params,
@@ -188,12 +189,15 @@ router.post('/', async (req, res) => {
     // workOrderId is now optional — fall back to the PO's, else null (no WO).
     const resolvedWorkOrderId = workOrderId || po.workOrderId || null;
 
-    // Step 2: Insert GRN record
+    // Step 2: Insert GRN record — numbered in this company's own series
+    // (GRN-00001 …, Settings → Document numbering), not by database id.
+    const grnOwner = req.user?.orgId ?? req.user?.id ?? null;
+    const grnNumber = await allocateNumber(client, { ownerId: grnOwner, docType: 'goods_receipt' });
     const grnResult = await client.query(
-      `INSERT INTO grn ("projectId", "workOrderId", "poId", "vehicleNumber", "batchNumber", chainage, "receivedQuantity", po_line_item_id, owner_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      `INSERT INTO grn ("projectId", "workOrderId", "poId", "vehicleNumber", "batchNumber", chainage, "receivedQuantity", po_line_item_id, owner_id, grn_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [resolvedProjectId, resolvedWorkOrderId, poId, vehicleNumber || null, batchNumber || null, chainage || null,
-       receivedQuantity, line?.id ?? null, req.user?.orgId ?? req.user?.id ?? null]
+       receivedQuantity, line?.id ?? null, grnOwner, grnNumber]
     );
     const grnId = grnResult.rows[0].id;
 
@@ -324,7 +328,7 @@ router.post('/', async (req, res) => {
       movementType: 'grn',
       refType: 'grn',
       refId: grnId,
-      refNumber: `GRN-${String(grnId).padStart(5, '0')}`,
+      refNumber: grnNumber,
       note: uomNote,
       userId: req.user?.id,
     });
@@ -337,17 +341,17 @@ router.post('/', async (req, res) => {
     // Step 5: Log activity
     await client.query(
       `INSERT INTO activities ("projectId", description, type, owner_id) VALUES ($1, $2, $3, $4)`,
-      [resolvedProjectId, `GRN-${String(grnId).padStart(5, '0')} received against ${poLabel} (${receivedQuantity} ${line?.uom || 'units'} of ${receivedItemName})`, 'GRN',
+      [resolvedProjectId, `${grnNumber} received against ${poLabel} (${receivedQuantity} ${line?.uom || 'units'} of ${receivedItemName})`, 'GRN',
        req.user?.orgId ?? req.user?.id ?? null]
     );
 
     await client.query('COMMIT');
-    notify({ org: po.owner_id ?? req.user?.orgId ?? req.user?.id }, { type: 'GRN_RECEIVED', title: `Goods received · GRN-${String(grnId).padStart(5, '0')}`, message: `${receivedQuantity} ${line?.uom || ''} of ${receivedItemName} received against ${poLabel}`.replace(/\s+/g, ' '), entityType: 'grn', entityId: grnId, link: `/grn/${grnId}/bill` });
+    notify({ org: po.owner_id ?? req.user?.orgId ?? req.user?.id }, { type: 'GRN_RECEIVED', title: `Goods received · ${grnNumber}`, message: `${receivedQuantity} ${line?.uom || ''} of ${receivedItemName} received against ${poLabel}`.replace(/\s+/g, ' '), entityType: 'grn', entityId: grnId, link: `/grn/${grnId}/bill` });
     /* The caller needs to know whether the order is finished or still owed
        something — that is the question a receipt raises. */
     res.json({
       message: 'GRN completed successfully',
-      grnId, poId, stockQty, uomNote,
+      grnId, grnNumber, poId, stockQty, uomNote,
       ordered: progress?.ordered,
       received: progress?.received,
       outstanding: progress?.outstanding,

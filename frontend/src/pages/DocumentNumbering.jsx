@@ -75,6 +75,10 @@ export default function DocumentNumbering() {
   const input = { padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: '0.86rem', outline: 'none', width: '100%' };
   const th = { padding: '10px 12px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-muted)', textAlign: 'left', borderBottom: '1px solid var(--border-default)' };
   const td = { padding: '10px 12px', borderBottom: '1px solid var(--border-subtle)', verticalAlign: 'top' };
+  /* Plain text in a row of boxes: dropped to the boxes' text line, so the
+     name and the next number read level with them. (Top-aligned, not
+     centred, so a message under a box doesn't shift the row.) */
+  const tdText = { ...td, paddingTop: 19 };
 
   return (
     <div style={{ maxWidth: 1060, margin: '0 auto' }}>
@@ -111,8 +115,8 @@ export default function DocumentNumbering() {
             <thead>
               <tr>
                 <th style={th}>Document</th>
-                <th style={{ ...th, width: 200 }}>Prefix</th>
-                <th style={{ ...th, width: 110 }}>Digits</th>
+                <th style={{ ...th, width: 180 }}>Prefix</th>
+                <th style={{ ...th, width: 130 }}>Digits</th>
                 <th style={{ ...th, width: 140 }}>Next number</th>
                 <th style={th}>Next document</th>
                 <th style={{ ...th, width: 96 }}></th>
@@ -125,7 +129,7 @@ export default function DocumentNumbering() {
                 const err = errors[row.docType];
                 return (
                   <tr key={row.docType}>
-                    <td style={{ ...td, fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                    <td style={{ ...tdText, fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
                       {row.label}
                       {row.perYear && <div style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--text-muted)' }}>restarts each financial year</div>}
                     </td>
@@ -142,7 +146,7 @@ export default function DocumentNumbering() {
                       <input style={{ ...input, fontFamily: 'var(--font-mono)' }} inputMode="numeric" value={n ?? ''}
                         onChange={e => set(row, 'nextSeq', e.target.value.replace(/[^\d]/g, ''))} aria-label={`${row.label} next number`} />
                     </td>
-                    <td style={td}>
+                    <td style={tdText}>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{shown || '—'}</span>
                       {shown && shown.length > 16 && (
                         <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: 2 }}>{shown.length} characters — GST allows 16</div>

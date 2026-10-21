@@ -71,7 +71,7 @@ export default function GrnBillBuilder() {
 
   if (!ctx) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading GRN…</div>;
 
-  const grnNo = `GRN-${String(ctx.grn?.id ?? '').padStart(5, '0')}`;
+  const grnNo = ctx.grn?.grn_number || `GRN-${String(ctx.grn?.id ?? '').padStart(5, '0')}`;
   /* A receipt is billed once. "Generate Bill" stayed on the receipt's row
      and made a second bill (a second payable) for the same goods. */
   if (ctx.existingBill) {

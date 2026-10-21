@@ -75,7 +75,8 @@ async function cleanup() {
     console.log('\n  ── Settings → Document numbering');
     const list = await api('GET', '/document-series');
     const inv0 = (list.body || []).find(s => s.docType === 'sales_invoice');
-    ok(list.status === 200 && list.body.length === 6, `six series are listed (${list.body.length})`);
+    const gr = (list.body || []).find(s => s.docType === 'goods_receipt');
+    ok(list.status === 200 && list.body.length === 7 && !!gr, `seven series are listed, goods receipts among them (${list.body.length}${gr ? `, next ${gr.next || gr.nextNumber || ''}` : ''})`);
     ok(inv0?.nextNumber === 'INV-0001', `a new business starts at INV-0001, as before (${inv0?.nextNumber})`);
 
     const fy = (() => { const d = new Date(); const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; return `${y}-${String((y + 1) % 100).padStart(2, '0')}`; })();

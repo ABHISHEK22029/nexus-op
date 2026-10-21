@@ -30,6 +30,9 @@ const SERIES = {
   delivery_challan: { label: 'Delivery challan', prefix: 'DC-',  pad: 4, table: 'delivery_challans',  column: 'challan_number' },
   note_credit:      { label: 'Credit note',      prefix: 'CN-',  pad: 4, table: 'credit_debit_notes', column: 'note_number' },
   note_debit:       { label: 'Debit note',       prefix: 'DN-',  pad: 4, table: 'credit_debit_notes', column: 'note_number' },
+  /* Five digits, as receipts have always been written (GRN-00031). They
+     used to be the database id; migration 074 numbered them per company. */
+  goods_receipt:    { label: 'Goods receipt',    prefix: 'GRN-', pad: 5, table: 'grn',                column: 'grn_number' },
 };
 
 const HAS_FY = /\{FY\}/i;

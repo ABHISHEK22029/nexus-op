@@ -76,7 +76,7 @@ export default function GrnBillDoc() {
           </div>
           <div className="inv-party">
             <div className="inv-party-title">Against</div>
-            <div className="inv-party-detail">{bill.grn_id ? `GRN-${String(bill.grn_id).padStart(5, '0')}` : '—'} · PO {bill.po_number || (bill.po_id ? `#${bill.po_id}` : '—')}</div>
+            <div className="inv-party-detail">{bill.grn_number || (bill.grn_id ? `GRN-${String(bill.grn_id).padStart(5, '0')}` : '—')} · PO {bill.po_number || (bill.po_id ? `#${bill.po_id}` : '—')}</div>
           </div>
         </div>
 

@@ -224,7 +224,9 @@ exports.getById = async (req, res) => {
     /* The PO by its number, for the printed bill ("PO #5355" was the row id). */
     const poNumber = bill.po_id ? (await db.query(
       'SELECT "poNumber" FROM purchase_orders WHERE id = $1 AND owner_id IS NOT DISTINCT FROM $2', [bill.po_id, bill.owner_id])).rows[0]?.poNumber : null;
-    res.json({ ...bill, items, vendor, payments, company, po_number: poNumber || null });
+    const grnNumber = bill.grn_id ? (await db.query(
+      'SELECT grn_number FROM grn WHERE id = $1 AND owner_id IS NOT DISTINCT FROM $2', [bill.grn_id, bill.owner_id])).rows[0]?.grn_number : null;
+    res.json({ ...bill, items, vendor, payments, company, po_number: poNumber || null, grn_number: grnNumber || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

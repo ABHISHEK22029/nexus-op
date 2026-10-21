@@ -228,7 +228,7 @@ const GRN = () => {
             <tbody className="divide-y divide-white/5">
               {q.rows.map((req) => (
                 <tr key={req.id} className="hover:bg-white/[0.02] transition-colors text-gray-300">
-                  <td className="px-6 py-4 font-medium text-gray-400">GRN-{req.id.toString().padStart(5, '0')}</td>
+                  <td className="px-6 py-4 font-medium" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-primary)' }}>{req.grn_number || `GRN-${req.id.toString().padStart(5, '0')}`}</td>
                   <td className="px-6 py-4" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{poNo[req.poId] || `PO-${req.poId}`}</td>
                   <td className="px-6 py-4">{req.vehicleNumber || '—'}</td>
                   <td className="px-6 py-4 font-bold text-right" style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{Number(req.receivedQuantity).toLocaleString('en-IN')}</td>
