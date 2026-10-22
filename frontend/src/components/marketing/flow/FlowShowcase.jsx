@@ -6,6 +6,7 @@ import { SCENES, CHAIN, CATALOGUE_URL, CLOSING_VOICE } from './story';
 import useNarrator from './voice';
 import { NARRATION } from './narration';
 import { useStoryClock, useStoryVoice, useReducedMotion, useKeyboardPause, usePageShown } from './engine';
+import { FLOW_GOTO, FLOW_VOICE } from './events';
 import './flow.css';
 
 /* every line the walkthrough says, for the voice to fetch ahead */
@@ -161,6 +162,25 @@ export default function FlowShowcase({ notes = true }) {
     clock.goTo(i);
     if (fromUser) setUserPaused(false);
   };
+
+  /* A page can play a stage from outside — How It Works' step strip does,
+     with "Watch this stage" — by dispatching FLOW_GOTO with its index. */
+  const clockGoTo = clock.goTo;
+  useEffect(() => {
+    const onGo = (e) => {
+      const i = Number(e.detail);
+      if (!Number.isInteger(i) || i < 0 || i >= n) return;
+      clockGoTo(i);
+      setUserPaused(false);
+    };
+    window.addEventListener(FLOW_GOTO, onGo);
+    return () => window.removeEventListener(FLOW_GOTO, onGo);
+  }, [clockGoTo, n]);
+  useEffect(() => {
+    const onVoice = () => { narrator.unlock(HOME_LINES); setVoiceOn(true); setUserPaused(false); };
+    window.addEventListener(FLOW_VOICE, onVoice);
+    return () => window.removeEventListener(FLOW_VOICE, onVoice);
+  }, [narrator]);
 
   const scene = SCENES[idx];
   const closing = phase === 'closing';

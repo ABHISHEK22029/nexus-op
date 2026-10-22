@@ -99,7 +99,7 @@ const VIRTUAL_TIME = (clips) => {
   /* the ad's music: an offline context whose clock is the stepped clock */
   const RealOffline = window.OfflineAudioContext;
   function VAudioContext() {
-    const ctx = new RealOffline(2, 48000 * 90, 48000);
+    const ctx = new RealOffline(2, 48000 * 100, 48000);   // longer than the ad (92 s)
     const t0 = vnow;
     Object.defineProperty(ctx, 'currentTime', { get: () => Math.max(0, (vnow - t0) / 1000) });
     Object.defineProperty(ctx, 'state', { get: () => 'running' });

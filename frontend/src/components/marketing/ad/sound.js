@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { CUES, SCORE, TEMPO } from './script';
+import { CUES, SCORE, TEMPO, VOICE } from './script';
+import VOICE_CLIPS from './voice-clips.json';
+import { clipName } from '../flow/narration';
 
 /* ══════════════════════════════════════════════════════════════════════
    The ad's sound — a score and its accents, made in the browser.
@@ -21,6 +23,12 @@ import { CUES, SCORE, TEMPO } from './script';
    stops and resumes in step; a jump (Replay, a seek) fades out whatever
    was playing and picks the score up at the new place, sustained chords
    included.
+
+   And a narrator: the voice-over (script.js VOICE), recorded clips in
+   /voice/ad/, fetched only once Sound is pressed and played on the same
+   audio clock as the music, so a line pauses, resumes and jumps with the
+   picture — after a jump, mid-sentence if that is where the ad is. While
+   a line is spoken the music steps back, and comes up again after.
    ══════════════════════════════════════════════════════════════════════ */
 
 const BAR = 240000 / TEMPO;          // 4/4: 2500 ms at 96
@@ -79,6 +87,8 @@ let ctx = null;
 let master = null;
 let bus = null;
 let noise = null;
+let music = null;       // the score's level: stepped back under the voice
+let voiceOut = null;
 
 const audio = () => {
   if (ctx) return ctx;
@@ -91,6 +101,11 @@ const audio = () => {
   master = ctx.createGain();
   master.gain.value = 0.62;
   master.connect(comp).connect(ctx.destination);
+  music = ctx.createGain();
+  music.connect(master);
+  voiceOut = ctx.createGain();
+  voiceOut.gain.value = VOICE_LEVEL;
+  voiceOut.connect(master);
   /* two seconds of noise from a fixed seed (mulberry32) */
   let seed = 0x5eed;
   const rand = () => {
@@ -113,7 +128,58 @@ const freshBus = () => {
     setTimeout(() => old.disconnect(), 500);
   }
   bus = ctx.createGain();
-  bus.connect(master);
+  bus.connect(music);
+};
+
+/* ── the narrator ── */
+const VOICE_DIR = '/voice/ad/';
+const VOICE_LEVEL = 1.15;
+const DUCK = 0.32;                  // the music's level while a line is spoken
+const LINES = VOICE
+  .map((v) => ({ ...v, name: clipName(v.text) }))
+  .map((v) => ({ ...v, dur: VOICE_CLIPS.clips?.[v.name] || 0 }))
+  .filter((v) => v.dur);
+const buffers = new Map();
+const speaking = new Set();
+let loading = null;
+let said = 0;
+
+/* fetch and decode every line once, after Sound is pressed */
+const loadVoice = () => {
+  if (loading || !ctx) return;
+  loading = Promise.all(LINES.map(async (l) => {
+    try {
+      const r = await fetch(VOICE_DIR + l.name);
+      if (!r.ok) return;
+      buffers.set(l.name, await ctx.decodeAudioData(await r.arrayBuffer()));
+    } catch { /* that line stays silent; its caption still says it */ }
+  }));
+  if (typeof window !== 'undefined') window.__MK_AD_VOICE__ = { loaded: () => buffers.size, said: () => said, lines: LINES.length };
+};
+
+/* say a line at `at` on the audio clock, from `offset` seconds into it */
+const speak = (l, at, offset = 0) => {
+  const b = buffers.get(l.name);
+  if (!b || offset >= b.duration) return false;
+  const s = ctx.createBufferSource();
+  s.buffer = b;
+  s.connect(voiceOut);
+  s.start(at, offset);
+  speaking.add(s);
+  s.onended = () => speaking.delete(s);
+  const end = at + b.duration - offset;
+  music.gain.setTargetAtTime(DUCK, Math.max(ctx.currentTime, at - 0.08), 0.07);
+  music.gain.setTargetAtTime(1, end + 0.05, 0.35);
+  said++;
+  return true;
+};
+
+/* stop whatever is being said, and bring the music back up */
+const hush = () => {
+  for (const s of speaking) { try { s.stop(); } catch { /* already over */ } }
+  speaking.clear();
+  music.gain.cancelScheduledValues(ctx.currentTime);
+  music.gain.setTargetAtTime(1, ctx.currentTime, 0.05);
 };
 
 /* a gain envelope: up in `a`, held to `hold`, down over `r` */
@@ -249,6 +315,7 @@ const PLAY = {
 export const soundOn = () => {
   const c = audio();
   if (c && c.state === 'suspended') c.resume().catch(() => {});
+  if (c) loadVoice();
   return Boolean(c);
 };
 
@@ -266,6 +333,7 @@ export const supportsSound = () => typeof window !== 'undefined' && Boolean(wind
 const AHEAD = 150;
 export function useAdSound(ms, { on, playing, ended }) {
   const booked = useRef(null);
+  const spoken = useRef(new Set());
   useEffect(() => {
     if (!ctx) return;
     if (!on) { booked.current = null; return; }
@@ -280,6 +348,8 @@ export function useAdSound(ms, { on, playing, ended }) {
     const jumped = booked.current == null || ms < booked.current - AHEAD - 60 || ms > booked.current + 400;
     if (jumped) {
       freshBus();
+      hush();
+      spoken.current = new Set();
       /* chords already sounding at this moment start now, for what is left of them */
       for (const e of EVENTS) {
         if (e.dur && e.at <= ms && ms < e.at + e.dur - 200) PLAY[e.name]?.(base, { ...e, dur: e.at + e.dur - ms });
@@ -290,6 +360,12 @@ export function useAdSound(ms, { on, playing, ended }) {
     for (const e of EVENTS) {
       if (e.at > booked.current && e.at <= until) PLAY[e.name]?.(base + Math.max(0, e.at - ms) / 1000, e);
     }
+    /* the voice: lines due now, and any still running that has not begun —
+       Sound pressed mid-line, or its clip only just arrived */
+    LINES.forEach((l, i) => {
+      if (spoken.current.has(i) || l.at > until || ms >= l.at + l.dur - 250) return;
+      if (speak(l, base + Math.max(0, l.at - ms) / 1000, Math.max(0, ms - l.at) / 1000)) spoken.current.add(i);
+    });
     booked.current = Math.max(booked.current, until);
   }, [ms, on, playing, ended]);
 }

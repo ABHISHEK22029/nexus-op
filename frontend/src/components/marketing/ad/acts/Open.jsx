@@ -1,94 +1,107 @@
 import React from 'react';
-import { FileSpreadsheet, Mail, FileText, MessageSquare, ClipboardList, ReceiptText, StickyNote } from 'lucide-react';
+import {
+  MessageCircle, StickyNote, FileText, Sheet, PhoneMissed, Mail, BellRing, Clock3, Copy, CircleHelp, Files, TriangleAlert,
+} from 'lucide-react';
 import { MoMark } from '../../film/shell/marks';
-import { Lines, Thread, Rider } from '../parts';
-import { pick, box } from '../geo';
+import { Burst } from '../parts';
+import { box } from '../util';
 
 /* ══════════════════════════════════════════════════════════════════════
-   Act 1 — before, and Maks Ops. (0–7 s)
+   Act 1 — before, and Maks Ops. (0–11.5 s)
 
-   The day as it is: a spreadsheet, a mail thread, a vendor's PDF, a
-   chat, a stock note, a job card, an invoice draft — each about the same
-   order, none of them aware of the others. They drift; the words say what
-   that costs. Then everything stops, an orange thread crosses the frame,
-   and the pieces are drawn along it into a single point, which opens into
-   the Maks Ops mark.
+   The day as it is, one line at a time: the order on WhatsApp, the stock
+   in a notebook, the quote in a PDF, the bills in Excel. Then the noise
+   multiplies — reminders, missed calls, copies of copies — and jitters,
+   until all of it is drawn into one point of light, which bursts into the
+   Maks Ops mark.
    ══════════════════════════════════════════════════════════════════════ */
 
-/* The fragments: where they sit (wide, narrow), and what is on them.
-   Narrow keeps five; a phone shows fewer things at once. */
-const FRAGS = [
-  { key: 'sheet', wide: [86, 118, 300], narrow: [14, 96, 236], tilt: -3, Ico: FileSpreadsheet, head: 'orders-FINAL-v3.xlsx',
-    body: <span className="ad-cells">{['Customer', 'Item', 'Qty', 'Rate', 'Acme', 'Bracket', '120', '?', 'Orbit', 'Plate', '60', '1,850'].map((c, i) => <i key={i}>{c}</i>)}</span> },
-  { key: 'mail', wide: [892, 92, 300], narrow: [176, 196, 230], tilt: 2.5, Ico: Mail, head: 'Re: Re: bracket rates?',
-    body: <><small>purchase@acme.example</small><span>Can you confirm the price for 120 by today?</span></> },
-  { key: 'pdf', wide: [928, 430, 256], narrow: [196, 478, 212], tilt: -2, Ico: FileText, head: 'deccan-metals.pdf',
-    body: <><small>QUOTATION</small><span>SS304 sheet, 2 mm — ₹260 / kg</span></> },
-  { key: 'note', wide: [150, 472, 210], narrow: null, tilt: 4, Ico: StickyNote, head: 'Store',
-    body: <span className="ad-hand">SS304 — 143 kg?? check</span> },
-  { key: 'chat', wide: [498, 566, 270], narrow: [16, 530, 232], tilt: 1.5, Ico: MessageSquare, head: 'Ravi · Acme',
-    body: <span className="ad-bubble">Need 120 brackets, brushed. 4 weeks OK?</span> },
-  { key: 'job', wide: [520, 104, 236], narrow: null, tilt: -1.5, Ico: ClipboardList, head: 'Job card',
-    body: <span>Cut 300 kg sheet — Monday</span> },
-  { key: 'inv', wide: [1012, 262, 214], narrow: [200, 616, 196], tilt: 3, Ico: ReceiptText, head: 'INV draft',
-    body: <span>GST pending · not sent</span> },
+const CX = 640, CY = 300;
+
+/* The four things the captions name, each arriving with its line. */
+const HERO = [
+  { key: 'chat', at: [92, 128, 300], tilt: -4, show: 300 },
+  { key: 'note', at: [912, 116, 250], tilt: 5, show: 1650 },
+  { key: 'pdf', at: [150, 470, 290], tilt: 3, show: 3050 },
+  { key: 'xls', at: [872, 452, 310], tilt: -3, show: 4520 },
 ];
 
-const PULL = 3150;          // the moment the thread starts drawing them in
+/* The noise around them: small, many, arriving fast. Kept out of the
+   band the centred caption is written in. */
+const SWARM = [
+  [520, 104, -6, BellRing, 'Reminder'], [720, 196, 4, PhoneMissed, 'Missed call'], [330, 236, -3, Mail, 'Re: Fw: Re:'],
+  [1010, 300, 6, Copy, 'v3_final (2)'], [36, 312, 3, CircleHelp, 'Who has it?'], [1140, 150, -5, Clock3, 'Overdue'],
+  [430, 586, 5, Files, 'Copy of copy'], [760, 606, -4, TriangleAlert, 'Stock?'], [1080, 620, 3, Mail, '12 unread'],
+  [230, 408, -7, PhoneMissed, 'Call back'], [610, 470, 4, CircleHelp, 'Rate?'], [60, 640, -2, BellRing, 'Pending'],
+].map((chip, i) => [...chip, i]);
 
-export default function Open({ t, layout }) {
-  const [W, H] = pick(layout, [1280, 720], [420, 720]);
-  const cx = W / 2, cy = H / 2;
-  const frags = FRAGS.filter((f) => f[layout]);
-  const hushed = t >= 2900;
+const PULL = 6700;          // everything is drawn into the point
+const CORE = 6950;          // the point of light
+const BRAND = 7600;         // it bursts into the mark
+
+/* Where a thing must travel to reach the point, as a CSS transform. */
+const pullTo = (left, top, width) => `translate(${CX - (left + width / 2)}px, ${CY - (top + 40)}px) scale(0.05)`;
+
+function Hero({ k }) {
+  if (k === 'chat') return (
+    <>
+      <span className="ad-frag-h"><MessageCircle size={14} /> Ravi · Acme</span>
+      <span className="ad-bubble">Need 120 brackets, brushed. Price?</span>
+      <span className="ad-bubble is-me">Will check stock and revert</span>
+    </>
+  );
+  if (k === 'note') return (
+    <>
+      <span className="ad-frag-h"><StickyNote size={14} /> Store</span>
+      <span className="ad-hand">SS304 — 143 kg??</span>
+      <span className="ad-hand is-small">ask Suresh</span>
+    </>
+  );
+  if (k === 'pdf') return (
+    <>
+      <span className="ad-frag-h"><FileText size={14} /> quote_final_v3.pdf</span>
+      <span className="ad-lines"><i /><i /><i style={{ width: '60%' }} /></span>
+    </>
+  );
+  return (
+    <>
+      <span className="ad-frag-h"><Sheet size={14} /> bills-oct-FINAL.xlsx</span>
+      <span className="ad-cells">{['Party', 'Amt', 'GST', 'Paid', 'Acme', '?', '18%', '—', 'Orbit', '64,900', '?', 'no'].map((c, i) => <i key={i}>{c}</i>)}</span>
+    </>
+  );
+}
+
+export default function Open({ t }) {
   const pulled = t >= PULL;
-  const core = t >= 3650;
-  const brand = t >= 4000;
-  const leaving = t >= 6150;
-
-  const across = pick(layout,
-    `M -40 ${cy + 30} C ${W * 0.22} ${cy - 60}, ${W * 0.38} ${cy + 70}, ${cx} ${cy} S ${W * 0.8} ${cy - 50}, ${W + 40} ${cy + 10}`,
-    `M -30 ${cy + 40} C 90 ${cy - 30}, 150 ${cy + 50}, ${cx} ${cy} S 340 ${cy - 30}, ${W + 30} ${cy + 20}`);
-  const onward = pick(layout,
-    `M ${cx} ${cy - 40} C ${cx + 220} ${cy - 40}, ${W - 260} ${cy + 20}, ${W + 40} ${cy + 20}`,
-    `M ${cx} ${cy - 30} C ${cx + 80} ${cy - 30}, ${W - 60} ${cy + 10}, ${W + 30} ${cy + 10}`);
-
   return (
     <div className="ad-act ad-open">
-      {frags.map((f, i) => {
-        const [left, top, width] = f[layout];
-        const fx = left + width / 2, fy = top + 50;
-        const style = {
-          ...box([left, top, width]),
-          '--tilt': `${f.tilt}deg`,
-          '--pull': `translate(${cx - fx}px, ${cy - fy}px) scale(0.06) rotate(0deg)`,
-          '--i': i,
-        };
+      {HERO.map((f, i) => (
+        <div key={f.key}
+          className={`ad-frag is-hero is-${f.key}${t >= f.show ? ' is-on' : ''}${t >= 5200 ? ' is-jitter' : ''}${pulled ? ' is-pulled' : ''}`}
+          style={{ ...box(f.at), '--tilt': `${f.tilt}deg`, '--pull': pullTo(...f.at), '--i': i, '--pd': `${i * 40}ms` }}>
+          <div className="ad-frag-in"><Hero k={f.key} /></div>
+        </div>
+      ))}
+
+      {SWARM.map(([left, top, tilt, icon, label, i]) => {
+        const Ico = icon;
         return (
-          <div key={f.key} style={style}
-            className={`ad-frag${t >= 120 + i * 230 ? ' is-on' : ''}${hushed ? ' is-hushed' : ''}${pulled ? ' is-pulled' : ''}`}>
-            <div className="ad-frag-in">
-              <span className="ad-frag-h"><f.Ico size={13} /> {f.head}</span>
-              <span className="ad-frag-b">{f.body}</span>
-            </div>
-          </div>
+        <div key={i}
+          className={`ad-frag is-swarm${t >= 5200 + i * 110 ? ' is-on' : ''}${t >= 5200 ? ' is-jitter' : ''}${pulled ? ' is-pulled' : ''}`}
+          style={{ left, top, '--tilt': `${tilt}deg`, '--pull': pullTo(left, top, 130), '--i': i + 4, '--pd': `${60 + i * 25}ms` }}>
+          <div className="ad-frag-in"><Ico size={13} /> {label}</div>
+        </div>
         );
       })}
 
-      <Lines layout={layout}>
-        <Thread d={across} on={t >= 2850 && !brand} dur={650} />
-        <Thread d={onward} on={leaving} dur={700} delay={150} />
-      </Lines>
-      <Rider d={onward} on={leaving} dur={700} delay={150} />
-
       {/* the point everything was drawn into, which becomes the mark */}
-      <div className={`ad-core${core ? ' is-on' : ''}${brand ? ' is-open' : ''}${leaving ? ' is-gone' : ''}`}
-        style={{ left: cx, top: cy - pick(layout, 40, 30) }}>
+      <div className={`ad-core${t >= CORE ? ' is-on' : ''}${t >= BRAND ? ' is-open' : ''}`} style={{ left: CX, top: CY }}>
         <span className="ad-core-dot" />
-        <span className="ad-core-mark"><MoMark size={pick(layout, 92, 76)} /></span>
+        <span className="ad-core-wave" />
+        <span className="ad-core-burst"><Burst on={t >= BRAND} n={18} size={260} /></span>
+        <span className="ad-core-mark"><MoMark size={112} /></span>
       </div>
-      <div className={`ad-word${brand && t >= 4250 ? ' is-on' : ''}${leaving ? ' is-gone' : ''}`}
-        style={{ left: 0, width: W, top: cy + pick(layout, 34, 30) }}>
+      <div className={`ad-word${t >= BRAND + 450 ? ' is-on' : ''}`} style={{ left: 0, width: 1280, top: CY + 70 }}>
         Maks Ops
       </div>
     </div>

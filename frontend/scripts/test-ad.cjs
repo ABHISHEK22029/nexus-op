@@ -7,8 +7,8 @@
    made (no AudioContext even exists) until Sound is pressed; every
    caption appears on cue; the same moment always draws the same picture;
    it ends on a real "Test Maks Ops" link; under reduced motion it shows
-   each scene finished; on a phone it has its own layout and never pushes
-   the page sideways; and nothing logs an error.
+   each scene finished; on a phone it plays as the same 16:9 film across
+   the screen and never pushes the page sideways; and nothing logs an error.
 
    window.__MK_AD_SPEED__ runs the clock fast (12) or holds it (0), and
    window.__MK_AD__.seek(ms) goes anywhere.
@@ -71,8 +71,6 @@ const SPY = () => {
     return { page, loaded };
   };
   const toAd = async (page) => {
-    await page.evaluate(() => document.querySelector('.mk-ad-section').scrollIntoView({ block: 'start' }));
-    await sleep(1500);
     await page.evaluate(() => document.querySelector('.mk-ad-slot').scrollIntoView({ block: 'center' }));
     await page.waitForFunction(() => window.__MK_AD__, { timeout: 15000 });
     await sleep(500);
@@ -84,18 +82,24 @@ const SPY = () => {
   try {
     console.log('\n  ── on the homepage');
     const { page, loaded } = await open();
+    /* the ad is the homepage's first screen: under the promise, with the
+       features it shows as chips beneath it */
     const head = await page.evaluate(() => {
-      const s = document.querySelector('.mk-ad-section');
-      return s && { h: s.querySelector('h2')?.textContent, eyebrow: s.querySelector('.pill')?.textContent, ph: Boolean(s.querySelector('.mk-ad-ph')) };
+      const hero = document.querySelector('.mp-hero');
+      return hero && {
+        h: hero.querySelector('h1')?.textContent,
+        first: hero === document.querySelector('.mp > section'),
+        slot: Boolean(hero.querySelector('#the-film.mk-ad-slot')),
+        chips: hero.querySelectorAll('.mp-chip').length,
+      };
     });
-    ok(head && /Your entire operation\.\s*Connected\./.test(head.h) && /difference/i.test(head.eyebrow), `the section is there, under its heading ("${head?.h}")`);
-    const order = await page.evaluate(() => {
-      const flow = document.querySelector('.mk-hero-flow'), ad = document.querySelector('.mk-ad-section');
-      return Boolean(flow && ad && (flow.compareDocumentPosition(ad) & Node.DOCUMENT_POSITION_FOLLOWING));
-    });
-    ok(order, 'after the "From catalogue to cash" walkthrough, which is still there');
-    ok(!loaded.some((u) => /marketing\/ad\/ProductAd|ProductAd-/.test(u)) && !(await page.evaluate(() => Boolean(window.__MK_AD__))),
-      'nothing of the ad is downloaded until the visitor scrolls near it');
+    ok(head && /From catalogue\s*to cash/.test(head.h) && head.first && head.slot,
+      `it is the first screen, under the promise ("${head?.h}")`);
+    ok(head?.chips === 8, `with the eight features it shows under it, each to play it from (${head?.chips})`);
+    ok(!(await page.evaluate(() => Boolean(document.querySelector('.fl-root')))),
+      'and the walkthrough is not repeated under it: that is How It Works');
+    ok(loaded.some((u) => /marketing\/ad\/ProductAd|ProductAd-/.test(u)),
+      'its code is its own chunk, fetched after the page');
 
     console.log('\n  ── it starts by itself, in view');
     await toAd(page);
@@ -104,7 +108,8 @@ const SPY = () => {
     let s1 = await state(page);
     ok(s1.started && s1.running && s1.ms > s0.ms, `once it is in view it plays (${Math.round(s0.ms)} → ${Math.round(s1.ms)} ms)`);
     ok(await page.evaluate(() => window.__audioContexts === 0), 'silently: no audio exists until Sound is pressed');
-    await page.evaluate(() => window.scrollTo(0, 0));
+    ok(await page.evaluate(() => !window.__MK_AD_VOICE__), 'and the voice-over clips are not even fetched');
+    await page.evaluate(() => document.querySelector('#catalogue').scrollIntoView({ block: 'start' }));
     await sleep(700);
     s0 = await state(page); await sleep(800); s1 = await state(page);
     ok(!s1.running && s1.ms === s0.ms, 'scrolled away, it pauses');
@@ -132,6 +137,14 @@ const SPY = () => {
     for (let i = 0; i < 20; i++) { loudest = Math.max(loudest, await page.evaluate(() => window.__peak())); await sleep(100); }
     const dbfs = loudest > 0 ? 20 * Math.log10(loudest) : -Infinity;
     ok(dbfs > -10 && dbfs < 0, `with Sound on it plays at a normal level, without clipping (peak ${dbfs.toFixed(1)} dBFS)`);
+    const voiceReady = await page.waitForFunction(() => window.__MK_AD_VOICE__ && window.__MK_AD_VOICE__.loaded() === window.__MK_AD_VOICE__.lines, { timeout: 15000 }).then(() => true).catch(() => false);
+    const voice = await page.evaluate(() => ({ loaded: window.__MK_AD_VOICE__?.loaded(), lines: window.__MK_AD_VOICE__?.lines }));
+    ok(voiceReady && voice.lines === AD.VOICE.length, `the narrator's lines load once Sound is on (${voice.loaded} of ${voice.lines})`);
+    /* from somewhere else entirely, so arriving at the line is a jump */
+    await seek(page, 60000, 400);
+    const said0 = await page.evaluate(() => window.__MK_AD_VOICE__.said());
+    await seek(page, 22300, 1300);
+    ok(await page.evaluate((n) => window.__MK_AD_VOICE__.said() > n, said0), 'and the narrator speaks on cue ("One click turns it into a complete quotation…")');
     await page.click('.ad-controls button[aria-label="Pause"]');
     await sleep(400);
     ok(await page.evaluate(() => window.__ac.state === 'suspended'), 'pausing the picture pauses the music');
@@ -157,11 +170,19 @@ const SPY = () => {
       }
     }
     const text = (ms) => seek(page, ms, 1200).then(() => page.evaluate(() => document.querySelector('.ad-canvas').innerText));
-    const a = await text(27500); const b = await text(27500);
-    ok(a === b && /Can build\s*57 of 120/.test(a), 'the same moment draws the same picture, every time (Smart Inventory: "Can build 57 of 120")');
-    ok(/All 120 can be built with stock on hand/.test(await text(36000)), 'after the goods receipt: "All 120 can be built with stock on hand"');
-    const roles = await text(48500);
-    ok(/Sign off POs/.test(roles) && /Finance/.test(roles) && /Procurement/.test(roles), 'the roles act shows what each role may do');
+    const a = await text(33500); const b = await text(33500);
+    ok(a === b && /Can build\s*57 of 120/.test(a), 'the same moment draws the same picture, every time (the order: "Can build 57 of 120")');
+    ok(/All 120 can be built with stock on hand/.test(await text(53500)), 'after the goods receipt: "All 120 can be built with stock on hand"');
+    await seek(page, 75500, 1200);
+    const roles = await page.evaluate(() => ({
+      active: document.querySelector('.ad-role.is-active')?.textContent.trim(),
+      yes: [...document.querySelectorAll('.ad-cap-row.is-yes')].map((r) => r.textContent.trim()),
+    }));
+    ok(/Procurement/.test(roles.active) && roles.yes.join(',') === 'Purchase orders,Goods receipt',
+      `the roles card shows what a role may do, from its real permissions (Procurement: ${roles.yes.join(', ')})`);
+    ok(/Two invoices are overdue/.test(await text(79600)), 'Ask AI answers the question it was asked');
+    const menu = await text(85600);
+    ok(/not yet read/.test(menu) && /awaiting approval/.test(menu) && /missing an e-way bill/.test(menu), 'the menu counts what is waiting, in the app\'s own words');
     await seek(page, AD.AD_MS);
     const cta = await page.evaluate(() => { const l = document.querySelector('a.ad-cta'); return l && { href: l.getAttribute('href'), text: l.textContent.trim() }; });
     ok(cta && cta.href === '/login' && /Test Maks Ops/.test(cta.text), `it ends on a real link: "${cta?.text}" → ${cta?.href}`);
@@ -172,10 +193,10 @@ const SPY = () => {
     console.log('\n  ── reduced motion');
     const r = await open({ reduced: true });
     await toAd(r.page);
-    await r.page.evaluate(() => { window.__MK_AD__.seek(19100); });
+    await r.page.evaluate(() => { window.__MK_AD__.seek(51000); });
     await sleep(600);
     const rs = await state(r.page);
-    const inv = AD.SCENES.find((x) => x.key === 'inventory');
+    const inv = AD.SCENES.find((x) => x.key === 'grn');
     ok(rs.reduced && rs.viewMs === inv.at + inv.still, 'each scene is shown finished');
     ok(await r.page.evaluate(() => document.querySelector('.ad-frame').classList.contains('is-reduced')), 'with plain fades, not movement');
     await r.page.close();
@@ -184,9 +205,11 @@ const SPY = () => {
     const m = await open({ width: 390, height: 844 });
     await toAd(m.page);
     await m.page.evaluate(() => { window.__MK_AD_SPEED__ = 0; });
-    ok((await state(m.page)).layout === 'narrow', 'it has its own narrow layout');
+    const shape = await m.page.evaluate(() => { const r = document.querySelector('.ad-frame').getBoundingClientRect(); return { w: r.width, h: r.height }; });
+    ok((await state(m.page)).layout === 'wide' && Math.abs(shape.h / shape.w - 720 / 1280) < 0.02,
+      `it plays as the same 16:9 film, across the screen (${Math.round(shape.w)} × ${Math.round(shape.h)})`);
     let wide = 0;
-    for (const ms of [1500, 9000, 13500, 17400, 24000, 30500, 35800, 39500, 44500, 47500, 51500, 57000]) {
+    for (const ms of [1500, 9000, 13500, 19400, 25000, 31500, 37800, 42500, 47500, 52500, 58000, 64000, 70000, 76000, 82000, 90000]) {
       await seek(m.page, ms, 500);
       wide = Math.max(wide, await m.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth));
     }

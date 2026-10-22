@@ -104,7 +104,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
      five seconds. Nothing else about the component changes. */
   console.log('\n  ── the live product walkthrough');
   const freeze = await page.evaluateOnNewDocument(() => { window.__MK_FLOW_SPEED__ = 0; });
-  await go('/');
+  await go('/how-it-works');   // the walkthrough's page, since the homepage leads with the ad
   await page.removeScriptToEvaluateOnNewDocument(freeze.identifier);
   const speed = (x) => page.evaluate((v) => { window.__MK_FLOW_SPEED__ = v; }, x);
   const current = () => page.evaluate(() => document.querySelector('.fl-card[aria-current="step"] .fl-card-title')?.textContent);
@@ -126,7 +126,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     }),
     notes: document.querySelectorAll('.fl-note').length,
   }));
-  ok(/catalogue to cash/i.test(first.headline), `the hero says it ("${first.headline}")`);
+  ok(/enquiry to invoice/i.test(first.headline), `the page says it ("${first.headline}")`);
   ok(first.cards === 7, `seven stage cards act as the controller (${first.cards})`);
   ok(first.videos === 0 && !first.playButton, 'no video, no player, no play button — it simply runs');
   ok(first.notes === 2, 'the handwritten margin notes are there');
@@ -259,7 +259,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     };
     HTMLMediaElement.prototype.pause = function () { clearTimeout(timers.get(this)); };
   });
-  await go('/');
+  await go('/how-it-works');
   await page.removeScriptToEvaluateOnNewDocument(fakeAudio.identifier);
   const played = () => page.evaluate(() => window.__played.slice());
   const forget = () => page.evaluate(() => { window.__played.length = 0; });
@@ -336,38 +336,54 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const v4 = await voiceState();
   ok(v4.pressed === 'false' && !v4.caption && !(await played()).length, 'and turning it off silences it at once');
 
-  /* ── 3. feature grid ──────────────────────────────────────────────── */
-  console.log('\n  ── feature grid');
-  await go('/');
-  await page.evaluate(() => {
-    const g = document.querySelector('.mk-feature-grid');
-    g?.scrollIntoView({ block: 'start' });
-  });
+  /* ── 3. one order, start to finish ─────────────────────────────────── */
+  console.log('\n  ── the flow: one order, start to finish');
+  await go('/');   // nine stages in three lanes, under the ad
+  await page.evaluate(() => document.querySelector('.mp-flow')?.scrollIntoView({ block: 'start' }));
   await sleep(600);
-  /* reveal them all: they animate in on scroll, so walk down the page */
-  for (let y = 0; y < 6; y++) {
-    await page.evaluate(() => window.scrollBy(0, 500));
-    await sleep(260);
-  }
+  for (let y = 0; y < 4; y++) { await page.evaluate(() => window.scrollBy(0, 400)); await sleep(260); }
   const feat = await page.evaluate(() => {
-    const cards = [...document.querySelectorAll('.mk-feature-grid > div')];
+    const lanes = [...document.querySelectorAll('.mp-lane')];
+    const stages = [...document.querySelectorAll('.mp-stage')];
     return {
-      count: cards.length,
-      titles: cards.map(c => c.querySelector('h3')?.textContent || ''),
-      /* every card must have a drawn diagram above its text, and it must
-         have real height — an empty stage is a broken-image look */
-      withDiagram: cards.filter(c => {
-        const stage = c.firstElementChild;
-        return stage && stage.getBoundingClientRect().height > 40;
-      }).length,
-      emptyDiagram: cards.filter(c => (c.firstElementChild?.childElementCount || 0) === 0).length,
+      lanes: lanes.map(l => l.querySelector('.mp-lane-h b')?.textContent),
+      count: stages.length,
+      titles: stages.map(c => c.querySelector('.mp-stage-t')?.textContent || ''),
+      numbers: stages.map(c => c.querySelector('.mp-stage-n')?.textContent),
+      records: stages.map(c => c.querySelector('.mp-stage-r')?.textContent || ''),
+      /* every stage must have a drawn diagram, with real height — an empty
+         stage is a broken-image look */
+      withDiagram: stages.filter(c => (c.querySelector('.mp-diagram > div')?.getBoundingClientRect().height || 0) > 40).length,
+      emptyDiagram: stages.filter(c => (c.querySelector('.mp-diagram > div')?.childElementCount || 0) === 0).length,
+      words: (document.querySelector('.mp-flow')?.innerText || '').split(/\s+/).filter(Boolean).length,
     };
   });
-  ok(feat.count === 12, `twelve feature cards (${feat.count})`);
-  ok(feat.withDiagram === feat.count, `all ${feat.count} render a diagram (${feat.withDiagram})`);
-  ok(feat.emptyDiagram === 0, `and none of the diagrams is empty (${feat.emptyDiagram} empty)`);
-  ok(feat.titles.some(t => /catalogue/i.test(t)), 'the catalogue is in the feature list at last');
-  ok(feat.titles.some(t => /scrap/i.test(t)), 'and scrap is named, not buried');
+  ok(JSON.stringify(feat.lanes) === JSON.stringify(['Sell', 'Buy', 'Make & get paid']), `three lanes, in the order work happens (${feat.lanes.join(' → ')})`);
+  ok(feat.count === 9 && feat.numbers.join() === '1,2,3,4,5,6,7,8,9', `nine stages, numbered in order (${feat.numbers.join(' ')})`);
+  ok(feat.withDiagram === feat.count && feat.emptyDiagram === 0, `each is drawn, none empty (${feat.withDiagram}/${feat.count})`);
+  ok(feat.titles.some(t => /catalogue/i.test(t)) && feat.titles.some(t => /invoice/i.test(t)), 'from the catalogue to the invoice');
+  const recs = feat.records.filter(r => /^(ENQ|QT|CO|GRN|PROD|DC|INV)-\d{4,5}$|^[A-Z]+\/FY\d{4}-\d{2}\/\d{3}$/.test(r));
+  ok(recs.length === 8, `each leaves its record, in the app's own numbering (${recs.join(' ')})`);
+  ok(feat.words <= 120, `and it says it in few words, record numbers included (${feat.words})`);
+  /* pressing a stage plays that part of the one film, above */
+  await page.evaluate(() => document.querySelectorAll('.mp-stage')[4].click());
+  await page.waitForFunction(() => window.__MK_AD__, { timeout: 15000 });
+  await sleep(500);
+  const at = await page.evaluate(() => window.__MK_AD__.state().ms);
+  ok(at >= 43000 && at < 49000, `pressing Purchase order plays the film from there (${Math.round(at)} ms)`);
+
+  /* each page has one film, at its top; nothing under it is that film again */
+  for (const pth of ['/', '/how-it-works', '/see-maksops']) {
+    await go(pth);
+    const films = await page.evaluate(() => ({
+      players: document.querySelectorAll('.ad-frame, .fl-root, .fm-film').length,
+      roots: [...document.querySelectorAll('.ad-frame, .fl-root, .fm-film')].filter(e => !e.parentElement.closest('.ad-frame, .fl-root, .fm-film')).length,
+    }));
+    ok(films.roots === 1, `${pth} shows its film once, at the top (${films.roots})`);
+  }
+  await go('/');
+  const also = await page.evaluate(() => document.querySelectorAll('.mp-also-chip').length);
+  ok(also >= 6, `what sits around the flow is named, and no more (${also})`);
 
   /* ── 4. catalogue showcase ────────────────────────────────────────── */
   console.log('\n  ── catalogue showcase');
@@ -392,7 +408,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   /* ── 5. reduced motion ────────────────────────────────────────────── */
   console.log('\n  ── prefers-reduced-motion');
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
-  await go('/');
+  await go('/how-it-works');
   /* Nothing advances on its own, every scene is drawn at its finished state,
      and the cards still switch between them. */
   const rm1 = await page.evaluate(() => ({
@@ -410,8 +426,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(await page.evaluate(() => /Short/.test(document.querySelector('.fl-window').innerText)),
     'choosing a stage still shows it, complete');
 
+  await go('/');
   const rmFeat = await page.evaluate(async () => {
-    document.querySelector('.mk-feature-grid')?.scrollIntoView({ block: 'start' });
+    document.querySelector('.mp-flow')?.scrollIntoView({ block: 'start' });
     await new Promise(r => setTimeout(r, 600));
     const rows = [...document.querySelectorAll('.mk-row')];
     const bars = [...document.querySelectorAll('.mk-bar, .mk-bar-v')];
@@ -431,20 +448,23 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   /* ── 6. narrow screens ────────────────────────────────────────────── */
   console.log('\n  ── 360px wide (the phones these customers use)');
-  await go('/', 360, 760);
-  for (let y = 0; y < 8; y++) {
-    await page.evaluate(() => window.scrollBy(0, 600));
-    await sleep(180);
+  const sideways = {};
+  for (const p of ['/', '/how-it-works', '/see-maksops', '/platform']) {
+    await go(p, 360, 760);
+    for (let y = 0; y < 8; y++) { await page.evaluate(() => window.scrollBy(0, 600)); await sleep(180); }
+    sideways[p] = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   }
+  await go('/how-it-works', 360, 760);
+  const engineScrolls = await page.evaluate(() => { const e = document.querySelector('.fl-strip'); return e ? e.scrollWidth > e.clientWidth : null; });
+  await go('/', 360, 760);
+  for (let y = 0; y < 6; y++) { await page.evaluate(() => window.scrollBy(0, 600)); await sleep(150); }
   const narrow = await page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,
     client: document.documentElement.clientWidth,
-    engineScrolls: (() => {
-      const e = document.querySelector('.fl-strip');
-      return e ? e.scrollWidth > e.clientWidth : null;
-    })(),
-    featCols: getComputedStyle(document.querySelector('.mk-feature-grid')).gridTemplateColumns.split(' ').length,
+    engineScrolls: null,
+    laneSwipes: [...document.querySelectorAll('.mp-stages')].every(e => e.scrollWidth > e.clientWidth),
   }));
+  narrow.engineScrolls = engineScrolls;
   /* This page used to overflow to 648px in a 360px viewport — it scrolled
      sideways by almost its own width. Three `repeat(N, 1fr)` grids (which is
      minmax(auto, 1fr), and `auto` will not shrink below min-content), the nav
@@ -459,12 +479,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
      The tolerance is deliberately tight — a real regression would be tens or
      hundreds of pixels and would still fail this. */
   const OVERFLOW_TOLERANCE = 8;
-  ok(narrow.scroll <= narrow.client + OVERFLOW_TOLERANCE,
-    `the page does not scroll meaningfully sideways (${narrow.scroll}px in ${narrow.client}px, `
-    + `was 648px; ${narrow.scroll - narrow.client}px residual within the ${OVERFLOW_TOLERANCE}px tolerance)`);
+  for (const [p, over] of Object.entries(sideways)) {
+    ok(over <= OVERFLOW_TOLERANCE, `${p} does not scroll meaningfully sideways (${over}px over, within the ${OVERFLOW_TOLERANCE}px tolerance)`);
+  }
   ok(narrow.engineScrolls === true,
     'the seven stage cards scroll inside their own strip instead of the page');
-  ok(narrow.featCols === 1, `feature cards stack to one column (${narrow.featCols})`);
+  ok(narrow.laneSwipes, 'each lane is a strip to swipe along, inside itself');
 
   /* ── 7. light theme ───────────────────────────────────────────────── */
   console.log('\n  ── light theme');
@@ -475,7 +495,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const el = document.querySelector('.fl-card');
     const cs = el ? getComputedStyle(el) : null;
     const body = getComputedStyle(document.body);
-    const txt = getComputedStyle(document.querySelector('.mk-feature-grid h3'));
+    const txt = getComputedStyle(document.querySelector('.mp-stage-t'));
     return {
       chamberBg: cs?.backgroundColor,
       bodyBg: body.backgroundColor,
@@ -518,7 +538,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(covered.missing.length === 0,
     covered.missing.length
       ? `${covered.missing.length} of ${covered.total} capabilities still unmentioned: ${covered.missing.join(', ')}`
-      : `all ${covered.total} named capabilities appear on the home page`);
+      : `all ${covered.total} named capabilities appear on the platform page`);
 
   const counts = await page.evaluate(() => ({
     moduleCards: document.querySelectorAll('.mk-inside-grid > div').length,
@@ -603,7 +623,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
          and run forever, so a reader at the footer still had twelve of them
          going. */
   console.log('\n  ── motion cost');
-  await go('/', 1440, 1000);
+  await go('/how-it-works', 1440, 1000);
   await page.evaluate(() => document.querySelector('.fl-window')?.scrollIntoView({ block: 'center' }));
   await sleep(1400);
 

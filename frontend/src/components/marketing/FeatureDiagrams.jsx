@@ -185,7 +185,9 @@ export const YieldRing = ({ on }) => {
    differentiator: the split is chosen from the ship-to state, not typed. */
 export const TaxSplit = ({ on }) => (
   <Stage label="GST">
-    <div style={{ display: 'grid', gap: 7, width: '100%', padding: '0 6px' }}>
+    {/* line-height 1.2: at the body's 1.5 the two rows were taller than the
+        stage, and the IGST row was cut off at the bottom */}
+    <div style={{ display: 'grid', gap: 7, width: '100%', padding: '0 6px', lineHeight: 1.2 }}>
       {[
         { k: 'Within state', a: 'CGST 9%', b: 'SGST 9%', c: 'var(--accent-blue)' },
         { k: 'Interstate', a: 'IGST 18%', b: null, c: 'var(--brand-amber)' },
@@ -337,73 +339,73 @@ const FEATURES = [
   {
     icon: <Files size={18} />, title: 'Vendor quotations, read from the file',
     diagram: ParseLines,
-    desc: 'Vendors send Excel, PDF and Word. Upload what they sent and the line items are read out of it — description, HSN, quantity, rate — instead of being retyped, which is where the comparison usually goes wrong.',
-    note: 'The original file stays attached, openable, so any number can be checked against the page it came from.',
+    desc: 'Upload the Excel, PDF or Word file a vendor sent. Description, HSN, quantity and rate are read out of it, not retyped.',
+    note: 'The original file stays attached, so any number can be checked against it.',
   },
   {
     icon: <ShoppingCart size={18} />, title: 'Comparison that is like-for-like',
     diagram: CompareBars,
-    desc: 'Line up several quotations, see the best price per row, and who did not quote a row at all. The total compared is the comparable one.',
-    note: 'A headline total covering eight lines against one covering five is how you buy the dearer option by accident.',
+    desc: 'Quotations side by side: the best price on every row, who skipped a row, and totals that compare like with like.',
+    note: null,
   },
   {
     icon: <Factory size={18} />, title: 'Production yield, scrap included',
     diagram: YieldRing,
-    desc: 'Consume against the bill of materials, record finished output and scrap, and read live yield, material balance and true cost per piece.',
-    note: 'Scrap is the line most systems quietly drop. It is where the margin goes.',
+    desc: 'Consume against the bill of materials, record output and scrap, and see live yield and the true cost per piece.',
+    note: 'Scrap is where the margin goes.',
   },
   {
     icon: <ReceiptText size={18} />, title: 'GST that follows place of supply',
     diagram: TaxSplit,
-    desc: 'CGST and SGST within the state, IGST across it — chosen from the ship-to address rather than typed and hoped for. Invoice numbers run sequentially per Rule 46(b).',
-    note: 'Once an invoice is issued, corrections go through a credit or debit note. That is the lawful route, not a limitation.',
+    desc: 'CGST and SGST within the state, IGST across it, picked from the ship-to address. Invoice numbers run in sequence, as GST requires.',
+    note: null,
   },
   {
     icon: <ShoppingBag size={18} />, title: 'Quotation to order, in one click',
-    diagram: (p) => <DocMorph {...p} from="QT" to="SO" />,
-    desc: 'Accepting a quotation creates the customer order with its lines intact, and locks the quotation — because a document someone has signed should not keep changing underneath them.',
+    diagram: (p) => <DocMorph {...p} from="QT" to="CO" />,
+    desc: 'Accept a quotation and the customer order is made with its lines intact. The quotation then locks, so what was agreed stays agreed.',
     note: null,
   },
   {
     icon: <Truck size={18} />, title: 'Goods receipt moves the stock',
     diagram: StockLevel,
-    desc: 'Record receipt against the purchase order with vehicle and batch. Inventory moves on the receipt itself, not on somebody remembering to adjust it later.',
+    desc: 'Receive against the purchase order, with vehicle and batch. Stock moves on the receipt itself, not when someone remembers.',
     note: 'Stock on the screen is stock on the floor.',
   },
   {
     icon: <Store size={18} />, title: 'A catalogue your customers can browse',
     diagram: SearchGrid,
-    desc: 'Publish your products with photographs, specifications and categories, and share one link. Enquiries arrive against a specific product rather than as "do you make brackets?".',
-    note: 'Covered in full below — it is the fastest route from a stranger to a quotation.',
+    desc: 'Publish products with photos and specifications, and share one link. Enquiries arrive tied to the exact product.',
+    note: null,
   },
   {
     icon: <Receipt size={18} />, title: 'Documents that survive printing',
     diagram: (p) => <DocMorph {...p} from="GRN" to="INV" tone="var(--accent-blue)" />,
-    desc: 'Every document prints through a real print stylesheet: A4 margins, the item table header repeated on each page, and totals, bank details and signature blocks that are never split across a page break.',
-    note: 'Your letterhead, logo and bank details come from your company profile, on every document.',
+    desc: 'Clean A4 on your own letterhead. Table headers repeat on every page; totals and signatures never split across a page break.',
+    note: null,
   },
   {
     icon: <FolderGit2 size={18} />, title: 'Projects and BOQ',
     diagram: (p) => <DocMorph {...p} from="BOQ" to="RA" />,
-    desc: 'Run jobs against an itemised bill of quantities, record measurements on site, and let running-account bills compute themselves from cumulative quantities with GST, TDS and retention applied.',
+    desc: 'Optional, for contract work: a bill of quantities, site measurements, and running-account bills worked out with GST, TDS and retention.',
     note: null,
   },
   {
     icon: <Users size={18} />, title: 'Customers, vendors and roles',
     diagram: (p) => <DocMorph {...p} from="GSTIN" to="OK" tone="var(--accent-emerald)" />,
-    desc: 'Masters for everyone you buy from and sell to — GSTIN, contacts, bank and compliance — reused across the whole flow. Each person sees only the modules their role allows.',
+    desc: 'Everyone you buy from and sell to, with GSTIN, contacts and bank details, entered once and used everywhere. Each person sees only what their role allows.',
     note: null,
   },
   {
     icon: <Brain size={18} />, title: 'Ask AI, about your own data',
     diagram: (p) => <DocMorph {...p} from="?" to="₹" tone="var(--accent-blue)" />,
-    desc: 'A read-only assistant on every screen. It answers from your records — what is overdue, what is waiting for approval — and explains how to use a feature.',
-    note: 'Read-only by design: it will tell you where to do something, never do it for you.',
+    desc: 'Ask on any screen what is overdue, what is waiting for approval, or how to do something. It answers from your own records.',
+    note: 'Read-only: it shows you where to act, and never acts for you.',
   },
   {
     icon: <BookOpen size={18} />, title: 'Smart Knowledge',
     diagram: (p) => <DocMorph {...p} from="DOC" to="AI" />,
-    desc: 'A searchable library of guides for the whole platform, with a one-click follow-up question from any article.',
+    desc: 'Searchable guides for the whole platform, with a one-click follow-up question from any article.',
     note: null,
   },
 ];

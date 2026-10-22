@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   Store, Search, Share2, MessageSquareQuote, ImageIcon,
   ArrowRight, Tag, Layers,
@@ -48,19 +47,19 @@ const FILTERS = [
 const STEPS = [
   {
     icon: <ImageIcon size={16} />, title: 'Publish once',
-    desc: 'Add a product with photographs, specifications, HSN and a category. It becomes a page with its own address.',
+    desc: 'Photos, specifications, HSN and a category.',
   },
   {
     icon: <Share2 size={16} />, title: 'Share one link',
-    desc: 'Send the catalogue to a customer, put it on WhatsApp, print it on a card. Nobody browsing it needs an account.',
+    desc: 'On WhatsApp or a card. No login to browse.',
   },
   {
     icon: <MessageSquareQuote size={16} />, title: 'Enquiries arrive attached',
-    desc: 'An enquiry comes in against a specific product, so whoever quotes it already knows what was asked for.',
+    desc: 'Tied to the exact product asked for.',
   },
   {
     icon: <ArrowRight size={16} />, title: 'Quote it',
-    desc: 'The enquiry becomes a quotation with the product line already on it — the engine above takes over from here.',
+    desc: 'The quotation starts with the product on it.',
   },
 ];
 
@@ -239,27 +238,6 @@ const CatalogueShowcase = () => {
             })}
           </div>
 
-          <div style={{
-            marginTop: 18, padding: '14px 16px', borderRadius: 'var(--r-md)',
-            background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
-          }}>
-            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--t-base)', lineHeight: 1.7 }}>
-              <strong style={{ color: 'var(--text-primary)' }}>Why it matters:</strong>{' '}
-              it is the only part of Maks Ops someone can use without an account — so it is
-              the shortest distance between a stranger finding you and a numbered quotation
-              leaving your office.
-            </p>
-          </div>
-
-          {/* maxWidth and normal wrapping: btn-ghost does not wrap by default,
-              so this label was 19px wider than a 360px screen and was the last
-              thing making the page scroll sideways. */}
-          <Link to="/platform" className="btn-ghost" style={{
-            marginTop: 16, display: 'inline-flex', maxWidth: '100%',
-            whiteSpace: 'normal', textAlign: 'left',
-          }}>
-            See it in the platform tour <ArrowRight size={15} style={{ flexShrink: 0 }} />
-          </Link>
         </div>
       </div>
     </div>

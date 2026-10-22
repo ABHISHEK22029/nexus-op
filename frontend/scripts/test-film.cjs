@@ -83,9 +83,11 @@ const FAKE = () => {
   await go('/see-maksops');
   const pg = await page.evaluate(() => ({
     h1: document.querySelector('h1')?.innerText || '',
-    entries: document.querySelectorAll('.smk-ch').length,
-    watch: [...document.querySelectorAll('.smk-watch')].map((a) => a.getAttribute('href')),
-    transcripts: document.querySelectorAll('.smk-ch details').length,
+    /* each chapter is a card that plays the film from there; its full text
+       is in the one folded transcript under them */
+    entries: document.querySelectorAll('.mp-chapter').length,
+    watch: [...document.querySelectorAll('.mp-chapter a')].map((a) => a.getAttribute('href')),
+    transcripts: document.querySelectorAll('.mp-transcript section').length,
     nav: [...document.querySelectorAll('a')].some((a) => a.getAttribute('href') === '/see-maksops' && /See Maks Ops/.test(a.textContent)),
     footer: [...document.querySelectorAll('footer a')].some((a) => a.getAttribute('href') === '/see-maksops'),
     nexus: /Nexus/i.test(document.body.innerText),

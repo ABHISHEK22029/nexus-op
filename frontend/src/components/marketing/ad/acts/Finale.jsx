@@ -1,71 +1,56 @@
 import React from 'react';
+import {
+  Store, Inbox, FileText, ClipboardList, Boxes, Scale, ShoppingCart, PackageCheck, Factory, Truck, ReceiptText,
+  BarChart3, Users, Sparkles,
+} from 'lucide-react';
 import { MoMark } from '../../film/shell/marks';
-import { Lines, Thread, Rider, Rise } from '../parts';
-import { box, pick } from '../geo';
+import { Burst } from '../parts';
 
 /* ══════════════════════════════════════════════════════════════════════
-   Act 8 — from catalogue to cash. (52.5–58 s; from 52.5 s)
+   Act 9 — everything, and the close. (86–92 s)
 
-   Everything the ad showed, reduced to its line: the thread runs once
-   more, the whole way, through the seven things it passed — and each one
-   lights as it is reached. Then the line the product is named for, the
-   promise under it, the way in, and the mark. It holds.
-
-   The button itself is not drawn here: it is a real link, laid over the
-   canvas by ProductAd (see CTA_AT in geo.js), so it can be clicked and
-   reached by keyboard and screen reader.
+   Everything the ad showed, at once: fourteen tiles snap into a grid in a
+   wave. Then they are drawn into the middle, the mark bursts out of them,
+   and the line the ad has been earning arrives — From catalogue to cash —
+   with the one button (ProductAd lays the real link over the canvas).
    ══════════════════════════════════════════════════════════════════════ */
 
-const STAGES = ['Catalogue', 'Enquiry', 'Quotation', 'Purchase', 'Inventory', 'Production', 'Invoice'];
-const RUN = 150, RUN_MS = 1500;
+const TILES = [
+  ['Catalogue', Store], ['Enquiries', Inbox], ['Quotations', FileText], ['Orders', ClipboardList],
+  ['Smart inventory', Boxes], ['Vendor quotes', Scale], ['Purchase orders', ShoppingCart],
+  ['Goods receipt', PackageCheck], ['Production', Factory], ['Delivery', Truck], ['Invoices & GST', ReceiptText],
+  ['Reports', BarChart3], ['Team & roles', Users], ['Ask AI', Sparkles],
+].map((tile, i) => [...tile, i]);
+const MX = 640, MY = 232;
+const GATHER = 2500;        // the tiles are drawn in
+const MARK = 3100;          // the mark bursts out
 
-const L = {
-  wide: {
-    line: 'M 96 196 L 1184 196',
-    stop: (i) => [160 + i * 160, 196],
-    head: [0, 268, 1280], sub: [0, 392, 1280], mark: [0, 618, 1280],
-  },
-  narrow: {
-    line: 'M 46 84 L 46 356',
-    stop: (i) => [46, 100 + i * 40],
-    head: [0, 388, 420], sub: [0, 506, 420], mark: [0, 664, 420],
-  },
-};
-
-export default function Finale({ t, layout }) {
-  const l = L[layout];
-  const narrow = layout === 'narrow';
-  const headline = pick(layout, [['From', 'catalogue'], ['to', 'cash.']], [['From', 'catalogue'], ['to', 'cash.']]);
+export default function Finale({ t }) {
   return (
-    <div className={`ad-act ad-finale is-${layout}`}>
-      <Lines layout={layout}>
-        <Thread d={l.line} on={t >= RUN} dur={RUN_MS} />
-      </Lines>
-      <Rider d={l.line} on={t >= RUN} dur={RUN_MS} />
-      {STAGES.map((s, i) => {
-        const [x, y] = l.stop(i);
-        const frac = narrow ? (y - 84) / (356 - 84) : (x - 96) / (1184 - 96);
-        const lit = t >= RUN + frac * RUN_MS - 40;
+    <div className="ad-act ad-finale">
+      {TILES.map(([label, icon, i]) => {
+        const Ico = icon;
+        const c = i % 7, r = Math.floor(i / 7);
+        const left = 73 + c * 164, top = 172 + r * 106;
         return (
-          <span key={s} className={`ad-stop${t >= 120 + i * 60 ? ' is-on' : ''}${lit ? ' is-lit' : ''}`} style={{ left: x, top: y }}>
-            <i /><b>{s}</b>
-          </span>
+          <div key={label}
+            className={`ad-tile2${t >= 80 + (c + r) * 55 ? ' is-on' : ''}${t >= GATHER ? ' is-gone' : ''}`}
+            style={{ left, top, '--pull': `translate(${MX - (left + 75)}px, ${MY - (top + 46)}px) scale(0.1)`, '--pd': `${(6 - c) * 22}ms` }}>
+            <Ico size={22} />
+            <span>{label}</span>
+          </div>
         );
       })}
 
-      <h3 className={`ad-final-h is-${layout}`} style={box(l.head)}>
-        {headline.map((group, g) => (
-          <span key={g} className={`ad-final-g${g === 1 ? ' is-accent' : ''}`}>
-            {group.map((w, k) => <Rise key={w} on={t >= 1500} delay={(g * 2 + k) * 90}>{w}</Rise>)}
-          </span>
-        ))}
-      </h3>
-      <p className={`ad-final-sub${t >= 2200 ? ' is-on' : ''}`} style={box(l.sub)}>
-        Run your business.<br className="ad-br" /> Not your spreadsheets.
-      </p>
-      <div className={`ad-final-mark${t >= 3100 ? ' is-on' : ''}`} style={box(l.mark)}>
-        <MoMark size={narrow ? 30 : 34} /><b>Maks Ops</b>
+      <div className={`ad-end-mark${t >= MARK ? ' is-on' : ''}`} style={{ left: MX, top: MY }}>
+        <span className="ad-end-burst"><Burst on={t >= MARK} n={22} size={300} /></span>
+        <MoMark size={104} />
       </div>
+      <h3 className={`ad-end-title${t >= 3500 ? ' is-on' : ''}`}>
+        From catalogue <span>to cash.</span>
+      </h3>
+      <p className={`ad-end-sub${t >= 3900 ? ' is-on' : ''}`}>Run your business, not your spreadsheets.</p>
+      <p className={`ad-end-url${t >= 4500 ? ' is-on' : ''}`}>maksops.co.in</p>
     </div>
   );
 }

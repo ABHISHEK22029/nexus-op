@@ -178,7 +178,7 @@ section('film formats: record numbers are what the backend issues', () => {
    production numbers it draws must add up like the rest. */
 const AD = await import(pathURL(path.join(SRC, 'components', 'marketing', 'ad', 'script.js')));
 section(`ad timeline: ${AD.SCENES.length} scenes in ${AD.ACTS.length} acts, ${AD.AD_MS / 1000} s, in order`, () => {
-  if (AD.AD_MS < 50000 || AD.AD_MS > 60000) fail(`the ad runs ${AD.AD_MS / 1000} s — it is meant to be 50–60`);
+  if (AD.AD_MS < 85000 || AD.AD_MS > 95000) fail(`the ad runs ${AD.AD_MS / 1000} s — it is meant to be 85–95`);
   const acts = AD.ACTS.map((a) => a.key);
   AD.ACTS.forEach((a, i) => { if (i && a.at <= AD.ACTS[i - 1].at) fail(`act ${a.key} starts before the one before it`); });
   AD.SCENES.forEach((s, i) => {
@@ -195,6 +195,32 @@ section(`ad timeline: ${AD.SCENES.length} scenes in ${AD.ACTS.length} acts, ${AD
     if (!s.sr || /lorem/i.test(s.sr)) fail(`scene ${s.key} has no transcript line`);
   });
   AD.CUES.forEach((c) => { if (c.at < 0 || c.at > AD.AD_MS) fail(`sound cue ${c.name} at ${c.at} is outside the ad`); });
+});
+section(`ad voice: ${AD.VOICE.length} lines, every one recorded and finished before the next`, () => {
+  const manifest = path.join(SRC, 'components', 'marketing', 'ad', 'voice-clips.json');
+  const recorded = fs.existsSync(manifest) ? JSON.parse(fs.readFileSync(manifest, 'utf8')) : {};
+  const clips = recorded.clips || {};
+  const db = (x) => 20 * Math.log10(x);
+  const rms = Object.values(recorded.levels || {}).map((l) => db(l.rms));
+  if (rms.length && Math.max(...rms) - Math.min(...rms) > 1) fail(`ad voice: the lines' loudness differs by ${(Math.max(...rms) - Math.min(...rms)).toFixed(1)} dB — record them again (make-ad.mjs --force)`);
+  AD.VOICE.forEach((l, i) => {
+    /* said within its own scene, so the words land on the picture they describe */
+    const sceneIdx = AD.SCENES.reduce((k, s, j) => (s.at <= l.at ? j : k), 0);
+    const sceneEnd = AD.sceneEnd(sceneIdx);
+    if (clips[NARR.clipName(l.text)] && l.at + clips[NARR.clipName(l.text)] > sceneEnd) {
+      fail(`ad voice: "${l.text}" is still speaking when scene ${AD.SCENES[sceneIdx].key} ends`);
+    }
+    const name = NARR.clipName(l.text);
+    const ms = clips[name];
+    if (!ms || !fs.existsSync(path.join(FRONT, 'public', 'voice', 'ad', name))) {
+      fail(`ad voice: "${l.text}" is not recorded — run node scripts/voiceover/make-ad.mjs`);
+      return;
+    }
+    const next = AD.VOICE[i + 1];
+    if (i && l.at <= AD.VOICE[i - 1].at) fail(`ad voice: "${l.text}" starts before the line before it`);
+    if (next && l.at + ms > next.at - 60) fail(`ad voice: "${l.text}" (${ms} ms) is still speaking when "${next.text}" begins`);
+    if (l.at + ms > AD.AD_MS) fail(`ad voice: "${l.text}" runs past the end of the ad`);
+  });
 });
 section('ad truth: every app label the ad shows still exists in the app', () => {
   for (const [file, label] of AD.TRUTH) {

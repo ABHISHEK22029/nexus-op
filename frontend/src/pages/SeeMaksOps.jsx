@@ -1,30 +1,39 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Clapperboard, ArrowRight, Play } from 'lucide-react';
+import { ArrowRight, Play } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
-import { CHAPTERS } from '../components/marketing/film/chapters';
-import { beatsOf, totalMs } from '../components/marketing/flow/engine/timeline';
+import { CHAPTERS, chapterIndex } from '../components/marketing/film/chapters';
+import { beatsOf, totalMs, startOf } from '../components/marketing/flow/engine/timeline';
 import { MODULES, moduleForPath } from '../lib/navigation';
+import { Section, Head, CtaBand } from '../components/marketing/page/parts';
+import { FILM_ACTS, CHAPTER_CARDS } from '../components/marketing/page/content';
 import './see-maksops.css';
 
 /* ══════════════════════════════════════════════════════════════════════
-   /see-maksops — the product film.
+   /see-maksops — the product film, and its chapters to jump into.
 
-   The homepage walkthrough is the minute-long version: one order, seven
-   stages. This is the whole of it, in chapters — catalogue, customer,
-   enquiry, quotation, stock, vendors, purchasing, receipt, production,
-   dispatch, invoice, money, roles — played in the product itself.
+   The film is the page's first screen, on its own dark stage. Under it the
+   eighteen chapters, grouped into five acts, are cards — an icon, the
+   title, what the chapter shows in one line, and where it starts; pressing
+   one plays the film from there (#chapter, which the film follows). They
+   are not frames of the film: the film is already on the page. Its full
+   text — a paragraph per chapter, where it is in the app, the transcript —
+   is folded into one "Read the film as text", for anyone who wants it and
+   for search engines.
 
-   The film is its own chunk, loaded after the page; the chapter index
-   below it is plain text built from the same chapter scripts, so the page
-   reads (and is found) without the film, and every chapter has a link.
-
-   ?mode=film shows only the stage, letterboxed, for recording an MP4.
+   The film is its own chunk, loaded after the page. ?mode=film shows only
+   the stage, letterboxed, for recording an MP4.
    ══════════════════════════════════════════════════════════════════════ */
-const ProductFilm = lazy(() => import('../components/marketing/film/ProductFilm'));
 
-const RUNTIME_MIN = Math.round(totalMs(CHAPTERS, 1200) / 60000);
+const ProductFilm = lazy(() => import('../components/marketing/film/ProductFilm'));
+const HANDOFF = 1200;     // the title card between chapters (ProductFilm)
+const RUNTIME_MIN = Math.round(totalMs(CHAPTERS, HANDOFF) / 60000);
+
+const clock = (ms) => {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 
 /* "Marketing › Enquiries": where each chapter happens, from the app's own
    menu. Chapters on the customer's screen or title cards have none. */
@@ -49,7 +58,7 @@ export default function SeeMaksOps() {
     document.title = 'See Maks Ops — the product film';
     const meta = document.querySelector('meta[name="description"]');
     const prevDesc = meta?.getAttribute('content');
-    meta?.setAttribute('content', `Maks Ops at work, start to finish: catalogue, enquiry, quotation, stock, vendor quotes, purchasing, goods receipt, production, dispatch and the GST invoice — a ${RUNTIME_MIN}-minute film played in the product itself.`);
+    meta?.setAttribute('content', `Maks Ops at work, start to finish: catalogue, enquiry, quotation, stock, vendor quotes, purchasing, goods receipt, production, dispatch and the GST invoice — ${CHAPTERS.length} chapters, ${RUNTIME_MIN} minutes.`);
     return () => { document.title = prev; if (meta && prevDesc) meta.setAttribute('content', prevDesc); };
   }, []);
 
@@ -62,64 +71,82 @@ export default function SeeMaksOps() {
   }
 
   return (
-    <div className="smk">
+    <div className="mp smk">
       <MarketingNav />
 
-      <section className="smk-hero">
-        <div className="smk-wrap">
-          <span className="pill pill-amber"><Clapperboard size={12} /> Product film · {RUNTIME_MIN} min · sample data</span>
-          <h1>See Maks Ops <span className="gradient-text-amber">at work.</span></h1>
-          <p>
-            One customer’s order, from your catalogue to a paid invoice — and everything the platform does on the
-            way. Not a video: the product itself, playing through a real transaction with sample data.
-          </p>
-          <a className="smk-skip" href="#chapters">Jump to a chapter <ArrowRight size={14} /></a>
-        </div>
-      </section>
-
-      <section className="smk-theatre" aria-label="The product film">
-        <div className="smk-wrap is-wide">
-          <Suspense fallback={<Placeholder />}><ProductFilm /></Suspense>
-        </div>
-      </section>
-
-      <section className="smk-index" id="chapters">
-        <div className="smk-wrap">
-          <h2>Every chapter</h2>
-          <p className="smk-lede">Each one is a part of the product you can use today. Start the film from any of them.</p>
-          <ol className="smk-list">
-            {CHAPTERS.map((ch) => {
-              const where = whereInApp(ch);
-              return (
-                <li key={ch.key} className="smk-ch">
-                  <span className="smk-n">{ch.n}</span>
-                  <div className="smk-ch-body">
-                    <h3>{ch.title} <small>{ch.kicker}</small></h3>
-                    <p>{ch.seo?.body}</p>
-                    {where.length > 0 && <p className="smk-where">Where in the app: {where.join(' · ')}</p>}
-                    <details>
-                      <summary>Transcript</summary>
-                      <p>{beatsOf(ch).map((b) => b.voice).filter(Boolean).join(' ')}</p>
-                    </details>
-                  </div>
-                  <a className="smk-watch" href={`#${ch.key}`}><Play size={13} /> Watch from here</a>
-                </li>
-              );
-            })}
-          </ol>
-        </div>
-      </section>
-
-      <section className="smk-cta">
-        <div className="smk-wrap">
-          <h2>Run your own order through it.</h2>
-          <p>Put your products in a catalogue, take an enquiry, and follow it to the invoice.</p>
-          <div className="smk-cta-btns">
-            <Link to="/login" className="btn-primary">Test Beta <ArrowRight size={15} /></Link>
-            <Link to="/platform" className="btn-secondary">See the platform</Link>
+      {/* ── the film ── */}
+      <section className="mp-section is-dark mp-hero" aria-label="The product film">
+        <div className="mp-wrap">
+          <div className="mp-hero-text">
+            <span className="mp-eyebrow">Product film · {CHAPTERS.length} chapters · {RUNTIME_MIN} min · sample data</span>
+            <h1 className="mp-h1">See Maks Ops <span className="mp-accent">at work.</span></h1>
+            <p className="mp-lede">One order from your catalogue to a paid invoice, and everything Maks Ops does on the way.</p>
+          </div>
+          <div id="the-film" className="mp-film-slot smk-film">
+            <Suspense fallback={<Placeholder />}><ProductFilm /></Suspense>
           </div>
         </div>
       </section>
+
+      {/* ── its chapters, to jump into ── */}
+      <Section id="chapters" label="Chapters">
+        <Head title="Eighteen chapters." accent="Five acts." lede="Press any chapter to watch from there." />
+        <div className="mp-acts">
+          {FILM_ACTS.map((act, a) => {
+            const chs = act.chapters.map((k) => CHAPTERS[chapterIndex(k)]).filter(Boolean);
+            const length = chs.reduce((s, c) => s + c.duration, 0);
+            return (
+              <div key={act.title} className={`mp-act is-${act.tone}`}>
+                <div className="mp-act-h">
+                  <span>Act {a + 1}</span><b>{act.title}</b>
+                  <small>{chs.length} chapters · {clock(length)}</small>
+                </div>
+                <ol className="mp-chapters">
+                  {chs.map((ch) => {
+                    const card = CHAPTER_CARDS[ch.key] || {};
+                    const from = clock(startOf(CHAPTERS, chapterIndex(ch.key), HANDOFF));
+                    return (
+                      <li key={ch.key} className="mp-chapter">
+                        <a href={`#${ch.key}`} aria-label={`${ch.title}: watch from ${from}`}>
+                          <span className="mp-chapter-top">
+                            <span className="mp-chapter-ico">{card.Icon && React.createElement(card.Icon, { size: 20, 'aria-hidden': true })}</span>
+                            <span className="mp-chapter-play"><Play size={11} fill="currentColor" /> {from}</span>
+                          </span>
+                          <span className="mp-chapter-meta">
+                            <b>{ch.title}</b>
+                            {card.line && <span>{card.line}</span>}
+                          </span>
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* everything the film says, as text — folded */}
+        <details className="mp-transcript">
+          <summary>Read the film as text</summary>
+          {CHAPTERS.map((ch) => {
+            const where = whereInApp(ch);
+            return (
+              <section key={ch.key}>
+                <h3>{ch.n} · {ch.title}</h3>
+                {ch.seo?.body && <p>{ch.seo.body}</p>}
+                <p>{beatsOf(ch).map((b) => b.voice).filter(Boolean).join(' ')}</p>
+                {where.length > 0 && <p>Where in the app: {where.join(' · ')}</p>}
+              </section>
+            );
+          })}
+        </details>
+      </Section>
+
+      <CtaBand title="Run your own order through it." line="No credit card. Every module included.">
+        <Link to="/login" className="mp-btn is-primary"><Play size={15} fill="currentColor" /> Test Maks Ops</Link>
+        <Link to="/platform" className="mp-btn is-ghost">See the platform <ArrowRight size={16} /></Link>
+      </CtaBand>
 
       <MarketingFooter />
     </div>
