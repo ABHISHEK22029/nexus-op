@@ -27,7 +27,10 @@ api(){ curl -s -m 25 -X "$1" "$B$2" -H "Authorization: Bearer $T" -H 'Content-Ty
 id_of(){ node -pe "try{const d=JSON.parse(require('fs').readFileSync(0,'utf8'));String(d.id??'')}catch(e){''}"; }
 
 echo "── setting the scene ──"
-CUST=$(api GET "/customers" | node -pe "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));const a=Array.isArray(d)?d:d.items;String(a[0].id)")
+CUST=$(api GET "/customers" | node -pe "try{const d=JSON.parse(require('fs').readFileSync(0,'utf8'));const a=Array.isArray(d)?d:d.items;String(a?.[0]?.id??'')}catch(e){''}")
+# an account with no customer yet (a fresh test account) gets one, removed at the end
+MADE_CUST=""
+if [ -z "$CUST" ]; then CUST=$(api POST "/customers" '{"name":"ZZ Customer","state":"Telangana"}' | id_of); MADE_CUST="$CUST"; fi
 VEND=$(api POST "/vendors" '{"name":"ZZ Steel Traders","type":"Material Supply"}' | id_of)
 MAT=$(api POST "/raw-materials" '{"name":"ZZ MS Plate 10mm","base_uom":"kg","category":"Plate"}' | id_of)
 # The generic CRUD factory only writes its declared columns, so base_uom may
@@ -63,8 +66,10 @@ api POST "/vendor-items" "{\"vendor_id\":$VEND,\"raw_material_id\":$MAT,\"price\
 ( cd "$(dirname "$0")/.." && node -e "
   const db=require('./db');
   (async()=>{
-    await db.query('INSERT INTO inventory (\"itemName\", quantity, uom, raw_material_id, item_type, owner_id) VALUES (\$1,\$2,\$3,\$4,\$5,\$6)',
-      ['ZZ MS Plate 10mm', 200, 'kg', $MAT, 'raw', 1]);
+    /* the stock belongs to the same company as the material — this was
+       owner_id 1, a real company, on the shared database */
+    await db.query('INSERT INTO inventory (\"itemName\", quantity, uom, raw_material_id, item_type, owner_id) SELECT \$1,\$2,\$3,id,\$4,owner_id FROM raw_materials WHERE id = \$5',
+      ['ZZ MS Plate 10mm', 200, 'kg', 'raw', $MAT]);
     process.exit(0);})().catch(e=>{console.error(e.message);process.exit(1)});" )
 
 # Customer orders 100 brackets.
@@ -124,17 +129,25 @@ fi
 ( cd "$(dirname "$0")/.." && node -e "
   const db=require('./db');
   (async()=>{
-    await db.query('DELETE FROM po_line_items WHERE \"poId\" IN (SELECT id FROM purchase_orders WHERE \"quoteRef\" = \$1)',['Auto: material shortfall']);
-    await db.query('DELETE FROM purchase_orders WHERE \"quoteRef\" = \$1',['Auto: material shortfall']);
-    await db.query('DELETE FROM customer_order_items WHERE customer_order_id = \$1',[$ORDER]);
-    await db.query('DELETE FROM customer_orders WHERE id = \$1',[$ORDER]);
-    await db.query('DELETE FROM vendor_items WHERE raw_material_id = \$1',[$MAT]);
-    await db.query('DELETE FROM sku_bom WHERE sku_id = \$1',[$SKU]);
-    await db.query('DELETE FROM stock_movements WHERE raw_material_id = \$1',[$MAT]);
-    await db.query('DELETE FROM inventory WHERE raw_material_id = \$1',[$MAT]);
-    await db.query('DELETE FROM skus WHERE id = \$1',[$SKU]);
-    await db.query('DELETE FROM raw_materials WHERE id = \$1',[$MAT]);
-    await db.query('DELETE FROM vendors WHERE id = \$1',[$VEND]);
+    /* ONLY what this run made. The PO delete used to be every PO on the
+       database whose quoteRef is 'Auto: material shortfall' — every
+       company's real shortfall orders, on the shared live database. It is
+       now the POs addressed to this run's own ZZ vendor, and nothing runs
+       for an id this run never got (0 matches no row). */
+    const vend = Number('${VEND:-0}') || 0, order = Number('${ORDER:-0}') || 0, mat = Number('${MAT:-0}') || 0,
+          sku = Number('${SKU:-0}') || 0, cust = Number('${MADE_CUST:-0}') || 0;
+    await db.query('DELETE FROM po_line_items WHERE \"poId\" IN (SELECT id FROM purchase_orders WHERE \"vendorId\" = \$1)',[vend]);
+    await db.query('DELETE FROM purchase_orders WHERE \"vendorId\" = \$1',[vend]);
+    await db.query('DELETE FROM customer_order_items WHERE customer_order_id = \$1',[order]);
+    await db.query('DELETE FROM customer_orders WHERE id = \$1',[order]);
+    await db.query('DELETE FROM vendor_items WHERE raw_material_id = \$1',[mat]);
+    await db.query('DELETE FROM sku_bom WHERE sku_id = \$1',[sku]);
+    await db.query('DELETE FROM stock_movements WHERE raw_material_id = \$1',[mat]);
+    await db.query('DELETE FROM inventory WHERE raw_material_id = \$1',[mat]);
+    await db.query('DELETE FROM skus WHERE id = \$1',[sku]);
+    await db.query('DELETE FROM raw_materials WHERE id = \$1',[mat]);
+    await db.query('DELETE FROM vendors WHERE id = \$1',[vend]);
+    await db.query('DELETE FROM customers WHERE id = \$1',[cust]);
     process.exit(0);})().catch(e=>{console.error('cleanup:',e.message);process.exit(0)});" )
 echo ""
 echo "  (test data removed)"
