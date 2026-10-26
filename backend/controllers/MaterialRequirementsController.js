@@ -201,6 +201,57 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
   `, supplierParams)).rows;
   const supplier = new Map(supplierRows.map(r => [r.raw_material_id, r]));
 
+  /* ── 4c. Everyone who could supply it, and what they last quoted ──
+     The preferred vendor is a default, not a verdict. Every vendor linked
+     to the material is an option, and so is every vendor whose quotation
+     (checked, from the last 120 days) has a line for it — the latest one
+     from each. The lowest of those, in the material's own unit, is who to
+     buy from: the comparison's winner, not whoever was ticked preferred. */
+  const optionParams = [];
+  const supplyOptions = (await db.query(`
+    SELECT vi.raw_material_id, vi.vendor_id, v.name AS vendor_name, vi.price, vi.moq, vi.lead_time_days, vi.is_preferred
+      FROM vendor_items vi JOIN vendors v ON v.id = vi.vendor_id
+     WHERE TRUE${own('v.owner_id', optionParams)}${admin ? '' : ' AND (vi.owner_id = $1 OR vi.owner_id IS NULL)'}`, optionParams)).rows;
+  const quoteParams = [];
+  const quoteRows = (await db.query(`
+    SELECT DISTINCT ON (l.raw_material_id, vq.vendor_id)
+           l.raw_material_id, vq.vendor_id, v.name AS vendor_name, l.rate, l.uom,
+           vq.id AS quotation_id, COALESCE(vq.quote_date, vq.created_at::date) AS quoted_on,
+           vq.lead_time_days, vq.payment_terms, vq.freight
+      FROM vendor_quotation_lines l
+      JOIN vendor_quotations vq ON vq.id = l.vendor_quotation_id
+      JOIN vendors v ON v.id = vq.vendor_id
+     WHERE l.raw_material_id IS NOT NULL AND l.rate IS NOT NULL
+       AND l.confidence IN ('high', 'checked')
+       AND vq.created_at > NOW() - INTERVAL '120 days'${own('vq.owner_id', quoteParams)}
+     ORDER BY l.raw_material_id, vq.vendor_id, vq.created_at DESC`, quoteParams)).rows;
+  const unitKey = (u) => String(u || '').toLowerCase().replace(/[.']/g, '').replace(/s$/, '').trim();
+  const optionsByMaterial = new Map();
+  const addOption = (id, o) => {
+    const list = optionsByMaterial.get(id) || [];
+    const at = list.findIndex(x => x.vendor_id === o.vendor_id);
+    if (at < 0) list.push(o); else list[at] = { ...list[at], ...Object.fromEntries(Object.entries(o).filter(([, v]) => v != null)) };
+    optionsByMaterial.set(id, list);
+  };
+  for (const s of supplyOptions) {
+    addOption(s.raw_material_id, {
+      vendor_id: s.vendor_id, name: s.vendor_name, price: s.price != null ? Number(s.price) : null,
+      moq: s.moq != null ? Number(s.moq) : null, lead_time_days: s.lead_time_days, is_preferred: !!s.is_preferred, source: 'supplies',
+    });
+  }
+  for (const q of quoteRows) {
+    const rm = materialById.get(q.raw_material_id);
+    const sameUnit = !q.uom || !rm || [rm.base_uom, rm.purchase_uom].some(u => unitKey(u) === unitKey(q.uom));
+    addOption(q.raw_material_id, {
+      vendor_id: q.vendor_id, name: q.vendor_name,
+      /* a quote in another unit (per tonne against per kg) is shown, but
+         not priced against the others */
+      quoted_rate: Number(q.rate), quoted_uom: q.uom, comparable: sameUnit,
+      quotation_id: q.quotation_id, quoted_on: q.quoted_on,
+      quoted_lead_time_days: q.lead_time_days, payment_terms: q.payment_terms, freight: q.freight,
+    });
+  }
+
   // ── 5. Roll demand up per material, converting into the base unit ──
   const byMaterial = new Map();
   const lines = [];       // per order-line detail, for the readiness view
@@ -253,11 +304,13 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
         available: stock.get(key) || 0,
         on_order: onOrder.get(key) || 0,
         orders: [],
+        order_ids: [],
       });
     }
     const m = byMaterial.get(key);
     m.required = r4(m.required + need);
     if (!m.orders.includes(d.order_number)) m.orders.push(d.order_number);
+    if (need > 0 && !m.order_ids.includes(d.order_id)) m.order_ids.push(d.order_id);
 
     lines.push({
       order_id: d.order_id, order_number: d.order_number, line_id: d.line_id,
@@ -268,6 +321,35 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
       need: r4(need), available: stock.get(key) || 0, conversion,
     });
   }
+
+  /* Each material's vendors, cheapest first at the price they would charge
+     now (their latest comparable quote, else their listed rate), and who to
+     buy from: the lowest comparable quote if there is one, else the
+     preferred vendor. */
+  const buyingOptions = (materialId, sup) => {
+    const list = (optionsByMaterial.get(materialId) || []).map(o => {
+      const quoted = o.quoted_rate != null && o.comparable !== false;
+      return {
+        ...o,
+        price_now: quoted ? o.quoted_rate : o.price,
+        price_source: quoted ? 'quote' : (o.price != null ? 'supplies' : null),
+        lead_time_now: o.quoted_lead_time_days ?? o.lead_time_days ?? null,
+      };
+    }).sort((a, b) => (a.price_now ?? Infinity) - (b.price_now ?? Infinity) || (a.lead_time_now ?? 999) - (b.lead_time_now ?? 999));
+    const quotes = list.filter(o => o.price_source === 'quote');
+    const best = quotes[0] || null;
+    const pick = best || (sup ? list.find(o => o.vendor_id === sup.vendor_id) : null);
+    const buyFrom = pick
+      ? { id: pick.vendor_id, name: pick.name, price: pick.price_now ?? (sup?.price != null ? Number(sup.price) : null),
+          source: best ? 'quote' : 'preferred', quotation_id: pick.quotation_id || null, quoted_on: pick.quoted_on || null,
+          lead_time_days: pick.lead_time_now, payment_terms: pick.payment_terms || null, freight: pick.freight || null, moq: pick.moq ?? null }
+      : (sup ? { id: sup.vendor_id, name: sup.vendor_name, price: sup.price != null ? Number(sup.price) : null, source: 'preferred', moq: sup.moq != null ? Number(sup.moq) : null } : null);
+    return {
+      vendor_options: list,
+      best_quote: best ? { id: best.vendor_id, name: best.name, price: best.price_now, quotation_id: best.quotation_id, quoted_on: best.quoted_on } : null,
+      buy_from: buyFrom,
+    };
+  };
 
   // ── 6. Finalise the five columns ──
   const materials = [...byMaterial.values()].map(m => {
@@ -302,6 +384,7 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
       order_value: rate != null ? r4(suggested * rate) : null,
       // Who to actually buy this from, so a shortfall is one click from a PO.
       preferred_vendor: sup ? { id: sup.vendor_id, name: sup.vendor_name, price: sup.price != null ? Number(sup.price) : null } : null,
+      ...buyingOptions(m.raw_material_id, sup),
       shortfall_value: rate != null ? r4(shortfall * rate) : null,
       status: shortfall > 0
         ? (m.on_order >= shortfall ? 'Ordered' : 'Short')

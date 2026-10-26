@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Printer, Download, Mail } from 'lucide-react';
 import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
@@ -309,6 +309,17 @@ const POInvoice = () => {
 
       </div>
       </div>
+
+      {/* The customer orders it was bought for — yours to know, not the
+          vendor's, so on screen only. */}
+      {po.forOrders?.length > 0 && (
+        <div data-po-for className="print:hidden no-print" style={{ marginTop: 16, fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+          Bought for{' '}
+          {po.forOrders.map((o, i) => (
+            <React.Fragment key={o.id}>{i > 0 && ', '}<Link to="/customer-orders" style={{ fontWeight: 700, color: 'var(--brand-amber)' }}>{o.orderNumber}</Link></React.Fragment>
+          ))}
+        </div>
+      )}
 
       {/* Files that belong with this document — the vendor's quotation behind it, their acknowledgement. Never printed. */}
       <div className="print:hidden no-print" style={{ marginTop: 16 }}>

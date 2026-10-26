@@ -348,6 +348,23 @@ export default function CustomerOrders() {
                           ))}
                         </tbody>
                       </table>
+                      {/* What was bought for this order, so a job's material
+                          can be followed from the order to the vendor. */}
+                      {(detail[o.id].purchaseOrders || []).length > 0 && (
+                        <div data-order-pos style={{ marginTop: 10 }}>
+                          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', padding: '4px 0 6px' }}>Purchase orders for this order</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {detail[o.id].purchaseOrders.map(p => (
+                              <Link key={p.id} to={`/po/${p.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--bg-surface)', textDecoration: 'none', fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                <b style={{ fontFamily: 'var(--font-mono)' }}>{p.po_number}</b>
+                                <span style={{ color: 'var(--text-secondary)' }}>{p.vendor_name}</span>
+                                <span style={{ color: 'var(--text-muted)' }}>{p.status}{p.approval_status === 'Pending Approval' ? ' · needs sign-off' : ''}</span>
+                                {p.value != null && <span style={{ fontWeight: 600 }}>{fmtINR(p.value)}</span>}
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 8 }}>
                         <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}><b>Make</b> to fabricate in-house · <b>Raise Quotation</b> to buy-out from vendors · then bill the customer →</div>
                         <button onClick={() => navigate(`/customer-orders/${o.id}/invoice`)} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>

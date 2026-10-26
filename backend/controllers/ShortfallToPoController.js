@@ -23,6 +23,16 @@ const { isCrossTenant, can, WRITE } = require('../shared/roles');
 const { writePoLines, notifyApproval } = require('../shared/poLines');
 const { notify } = require('../notify');
 const { computeRequirements } = require('./MaterialRequirementsController');
+const { linkPoToOrders } = require('../shared/poOrders');
+
+/* { [materialId]: vendorId } — the vendor a person picked for a material,
+   in place of the suggested one. Anything else is ignored. */
+const choicesOf = (req) => {
+  let c = req.body?.choices;
+  /* the preview (a GET) sends them as ?choices={"12":7} */
+  if (!c && req.query?.choices) { try { c = JSON.parse(String(req.query.choices)); } catch { c = null; } }
+  return c && typeof c === 'object' && !Array.isArray(c) ? c : {};
+};
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -43,7 +53,7 @@ const reqOpts = (req) => ({
 exports.plan = async (req, res) => {
   try {
     const { materials } = await computeRequirements(reqOpts(req));
-    const plan = groupByVendor(materials);
+    const plan = groupByVendor(materials, choicesOf(req));
     res.json({
       vendors: plan.byVendor,
       unassigned: plan.unassigned,
@@ -58,8 +68,9 @@ exports.plan = async (req, res) => {
 };
 
 /* POST /material-requirements/to-po
-   Body: { materialIds?: number[], projectId?: number }
-   Raises one PO per vendor. */
+   Body: { materialIds?: number[], projectId?: number, orderId?: number,
+           choices?: { [materialId]: vendorId } }
+   Raises one PO per vendor, each linked to the orders it is bought for. */
 exports.create = async (req, res) => {
   /* The route is checked against material-requirements, which Production
      may write. Raising purchase orders is a different permission. */
@@ -73,7 +84,7 @@ exports.create = async (req, res) => {
   try {
     const { materials } = await computeRequirements(reqOpts(req));
     const chosen = only ? materials.filter(m => only.has(Number(m.raw_material_id))) : materials;
-    const plan = groupByVendor(chosen);
+    const plan = groupByVendor(chosen, choicesOf(req));
 
     if (!plan.byVendor.length) {
       return res.status(400).json({
@@ -127,11 +138,14 @@ exports.create = async (req, res) => {
         sno: i + 1, description: l.material, uom: l.uom || 'nos', quantity: l.qty, unitPrice: l.rate || 0, rawMaterialId: l.raw_material_id,
       })), req.user?.orgId);
       gates.push([poId, poNumber, gate, v.vendorName]);
+      /* bought for: every order whose shortfall its lines cover */
+      const forOrders = await linkPoToOrders(client, poId, v.lines.flatMap(l => l.order_ids || []), req.user?.orgId);
 
       created.push({
         id: poId, poNumber, vendor: v.vendorName, vendorId: v.vendorId,
         lines: v.lines.length, value: v.total,
         approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required',
+        forOrders,
       });
     }
 
@@ -157,16 +171,29 @@ exports.create = async (req, res) => {
   } finally { client.release(); }
 };
 
-/** Split short materials into per-vendor baskets, and those with no vendor. */
-function groupByVendor(materials) {
+/** Split short materials into per-vendor baskets, and those with no vendor.
+ *
+ *  Each material goes to the vendor a person picked for it (`choices`, if
+ *  that vendor is one of its options), else to its suggested vendor — the
+ *  lowest recent quote, else the preferred vendor (computeRequirements'
+ *  buy_from). Priced at that vendor's own rate, rounded up to that vendor's
+ *  own minimum. */
+function groupByVendor(materials, choices = {}) {
   const byVendor = new Map();
   const unassigned = [];
 
   for (const m of materials) {
-    const qty = Number(m.suggested_order_qty) || 0;
-    if (qty <= 0) continue;                       // not short, or already on order
+    const suggested = Number(m.suggested_order_qty) || 0;
+    if (suggested <= 0) continue;                 // not short, or already on order
 
-    if (!m.preferred_vendor?.id) {
+    const options = m.vendor_options || [];
+    const pickedId = Number(choices[m.raw_material_id] ?? choices[String(m.raw_material_id)]);
+    const picked = pickedId ? options.find(o => o.vendor_id === pickedId) : null;
+    const vendor = picked
+      ? { id: picked.vendor_id, name: picked.name, price: picked.price_now, moq: picked.moq, source: picked.price_source === 'quote' ? 'quote' : 'chosen', lead_time_days: picked.lead_time_now }
+      : m.buy_from || (m.preferred_vendor ? { ...m.preferred_vendor, source: 'preferred' } : null);
+
+    if (!vendor?.id) {
       unassigned.push({
         raw_material_id: m.raw_material_id,
         material: m.material,
@@ -175,26 +202,36 @@ function groupByVendor(materials) {
       });
       continue;
     }
+    /* The suggestion was rounded to the preferred vendor's minimum. Another
+       vendor is rounded to their own, or ordered exactly if they have none. */
+    const uncovered = Number(m.uncovered) || suggested;
+    const isPreferred = vendor.id === m.preferred_vendor?.id;
+    const moq = isPreferred ? (Number(m.moq) || null) : (Number(vendor.moq) || null);
+    const qty = isPreferred ? suggested : (moq ? r2(Math.ceil(uncovered / moq) * moq) : uncovered);
 
-    const key = m.preferred_vendor.id;
+    const key = vendor.id;
     if (!byVendor.has(key)) {
-      byVendor.set(key, { vendorId: key, vendorName: m.preferred_vendor.name, lines: [], total: 0 });
+      byVendor.set(key, { vendorId: key, vendorName: vendor.name, lines: [], total: 0 });
     }
     const basket = byVendor.get(key);
-    const rate = Number(m.preferred_vendor.price) || 0;
+    const rate = Number(vendor.price) || 0;
     const line = {
       raw_material_id: m.raw_material_id,
       material: m.material,
       shortfall: m.shortfall,
-      qty,                                        // already rounded to MOQ
-      moq: m.moq, moq_source: m.moq_source,
+      qty,                                        // rounded to the vendor's minimum
+      moq: moq ?? m.moq, moq_source: moq ? 'vendor' : m.moq_source,
+      vendor_source: vendor.source,               // 'quote' | 'preferred' | 'chosen'
+      order_ids: m.order_ids || [],
+      orders: m.orders || [],
+      options: options.map(o => ({ vendorId: o.vendor_id, name: o.name, price: o.price_now, source: o.price_source, leadTimeDays: o.lead_time_now, paymentTerms: o.payment_terms || null, freight: o.freight || null, isPreferred: !!o.is_preferred })),
       /* Fall back through the chain rather than emitting null — a PO line
          reading "1000null" tells the vendor nothing about what unit to
          send. */
       uom: m.purchase_uom || m.base_uom || m.bom_uom || 'nos',
       rate,
       amount: r2(qty * rate),
-      lead_time_days: m.lead_time_days,
+      lead_time_days: vendor.lead_time_days ?? m.lead_time_days,
     };
     basket.lines.push(line);
     basket.total = r2(basket.total + line.amount);

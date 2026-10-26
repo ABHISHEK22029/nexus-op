@@ -486,7 +486,15 @@ const PurchaseOrders = () => {
           <tbody className="divide-y divide-white/5">
             {q.rows.length > 0 ? q.rows.map((po) => (
               <tr key={po.id} className="table-row-animate hover:bg-white/[0.01]">
-                <td className="px-6 py-4 font-mono" style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{po.poNumber || `PO-${po.id.toString().padStart(4, '0')}`}</td>
+                <td className="px-6 py-4 font-mono" style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                  {po.poNumber || `PO-${po.id.toString().padStart(4, '0')}`}
+                  {/* the customer orders it was bought for */}
+                  {po.forOrders?.length > 0 && (
+                    <div data-po-for style={{ fontFamily: 'var(--font-body)', fontWeight: 500, fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                      for {po.forOrders.map(o => o.orderNumber).join(', ')}
+                    </div>
+                  )}
+                </td>
                 <td className="px-6 py-4 text-sm font-medium text-white">{po.vendorName}</td>
                 <td className="px-6 py-4 text-sm">
                   <span className="text-gray-300">{po.quantity}</span><span className="text-gray-500 mx-1">×</span><span>{po.itemName}</span>

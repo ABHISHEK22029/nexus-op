@@ -22,8 +22,30 @@ const { allocatePoNumber } = require('../shared/docNumber');
 const { writePoLines, poLinesProblem, notifyApproval } = require('../shared/poLines');
 const { notify } = require('../notify');
 const { runList } = require('../shared/listQuery');
+const { readTerms, matchMaterial } = require('../shared/quoteTerms');
+const { linkPoToOrders, orderFromRef } = require('../shared/poOrders');
 
 const ownerOf = (req) => req.user?.orgId ?? req.user?.id ?? null;
+/* the company's materials, for linking quoted lines to them */
+const materialsOf = async (q, owner) =>
+  (await q.query('SELECT id, name FROM raw_materials WHERE owner_id IS NOT DISTINCT FROM $1', [owner])).rows;
+/* the terms a person may set when checking a quotation */
+const FREIGHT = ['Included', 'Extra'];
+const termsFrom = (b) => {
+  const out = {};
+  if ('leadTimeDays' in b) {
+    const n = b.leadTimeDays === '' || b.leadTimeDays == null ? null : Number(b.leadTimeDays);
+    if (n != null && (!Number.isInteger(n) || n < 0 || n > 999)) return { error: 'Delivery must be a whole number of days' };
+    out.lead_time_days = n;
+  }
+  if ('paymentTerms' in b) out.payment_terms = String(b.paymentTerms ?? '').trim().slice(0, 120) || null;
+  if ('freight' in b) {
+    const f = String(b.freight ?? '').trim();
+    if (f && !FREIGHT.includes(f)) return { error: `Freight is ${FREIGHT.join(' or ')}` };
+    out.freight = f || null;
+  }
+  return { out };
+};
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -62,26 +84,40 @@ exports.upload = async (req, res) => {
 
     const t = parsed.totals || {};
     const summed = r2(parsed.lines.reduce((s, l) => s + (Number(l.amount) || 0), 0));
+    /* Delivery, payment and freight, where the quotation states them —
+       beside the price is where they decide which vendor is best. What the
+       upload form sends wins over what was read. */
+    const read = readTerms(parsed.text);
+    const given = termsFrom(req.body || {});
+    if (given.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: given.error }); }
+    const terms = { ...read, ...given.out };
     const { rows: [q] } = await client.query(
       `INSERT INTO vendor_quotations
          (owner_id, vendor_id, vendor_name, rfq_ref, attachment_id, filename, mime, source_kind,
-          quote_ref, quote_date, subtotal, tax_total, grand_total, parse_status, parse_note, raw_text)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+          quote_ref, quote_date, subtotal, tax_total, grand_total, parse_status, parse_note, raw_text,
+          lead_time_days, payment_terms, freight)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
       [owner, vendorId, vendorName, req.body.rfqRef || null,
        att.id, req.file.originalname, req.file.mimetype, parsed.kind,
        req.body.quoteRef || null, req.body.quoteDate || null,
        t.subtotal ?? summed ?? null, t.tax ?? null, t.grand ?? null,
-       parsed.status, parsed.note, (parsed.text || '').slice(0, 200000)]);
+       parsed.status, parsed.note, (parsed.text || '').slice(0, 200000),
+       terms.lead_time_days, terms.payment_terms, terms.freight]);
 
     await client.query('UPDATE attachments SET entity_id = $1 WHERE id = $2', [q.id, att.id]);
 
+    /* Each line linked to the material it names, where one clearly fits —
+       so the requirements know who quoted what they are short of, and the
+       PO raised from it lands in that material's stock. */
+    const materials = await materialsOf(client, owner);
     let n = 0;
     for (const l of parsed.lines) {
       await client.query(
         `INSERT INTO vendor_quotation_lines
-           (vendor_quotation_id, owner_id, line_no, description, hsn, uom, quantity, rate, amount, match_key, confidence)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [q.id, owner, ++n, l.description, l.hsn, l.uom, l.quantity, l.rate, l.amount, l.match_key, l.confidence]);
+           (vendor_quotation_id, owner_id, line_no, description, hsn, uom, quantity, rate, amount, match_key, confidence, raw_material_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [q.id, owner, ++n, l.description, l.hsn, l.uom, l.quantity, l.rate, l.amount, l.match_key, l.confidence,
+         matchMaterial(l.description, materials)]);
     }
     await client.query('COMMIT');
     res.json({ ...q, lineCount: n });
@@ -216,6 +252,7 @@ exports.compare = async (req, res) => {
         if ((l.description || '').length > (g.description || '').length) g.description = l.description;
         g.hsn = g.hsn || l.hsn;
         g.uom = g.uom || l.uom;
+        g.rawMaterialId = g.rawMaterialId || l.raw_material_id || null;
         g.by[q.id] = {
           description: l.description,
           quantity: l.quantity == null ? null : Number(l.quantity),
@@ -286,6 +323,11 @@ exports.compare = async (req, res) => {
         poId: q.po_number ? q.po_id : null,
         poNumber: q.po_number || null,
         statedTotal: q.grand_total == null ? null : Number(q.grand_total),
+        /* the terms beside the price: cheapest is not best when it takes
+           three weeks, wants cash up front or leaves the freight to you */
+        leadTimeDays: q.lead_time_days ?? null,
+        paymentTerms: q.payment_terms ?? null,
+        freight: q.freight ?? null,
         linesTotal: r2(own),
         comparableTotal: r2(common),
         linesQuoted: out.filter(r => r.by[q.id]).length,
@@ -306,8 +348,16 @@ exports.compare = async (req, res) => {
     }
     if (out.some(r => r.unitsDiffer)) caveats.push('Some items are quoted in different units (kg against MT, say) — compare those by hand.');
     if (out.some(r => r.qtyDiffers)) caveats.push('Vendors quoted different quantities on some items, so like for like prices them all at the same quantity.');
+    /* The price alone does not settle it when the terms differ — said, so
+       nobody picks the lowest number and finds the freight was extra. */
+    const differs = (k) => new Set(totals.map(t => t[k] ?? '—')).size > 1;
+    const termNames = [differs('leadTimeDays') && 'delivery', differs('paymentTerms') && 'payment', differs('freight') && 'freight'].filter(Boolean);
+    const listed = termNames.length > 1 ? `${termNames.slice(0, -1).join(', ')} and ${termNames.at(-1)}` : termNames[0];
+    if (termNames.length) caveats.push(`The vendors' ${listed} terms differ — weigh them beside the price.`);
+    const fastest = totals.filter(t => t.leadTimeDays != null).sort((a, b) => a.leadTimeDays - b.leadTimeDays)[0] || null;
 
     res.json({
+      fastestDelivery: fastest && totals.filter(t => t.leadTimeDays === fastest.leadTimeDays).length === 1 ? fastest.id : null,
       quotations: totals,
       rows: out,
       comparableRowCount: everyoneQuoted.length,
@@ -356,6 +406,13 @@ exports.update = async (req, res) => {
       if (n != null && !Number.isFinite(n)) return res.status(400).json({ error: `${k} must be a number` });
       set[col] = n;
     }
+    const terms = termsFrom(b);
+    if (terms.error) return res.status(400).json({ error: terms.error });
+    Object.assign(set, terms.out);
+    /* a line's material: the one a person picked, if it is the company's
+       own; otherwise the one its wording names */
+    const materials = 'lines' in b ? await materialsOf(db, q.owner_id) : [];
+    const ownMaterial = new Set(materials.map((m) => m.id));
 
     let lines = null;
     if ('lines' in b) {
@@ -371,7 +428,11 @@ exports.update = async (req, res) => {
           return res.status(400).json({ error: `Line ${i + 1}: quantity, rate and amount must be numbers` });
         }
         if (amount == null && quantity != null && rate != null) amount = r2(quantity * rate);
-        lines.push({ description: description.slice(0, 500), hsn: text(l.hsn, 12), uom: text(l.uom, 20), quantity, rate, amount });
+        const picked = Number(l.rawMaterialId ?? l.raw_material_id);
+        const rawMaterialId = 'rawMaterialId' in l || 'raw_material_id' in l
+          ? (ownMaterial.has(picked) ? picked : null)
+          : matchMaterial(description, materials);
+        lines.push({ description: description.slice(0, 500), hsn: text(l.hsn, 12), uom: text(l.uom, 20), quantity, rate, amount, rawMaterialId });
       }
       set.subtotal = r2(lines.reduce((s, l) => s + (l.amount || 0), 0));
       set.parse_status = 'reviewed';
@@ -393,9 +454,9 @@ exports.update = async (req, res) => {
         for (const l of lines) {
           await client.query(
             `INSERT INTO vendor_quotation_lines
-               (vendor_quotation_id, owner_id, line_no, description, hsn, uom, quantity, rate, amount, match_key, confidence)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'checked')`,
-            [q.id, q.owner_id, ++n, l.description, l.hsn, l.uom, l.quantity, l.rate, l.amount, matchKey(l.description, l.hsn)]);
+               (vendor_quotation_id, owner_id, line_no, description, hsn, uom, quantity, rate, amount, match_key, confidence, raw_material_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'checked',$11)`,
+            [q.id, q.owner_id, ++n, l.description, l.hsn, l.uom, l.quantity, l.rate, l.amount, matchKey(l.description, l.hsn), l.rawMaterialId]);
         }
       }
       await client.query('COMMIT');
@@ -457,7 +518,7 @@ exports.toPo = async (req, res) => {
       .map((l) => {
         const qty = Number(l.quantity);
         const rate = l.rate != null ? Number(l.rate) : (l.amount != null && qty > 0 ? r2(Number(l.amount) / qty) : null);
-        return { description: String(l.description || '').trim(), uom: l.uom || "No's", hsn: l.hsn || null, quantity: qty, unitPrice: rate };
+        return { description: String(l.description || '').trim(), uom: l.uom || "No's", hsn: l.hsn || null, quantity: qty, unitPrice: rate, rawMaterialId: l.raw_material_id || null };
       })
       .filter((it) => it.description && it.quantity > 0 && it.unitPrice != null)
       .map((it, i) => ({ ...it, sno: i + 1 }));
@@ -489,6 +550,11 @@ exports.toPo = async (req, res) => {
     const poId = rows[0].id;
     const gate = await writePoLines(client, poId, items, owner);
     await client.query('UPDATE vendor_quotations SET po_id = $1 WHERE id = $2', [poId, q.id]);
+    /* What it is being bought for: the orders named on the request, or the
+       order the quotation's "Against" reference names (CO-0012). */
+    const asked = [].concat(req.body?.customerOrderIds || [], req.body?.customerOrderId || []);
+    if (!asked.length) { const fromRef = await orderFromRef(client, q.rfq_ref, owner); if (fromRef) asked.push(fromRef); }
+    const forOrders = await linkPoToOrders(client, poId, asked, owner);
     await client.query(
       `INSERT INTO activities ("projectId", type, description, timestamp, owner_id) VALUES ($1,$2,$3,NOW(),$4)`,
       [req.body?.projectId || null, 'PO_CREATED', `${poNumber} raised from ${vendor.name}'s quotation`, owner]);
@@ -499,6 +565,7 @@ exports.toPo = async (req, res) => {
     res.json({
       id: poId, poNumber, vendor: vendor.name, lines: items.length, value: r2(gate.subtotal),
       approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required',
+      forOrders,
     });
   } catch (e) {
     if (client) await client.query('ROLLBACK').catch(() => {});

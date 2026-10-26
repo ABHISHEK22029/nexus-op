@@ -264,15 +264,25 @@ export default function MaterialRequirements() {
                           supplier is a question, not an instruction. */}
                       <td style={td}>
                         {m.shortfall <= 0 ? <span style={{ color: 'var(--text-muted)' }}>—</span>
-                          : m.preferred_vendor ? (
-                            <>
-                              <div style={{ fontWeight: 600, fontSize: '0.82rem' }}>{m.preferred_vendor.name}</div>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                {m.preferred_vendor.price != null && <>₹{num(m.preferred_vendor.price)} · </>}
-                                {m.lead_time_days != null ? `${m.lead_time_days}d lead` : 'lead unknown'}
-                              </div>
-                            </>
-                          ) : (
+                          : (m.buy_from || m.preferred_vendor) ? (() => {
+                            /* the comparison's winner when a vendor has quoted
+                               it recently; the preferred vendor otherwise */
+                            const b = m.buy_from || { ...m.preferred_vendor, source: 'preferred' };
+                            const lead = b.lead_time_days ?? m.lead_time_days;
+                            return (
+                              <>
+                                <div style={{ fontWeight: 600, fontSize: '0.82rem' }} data-buy-from={b.source}>
+                                  {b.name}
+                                  {b.source === 'quote' && <span style={{ marginLeft: 6, fontSize: '0.64rem', fontWeight: 800, color: '#16a34a', textTransform: 'uppercase' }}>Lowest quote</span>}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                  {b.price != null && <>₹{num(b.price)}{b.source === 'quote' && b.quoted_on ? ` quoted ${new Date(b.quoted_on).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''} · </>}
+                                  {lead != null ? `${lead}d lead` : 'lead unknown'}
+                                  {(m.vendor_options?.length || 0) > 1 && <> · {m.vendor_options.length} vendors</>}
+                                </div>
+                              </>
+                            );
+                          })() : (
                             <span title="Link a vendor to this material so purchase orders can be raised directly"
                               style={{ fontSize: '0.75rem', color: '#b45309' }}>No supplier linked</span>
                           )}

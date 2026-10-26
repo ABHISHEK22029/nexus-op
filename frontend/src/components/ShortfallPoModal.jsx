@@ -21,11 +21,23 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const qty = n => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 });
 
+/* how a vendor option reads in the picker: who, at what price and from
+   where, and the terms beside it */
+const optionLabel = (o) => [
+  o.name,
+  o.price != null ? `${rup(o.price)}${o.source === 'quote' ? ' quoted' : ''}` : 'no rate',
+  o.leadTimeDays != null ? (o.leadTimeDays === 0 ? 'ex-stock' : `${o.leadTimeDays} days`) : null,
+  o.freight ? `freight ${o.freight.toLowerCase()}` : null,
+  o.isPreferred ? 'preferred' : null,
+].filter(Boolean).join(' · ');
+
 export default function ShortfallPoModal({ onClose, onRaised, query = '' }) {
   const [plan, setPlan] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  /* { [materialId]: vendorId } — a vendor picked in place of the suggestion */
+  const [choices, setChoices] = useState({});
 
   useEffect(() => {
     const esc = (e) => { if (e.key === 'Escape' && !busy) onClose(); };
@@ -38,18 +50,22 @@ export default function ShortfallPoModal({ onClose, onRaised, query = '' }) {
     return { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) };
   };
 
+  /* the plan is the server's, re-asked whenever a vendor is changed, so the
+     quantities (each vendor's own minimum) and prices are exactly what will
+     be raised */
   useEffect(() => {
-    fetch(`${API}/material-requirements/purchase-plan${query ? `?${query}` : ''}`, { headers: headers() })
+    const parts = [query, Object.keys(choices).length ? `choices=${encodeURIComponent(JSON.stringify(choices))}` : ''].filter(Boolean);
+    fetch(`${API}/material-requirements/purchase-plan${parts.length ? `?${parts.join('&')}` : ''}`, { headers: headers() })
       .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Could not work out the purchase plan'); return d; })
       .then(setPlan)
       .catch(e => setError(e.message));
-  }, [query]);
+  }, [query, choices]);
 
   const raise = async () => {
     setBusy(true); setError('');
     try {
       const r = await fetch(`${API}/material-requirements/to-po${query ? `?${query}` : ''}`, {
-        method: 'POST', headers: headers(), body: JSON.stringify({}),
+        method: 'POST', headers: headers(), body: JSON.stringify({ choices }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.detail || d.error || 'The purchase orders were not raised');
@@ -81,7 +97,7 @@ export default function ShortfallPoModal({ onClose, onRaised, query = '' }) {
             <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {result
                 ? 'Each is a normal purchase order: approve, send and receive it as usual.'
-                : 'One purchase order per vendor, from each material’s preferred vendor, at their price — quantities rounded up to their minimum order.'}
+                : 'One purchase order per vendor. Each material goes to its lowest recent quote, or its preferred vendor — change it below. Quantities are rounded up to that vendor’s minimum order.'}
             </p>
           </div>
           <button onClick={onClose} disabled={busy} aria-label="Close"
@@ -103,7 +119,10 @@ export default function ShortfallPoModal({ onClose, onRaised, query = '' }) {
                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border-subtle)' }}>
                   <CheckCircle2 size={16} style={{ color: '#10b981', flex: 'none' }} />
                   <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{c.poNumber}</span>
-                  <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{c.vendor} · {c.lines} line{c.lines === 1 ? '' : 's'}</span>
+                  <span style={{ flex: 1, color: 'var(--text-secondary)' }}>
+                    {c.vendor} · {c.lines} line{c.lines === 1 ? '' : 's'}
+                    {c.forOrders?.length > 0 && <span data-po-for style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)' }}>for {c.forOrders.map(o => o.orderNumber).join(', ')}</span>}
+                  </span>
                   {c.approvalStatus === 'Pending Approval' && <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#b45309' }}>Needs sign-off</span>}
                   <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{rup(c.value)}</span>
                 </div>
@@ -125,7 +144,20 @@ export default function ShortfallPoModal({ onClose, onRaised, query = '' }) {
                 <tbody>
                   {v.lines.map(l => (
                     <tr key={l.raw_material_id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                      <td style={{ padding: '7px 12px', color: 'var(--text-primary)' }}>{l.material}</td>
+                      <td style={{ padding: '7px 12px', color: 'var(--text-primary)' }}>
+                        {l.material}
+                        {l.vendor_source === 'quote' && <span style={{ marginLeft: 6, fontSize: '0.66rem', fontWeight: 800, color: '#16a34a', textTransform: 'uppercase' }}>Lowest quote</span>}
+                        {l.orders?.length > 0 && <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)' }}>for {l.orders.join(', ')}</span>}
+                        {/* buy it from someone else: every vendor who supplies or quoted it */}
+                        {l.options?.length > 1 && (
+                          <select value={v.vendorId} disabled={busy} data-pick-vendor={l.raw_material_id}
+                            onChange={e => setChoices(c => ({ ...c, [l.raw_material_id]: Number(e.target.value) }))}
+                            aria-label={`Vendor for ${l.material}`}
+                            style={{ display: 'block', marginTop: 5, width: '100%', maxWidth: 420, fontSize: '0.74rem', padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>
+                            {l.options.map(o => <option key={o.vendorId} value={o.vendorId}>{optionLabel(o)}</option>)}
+                          </select>
+                        )}
+                      </td>
                       <td style={{ padding: '7px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                         {qty(l.qty)} {l.uom}
                         {Number(l.qty) > Number(l.shortfall) && <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)' }}>short {qty(l.shortfall)}, minimum order</span>}

@@ -51,6 +51,7 @@ const { andOwner, assertOwned } = require('./shared/ownerScope');
 const { assertRefs } = require('./shared/ownedRefs');
 const { docNumber, loadProfile, nextSeq, allocatePoNumber } = require('./shared/docNumber');
 const { writePoLines, gatePo, poLinesProblem, notifyApproval } = require('./shared/poLines');
+const { linkPoToOrders, ordersForPos } = require('./shared/poOrders');
 const { firstProblem, VENDOR_SPEC, CUSTOMER_SPEC, COMPANY_SPEC } = require('./shared/validators');
 const grnRouter = require('./routes/grn');
 
@@ -715,6 +716,10 @@ app.get('/po', async (req, res) => {
                 COUNT(*) FILTER (WHERE COALESCE(approval_status,'Pending') = 'Pending')::int AS awaiting_approval,
                 COUNT(*) FILTER (WHERE status = 'Delivered')::int AS delivered`,
     });
+    /* each PO's customer orders, for the "For CO-0012" beside it */
+    const page = Array.isArray(result) ? result : result.items || [];
+    const links = await ordersForPos(db, page.map(p => p.id));
+    for (const p of page) p.forOrders = links[p.id] || [];
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -749,7 +754,9 @@ app.get('/po/:id', async (req, res) => {
        orders, opening one said "Purchase Order not found". */
     let company = null;
     try { company = await profileFor(db, rows[0].owner_id); } catch { /* optional */ }
-    res.json({ ...rows[0], company });
+    /* the customer orders it was bought for */
+    const forOrders = (await ordersForPos(db, [rows[0].id]))[rows[0].id] || [];
+    res.json({ ...rows[0], company, forOrders });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -833,13 +840,15 @@ app.post('/po', async (req, res) => {
        could be approved at any value; the lines, if posted later, re-gate it. */
     const gate = items ? await writePoLines(client, poId, items, poOwner)
       : await gatePo(client, poId, (Number(quantity) || 0) * (Number(unitPrice) || 0), poOwner);
+    /* what it is bought for, when the screen says (migration 076) */
+    const forOrders = await linkPoToOrders(client, poId, [].concat(req.body.customerOrderIds || [], req.body.customerOrderId || []), poOwner);
     await client.query('COMMIT');
 
     await logActivity(projectId || null, 'PO_CREATED', `${poNumber} created for "${itemName}"`, poOwner);
     const poValue = gate.subtotal;
     notify({ org: poOwner }, { type: 'PO_CREATED', title: `PO ${poNumber} raised`, message: `${itemName} · ₹${poValue.toLocaleString('en-IN')}`, entityType: 'po', entityId: poId, link: `/po/${poId}` });
     notifyApproval(poId, poNumber, gate, poOwner);
-    res.json({ id: poId, poNumber, linesSaved: !!items, approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required' });
+    res.json({ id: poId, poNumber, linesSaved: !!items, approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required', forOrders });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: err.message });

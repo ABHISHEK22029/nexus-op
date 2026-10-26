@@ -73,6 +73,10 @@ export default function VendorQuotations() {
   const [vendors, setVendors] = useState([]);
   const [reviewing, setReviewing] = useState(null);
   const [dragging, setDragging] = useState(false);
+  /* what a PO raised here is bought for: an open customer order, or — left
+     blank — whatever order the quotation's "Against" reference names */
+  const [orders, setOrders] = useState([]);
+  const [forOrder, setForOrder] = useState('');
   const fileRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -92,6 +96,13 @@ export default function VendorQuotations() {
       setVendors(Array.isArray(d) ? d : (d.items || d.rows || []));
     }).catch(() => {});
   }, []);
+  useEffect(() => {
+    if (!canRaise) return;
+    fetch(`${API}/customer-orders?limit=100`, { headers: auth() }).then(r => (r.ok ? r.json() : [])).then(d => {
+      const all = Array.isArray(d) ? d : (d.items || d.rows || []);
+      setOrders(all.filter(o => !/delivered|closed|cancel/i.test(o.status || '')));
+    }).catch(() => {});
+  }, [canRaise]);
 
   /* One file or several. With several, the vendor box is left for the
      review step — one name cannot belong to three vendors' files. */
@@ -172,11 +183,13 @@ export default function VendorQuotations() {
     setBusy(true);
     try {
       const r = await fetch(`${API}/vendor-quotations/${q.id}/to-po`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...auth() }, body: JSON.stringify({}),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...auth() },
+        body: JSON.stringify(forOrder ? { customerOrderId: Number(forOrder) } : {}),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { toast.error(d.error || 'The purchase order was not raised'); if (r.status === 409 && cmp) await compare(cmp.quotations.map(x => x.id)); return; }
-      toast.success(`${d.poNumber} raised to ${d.vendor}${d.approvalStatus === 'Pending Approval' ? ' — it needs sign-off' : ''}`);
+      const forWhat = d.forOrders?.length ? ` for ${d.forOrders.map(o => o.orderNumber).join(', ')}` : '';
+      toast.success(`${d.poNumber} raised to ${d.vendor}${forWhat}${d.approvalStatus === 'Pending Approval' ? ' — it needs sign-off' : ''}`);
       if (cmp) await compare(cmp.quotations.map(x => x.id));
     } finally { setBusy(false); }
   };
@@ -297,7 +310,8 @@ export default function VendorQuotations() {
           onOpen={openOriginal} onSaved={async () => { await load(); if (cmp) compare(cmp.quotations.map(q => q.id)); }} />
       )}
 
-      {cmp && <Comparison cmp={cmp} onClose={() => setCmp(null)} onOpen={openOriginal} onRaisePo={canRaise ? raisePo : null} busy={busy} />}
+      {cmp && <Comparison cmp={cmp} onClose={() => setCmp(null)} onOpen={openOriginal} onRaisePo={canRaise ? raisePo : null} busy={busy}
+        orders={orders} forOrder={forOrder} setForOrder={setForOrder} />}
     </div>
   );
 }
@@ -307,18 +321,26 @@ function Review({ id, vendors, onClose, onOpen, onSaved }) {
   const toast = useToast();
   const [q, setQ] = useState(null);
   const [lines, setLines] = useState([]);
-  const [head, setHead] = useState({ vendorName: '', rfqRef: '', quoteRef: '' });
+  const [head, setHead] = useState({ vendorName: '', rfqRef: '', quoteRef: '', leadTimeDays: '', paymentTerms: '', freight: '' });
   const [saving, setSaving] = useState(false);
+  /* the company's materials, so each line can say which one it is */
+  const [materials, setMaterials] = useState([]);
 
   useEffect(() => {
     fetch(`${API}/vendor-quotations/${id}`, { headers: auth() }).then(r => (r.ok ? r.json() : null)).then(d => {
       if (!d) return;
       setQ(d);
-      setHead({ vendorName: d.vendor_name || '', rfqRef: d.rfq_ref || '', quoteRef: d.quote_ref || '' });
+      setHead({
+        vendorName: d.vendor_name || '', rfqRef: d.rfq_ref || '', quoteRef: d.quote_ref || '',
+        leadTimeDays: d.lead_time_days ?? '', paymentTerms: d.payment_terms || '', freight: d.freight || '',
+      });
       /* NUMERIC columns arrive as "180.000"; show 180. */
       const n = (v) => (v == null ? '' : Number(v));
-      setLines(d.lines.map(l => ({ description: l.description || '', hsn: l.hsn || '', uom: l.uom || '', quantity: n(l.quantity), rate: n(l.rate), confidence: l.confidence })));
+      setLines(d.lines.map(l => ({ description: l.description || '', hsn: l.hsn || '', uom: l.uom || '', quantity: n(l.quantity), rate: n(l.rate), confidence: l.confidence, rawMaterialId: l.raw_material_id || '' })));
     });
+    fetch(`${API}/raw-materials?limit=500`, { headers: auth() }).then(r => (r.ok ? r.json() : [])).then(d => {
+      setMaterials(Array.isArray(d) ? d : (d.items || d.rows || []));
+    }).catch(() => {});
   }, [id]);
 
   const setLine = (i, patch) => setLines(ls => ls.map((l, k) => (k === i ? { ...l, ...patch, confidence: 'checked' } : l)));
@@ -333,8 +355,9 @@ function Review({ id, vendors, onClose, onOpen, onSaved }) {
         method: 'PUT', headers: { ...auth(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vendorName: head.vendorName, rfqRef: head.rfqRef, quoteRef: head.quoteRef,
+          leadTimeDays: head.leadTimeDays, paymentTerms: head.paymentTerms, freight: head.freight,
           ...(match ? { vendorId: match.id } : {}),
-          lines: lines.map(l => ({ description: l.description, hsn: l.hsn, uom: l.uom, quantity: l.quantity, rate: l.rate })),
+          lines: lines.map(l => ({ description: l.description, hsn: l.hsn, uom: l.uom, quantity: l.quantity, rate: l.rate, rawMaterialId: l.rawMaterialId || null })),
         }),
       });
       const d = await r.json().catch(() => ({}));
@@ -366,10 +389,24 @@ function Review({ id, vendors, onClose, onOpen, onSaved }) {
         <label style={{ display: 'grid', gap: 4 }}><span style={S.label}>Vendor's quote no.</span>
           <input style={S.input} value={head.quoteRef} onChange={e => setHead(h => ({ ...h, quoteRef: e.target.value }))} aria-label="Vendor quote number" /></label>
       </div>
+      {/* The terms beside the price — read from the file where it says, and
+          worth checking: cheapest is not best when the freight is extra. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 14 }}>
+        <label style={{ display: 'grid', gap: 4 }}><span style={S.label}>Delivery (days)</span>
+          <input style={S.input} type="number" min="0" step="1" inputMode="numeric" value={head.leadTimeDays} placeholder="Not stated"
+            onChange={e => setHead(h => ({ ...h, leadTimeDays: e.target.value }))} aria-label="Delivery in days" /></label>
+        <label style={{ display: 'grid', gap: 4 }}><span style={S.label}>Payment terms</span>
+          <input style={S.input} value={head.paymentTerms} placeholder="e.g. 30 days credit" maxLength={120}
+            onChange={e => setHead(h => ({ ...h, paymentTerms: e.target.value }))} aria-label="Payment terms" /></label>
+        <label style={{ display: 'grid', gap: 4 }}><span style={S.label}>Freight</span>
+          <select style={S.input} value={head.freight} onChange={e => setHead(h => ({ ...h, freight: e.target.value }))} aria-label="Freight">
+            <option value="">Not stated</option><option value="Included">Included</option><option value="Extra">Extra</option>
+          </select></label>
+      </div>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
           <thead><tr>
-            <th style={{ ...S.th, width: '40%' }}>Item</th><th style={S.th}>HSN</th><th style={S.th}>Qty</th><th style={S.th}>Unit</th>
+            <th style={{ ...S.th, width: '32%' }}>Item</th><th style={S.th}>Material</th><th style={S.th}>HSN</th><th style={S.th}>Qty</th><th style={S.th}>Unit</th>
             <th style={S.th}>Rate</th><th style={{ ...S.th, textAlign: 'right' }}>Amount</th><th style={S.th}></th>
           </tr></thead>
           <tbody>
@@ -380,6 +417,15 @@ function Review({ id, vendors, onClose, onOpen, onSaved }) {
                     {!TRUSTED.has(l.confidence) && <span title="Read from text, not a table cell — check it" style={{ color: '#b45309' }}>*</span>}
                     <input style={S.input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} aria-label={`Review line ${i + 1} item`} />
                   </div>
+                </td>
+                {/* which of your materials this is — so the requirements know
+                    who quoted it, and its PO lands in that material's stock */}
+                <td style={{ ...S.td, padding: '5px 4px', width: 180 }}>
+                  <select style={S.input} value={l.rawMaterialId} onChange={e => setLine(i, { rawMaterialId: e.target.value ? Number(e.target.value) : '' })}
+                    aria-label={`Review line ${i + 1} material`}>
+                    <option value="">Not linked</option>
+                    {materials.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
                 </td>
                 <td style={{ ...S.td, padding: '5px 4px', width: 90 }}><input style={{ ...S.input, fontFamily: 'var(--font-mono)' }} value={l.hsn} inputMode="numeric" maxLength={8} onChange={e => setLine(i, { hsn: e.target.value.replace(/\D/g, '') })} aria-label={`Review line ${i + 1} HSN`} /></td>
                 <td style={{ ...S.td, padding: '5px 4px', width: 90 }}><input style={S.input} type="number" step="any" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} aria-label={`Review line ${i + 1} quantity`} /></td>
@@ -396,7 +442,7 @@ function Review({ id, vendors, onClose, onOpen, onSaved }) {
         </table>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-        <button className="btn-secondary btn-sm" onClick={() => setLines(ls => [...ls, { description: '', hsn: '', uom: '', quantity: '', rate: '', confidence: 'checked' }])}
+        <button className="btn-secondary btn-sm" onClick={() => setLines(ls => [...ls, { description: '', hsn: '', uom: '', quantity: '', rate: '', confidence: 'checked', rawMaterialId: '' }])}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Plus size={14} /> Add line</button>
         <span style={{ marginLeft: 'auto', fontSize: '0.86rem', color: 'var(--text-secondary)' }}>
           Lines total, before tax: <b style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{rup(total)}</b>
@@ -419,10 +465,18 @@ function csvOf(cmp) {
     ...qs.flatMap(q => [r.by[q.id]?.rate ?? '', r.by[q.id]?.comparable ?? '']),
     qs.filter(q => r.bestQuotationIds.includes(q.id)).map(q => q.vendor).join(' / ')]);
   const foot = ['Like-for-like total', '', ...qs.flatMap(q => ['', q.comparableTotal]), ''];
-  return [head, ...body, foot].map(r => r.map(esc).join(',')).join('\n');
+  const terms = [
+    ['Delivery (days)', '', ...qs.flatMap(q => [q.leadTimeDays ?? '', '']), ''],
+    ['Payment terms', '', ...qs.flatMap(q => [q.paymentTerms ?? '', '']), ''],
+    ['Freight', '', ...qs.flatMap(q => [q.freight ?? '', '']), ''],
+  ];
+  return [head, ...body, foot, ...terms].map(r => r.map(esc).join(',')).join('\n');
 }
 
-function Comparison({ cmp, onClose, onOpen, onRaisePo, busy }) {
+/* the terms beside a price, as a person reads them */
+const days = (n) => (n == null ? '—' : n === 0 ? 'Ex-stock' : `${n} day${n === 1 ? '' : 's'}`);
+
+function Comparison({ cmp, onClose, onOpen, onRaisePo, busy, orders = [], forOrder = '', setForOrder }) {
   const qs = cmp.quotations;
   const cheapest = qs.find(q => q.id === cmp.cheapestOnLikeForLike);
   const download = () => {
@@ -459,14 +513,31 @@ function Comparison({ cmp, onClose, onOpen, onRaisePo, busy }) {
         </div>
       )}
 
+      {/* What a purchase order raised here is for — so the order shows what
+          was bought for it. Left blank, the quotation's "Against" decides. */}
+      {onRaisePo && orders.length > 0 && (
+        <label className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: '0.84rem', flexWrap: 'wrap' }}>
+          <span style={S.label}>Buying for</span>
+          <select style={{ ...S.input, width: 'auto', minWidth: 240 }} value={forOrder} onChange={e => setForOrder?.(e.target.value)} aria-label="Buying for which order">
+            <option value="">The order named in “Against”, if any</option>
+            {orders.map(o => <option key={o.id} value={o.id}>{o.order_number}{o.customer_name ? ` · ${o.customer_name}` : ''}</option>)}
+          </select>
+        </label>
+      )}
+
       <div style={{ overflowX: 'auto', marginBottom: 16 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
           <thead>
             <tr>
               <th style={S.th}>Vendor</th>
               <th style={{ ...S.th, textAlign: 'right' }}>Like for like</th>
               <th style={{ ...S.th, textAlign: 'right' }}>Their stated total</th>
               <th style={{ ...S.th, textAlign: 'right' }}>Items quoted</th>
+              {/* cheapest is not best when it is slower, wants cash up front,
+                  or leaves the freight to you — so the terms sit beside it */}
+              <th style={S.th}>Delivery</th>
+              <th style={S.th}>Payment</th>
+              <th style={S.th}>Freight</th>
               <th className="no-print" style={S.th}></th>
             </tr>
           </thead>
@@ -489,6 +560,14 @@ function Comparison({ cmp, onClose, onOpen, onRaisePo, busy }) {
                   <td style={S.num}>
                     {q.linesQuoted}
                     {q.linesMissing > 0 && <span style={{ color: '#b45309' }}> · {q.linesMissing} not quoted</span>}
+                  </td>
+                  <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
+                    {days(q.leadTimeDays)}
+                    {q.id === cmp.fastestDelivery && <span style={{ marginLeft: 6, fontSize: '0.66rem', fontWeight: 800, color: '#2563eb', textTransform: 'uppercase' }}>Fastest</span>}
+                  </td>
+                  <td style={{ ...S.td, maxWidth: 180 }}>{q.paymentTerms || '—'}</td>
+                  <td style={{ ...S.td, whiteSpace: 'nowrap', color: q.freight === 'Extra' ? '#b45309' : undefined, fontWeight: q.freight === 'Extra' ? 700 : undefined }}>
+                    {q.freight || '—'}
                   </td>
                   <td className="no-print" style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {q.poNumber ? (

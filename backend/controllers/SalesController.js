@@ -16,6 +16,7 @@ const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
 const { runList } = require('../shared/listQuery');
 const { assertRefs, skuIdsOf } = require('../shared/ownedRefs');
+const { posForOrder } = require('../shared/poOrders');
 const { prepareLines } = require('../shared/lineChecks');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
@@ -174,7 +175,9 @@ exports.getOrderById = async (req, res) => {
     const cust = await db.query('SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)',
       [o.rows[0].customer_id, o.rows[0].owner_id]);
     const items = await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [req.params.id]);
-    res.json({ ...o.rows[0], customer: cust.rows[0] || null, items: items.rows });
+    /* the purchase orders bought for it (migration 076) */
+    const purchaseOrders = await posForOrder(db, o.rows[0].id);
+    res.json({ ...o.rows[0], customer: cust.rows[0] || null, items: items.rows, purchaseOrders });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
