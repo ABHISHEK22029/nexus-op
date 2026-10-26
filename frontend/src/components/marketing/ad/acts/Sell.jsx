@@ -48,76 +48,76 @@ export default function Sell({ t }) {
   const day = makeDay();
 
   return (
-    <div className="ad-act ad-sell">
+    <div className="reel-act reel-sell">
       <Browser at={BROWSER} url={typed(CATALOGUE_URL, t, 3000, 38)}
-        className={`ad-cat${bare ? ' is-bare' : ''}${aside ? ' is-aside' : ''}`}>
-        <div className="ad-cat-head">
-          <span className="ad-cat-logo">PF</span>
+        className={`reel-cat${bare ? ' is-bare' : ''}${aside ? ' is-aside' : ''}`}>
+        <div className="reel-cat-head">
+          <span className="reel-cat-logo">PF</span>
           <span><b>{SELLER.name}</b><small>Catalogue · {SELLER.city}</small></span>
-          <In on={t >= 3900} fx="pop" className="ad-btn is-wa ad-cat-share">
+          <In on={t >= 3900} fx="pop" className="reel-btn is-wa reel-cat-share">
             <MessageCircle size={14} /> Share on WhatsApp
           </In>
         </div>
 
         {/* the bracket: built large, then pulled back into the grid */}
-        <div className="ad-tile is-hero" style={{ left: 28, top: 106, width: TILE_W, transform: bare ? HERO_FROM : 'none' }}>
-          <In on={t >= 600} fx="zoom" className="ad-tile-art"><Bracket size={150} /></In>
-          <In on={t >= 900} fx="left" className="ad-tile-name">{PRODUCT.name}</In>
-          <In on={t >= 1200} fx="left" className="ad-tile-price">₹{inr(PRODUCT.rate)} <small>/ {PRODUCT.unit}</small></In>
-          <In on={t >= 1500} fx="fade" className="ad-tile-meta">
-            <span className="ad-chip">MOQ {PRODUCT.moq}</span><span className="ad-chip">{PRODUCT.leadTime}</span>
+        <div className="reel-tile is-hero" style={{ left: 28, top: 106, width: TILE_W, transform: bare ? HERO_FROM : 'none' }}>
+          <In on={t >= 600} fx="zoom" className="reel-tile-art"><Bracket size={150} /></In>
+          <In on={t >= 900} fx="left" className="reel-tile-name">{PRODUCT.name}</In>
+          <In on={t >= 1200} fx="left" className="reel-tile-price">₹{inr(PRODUCT.rate)} <small>/ {PRODUCT.unit}</small></In>
+          <In on={t >= 1500} fx="fade" className="reel-tile-meta">
+            <span className="reel-chip">MOQ {PRODUCT.moq}</span><span className="reel-chip">{PRODUCT.leadTime}</span>
           </In>
-          <In on={t >= 1800} fx="rise" className={`ad-btn ad-tile-btn${t >= 5480 && t < 6200 ? ' is-hot' : ''}`}>
+          <In on={t >= 1800} fx="rise" className={`reel-btn reel-tile-btn${t >= 5480 && t < 6200 ? ' is-hot' : ''}`}>
             <Plus size={14} /> Add to enquiry
           </In>
         </div>
         {OTHERS.map((o) => (
-          <div key={o.name} className="ad-tile" style={{ left: o.left, top: 106, width: TILE_W }}>
-            <span className={`ad-tile-art is-${o.shape}`}><i /></span>
-            <span className="ad-tile-name">{o.name}</span>
-            <span className="ad-tile-price">{o.price} <small>/ {o.unit}</small></span>
-            <span className="ad-btn is-ghost ad-tile-btn"><Plus size={14} /> Add to enquiry</span>
+          <div key={o.name} className="reel-tile" style={{ left: o.left, top: 106, width: TILE_W }}>
+            <span className={`reel-tile-art is-${o.shape}`}><i /></span>
+            <span className="reel-tile-name">{o.name}</span>
+            <span className="reel-tile-price">{o.price} <small>/ {o.unit}</small></span>
+            <span className="reel-btn is-ghost reel-tile-btn"><Plus size={14} /> Add to enquiry</span>
           </div>
         ))}
       </Browser>
 
       {/* shared: the link goes out, and arrives on WhatsApp */}
       <Lines><Thread d={FLY_LINK} on={t >= 4450} off={t >= 5500} dur={450} /></Lines>
-      <Rider d={FLY_LINK} on={t >= 4450} dur={450} className={`ad-pill-fly${t >= 4950 ? ' is-landed' : ''}`}>
-        <span className="ad-pill">maksops.co.in/c/…</span>
+      <Rider d={FLY_LINK} on={t >= 4450} dur={450} className={`reel-pill-fly${t >= 4950 ? ' is-landed' : ''}`}>
+        <span className="reel-pill">maksops.co.in/c/…</span>
       </Rider>
-      <In on={t >= 4850} off={aside} fx="pop" at={[1004, 262, 252, 178]} className="ad-wa">
-        <span className="ad-wa-h"><MessageCircle size={14} /> WhatsApp</span>
-        <span className="ad-wa-card">
-          <span className="ad-wa-prev"><MoMark size={30} /><span><b>{SELLER.name}</b><small>{CATALOGUE_URL}</small></span></span>
-          <span className="ad-wa-meta">Our catalogue — order online <CheckCheck size={14} /></span>
+      <In on={t >= 4850} off={aside} fx="pop" at={[1004, 262, 252, 178]} className="reel-wa">
+        <span className="reel-wa-h"><MessageCircle size={14} /> WhatsApp</span>
+        <span className="reel-wa-card">
+          <span className="reel-wa-prev"><MoMark size={30} /><span><b>{SELLER.name}</b><small>{CATALOGUE_URL}</small></span></span>
+          <span className="reel-wa-meta">Our catalogue — order online <CheckCheck size={14} /></span>
         </span>
       </In>
 
       {/* the customer's enquiry */}
-      <In on={t >= 6250} off={t >= 7300} fx="pop" at={[380, 300, 300, 210]} className="ad-card ad-drawer">
-        <b className="ad-drawer-h">Your enquiry</b>
-        <span className="ad-drawer-row"><Bracket size={38} /> <span>{PRODUCT.name}</span><b className="ad-qty">{QTY}</b></span>
-        <span className="ad-note">Brushed finish, 4 weeks</span>
-        <span className={`ad-btn ad-drawer-send${t >= 6400 && t < 7000 ? ' is-hot' : ''}`}>Send enquiry</span>
+      <In on={t >= 6250} off={t >= 7300} fx="pop" at={[380, 300, 300, 210]} className="reel-card reel-drawer">
+        <b className="reel-drawer-h">Your enquiry</b>
+        <span className="reel-drawer-row"><Bracket size={38} /> <span>{PRODUCT.name}</span><b className="reel-qty">{QTY}</b></span>
+        <span className="reel-note">Brushed finish, 4 weeks</span>
+        <span className={`reel-btn reel-drawer-send${t >= 6400 && t < 7000 ? ' is-hot' : ''}`}>Send enquiry</span>
       </In>
       <Lines><Thread d={FLY_ENQ} on={t >= 7100} dur={800} /></Lines>
-      <Rider d={FLY_ENQ} on={t >= 7100} dur={800} className={`ad-packet${t >= 7980 ? ' is-landed' : ''}`}>
-        <span className="ad-packet-in"><b>{IDS.enq}</b> {QTY} × {PRODUCT.name}</span>
+      <Rider d={FLY_ENQ} on={t >= 7100} dur={800} className={`reel-packet${t >= 7980 ? ' is-landed' : ''}`}>
+        <span className="reel-packet-in"><b>{IDS.enq}</b> {QTY} × {PRODUCT.name}</span>
       </Rider>
 
       {/* where it lands: Maks Ops */}
-      <In on={aside} fx="right" at={[800, 170, 450, 430]} className="ad-app-host">
+      <In on={aside} fx="right" at={[800, 170, 450, 430]} className="reel-app-host">
         <AppWin at={[0, 0, 450, 430]} active="marketing" badges={{ marketing: t >= 8200 ? 1 : 0 }} title="Enquiries"
           className={t >= 8200 ? 'is-pinged' : ''}>
-          <div className="ad-rows">
-            <In on={enquired} fx="drop" className="ad-row is-new">
+          <div className="reel-rows">
+            <In on={enquired} fx="drop" className="reel-row is-new">
               <span><b>{CUSTOMER.short}</b><small>{QTY} × {PRODUCT.name}</small></span>
-              <span className="ad-chip tone-blue">New</span>
+              <span className="reel-chip tone-blue">New</span>
             </In>
-            <div className="ad-row"><span><b>Orbit Infra</b><small>60 × Base Plate, 6 mm</small></span><span className="ad-chip">Quoted</span></div>
-            <div className="ad-row"><span><b>Sunrise Projects</b><small>40 m Cable Tray</small></span><span className="ad-chip">Quoted</span></div>
-            <div className="ad-row is-faint"><span><b>Deccan Builders</b><small>{day(-3)}</small></span><span className="ad-chip">Won</span></div>
+            <div className="reel-row"><span><b>Orbit Infra</b><small>60 × Base Plate, 6 mm</small></span><span className="reel-chip">Quoted</span></div>
+            <div className="reel-row"><span><b>Sunrise Projects</b><small>40 m Cable Tray</small></span><span className="reel-chip">Quoted</span></div>
+            <div className="reel-row is-faint"><span><b>Deccan Builders</b><small>{day(-3)}</small></span><span className="reel-chip">Won</span></div>
           </div>
         </AppWin>
       </In>

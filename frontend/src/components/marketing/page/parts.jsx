@@ -48,8 +48,8 @@ export function AdBand() {
   }, []);
   return (
     <>
-      <div id="the-film" className="mk-ad-slot mp-film-slot">
-        <Suspense fallback={<div className="mk-ad-ph" />}><ProductAd soundPrompt /></Suspense>
+      <div id="the-film" className="mk-reel-slot mp-film-slot">
+        <Suspense fallback={<div className="mk-reel-ph" />}><ProductAd soundPrompt /></Suspense>
       </div>
       <div className="mp-chips" role="group" aria-label="Play the film from a feature">
         {AD_CHIPS.map(({ label, Icon, at, scenes }) => {

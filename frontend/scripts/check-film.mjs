@@ -212,7 +212,7 @@ section(`ad voice: ${AD.VOICE.length} lines, every one recorded and finished bef
     }
     const name = NARR.clipName(l.text);
     const ms = clips[name];
-    if (!ms || !fs.existsSync(path.join(FRONT, 'public', 'voice', 'ad', name))) {
+    if (!ms || !fs.existsSync(path.join(FRONT, 'public', 'voice', 'reel', name))) {
       fail(`ad voice: "${l.text}" is not recorded — run node scripts/voiceover/make-ad.mjs`);
       return;
     }
@@ -235,6 +235,31 @@ section('ad numbers: production adds up', () => {
   if (+(((YIELD.issued - YIELD.scrap) / YIELD.issued) * 100).toFixed(1) !== YIELD.yieldPct) fail('yield ≠ (issued − scrap) ÷ issued');
   if (Math.round((YIELD.issued * rate - 960) / QTY) !== YIELD.costPerPiece) fail('cost per piece ≠ (issued × rate − scrap value) ÷ pieces');
   if (YIELD.issued !== QTY * TX.MATERIAL.perPiece) fail('material issued ≠ pieces × material per piece');
+});
+
+/* Ad blockers hide, on every site, elements whose class looks like an
+   advert: EasyList — the list uBlock Origin, AdBlock, AdGuard and Brave all
+   use — has ##.ad-frame, ##.ad-card, ##.ad-cta and hundreds more. The
+   homepage film was built with an ad- prefix, and for anyone with a blocker
+   the hero was its buttons and an empty space. Its names are reel- now; this
+   keeps an advert-looking class, id or file path from coming back. */
+section('ad blockers: no marketing class, id or file looks like an advert', () => {
+  const ADVERT = /(?:^|[^a-z0-9])(?:ad|ads|advert|advertisement|sponsor|sponsored)(?:[-_]|$)/i;
+  const MARKETING = path.join(SRC, 'components', 'marketing');
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(path.join(dir, d.name)) : [path.join(dir, d.name)]));
+  const files = [...walk(MARKETING), path.join(SRC, 'styles', 'motion.css'), ...['Welcome', 'HowItWorks', 'SeeMaksOps', 'PlatformCapabilities', 'GetStarted'].map((p) => path.join(SRC, 'pages', `${p}.jsx`))]
+    .filter((f) => /\.(css|jsx?)$/.test(f) && fs.existsSync(f));
+  const names = new Set();
+  for (const f of files) {
+    const s = fs.readFileSync(f, 'utf8');
+    const rel = path.relative(SRC, f);
+    if (f.endsWith('.css')) for (const m of s.matchAll(/[.#](-?[a-z_][\w-]*)/gi)) names.add(`${m[1]}  (${rel})`);
+    else for (const m of s.matchAll(/(?:className|id)=(?:"([^"]+)"|\{`([^`]+)`\}|\{'([^']+)'\})/g)) (m[1] || m[2] || m[3]).split(/\s+/).forEach((n) => names.add(`${n}  (${rel})`));
+  }
+  for (const n of names) if (ADVERT.test(n.split('  ')[0])) fail(`ad blockers: "${n}" looks like an advert, and blockers hide it — rename it`);
+  for (const dir of fs.readdirSync(path.join(FRONT, 'public'), { withFileTypes: true })) {
+    if (dir.isDirectory()) for (const sub of fs.readdirSync(path.join(FRONT, 'public', dir.name))) if (ADVERT.test(sub)) fail(`ad blockers: public/${dir.name}/${sub} — a path like that is blocked`);
+  }
 });
 
 if (failures) { console.log(`\n${failures} problem(s) with the product film or the ad`); process.exit(1); }

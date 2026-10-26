@@ -27,14 +27,14 @@ const MARK = 3100;          // the mark bursts out
 
 export default function Finale({ t }) {
   return (
-    <div className="ad-act ad-finale">
+    <div className="reel-act reel-finale">
       {TILES.map(([label, icon, i]) => {
         const Ico = icon;
         const c = i % 7, r = Math.floor(i / 7);
         const left = 73 + c * 164, top = 172 + r * 106;
         return (
           <div key={label}
-            className={`ad-tile2${t >= 80 + (c + r) * 55 ? ' is-on' : ''}${t >= GATHER ? ' is-gone' : ''}`}
+            className={`reel-tile2${t >= 80 + (c + r) * 55 ? ' is-on' : ''}${t >= GATHER ? ' is-gone' : ''}`}
             style={{ left, top, '--pull': `translate(${MX - (left + 75)}px, ${MY - (top + 46)}px) scale(0.1)`, '--pd': `${(6 - c) * 22}ms` }}>
             <Ico size={22} />
             <span>{label}</span>
@@ -42,15 +42,15 @@ export default function Finale({ t }) {
         );
       })}
 
-      <div className={`ad-end-mark${t >= MARK ? ' is-on' : ''}`} style={{ left: MX, top: MY }}>
-        <span className="ad-end-burst"><Burst on={t >= MARK} n={22} size={300} /></span>
+      <div className={`reel-end-mark${t >= MARK ? ' is-on' : ''}`} style={{ left: MX, top: MY }}>
+        <span className="reel-end-burst"><Burst on={t >= MARK} n={22} size={300} /></span>
         <MoMark size={104} />
       </div>
-      <h3 className={`ad-end-title${t >= 3500 ? ' is-on' : ''}`}>
+      <h3 className={`reel-end-title${t >= 3500 ? ' is-on' : ''}`}>
         From catalogue <span>to cash.</span>
       </h3>
-      <p className={`ad-end-sub${t >= 3900 ? ' is-on' : ''}`}>Run your business, not your spreadsheets.</p>
-      <p className={`ad-end-url${t >= 4500 ? ' is-on' : ''}`}>maksops.co.in</p>
+      <p className={`reel-end-sub${t >= 3900 ? ' is-on' : ''}`}>Run your business, not your spreadsheets.</p>
+      <p className={`reel-end-url${t >= 4500 ? ' is-on' : ''}`}>maksops.co.in</p>
     </div>
   );
 }

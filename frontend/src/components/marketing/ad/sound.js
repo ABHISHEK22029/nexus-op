@@ -25,7 +25,7 @@ import { clipName } from '../flow/narration';
    included.
 
    And a narrator: the voice-over (script.js VOICE), recorded clips in
-   /voice/ad/, fetched only once Sound is pressed and played on the same
+   /voice/reel/, fetched only once Sound is pressed and played on the same
    audio clock as the music, so a line pauses, resumes and jumps with the
    picture — after a jump, mid-sentence if that is where the ad is. While
    a line is spoken the music steps back, and comes up again after.
@@ -132,7 +132,7 @@ const freshBus = () => {
 };
 
 /* ── the narrator ── */
-const VOICE_DIR = '/voice/ad/';
+const VOICE_DIR = '/voice/reel/';
 const VOICE_LEVEL = 1.15;
 const DUCK = 0.32;                  // the music's level while a line is spoken
 const LINES = VOICE

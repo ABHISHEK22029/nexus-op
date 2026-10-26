@@ -42,41 +42,41 @@ export default function Source({ t }) {
   const bar = (on, frac) => ({ transform: `scaleX(${on ? frac : 0})` });
   const leaving = t >= DROP;
   return (
-    <div className="ad-act ad-source">
-      <In on fx="fade" off={leaving} className="ad-order-host" at={[64, 160, 380, 226]}>
+    <div className="reel-act reel-source">
+      <In on fx="fade" off={leaving} className="reel-order-host" at={[64, 160, 380, 226]}>
         <OrderCard at={[0, 0, 380, 226]} state="short" />
       </In>
 
       {/* the shortfall */}
-      <In on={t >= 100} off={leaving} fx="right" at={[480, 160, 736, 290]} className="ad-card ad-need">
-        <span className="ad-need-h"><span className="ad-eyebrow">Material requirements</span><b>{MATERIAL.name}</b></span>
+      <In on={t >= 100} off={leaving} fx="right" at={[480, 160, 736, 290]} className="reel-card reel-need">
+        <span className="reel-need-h"><span className="reel-eyebrow">Material requirements</span><b>{MATERIAL.name}</b></span>
         {[
           ['Needed for open orders', STOCK.needed, 1, 'slate', 400],
           ['In stock', STOCK.onHand, STOCK.onHand / STOCK.needed, 'blue', 900],
           ['Short', STOCK.short, STOCK.short / STOCK.needed, 'red', 1400],
         ].map(([label, kg, frac, tone, at]) => (
-          <span key={label} className={`ad-need-row tone-${tone}${t >= at + 900 && tone === 'red' ? ' is-glow' : ''}`}>
+          <span key={label} className={`reel-need-row tone-${tone}${t >= at + 900 && tone === 'red' ? ' is-glow' : ''}`}>
             <span>{label}</span>
-            <span className="ad-need-track"><i style={bar(t >= at, frac)} /></span>
+            <span className="reel-need-track"><i style={bar(t >= at, frac)} /></span>
             <b>{inr(Math.round(count(t, at, 900, 0, kg)))} kg</b>
           </span>
         ))}
       </In>
       <In on={t >= 2600} off={leaving} fx="pop" at={[956, 480, 260, 46]}
-        className={`ad-btn is-big${t >= 2700 && t < 3260 ? ' is-hot' : ''}`}>
+        className={`reel-btn is-big${t >= 2700 && t < 3260 ? ' is-hot' : ''}`}>
         <ShoppingCart size={15} /> Raise purchase orders
       </In>
 
       {/* the vendors' quotes, as they came */}
-      <In on={t >= DROP} off={t >= COLUMNS} fx="pop" at={[390, 160, 500, 360]} className="ad-drop">
-        <span className="ad-drop-h"><Upload size={15} /> Vendor quotes</span>
+      <In on={t >= DROP} off={t >= COLUMNS} fx="pop" at={[390, 160, 500, 360]} className="reel-drop">
+        <span className="reel-drop-h"><Upload size={15} /> Vendor quotes</span>
         {VENDORS.map((v, i) => (
-          <In key={v.name} on={t >= DROP + 300 + i * 300} fx="drop" className="ad-file" style={{ left: 50 + i * 140, top: 96 }}>
+          <In key={v.name} on={t >= DROP + 300 + i * 300} fx="drop" className="reel-file" style={{ left: 50 + i * 140, top: 96 }}>
             <FileIcon kind={KIND[v.kind]} size={64} />
             <small>{v.file}</small>
           </In>
         ))}
-        <i className={`ad-scan${t >= 5300 ? ' is-on' : ''}`} />
+        <i className={`reel-scan${t >= 5300 ? ' is-on' : ''}`} />
       </In>
 
       {/* read, and side by side */}
@@ -84,35 +84,35 @@ export default function Source({ t }) {
         const best = v.best && t >= BEST;
         return (
           <In key={v.name} on={t >= COLUMNS} off={t >= PO} fx="rise" d={i * 120} at={[200 + i * 305, 172, 270, 330]}
-            className={`ad-card ad-vq${best ? ' is-best' : ''}${t >= BEST && !v.best ? ' is-dim' : ''}`}>
-            {best && <span className="ad-vq-badge"><BadgeCheck size={14} /> Lowest like for like</span>}
-            <span className="ad-vq-file"><FileIcon kind={KIND[v.kind]} size={26} /> {v.file}</span>
-            <b className="ad-vq-name">{SHORT_NAMES[v.name]}</b>
-            <span className="ad-vq-rate">₹{v.rate}<small> / kg</small></span>
-            <span className="ad-muted">{STOCK.short} kg · ₹{inr(v.rate * STOCK.short)}</span>
-            {v.best && <In on={t >= 7600} fx="rise" className={`ad-btn ad-vq-po${t >= 8180 && t < 8760 ? ' is-hot' : ''}`}>Raise PO</In>}
+            className={`reel-card reel-vq${best ? ' is-best' : ''}${t >= BEST && !v.best ? ' is-dim' : ''}`}>
+            {best && <span className="reel-vq-badge"><BadgeCheck size={14} /> Lowest like for like</span>}
+            <span className="reel-vq-file"><FileIcon kind={KIND[v.kind]} size={26} /> {v.file}</span>
+            <b className="reel-vq-name">{SHORT_NAMES[v.name]}</b>
+            <span className="reel-vq-rate">₹{v.rate}<small> / kg</small></span>
+            <span className="reel-muted">{STOCK.short} kg · ₹{inr(v.rate * STOCK.short)}</span>
+            {v.best && <In on={t >= 7600} fx="rise" className={`reel-btn reel-vq-po${t >= 8180 && t < 8760 ? ' is-hot' : ''}`}>Raise PO</In>}
           </In>
         );
       })}
 
       {/* the purchase order, and its sign-off */}
-      <In on={t >= PO} fx="pop" at={[400, 168, 480, 320]} className="ad-card ad-po">
-        <span className="ad-eyebrow">Purchase order</span>
-        <b className="ad-id is-big">{IDS.po}</b>
-        <span className="ad-po-who">{VENDORS[1].name}</span>
-        <span className="ad-muted">{MATERIAL.name} · {STOCK.short} kg × ₹260</span>
-        <span className="ad-po-amt">₹{inr(PO_VALUE)}</span>
-        <In on={t >= 9800} fx="left" as="span" className="ad-po-rule">
+      <In on={t >= PO} fx="pop" at={[400, 168, 480, 320]} className="reel-card reel-po">
+        <span className="reel-eyebrow">Purchase order</span>
+        <b className="reel-id is-big">{IDS.po}</b>
+        <span className="reel-po-who">{VENDORS[1].name}</span>
+        <span className="reel-muted">{MATERIAL.name} · {STOCK.short} kg × ₹260</span>
+        <span className="reel-po-amt">₹{inr(PO_VALUE)}</span>
+        <In on={t >= 9800} fx="left" as="span" className="reel-po-rule">
           Over ₹{inr(APPROVAL_THRESHOLD)}, so it waits for sign-off
         </In>
-        <span className="ad-po-foot">
-          <span className={`ad-chip ${t >= SIGNED ? 'tone-green' : 'tone-amber is-pulse'}`}>{t >= SIGNED ? 'Approved' : 'Needs sign-off'}</span>
-          <In on={t >= 11900} fx="pop" as="span" className={`ad-btn is-green${t >= 12080 && t < 12660 ? ' is-hot' : ''}`}><ShieldCheck size={14} /> Sign off</In>
+        <span className="reel-po-foot">
+          <span className={`reel-chip ${t >= SIGNED ? 'tone-green' : 'tone-amber is-pulse'}`}>{t >= SIGNED ? 'Approved' : 'Needs sign-off'}</span>
+          <In on={t >= 11900} fx="pop" as="span" className={`reel-btn is-green${t >= 12080 && t < 12660 ? ' is-hot' : ''}`}><ShieldCheck size={14} /> Sign off</In>
         </span>
-        <In on={t >= SIGNED} fx="stamp" className="ad-stamp tone-green" style={{ left: 250, top: 60 }}>Signed off</In>
+        <In on={t >= SIGNED} fx="stamp" className="reel-stamp tone-green" style={{ left: 250, top: 60 }}>Signed off</In>
       </In>
-      <In on={t >= 11800} fx="right" at={[930, 214, 200, 64]} className="ad-who">
-        <span className="ad-who-av">F</span><span><b>Finance</b><small>can sign off</small></span>
+      <In on={t >= 11800} fx="right" at={[930, 214, 200, 64]} className="reel-who">
+        <span className="reel-who-av">F</span><span><b>Finance</b><small>can sign off</small></span>
       </In>
 
       <Cursor t={t} path={CURSOR} until={13800} />

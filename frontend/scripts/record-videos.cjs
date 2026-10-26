@@ -221,9 +221,9 @@ async function drawn(page, selector, realMs = 20000) {
 /* The homepage loads the ad only when it is scrolled near: scroll to its
    section (always there), let it load, then centre the frame itself. */
 async function toAd(page) {
-  await page.evaluate(() => document.querySelector('.mk-ad-section')?.scrollIntoView({ block: 'center' }));
-  await drawn(page, '.ad-frame');
-  await page.evaluate(() => document.querySelector('.ad-frame').scrollIntoView({ block: 'center' }));
+  await page.evaluate(() => document.querySelector('.mk-reel-section')?.scrollIntoView({ block: 'center' }));
+  await drawn(page, '.reel-frame');
+  await page.evaluate(() => document.querySelector('.reel-frame').scrollIntoView({ block: 'center' }));
   await settle(page, 800);
 }
 
@@ -311,7 +311,7 @@ async function recordAd(browser) {
   const probe = await newPage(browser, { width: 1440, height: 1100 });
   await probe.goto(`${UI}/`, { waitUntil: 'networkidle0' });
   await toAd(probe);
-  const w = await probe.evaluate(() => document.querySelector('.ad-frame')?.getBoundingClientRect().width || 0);
+  const w = await probe.evaluate(() => document.querySelector('.reel-frame')?.getBoundingClientRect().width || 0);
   await probe.close();
   if (!w) throw new Error('the ad was not found on the homepage');
   const dpr = 1920 / w;
@@ -319,18 +319,18 @@ async function recordAd(browser) {
   const page = await newPage(browser, { width: 1440, height: 1100, dpr });
   await page.goto(`${UI}/`, { waitUntil: 'networkidle0' });
   await toAd(page);
-  const sound = await page.$('.ad-ctl[aria-label="Sound"]');
+  const sound = await page.$('.reel-ctl[aria-label="Sound"]');
   if (!sound) throw new Error('the ad\'s Sound button was not found');
   await sound.click();
   await page.mouse.move(0, 0);
   if (!(await page.evaluate(() => !!window.__vtAudio))) throw new Error('pressing Sound did not start the ad\'s audio');
   /* the frame only: its controls are not part of the film — hidden after
      the click, since a hidden button cannot be pressed */
-  await page.addStyleTag({ content: '.ad-controls,.ad-progress{visibility:hidden !important} .mkt-nav{visibility:hidden !important} .ad-frame{border-radius:0 !important}' });
+  await page.addStyleTag({ content: '.reel-controls,.reel-progress{visibility:hidden !important} .mkt-nav{visibility:hidden !important} .reel-frame{border-radius:0 !important}' });
   await page.evaluate(() => window.__MK_AD__.seek(0));
   await step(page);
-  const box = await page.evaluate(() => { const r = document.querySelector('.ad-canvas').getBoundingClientRect(); return { x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height }; });
-  if (process.env.DEBUG_REC) log('ad box', JSON.stringify(box), await page.evaluate(() => JSON.stringify({ y: window.scrollY, h: window.innerHeight, frames: document.querySelectorAll('.ad-frame').length })));
+  const box = await page.evaluate(() => { const r = document.querySelector('.reel-canvas').getBoundingClientRect(); return { x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height }; });
+  if (process.env.DEBUG_REC) log('ad box', JSON.stringify(box), await page.evaluate(() => JSON.stringify({ y: window.scrollY, h: window.innerHeight, frames: document.querySelectorAll('.reel-frame').length })));
   const r = await capture(page, {
     name: 'ad', clip: box, size: { w: 1920, h: 1080 },
     done: (p) => p.evaluate(() => { const s = window.__MK_AD__?.state(); return !!s && (s.ended || s.phase === 'ended' || s.ms >= window.__MK_AD__.duration); }),
@@ -338,7 +338,7 @@ async function recordAd(browser) {
   });
   const audio = await page.evaluate(() => window.__vt.renderAudio());
   if (!audio) throw new Error('the ad made no sound to record');
-  const wav = path.join(work, 'ad-music.wav');
+  const wav = path.join(work, 'reel-music.wav');
   fs.writeFileSync(wav, Buffer.from(audio.wav, 'base64'));
   const file = await mux('Maks Ops - 58 second ad', r.file, wav, r.seconds, { audioOffset: r.startV - audio.t0 });
   await page.close();

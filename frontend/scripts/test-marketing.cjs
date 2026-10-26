@@ -376,8 +376,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   for (const pth of ['/', '/how-it-works', '/see-maksops']) {
     await go(pth);
     const films = await page.evaluate(() => ({
-      players: document.querySelectorAll('.ad-frame, .fl-root, .fm-film').length,
-      roots: [...document.querySelectorAll('.ad-frame, .fl-root, .fm-film')].filter(e => !e.parentElement.closest('.ad-frame, .fl-root, .fm-film')).length,
+      players: document.querySelectorAll('.reel-frame, .fl-root, .fm-film').length,
+      roots: [...document.querySelectorAll('.reel-frame, .fl-root, .fm-film')].filter(e => !e.parentElement.closest('.reel-frame, .fl-root, .fm-film')).length,
     }));
     ok(films.roots === 1, `${pth} shows its film once, at the top (${films.roots})`);
   }

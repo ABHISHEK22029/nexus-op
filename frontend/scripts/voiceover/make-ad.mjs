@@ -13,7 +13,7 @@
      node make-ad.mjs --check          say what is missing; records nothing
      node make-ad.mjs --voice af_bella --speed 1.1 --force
 
-   Each line becomes public/voice/ad/<hash of its words>.mp3, and
+   Each line becomes public/voice/reel/<hash of its words>.mp3, and
    src/components/marketing/ad/voice-clips.json lists the clips and their
    lengths (the ad plays them by name; check-film.mjs measures them). A
    line already recorded in the same voice and speed is left alone; clips
@@ -28,7 +28,7 @@ import { clipName } from '../../src/components/marketing/flow/narration.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONT = path.resolve(HERE, '..', '..');
-const OUT = path.join(FRONT, 'public', 'voice', 'ad');
+const OUT = path.join(FRONT, 'public', 'voice', 'reel');
 const MANIFEST = path.join(FRONT, 'src', 'components', 'marketing', 'ad', 'voice-clips.json');
 
 const arg = (name, dflt) => {

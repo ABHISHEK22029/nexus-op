@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Pause, Play, RotateCcw, Volume2, VolumeX, ArrowRight } from 'lucide-react';
+import { Pause, Play, RotateCcw, Volume2, VolumeX, ArrowRight, Maximize2, Minimize2 } from 'lucide-react';
 import useInView from '../../../hooks/useInView';
 import { useStoryClock, useReducedMotion, usePageShown } from '../flow/engine';
 import Stage from '../film/shell/Stage';
@@ -49,11 +49,11 @@ function Caption({ line, state }) {
   const accent = line.accent ? line.accent.split(' ') : [];
   const from = accent.length ? words.findIndex((w, i) => accent.every((a, k) => words[i + k] === a)) : -1;
   return (
-    <p className={`ad-cap is-${state}`}>
+    <p className={`reel-cap is-${state}`}>
       {words.map((w, i) => (
         <React.Fragment key={i}>
           {i > 0 && ' '}
-          <span className={`ad-cap-w${from >= 0 && i >= from && i < from + accent.length ? ' is-accent' : ''}`}
+          <span className={`reel-cap-w${from >= 0 && i >= from && i < from + accent.length ? ' is-accent' : ''}`}
             style={{ '--i': i }}>{w}</span>
         </React.Fragment>
       ))}
@@ -61,12 +61,27 @@ function Caption({ line, state }) {
   );
 }
 
+/* a touch screen taller than it is wide — a phone held upright. Touch
+   only: a tall desktop monitor is not a phone to be turned sideways. */
+function usePortrait() {
+  const query = '(orientation: portrait) and (pointer: coarse)';
+  const [portrait, setPortrait] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return undefined;
+    const on = () => setPortrait(mq.matches);
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
+  return portrait;
+}
+
 function Captions({ ms, layout }) {
   const { scene, t } = sceneAt(ms);
   let cur = -1;
   scene.caption.forEach((l, i) => { if (t >= l.at && (l.until == null || t < l.until)) cur = i; });
   return (
-    <div className={`ad-caps is-${scene.place || 'top'} is-${layout}`}>
+    <div className={`reel-caps is-${scene.place || 'top'} is-${layout}`}>
       {scene.caption.map((l, i) => (
         <Caption key={`${scene.key}-${i}`} line={l} state={i === cur ? 'in' : i < cur || (l.until != null && t >= l.until) ? 'out' : 'wait'} />
       ))}
@@ -77,15 +92,15 @@ function Captions({ ms, layout }) {
 function ActLayer({ act, t, layout, leaving }) {
   const View = VIEWS[act.key];
   return (
-    <div className={`ad-layer${leaving ? ' is-leaving' : ''}`}>
+    <div className={`reel-layer${leaving ? ' is-leaving' : ''}`}>
       <View t={t} layout={layout} />
     </div>
   );
 }
 
 /* Outside the ad, a page can jump it to a moment — the feature chips under
-   the homepage's hero do — by dispatching `mk-ad-seek` with the time; the ad
-   announces each scene it reaches as `mk-ad-scene`, so those chips can show
+   the homepage's hero do — by dispatching `mk-reel-seek` with the time; the ad
+   announces each scene it reaches as `mk-reel-scene`, so those chips can show
    where it is. Window events keep the two apart: the ad is loaded lazily,
    and the chips are drawn before it exists. */
 
@@ -128,6 +143,50 @@ export default function ProductAd({ className = '', soundPrompt = false }) {
     goTo(0); setPaused(false);
   };
 
+  /* Full screen: the browser's own where it has one, turned to landscape on
+     a phone that allows it (Android). An iPhone has no full screen for
+     anything but a <video>, so there the film fills the window instead —
+     and, held upright, turns itself sideways, as a video player would. */
+  const [full, setFull] = useState(false);
+  const [fill, setFill] = useState(false);
+  const portrait = usePortrait();
+  const toggleFull = () => {
+    const el = viewRef.current;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+      return;
+    }
+    if (fill) { setFill(false); return; }
+    const request = el?.requestFullscreen || el?.webkitRequestFullscreen;
+    if (!request) { setFill(true); return; }
+    Promise.resolve(request.call(el))
+      .then(() => screen.orientation?.lock?.('landscape').catch(() => {}))
+      .catch(() => setFill(true));
+  };
+  useEffect(() => {
+    const on = () => {
+      const now = (document.fullscreenElement || document.webkitFullscreenElement) === viewRef.current;
+      setFull(now);
+      if (!now) try { screen.orientation?.unlock?.(); } catch { /* not supported */ }
+    };
+    document.addEventListener('fullscreenchange', on);
+    document.addEventListener('webkitfullscreenchange', on);
+    return () => {
+      document.removeEventListener('fullscreenchange', on);
+      document.removeEventListener('webkitfullscreenchange', on);
+    };
+  }, [viewRef]);
+  /* filling the window: the page behind stops scrolling, Escape leaves */
+  useEffect(() => {
+    if (!fill) return undefined;
+    const root = document.documentElement;
+    root.classList.add('reel-filling');
+    const onKey = (e) => { if (e.key === 'Escape') setFill(false); };
+    window.addEventListener('keydown', onKey);
+    return () => { root.classList.remove('reel-filling'); window.removeEventListener('keydown', onKey); };
+  }, [fill]);
+  const fullOn = full || fill;
+
   /* jumps asked for from outside (the feature chips) */
   useEffect(() => {
     const onSeek = (e) => {
@@ -149,7 +208,7 @@ export default function ProductAd({ className = '', soundPrompt = false }) {
   /* the tests' handle: where it is, and a way to go anywhere */
   const live = useRef({});
   useEffect(() => {
-    live.current = { ms, viewMs, running, ended, started: seen, scene: scene.key, act: act.key, layout, reduced, sound, paused };
+    live.current = { ms, viewMs, running, ended, started: seen, scene: scene.key, act: act.key, layout, reduced, sound, paused, full, fill };
   });
   useEffect(() => {
     window.__MK_AD__ = {
@@ -161,51 +220,59 @@ export default function ProductAd({ className = '', soundPrompt = false }) {
   }, [goTo]);
 
   return (
-    <div ref={viewRef} className={`ad ${className}`} role="group" aria-roledescription="product film"
+    <div ref={viewRef} className={`reel${full ? ' is-full' : ''}${fill ? ' is-fill' : ''}${fullOn && portrait ? ' is-turned' : ''} ${className}`}
+      role="group" aria-roledescription="product film"
       aria-label="Maks Ops in a minute and a half: one order, from a catalogue enquiry to a paid invoice, and the platform around it">
-      <div ref={frameRef} className={`ad-frame is-${layout}${reduced ? ' is-reduced' : ''}${running && !ended ? '' : ' is-paused'}`}>
+      {/* the frame and its controls: in full screen on an upright phone, this turns sideways */}
+      <div className="reel-body">
+      <div ref={frameRef} className={`reel-frame is-${layout}${reduced ? ' is-reduced' : ''}${running && !ended ? '' : ' is-paused'}`}>
         <Stage layout={layout}>
-          <div className="ad-canvas" aria-hidden="true">
-            <div className="ad-grid" />
+          <div className="reel-canvas" aria-hidden="true">
+            <div className="reel-grid" />
             {leaving && <ActLayer key={leaving.key} act={leaving} t={viewMs - leaving.at} layout={layout} leaving />}
             <ActLayer key={act.key} act={act} t={actT} layout={layout} />
             {/* a sweep of light across the frame as each act begins */}
-            {actIdx > 0 && !reduced && actT < 1400 && <i key={`sweep-${act.key}`} className="ad-sweep" />}
+            {actIdx > 0 && !reduced && actT < 1400 && <i key={`sweep-${act.key}`} className="reel-sweep" />}
             <Captions ms={viewMs} layout={layout} />
           </div>
           {viewMs >= CTA_FROM && (
-            <Link to="/login" className="ad-cta" style={box(CTA_AT)}>
+            <Link to="/login" className="reel-cta" style={box(CTA_AT)}>
               Test Maks Ops <ArrowRight size={17} />
             </Link>
           )}
         </Stage>
-        <i className="ad-progress" style={{ transform: `scaleX(${ms / AD_MS})` }} aria-hidden="true" />
+        <i className="reel-progress" style={{ transform: `scaleX(${ms / AD_MS})` }} aria-hidden="true" />
         {soundPrompt && !sound && !ended && supportsSound() && (
-          <button type="button" className="ad-play-sound" onClick={withSound}>
-            <span className="ad-play-sound-ico"><Play size={16} fill="currentColor" /></span> Play with sound
+          <button type="button" className="reel-play-sound" onClick={withSound}>
+            <span className="reel-play-sound-ico"><Play size={16} fill="currentColor" /></span> Play with sound
           </button>
         )}
       </div>
 
       {/* below the frame, so they never cover what the film is showing */}
-      <div className="ad-controls">
+      <div className="reel-controls">
         {!ended && (
-          <button type="button" className="ad-ctl" onClick={() => setPaused((p) => !p)} aria-label={paused ? 'Play' : 'Pause'}>
+          <button type="button" className="reel-ctl" onClick={() => setPaused((p) => !p)} aria-label={paused ? 'Play' : 'Pause'}>
             {paused ? <Play size={14} /> : <Pause size={14} />}
           </button>
         )}
         {supportsSound() && (
-          <button type="button" className={`ad-ctl${sound ? ' is-on' : ''}`} onClick={toggleSound} aria-pressed={sound} aria-label="Sound">
+          <button type="button" className={`reel-ctl${sound ? ' is-on' : ''}`} onClick={toggleSound} aria-pressed={sound} aria-label="Sound">
             {sound ? <Volume2 size={14} /> : <VolumeX size={14} />}<span>{sound ? 'Sound on' : 'Play sound'}</span>
           </button>
         )}
-        <button type="button" className={`ad-ctl${ended ? ' is-on' : ''}`} onClick={replay} aria-label="Replay">
+        <button type="button" className={`reel-ctl is-replay${ended ? ' is-on' : ''}`} onClick={replay} aria-label="Replay">
           <RotateCcw size={14} /><span>Replay</span>
         </button>
+        <button type="button" className="reel-ctl is-full-btn" onClick={toggleFull} aria-pressed={fullOn}
+          aria-label={fullOn ? 'Exit full screen' : 'Full screen'}>
+          {fullOn ? <Minimize2 size={14} /> : <Maximize2 size={14} />}<span>{fullOn ? 'Exit' : 'Full screen'}</span>
+        </button>
+      </div>
       </div>
 
       {/* the whole story as text, for screen readers and anyone without the picture */}
-      <ol className="ad-sr">
+      <ol className="reel-sr">
         {SCENES.map((s) => <li key={s.key}>{s.sr}</li>)}
       </ol>
     </div>

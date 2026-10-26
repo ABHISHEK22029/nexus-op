@@ -26,32 +26,32 @@ export default function Stock({ t }) {
   const level = t >= POUR ? STOCK.after : STOCK.onHand;
   const kg = Math.round(count(t, POUR, FULL - POUR, STOCK.onHand, STOCK.after));
   return (
-    <div className="ad-act ad-stock">
-      <In on fx="left" at={[70, 230, 330, 210]} className="ad-card ad-grn">
-        <span className="ad-grn-ico"><PackageCheck size={22} /></span>
-        <span className="ad-eyebrow">Goods receipt</span>
-        <b className="ad-id is-big">{IDS.grn}</b>
-        <span className="ad-grn-what">{MATERIAL.name}</span>
-        <span className="ad-muted">{STOCK.short} kg · from {VENDORS[1].name}</span>
-        <span className="ad-chip tone-green"><Check size={12} /> Received</span>
+    <div className="reel-act reel-stock">
+      <In on fx="left" at={[70, 230, 330, 210]} className="reel-card reel-grn">
+        <span className="reel-grn-ico"><PackageCheck size={22} /></span>
+        <span className="reel-eyebrow">Goods receipt</span>
+        <b className="reel-id is-big">{IDS.grn}</b>
+        <span className="reel-grn-what">{MATERIAL.name}</span>
+        <span className="reel-muted">{STOCK.short} kg · from {VENDORS[1].name}</span>
+        <span className="reel-chip tone-green"><Check size={12} /> Received</span>
       </In>
 
       {Array.from({ length: 11 }, (_, i) => {
         const at = POUR + i * 170;
-        return <Rider key={i} d={FLOW} on={t >= at} dur={850} className={`ad-drip${t >= at + 850 ? ' is-landed' : ''}`} />;
+        return <Rider key={i} d={FLOW} on={t >= at} dur={850} className={`reel-drip${t >= at + 850 ? ' is-landed' : ''}`} />;
       })}
 
-      <In on={t >= 150} fx="rise" at={[545, 150, 190, 440]} className="ad-tank">
-        <span className="ad-tank-h">{MATERIAL.name.split(',')[0]}</span>
-        <span className="ad-tank-glass">
-          <i className="ad-tank-fill" style={{ transform: `scaleY(${level / CAP})` }} />
-          <i className="ad-tank-mark" style={{ bottom: `${(STOCK.onHand / CAP) * 100}%` }}><span>{STOCK.onHand} kg</span></i>
+      <In on={t >= 150} fx="rise" at={[545, 150, 190, 440]} className="reel-tank">
+        <span className="reel-tank-h">{MATERIAL.name.split(',')[0]}</span>
+        <span className="reel-tank-glass">
+          <i className="reel-tank-fill" style={{ transform: `scaleY(${level / CAP})` }} />
+          <i className="reel-tank-mark" style={{ bottom: `${(STOCK.onHand / CAP) * 100}%` }}><span>{STOCK.onHand} kg</span></i>
         </span>
-        <b className={`ad-tank-kg${t >= FULL ? ' is-full' : ''}`}>{inr(kg)} kg</b>
+        <b className={`reel-tank-kg${t >= FULL ? ' is-full' : ''}`}>{inr(kg)} kg</b>
       </In>
 
       <Lines><Thread d={TO_ORDER} on={t >= FULL} dur={400} /></Lines>
-      <In on fx="fade" at={[860, 230, 360, 214]} className="ad-order-host">
+      <In on fx="fade" at={[860, 230, 360, 214]} className="reel-order-host">
         <OrderCard at={[0, 0, 360, 214]} state={t >= READY ? 'ready' : 'short'} />
       </In>
     </div>

@@ -71,13 +71,13 @@ const SPY = () => {
     return { page, loaded };
   };
   const toAd = async (page) => {
-    await page.evaluate(() => document.querySelector('.mk-ad-slot').scrollIntoView({ block: 'center' }));
+    await page.evaluate(() => document.querySelector('.mk-reel-slot').scrollIntoView({ block: 'center' }));
     await page.waitForFunction(() => window.__MK_AD__, { timeout: 15000 });
     await sleep(500);
   };
   const state = (page) => page.evaluate(() => window.__MK_AD__.state());
   const seek = async (page, ms, wait = 700) => { await page.evaluate((x) => window.__MK_AD__.seek(x), ms); await sleep(wait); };
-  const caption = (page) => page.evaluate(() => [...document.querySelectorAll('.ad-cap.is-in')].map((p) => p.textContent.replace(/\s+/g, ' ').trim()).join(' | '));
+  const caption = (page) => page.evaluate(() => [...document.querySelectorAll('.reel-cap.is-in')].map((p) => p.textContent.replace(/\s+/g, ' ').trim()).join(' | '));
 
   try {
     console.log('\n  ── on the homepage');
@@ -89,7 +89,7 @@ const SPY = () => {
       return hero && {
         h: hero.querySelector('h1')?.textContent,
         first: hero === document.querySelector('.mp > section'),
-        slot: Boolean(hero.querySelector('#the-film.mk-ad-slot')),
+        slot: Boolean(hero.querySelector('#the-film.mk-reel-slot')),
         chips: hero.querySelectorAll('.mp-chip').length,
       };
     });
@@ -113,21 +113,21 @@ const SPY = () => {
     await sleep(700);
     s0 = await state(page); await sleep(800); s1 = await state(page);
     ok(!s1.running && s1.ms === s0.ms, 'scrolled away, it pauses');
-    await page.evaluate(() => document.querySelector('.mk-ad-slot').scrollIntoView({ block: 'center' }));
+    await page.evaluate(() => document.querySelector('.mk-reel-slot').scrollIntoView({ block: 'center' }));
     await sleep(900);
     ok((await state(page)).running, 'and carries on when it is back in view');
 
     console.log('\n  ── controls');
-    await page.click('.ad-controls button[aria-label="Pause"]');
+    await page.click('.reel-controls button[aria-label="Pause"]');
     await sleep(250);            // the clock commits its last frame, then sleeps
     s0 = await state(page); await sleep(700); s1 = await state(page);
     ok(s1.paused && s1.ms === s0.ms, 'Pause holds it');
-    await page.click('.ad-controls button[aria-label="Play"]');
+    await page.click('.reel-controls button[aria-label="Play"]');
     await sleep(600);
     ok((await state(page)).running, 'Play resumes it');
-    await page.click('.ad-controls button[aria-label="Sound"]');
+    await page.click('.reel-controls button[aria-label="Sound"]');
     await sleep(300);
-    ok(await page.evaluate(() => window.__audioContexts === 1 && document.querySelector('.ad-controls button[aria-label="Sound"]').getAttribute('aria-pressed') === 'true'),
+    ok(await page.evaluate(() => window.__audioContexts === 1 && document.querySelector('.reel-controls button[aria-label="Sound"]').getAttribute('aria-pressed') === 'true'),
       'Sound makes the one audio context, and says it is on');
     /* it must be heard: the loudest moment in two seconds of the groove
        has to reach a normal level, not a whisper */
@@ -145,19 +145,33 @@ const SPY = () => {
     const said0 = await page.evaluate(() => window.__MK_AD_VOICE__.said());
     await seek(page, 22300, 1300);
     ok(await page.evaluate((n) => window.__MK_AD_VOICE__.said() > n, said0), 'and the narrator speaks on cue ("One click turns it into a complete quotation…")');
-    await page.click('.ad-controls button[aria-label="Pause"]');
+    await page.click('.reel-controls button[aria-label="Pause"]');
     await sleep(400);
     ok(await page.evaluate(() => window.__ac.state === 'suspended'), 'pausing the picture pauses the music');
-    await page.click('.ad-controls button[aria-label="Play"]');
+    await page.click('.reel-controls button[aria-label="Play"]');
     await sleep(400);
     ok(await page.evaluate(() => window.__ac.state === 'running'), 'and Play brings it back, in step');
-    await page.click('.ad-controls button[aria-label="Sound"]');
+    await page.click('.reel-controls button[aria-label="Sound"]');
     await sleep(300);
     ok(await page.evaluate(() => window.__ac.state === 'suspended'), 'Sound off silences it');
     await seek(page, 30000);
-    await page.click('.ad-controls button[aria-label="Replay"]');
+    await page.click('.reel-controls button[aria-label="Replay"]');
     await sleep(300);
     ok((await state(page)).ms < 1000, 'Replay goes back to the start');
+
+    /* Full screen: the browser's own, the picture as large as the screen
+       allows at 16:9, still playing — and back again */
+    await page.click('.reel-controls button[aria-label="Full screen"]');
+    await sleep(900);
+    const fs = await page.evaluate(() => {
+      const r = document.querySelector('.reel-frame').getBoundingClientRect();
+      return { native: document.fullscreenElement === document.querySelector('.reel'), w: r.width, h: r.height, vw: innerWidth, vh: innerHeight };
+    });
+    ok(fs.native && (fs.w > fs.vw * 0.95 || fs.h > fs.vh * 0.85) && Math.abs(fs.h / fs.w - 720 / 1280) < 0.02 && (await state(page)).running,
+      `Full screen fills the screen at 16:9, still playing (${Math.round(fs.w)} × ${Math.round(fs.h)} of ${fs.vw} × ${fs.vh})`);
+    await page.click('.reel-controls button[aria-label="Exit full screen"]');
+    await sleep(700);
+    ok(await page.evaluate(() => !document.fullscreenElement && !document.querySelector('.reel').className.includes('is-full')), 'and Exit brings it back to the page');
 
     console.log('\n  ── the story');
     await page.evaluate(() => { window.__MK_AD_SPEED__ = 0; });
@@ -169,14 +183,14 @@ const SPY = () => {
         ok(shown === c.text, `${sc.key}: "${c.text}"${shown === c.text ? '' : ` — showed "${shown}"`}`);
       }
     }
-    const text = (ms) => seek(page, ms, 1200).then(() => page.evaluate(() => document.querySelector('.ad-canvas').innerText));
+    const text = (ms) => seek(page, ms, 1200).then(() => page.evaluate(() => document.querySelector('.reel-canvas').innerText));
     const a = await text(33500); const b = await text(33500);
     ok(a === b && /Can build\s*57 of 120/.test(a), 'the same moment draws the same picture, every time (the order: "Can build 57 of 120")');
     ok(/All 120 can be built with stock on hand/.test(await text(53500)), 'after the goods receipt: "All 120 can be built with stock on hand"');
     await seek(page, 75500, 1200);
     const roles = await page.evaluate(() => ({
-      active: document.querySelector('.ad-role.is-active')?.textContent.trim(),
-      yes: [...document.querySelectorAll('.ad-cap-row.is-yes')].map((r) => r.textContent.trim()),
+      active: document.querySelector('.reel-role.is-active')?.textContent.trim(),
+      yes: [...document.querySelectorAll('.reel-cap-row.is-yes')].map((r) => r.textContent.trim()),
     }));
     ok(/Procurement/.test(roles.active) && roles.yes.join(',') === 'Purchase orders,Goods receipt',
       `the roles card shows what a role may do, from its real permissions (Procurement: ${roles.yes.join(', ')})`);
@@ -184,10 +198,10 @@ const SPY = () => {
     const menu = await text(85600);
     ok(/not yet read/.test(menu) && /awaiting approval/.test(menu) && /missing an e-way bill/.test(menu), 'the menu counts what is waiting, in the app\'s own words');
     await seek(page, AD.AD_MS);
-    const cta = await page.evaluate(() => { const l = document.querySelector('a.ad-cta'); return l && { href: l.getAttribute('href'), text: l.textContent.trim() }; });
+    const cta = await page.evaluate(() => { const l = document.querySelector('a.reel-cta'); return l && { href: l.getAttribute('href'), text: l.textContent.trim() }; });
     ok(cta && cta.href === '/login' && /Test Maks Ops/.test(cta.text), `it ends on a real link: "${cta?.text}" → ${cta?.href}`);
-    ok(await page.evaluate(() => document.querySelectorAll('.ad-sr li').length) === AD.SCENES.length, 'the whole story is there as text for screen readers');
-    ok(await page.evaluate(() => document.querySelector('.ad-canvas').getAttribute('aria-hidden') === 'true'), 'and the picture itself is hidden from them');
+    ok(await page.evaluate(() => document.querySelectorAll('.reel-sr li').length) === AD.SCENES.length, 'the whole story is there as text for screen readers');
+    ok(await page.evaluate(() => document.querySelector('.reel-canvas').getAttribute('aria-hidden') === 'true'), 'and the picture itself is hidden from them');
     await page.close();
 
     console.log('\n  ── reduced motion');
@@ -198,14 +212,14 @@ const SPY = () => {
     const rs = await state(r.page);
     const inv = AD.SCENES.find((x) => x.key === 'grn');
     ok(rs.reduced && rs.viewMs === inv.at + inv.still, 'each scene is shown finished');
-    ok(await r.page.evaluate(() => document.querySelector('.ad-frame').classList.contains('is-reduced')), 'with plain fades, not movement');
+    ok(await r.page.evaluate(() => document.querySelector('.reel-frame').classList.contains('is-reduced')), 'with plain fades, not movement');
     await r.page.close();
 
     console.log('\n  ── on a phone');
     const m = await open({ width: 390, height: 844 });
     await toAd(m.page);
     await m.page.evaluate(() => { window.__MK_AD_SPEED__ = 0; });
-    const shape = await m.page.evaluate(() => { const r = document.querySelector('.ad-frame').getBoundingClientRect(); return { w: r.width, h: r.height }; });
+    const shape = await m.page.evaluate(() => { const r = document.querySelector('.reel-frame').getBoundingClientRect(); return { w: r.width, h: r.height }; });
     ok((await state(m.page)).layout === 'wide' && Math.abs(shape.h / shape.w - 720 / 1280) < 0.02,
       `it plays as the same 16:9 film, across the screen (${Math.round(shape.w)} × ${Math.round(shape.h)})`);
     let wide = 0;

@@ -68,13 +68,23 @@
 .mp-hero-text { display: flex; flex-direction: column; align-items: center; gap: 20px; text-align: center; }
 .mp-hero-text .mp-btns { margin-top: 8px; }
 .mp-film-slot { max-width: min(1160px, 118vh); margin: 52px auto 0; }
-.mp-film-slot .ad-frame { border-color: hsl(222 40% 22%); box-shadow: 0 50px 120px -50px #000, 0 0 0 1px hsl(0 0% 100% / 0.04) inset; }
-.is-dark .ad-controls { justify-content: center; }
-.is-dark .ad-ctl { background: hsl(0 0% 100% / 0.06); border-color: hsl(0 0% 100% / 0.14); color: #c9d3e8; }
-.is-dark .ad-ctl:hover { color: #fff; border-color: hsl(0 0% 100% / 0.3); }
-.is-dark .ad-ctl.is-on { color: hsl(32 100% 66%); border-color: hsl(28 100% 54% / 0.6); }
-.is-dark .mk-ad-ph { background: hsl(225 45% 10%); border-color: hsl(222 40% 20%); }
+.mp-film-slot .reel-frame { border-color: hsl(222 40% 22%); box-shadow: 0 50px 120px -50px #000, 0 0 0 1px hsl(0 0% 100% / 0.04) inset; }
+.is-dark .reel-controls { justify-content: center; }
+.is-dark .reel-ctl { background: hsl(0 0% 100% / 0.06); border-color: hsl(0 0% 100% / 0.14); color: #c9d3e8; }
+.is-dark .reel-ctl:hover { color: #fff; border-color: hsl(0 0% 100% / 0.3); }
+.is-dark .reel-ctl.is-on { color: hsl(32 100% 66%); border-color: hsl(28 100% 54% / 0.6); }
+.is-dark .mk-reel-ph { background: hsl(225 45% 10%); border-color: hsl(222 40% 20%); }
 @media (max-width: 600px) { .mp-hero { padding: 48px 0 40px; } .mp-film-slot { margin-top: 32px; } }
+/* on a phone the film runs edge to edge, as a video player does — every
+   pixel of a narrow screen goes to the picture; Full screen turns it sideways */
+@media (max-width: 600px) {
+  .mp-film-slot.mk-reel-slot { margin-left: -16px; margin-right: -16px; max-width: none; }
+  .mp-film-slot .reel:not(.is-full):not(.is-fill) .reel-frame { border-radius: 0; border-left: 0; border-right: 0; }
+  .mp-film-slot .mk-reel-ph { border-radius: 0; border-left: 0; border-right: 0; }
+  .mp-film-slot .reel-controls { padding: 0 16px; flex-wrap: wrap; }
+  /* one row on a phone: Replay keeps its icon, and gives up its word */
+  .mp-film-slot .reel:not(.is-full):not(.is-fill) .reel-ctl.is-replay span { display: none; }
+}
 
 /* the features under the film: press one, the film plays it */
 .mp-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }

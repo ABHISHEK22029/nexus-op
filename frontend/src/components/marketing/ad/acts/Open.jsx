@@ -45,28 +45,28 @@ const pullTo = (left, top, width) => `translate(${CX - (left + width / 2)}px, ${
 function Hero({ k }) {
   if (k === 'chat') return (
     <>
-      <span className="ad-frag-h"><MessageCircle size={14} /> Ravi · Acme</span>
-      <span className="ad-bubble">Need 120 brackets, brushed. Price?</span>
-      <span className="ad-bubble is-me">Will check stock and revert</span>
+      <span className="reel-frag-h"><MessageCircle size={14} /> Ravi · Acme</span>
+      <span className="reel-bubble">Need 120 brackets, brushed. Price?</span>
+      <span className="reel-bubble is-me">Will check stock and revert</span>
     </>
   );
   if (k === 'note') return (
     <>
-      <span className="ad-frag-h"><StickyNote size={14} /> Store</span>
-      <span className="ad-hand">SS304 — 143 kg??</span>
-      <span className="ad-hand is-small">ask Suresh</span>
+      <span className="reel-frag-h"><StickyNote size={14} /> Store</span>
+      <span className="reel-hand">SS304 — 143 kg??</span>
+      <span className="reel-hand is-small">ask Suresh</span>
     </>
   );
   if (k === 'pdf') return (
     <>
-      <span className="ad-frag-h"><FileText size={14} /> quote_final_v3.pdf</span>
-      <span className="ad-lines"><i /><i /><i style={{ width: '60%' }} /></span>
+      <span className="reel-frag-h"><FileText size={14} /> quote_final_v3.pdf</span>
+      <span className="reel-lines"><i /><i /><i style={{ width: '60%' }} /></span>
     </>
   );
   return (
     <>
-      <span className="ad-frag-h"><Sheet size={14} /> bills-oct-FINAL.xlsx</span>
-      <span className="ad-cells">{['Party', 'Amt', 'GST', 'Paid', 'Acme', '?', '18%', '—', 'Orbit', '64,900', '?', 'no'].map((c, i) => <i key={i}>{c}</i>)}</span>
+      <span className="reel-frag-h"><Sheet size={14} /> bills-oct-FINAL.xlsx</span>
+      <span className="reel-cells">{['Party', 'Amt', 'GST', 'Paid', 'Acme', '?', '18%', '—', 'Orbit', '64,900', '?', 'no'].map((c, i) => <i key={i}>{c}</i>)}</span>
     </>
   );
 }
@@ -74,12 +74,12 @@ function Hero({ k }) {
 export default function Open({ t }) {
   const pulled = t >= PULL;
   return (
-    <div className="ad-act ad-open">
+    <div className="reel-act reel-open">
       {HERO.map((f, i) => (
         <div key={f.key}
-          className={`ad-frag is-hero is-${f.key}${t >= f.show ? ' is-on' : ''}${t >= 5200 ? ' is-jitter' : ''}${pulled ? ' is-pulled' : ''}`}
+          className={`reel-frag is-hero is-${f.key}${t >= f.show ? ' is-on' : ''}${t >= 5200 ? ' is-jitter' : ''}${pulled ? ' is-pulled' : ''}`}
           style={{ ...box(f.at), '--tilt': `${f.tilt}deg`, '--pull': pullTo(...f.at), '--i': i, '--pd': `${i * 40}ms` }}>
-          <div className="ad-frag-in"><Hero k={f.key} /></div>
+          <div className="reel-frag-in"><Hero k={f.key} /></div>
         </div>
       ))}
 
@@ -87,21 +87,21 @@ export default function Open({ t }) {
         const Ico = icon;
         return (
         <div key={i}
-          className={`ad-frag is-swarm${t >= 5200 + i * 110 ? ' is-on' : ''}${t >= 5200 ? ' is-jitter' : ''}${pulled ? ' is-pulled' : ''}`}
+          className={`reel-frag is-swarm${t >= 5200 + i * 110 ? ' is-on' : ''}${t >= 5200 ? ' is-jitter' : ''}${pulled ? ' is-pulled' : ''}`}
           style={{ left, top, '--tilt': `${tilt}deg`, '--pull': pullTo(left, top, 130), '--i': i + 4, '--pd': `${60 + i * 25}ms` }}>
-          <div className="ad-frag-in"><Ico size={13} /> {label}</div>
+          <div className="reel-frag-in"><Ico size={13} /> {label}</div>
         </div>
         );
       })}
 
       {/* the point everything was drawn into, which becomes the mark */}
-      <div className={`ad-core${t >= CORE ? ' is-on' : ''}${t >= BRAND ? ' is-open' : ''}`} style={{ left: CX, top: CY }}>
-        <span className="ad-core-dot" />
-        <span className="ad-core-wave" />
-        <span className="ad-core-burst"><Burst on={t >= BRAND} n={18} size={260} /></span>
-        <span className="ad-core-mark"><MoMark size={112} /></span>
+      <div className={`reel-core${t >= CORE ? ' is-on' : ''}${t >= BRAND ? ' is-open' : ''}`} style={{ left: CX, top: CY }}>
+        <span className="reel-core-dot" />
+        <span className="reel-core-wave" />
+        <span className="reel-core-burst"><Burst on={t >= BRAND} n={18} size={260} /></span>
+        <span className="reel-core-mark"><MoMark size={112} /></span>
       </div>
-      <div className={`ad-word${t >= BRAND + 450 ? ' is-on' : ''}`} style={{ left: 0, width: 1280, top: CY + 70 }}>
+      <div className={`reel-word${t >= BRAND + 450 ? ' is-on' : ''}`} style={{ left: 0, width: 1280, top: CY + 70 }}>
         Maks Ops
       </div>
     </div>

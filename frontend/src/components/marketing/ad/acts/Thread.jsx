@@ -38,20 +38,20 @@ const DRAW_AT = 300, DRAW = 2400;
 
 export default function Thread({ t }) {
   return (
-    <div className={`ad-act ad-thread-act${t >= 40 ? ' is-on' : ''}`}>
+    <div className={`reel-act reel-thread-act${t >= 40 ? ' is-on' : ''}`}>
       <Lines><Line d={PATH} on={t >= DRAW_AT} dur={DRAW} /></Lines>
       {t >= DRAW_AT + DRAW && [0, 1, 2, 3].map((i) => (
-        <span key={i} className="ad-travel" style={{ offsetPath: `path("${PATH}")`, animationDelay: `${i * 650}ms` }} />
+        <span key={i} className="reel-travel" style={{ offsetPath: `path("${PATH}")`, animationDelay: `${i * 650}ms` }} />
       ))}
       {STEPS.map(([label, id, icon, i]) => {
         const Ico = icon;
         const [x, y] = PTS[i];
         const lit = t >= DRAW_AT + ((i + 1) / (STEPS.length + 1)) * DRAW;
         return (
-          <div key={label} className={`ad-node${t >= i * 140 ? ' is-on' : ''}${lit ? ' is-lit' : ''}${t >= 2900 ? ' is-pulse' : ''}`}
+          <div key={label} className={`reel-node${t >= i * 140 ? ' is-on' : ''}${lit ? ' is-lit' : ''}${t >= 2900 ? ' is-pulse' : ''}`}
             style={{ left: x - 36, top: y - 36, '--i': i }}>
-            <span className="ad-node-dot"><Ico size={26} /></span>
-            <span className="ad-node-label"><b>{label}</b><small>{id}</small></span>
+            <span className="reel-node-dot"><Ico size={26} /></span>
+            <span className="reel-node-label"><b>{label}</b><small>{id}</small></span>
           </div>
         );
       })}

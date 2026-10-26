@@ -127,7 +127,7 @@ export const SCENES = [
    line per beat, written to be heard: short, warm, encouraging, and
    finished before the next beat begins (check-film.mjs measures every
    recorded clip against the next line). Each line is one recorded clip
-   (scripts/voiceover/make-ad.mjs → public/voice/ad/, lengths in
+   (scripts/voiceover/make-ad.mjs → public/voice/reel/, lengths in
    ./voice-clips.json); sound.js plays them on the music's own clock and
    lowers the music while they speak.
 

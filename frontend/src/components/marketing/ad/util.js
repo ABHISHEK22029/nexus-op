@@ -26,7 +26,7 @@ export const inr = (n, dp = 0) => Number(n).toLocaleString('en-IN', { minimumFra
 /** The first characters of `s` typed by `t` (one every `per` ms from `from`). */
 export const typed = (s, t, from, per = 45) => s.slice(0, Math.max(0, Math.floor((t - from) / per)));
 
-/* The pointer takes this long to glide to a waypoint (ad.css, .ad-cursor). */
+/* The pointer takes this long to glide to a waypoint (ad.css, .reel-cursor). */
 export const GLIDE = 520;
 
 /** A waypoint that clicks at `when`: the pointer sets off in time to arrive then. */
@@ -34,7 +34,7 @@ export const clickAt = (when, x, y) => ({ at: when - GLIDE, x, y, click: true })
 
 /* Window events between a page and its ad (ProductAd.jsx): jump the ad to a
    time (detail: ms), and the ad announcing the scene it reached (detail: key). */
-export const AD_SEEK = 'mk-ad-seek';
-export const AD_SCENE = 'mk-ad-scene';
+export const AD_SEEK = 'mk-reel-seek';
+export const AD_SCENE = 'mk-reel-scene';
 /* Start the ad from the top with its sound on (dispatched inside a click). */
-export const AD_SOUND = 'mk-ad-sound';
+export const AD_SOUND = 'mk-reel-sound';

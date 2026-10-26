@@ -38,66 +38,66 @@ export default function Quote({ t }) {
   const total = count(t, 2700, 1000, 0, TOTAL);
   const order = t < 9000 ? 'idle' : t < 10700 ? 'checking' : 'short';
   return (
-    <div className="ad-act ad-quote">
-      <div className="ad-flip">
+    <div className="reel-act reel-quote">
+      <div className="reel-flip">
         {/* the enquiry, as it arrived */}
-        <div className={`ad-card ad-enq${t >= FLIP ? ' is-flipped' : ''}`} style={{ left: 390, top: 150, width: 500, height: 370 }}>
-          <span className="ad-enq-top"><b className="ad-id">{IDS.enq}</b><span className="ad-chip tone-blue">New</span></span>
-          <b className="ad-enq-who">{CUSTOMER.short}</b>
-          <span className="ad-muted">{CUSTOMER.contact} · {CUSTOMER.email}</span>
-          <span className="ad-enq-want"><Bracket size={60} /><span><b>{PRODUCT.name}</b><small>× {QTY} {PRODUCT.unit}</small></span></span>
-          <span className="ad-note">“Brushed finish, delivery in 4 weeks.”</span>
-          <span className={`ad-btn ad-enq-go${t >= 150 && t < 760 ? ' is-hot' : ''}`}><ArrowRightLeft size={14} /> Convert to quotation</span>
+        <div className={`reel-card reel-enq${t >= FLIP ? ' is-flipped' : ''}`} style={{ left: 390, top: 150, width: 500, height: 370 }}>
+          <span className="reel-enq-top"><b className="reel-id">{IDS.enq}</b><span className="reel-chip tone-blue">New</span></span>
+          <b className="reel-enq-who">{CUSTOMER.short}</b>
+          <span className="reel-muted">{CUSTOMER.contact} · {CUSTOMER.email}</span>
+          <span className="reel-enq-want"><Bracket size={60} /><span><b>{PRODUCT.name}</b><small>× {QTY} {PRODUCT.unit}</small></span></span>
+          <span className="reel-note">“Brushed finish, delivery in 4 weeks.”</span>
+          <span className={`reel-btn reel-enq-go${t >= 150 && t < 760 ? ' is-hot' : ''}`}><ArrowRightLeft size={14} /> Convert to quotation</span>
         </div>
 
         {/* the quotation it turns into */}
         <In on={t >= FLIP} fx="flip" d={300}
-          className={`ad-card ad-doc ad-qt${t >= SHARED ? ' is-shared' : ''}${t >= FOLD ? ' is-folded' : ''}`}
+          className={`reel-card reel-doc reel-qt${t >= SHARED ? ' is-shared' : ''}${t >= FOLD ? ' is-folded' : ''}`}
           style={{ left: 330, top: 140, width: 620, height: 440 }}>
-          <span className="ad-doc-top">
-            <span><span className="ad-eyebrow">Quotation</span><b className="ad-id is-big">{IDS.qt}</b></span>
-            <span className={`ad-chip ${t >= ACCEPTED ? 'tone-green' : t >= SHARED ? 'tone-blue' : ''}`}>
+          <span className="reel-doc-top">
+            <span><span className="reel-eyebrow">Quotation</span><b className="reel-id is-big">{IDS.qt}</b></span>
+            <span className={`reel-chip ${t >= ACCEPTED ? 'tone-green' : t >= SHARED ? 'tone-blue' : ''}`}>
               {t >= ACCEPTED ? 'Accepted' : t >= SHARED ? 'Sent' : 'Draft'}
             </span>
           </span>
-          <span className="ad-muted">{SELLER.name} → {CUSTOMER.short}</span>
-          <In on={t >= FLIP + 300} fx="fade" className="ad-tr is-head"><span>Item</span><span>Qty</span><span>Rate</span><span>Amount</span></In>
-          <In on={t >= FLIP + 500} fx="left" className="ad-tr">
-            <span className="ad-tr-item"><Bracket size={30} /> {PRODUCT.name}</span><span>{QTY}</span><span>₹{inr(RATE)}</span><span>₹{inr(SUB)}</span>
+          <span className="reel-muted">{SELLER.name} → {CUSTOMER.short}</span>
+          <In on={t >= FLIP + 300} fx="fade" className="reel-tr is-head"><span>Item</span><span>Qty</span><span>Rate</span><span>Amount</span></In>
+          <In on={t >= FLIP + 500} fx="left" className="reel-tr">
+            <span className="reel-tr-item"><Bracket size={30} /> {PRODUCT.name}</span><span>{QTY}</span><span>₹{inr(RATE)}</span><span>₹{inr(SUB)}</span>
           </In>
-          <div className="ad-sums">
+          <div className="reel-sums">
             <In on={t >= 1800} fx="fade" as="span">Sub-total <b>₹{inr(SUB)}</b></In>
             <In on={t >= 2000} fx="left" as="span">CGST 9% <b>₹{inr(HALF_GST)}</b></In>
             <In on={t >= 2300} fx="left" as="span">SGST 9% <b>₹{inr(HALF_GST)}</b></In>
             <In on={t >= 2600} fx="rise" as="span" className={`is-total${t >= 3700 ? ' is-shine' : ''}`}>Total <b>₹{inr(Math.round(total))}</b></In>
           </div>
-          <In on={t >= 4400} fx="rise" className={`ad-btn ad-qt-share${t >= 4650 && t < 5260 ? ' is-hot' : ''}`}>
+          <In on={t >= 4400} fx="rise" className={`reel-btn reel-qt-share${t >= 4650 && t < 5260 ? ' is-hot' : ''}`}>
             <Share2 size={14} /> Share for approval
           </In>
-          <In on={t >= ACCEPTED} fx="stamp" className="ad-stamp tone-green" style={{ left: 320, top: 92 }}>Accepted</In>
+          <In on={t >= ACCEPTED} fx="stamp" className="reel-stamp tone-green" style={{ left: 320, top: 92 }}>Accepted</In>
         </In>
       </div>
 
       {/* the customer's side */}
       <Lines><Thread d={FLY} on={t >= SHARED} off={t >= 7800} dur={600} /></Lines>
-      <Rider d={FLY} on={t >= SHARED} dur={600} className={`ad-paper${t >= SHARED + 650 ? ' is-landed' : ''}`}><i /><i /><i /></Rider>
-      <In on={t >= SHARED + 150} off={t >= 7800} fx="right" at={[870, 190, 340, 330]} className="ad-browser ad-cust">
-        <div className="ad-browser-bar"><i /><i /><i /></div>
-        <div className="ad-cust-body">
-          <span className="ad-muted">Quotation from {SELLER.name}</span>
-          <b className="ad-cust-amt">₹{inr(TOTAL)}</b>
-          <span className="ad-muted">{QTY} × {PRODUCT.name}</span>
+      <Rider d={FLY} on={t >= SHARED} dur={600} className={`reel-paper${t >= SHARED + 650 ? ' is-landed' : ''}`}><i /><i /><i /></Rider>
+      <In on={t >= SHARED + 150} off={t >= 7800} fx="right" at={[870, 190, 340, 330]} className="reel-browser reel-cust">
+        <div className="reel-browser-bar"><i /><i /><i /></div>
+        <div className="reel-cust-body">
+          <span className="reel-muted">Quotation from {SELLER.name}</span>
+          <b className="reel-cust-amt">₹{inr(TOTAL)}</b>
+          <span className="reel-muted">{QTY} × {PRODUCT.name}</span>
           {t >= 6500
-            ? <span className="ad-cust-done"><Check size={16} /> Accepted</span>
-            : <span className="ad-cust-btns">
-                <span className={`ad-btn is-green${t >= 5900 ? ' is-hot' : ''}`}><Check size={14} /> Accept quotation</span>
-                <span className="ad-btn is-ghost">Decline</span>
+            ? <span className="reel-cust-done"><Check size={16} /> Accepted</span>
+            : <span className="reel-cust-btns">
+                <span className={`reel-btn is-green${t >= 5900 ? ' is-hot' : ''}`}><Check size={14} /> Accept quotation</span>
+                <span className="reel-btn is-ghost">Decline</span>
               </span>}
         </div>
       </In>
 
       {/* and the order it becomes */}
-      <In on={t >= FOLD + 100} fx="pop" className={`ad-order-host${t >= DOCK ? ' is-docked' : ''}`} at={[430, 210, 420, 250]}>
+      <In on={t >= FOLD + 100} fx="pop" className={`reel-order-host${t >= DOCK ? ' is-docked' : ''}`} at={[430, 210, 420, 250]}>
         <OrderCard at={[0, 0, 420, 250]} state={order} />
       </In>
 

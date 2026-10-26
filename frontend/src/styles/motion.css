@@ -284,17 +284,16 @@
 /* ── the ad (components/marketing/ad/AdSection.jsx) ──
    A contained frame under its heading, sized to the screen's height as
    well as its width, so a 58-second film never makes the page a wall. */
-.mk-ad-section { padding-top: 48px; }
-.mk-ad-head { max-width: 680px; margin: 0 auto 32px; text-align: center; }
-.mk-ad-head h2 { margin: 16px 0 0; text-wrap: balance; }
-.mk-ad-head p { max-width: 560px; margin: 14px auto 0; color: var(--text-muted); line-height: 1.75; }
-.mk-ad-slot { max-width: min(1160px, 115vh); margin: 0 auto; }
-.mk-ad-ph { aspect-ratio: 1280 / 720; border-radius: 22px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
-/* the slot is the container the ad measures itself against (narrow below
-   640px of its own width), so the placeholder and the frame switch shape at
-   exactly the same point as the ad does */
-.mk-ad-slot { container-type: inline-size; }
-@container (max-width: 639px) { .mk-ad-ph { aspect-ratio: 420 / 720; } }
+.mk-reel-section { padding-top: 48px; }
+.mk-reel-head { max-width: 680px; margin: 0 auto 32px; text-align: center; }
+.mk-reel-head h2 { margin: 16px 0 0; text-wrap: balance; }
+.mk-reel-head p { max-width: 560px; margin: 14px auto 0; color: var(--text-muted); line-height: 1.75; }
+.mk-reel-slot { max-width: min(1160px, 115vh); margin: 0 auto; }
+.mk-reel-ph { aspect-ratio: 1280 / 720; border-radius: 22px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
+/* the slot is the container the ad's own sizes are measured against. The
+   film is 16:9 at every width now, and so is its placeholder — a tall one
+   on a phone made the page jump when the film arrived. */
+.mk-reel-slot { container-type: inline-size; }
 
 /* ── hover effects, in CSS rather than onMouseEnter/Leave ──
    Inline hover handlers stick on touch screens: a tap fires the enter and
@@ -336,7 +335,7 @@
 
 /* the ad's slot keeps room for the controls under the frame, so nothing
    below it moves when the ad arrives */
-.mk-ad-ph { margin-bottom: 42px; }
+.mk-reel-ph { margin-bottom: 42px; }
 
 @media (prefers-reduced-motion: reduce) {
   .mk-marquee { animation: none; }
