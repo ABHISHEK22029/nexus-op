@@ -10,6 +10,7 @@ import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
 import useInView from '../hooks/useInView';
 import usePageMeta from '../hooks/usePageMeta';
+import { PAGES } from '../lib/seo';
 import EverythingInside from '../components/marketing/EverythingInside';
 import {
   ParseLines, CompareBars, YieldRing, TaxSplit, DocMorph,
@@ -243,10 +244,7 @@ const ModulePanel = ({ module }) => {
 const PlatformCapabilities = () => {
   const navigate = useNavigate();
   const [headerRef, headerInView] = useInView(0.1, { once: true });
-  usePageMeta(
-    'Platform — every part of Maks Ops',
-    'Quotations, vendor quotes, comparison, goods receipt, production, GST invoicing and your public catalogue — what each part of Maks Ops does. Contracting (BOQ, measurement book, RA bills) is an optional module.',
-  );
+  usePageMeta(PAGES['/platform'].title, PAGES['/platform'].description, '/platform');
 
   /* The open module lives in the address (?module=…), so the footer can link
      straight to one and a link to this page shows what was being looked at.

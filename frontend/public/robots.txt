@@ -1,0 +1,9 @@
+# MaksOps — https://www.maksops.co.in
+# The public pages are listed in the sitemap. Everything else (the app,
+# sign-in) is served with a noindex tag. A customer's quotation link (/q/…)
+# is private to them, so it is not crawled at all.
+User-agent: *
+Allow: /
+Disallow: /q/
+
+Sitemap: https://www.maksops.co.in/sitemap.xml

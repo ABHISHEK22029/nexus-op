@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import usePageMeta from '../hooks/usePageMeta';
+import { PAGES } from '../lib/seo';
 
 /* ── Sample data that gets loaded in "Explore" mode ──
 
@@ -57,7 +58,7 @@ const SAMPLE_PROJECTS = [
 ];
 
 const GetStarted = () => {
-  usePageMeta('Get started — Maks Ops', 'Start Maks Ops fresh with your own company, or explore it first with sample data already filled in.');
+  usePageMeta(PAGES['/get-started'].title, PAGES['/get-started'].description, '/get-started');
   const navigate = useNavigate();
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(false);

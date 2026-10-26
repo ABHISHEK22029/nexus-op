@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useLayoutEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import AppNav from './components/AppNav';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -171,11 +171,17 @@ const AppLayout = ({ children }) => (
 );
 
 /* ─── Marketing Layout (full screen, no sidebar) ────────── */
-const MarketingLayout = ({ children }) => (
-  <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
-    {children}
-  </div>
-);
+const MarketingLayout = ({ children }) => {
+  /* The page arrived pre-rendered (scripts/prerender.mjs); now that the
+     live one is drawn, it takes the pre-rendered copy's place — before the
+     browser paints, so the swap is never seen. */
+  useLayoutEffect(() => { document.getElementById('prerender')?.remove(); }, []);
+  return (
+    <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
+      {children}
+    </div>
+  );
+};
 
 /* ─── Route Controller ──────────────────────────────────── */
 const AppRoutes = () => {

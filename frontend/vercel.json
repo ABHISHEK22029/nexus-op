@@ -1,6 +1,13 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/platform", "destination": "/platform.html" },
+    { "source": "/how-it-works", "destination": "/how-it-works.html" },
+    { "source": "/see-maksops", "destination": "/see-maksops.html" },
+    { "source": "/get-started", "destination": "/get-started.html" },
+    { "source": "/c/(.*)", "destination": "/catalogue.html" },
+    { "source": "/(.*)", "destination": "/app.html" }
   ],
   "headers": [
     {

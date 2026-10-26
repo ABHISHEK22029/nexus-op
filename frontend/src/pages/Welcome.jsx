@@ -5,6 +5,7 @@ import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
 import CatalogueShowcase from '../components/marketing/CatalogueShowcase';
 import usePageMeta from '../hooks/usePageMeta';
+import { PAGES } from '../lib/seo';
 import { Section, Head, AdBand, CtaBand } from '../components/marketing/page/parts';
 import Diagram from '../components/marketing/page/Diagrams';
 import RolesBand from '../components/marketing/page/RolesBand';
@@ -29,10 +30,7 @@ import { playAd, playAdWithSound } from '../components/marketing/page/hooks';
    ══════════════════════════════════════════════════════════════════════ */
 
 const Welcome = () => {
-  usePageMeta(
-    'Maks Ops — From catalogue to cash',
-    'Quotes, stock, purchasing, production and GST invoices, connected in one place for growing manufacturers.',
-  );
+  usePageMeta(PAGES['/'].title, PAGES['/'].description, '/');
 
   return (
     <div className="mp">
@@ -42,8 +40,12 @@ const Welcome = () => {
       <section className="mp-section is-dark mp-hero" aria-label="Maks Ops">
         <div className="mp-wrap">
           <div className="mp-hero-text">
-            <span className="mp-eyebrow">Operations software for manufacturers</span>
-            <h1 className="mp-h1">From catalogue <span className="mp-accent">to cash.</span></h1>
+            {/* the label is part of the heading: what MaksOps is, in the words
+                people search for, then the promise */}
+            <h1 className="mp-h1">
+              <span className="mp-eyebrow mp-h1-kicker">MaksOps · Operations software for manufacturers</span>{' '}
+              From catalogue <span className="mp-accent">to cash.</span>
+            </h1>
             <p className="mp-lede">
               Quotes, stock, purchasing, production and GST invoices, connected in one place for growing manufacturers.
             </p>

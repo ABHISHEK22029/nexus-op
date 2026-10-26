@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Play } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
@@ -8,6 +8,8 @@ import { beatsOf, totalMs, startOf } from '../components/marketing/flow/engine/t
 import { MODULES, moduleForPath } from '../lib/navigation';
 import { Section, Head, CtaBand } from '../components/marketing/page/parts';
 import { FILM_ACTS, CHAPTER_CARDS } from '../components/marketing/page/content';
+import usePageMeta from '../hooks/usePageMeta';
+import { PAGES } from '../lib/seo';
 import './see-maksops.css';
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -53,14 +55,7 @@ const Placeholder = () => <div className="smk-ph" aria-hidden="true"><Play size=
 export default function SeeMaksOps() {
   const film = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'film';
 
-  useEffect(() => {
-    const prev = document.title;
-    document.title = 'See Maks Ops — the product film';
-    const meta = document.querySelector('meta[name="description"]');
-    const prevDesc = meta?.getAttribute('content');
-    meta?.setAttribute('content', `Maks Ops at work, start to finish: catalogue, enquiry, quotation, stock, vendor quotes, purchasing, goods receipt, production, dispatch and the GST invoice — ${CHAPTERS.length} chapters, ${RUNTIME_MIN} minutes.`);
-    return () => { document.title = prev; if (meta && prevDesc) meta.setAttribute('content', prevDesc); };
-  }, []);
+  usePageMeta(PAGES['/see-maksops'].title, PAGES['/see-maksops'].description, '/see-maksops');
 
   if (film) {
     return (

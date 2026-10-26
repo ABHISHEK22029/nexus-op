@@ -10,6 +10,12 @@ import './lib/inputGuards.js' // number fields take numbers; the wheel does not 
 import App from './App.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 
+/* A public page arrives pre-rendered (scripts/prerender.mjs) in #prerender,
+   and MarketingLayout swaps it for the live page once that is drawn. If
+   this is not the page it was rendered for, it goes now. */
+const prerendered = document.getElementById('prerender');
+if (prerendered && prerendered.dataset.path !== window.location.pathname) prerendered.remove();
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider>

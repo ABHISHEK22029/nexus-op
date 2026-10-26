@@ -661,6 +661,47 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(atFooter.length < atEngine.length && !atFooter.some(c => /^fl-/.test(c)),
     `motion follows the viewport — ${atEngine.length} loops at the engine, ${atFooter.length} at the footer (${atFooter.join(', ') || 'none'})`);
 
+  /* ── 9. what a search engine gets, before any JavaScript runs ─────────
+     The site is a single-page app: every address used to return the same
+     empty index.html, robots.txt and sitemap.xml included. scripts/
+     prerender.mjs writes the public pages as real HTML; this reads the raw
+     responses, as a crawler or a link preview does. */
+  console.log('\n  ── search engines and link previews (raw HTML, no JavaScript)');
+  const raw = async (p) => { const r = await fetch(BASE + p); return { status: r.status, type: r.headers.get('content-type') || '', text: await r.text() }; };
+  const tag = (html, re) => (html.match(re) || [])[1] || null;
+  const SITE_URL = 'https://www.maksops.co.in';
+  const PUBLIC = { '/': /From catalogue/, '/platform': /SME Operations/, '/how-it-works': /enquiry to invoice/i, '/see-maksops': /at work/, '/get-started': /get started/i };
+  const titles = new Set();
+  for (const [p, h1re] of Object.entries(PUBLIC)) {
+    const { text } = await raw(p);
+    const title = tag(text, /<title>([^<]*)<\/title>/);
+    const canon = tag(text, /<link rel="canonical" href="([^"]*)"/);
+    const h1 = (tag(text, /<h1[^>]*>([\s\S]*?)<\/h1>/) || '').replace(/<[^>]+>/g, ' ');
+    const words = text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<head[\s\S]*?<\/head>/g, ' ').replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
+    titles.add(title);
+    ok(/MaksOps/.test(title || '') && canon === SITE_URL + p && h1re.test(h1) && words > 100 && !/name="robots"/.test(text),
+      `${p} arrives as a page: its own title ("${title}"), canonical, heading and ${words} words`);
+  }
+  ok(titles.size === Object.keys(PUBLIC).length, 'and no two public pages share a title');
+  const home = (await raw('/')).text;
+  let ld = [];
+  try { ld = [...home.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => JSON.parse(m[1])['@type']); } catch { ld = ['unparseable']; }
+  ok(['Organization', 'WebSite', 'SoftwareApplication'].every((t) => ld.includes(t)), `the homepage says who and what it is, as structured data (${ld.join(', ')})`);
+  ok(/property="og:image" content="https:\/\/www\.maksops\.co\.in\/og-image\.png"/.test(home) && /^image\/png/.test((await raw('/og-image.png')).type),
+    'and a shared link previews with its picture');
+  const shells = await Promise.all(['/login', '/dashboard', '/an-address-that-does-not-exist'].map(raw));
+  ok(shells.every((s) => /<meta name="robots" content="noindex"/.test(s.text) && !/rel="canonical"/.test(s.text) && !/id="prerender"/.test(s.text)),
+    'the app, sign-in and unknown addresses are kept out of search (noindex)');
+  const catalogue = await raw('/c/some-company');
+  ok(!/name="robots"/.test(catalogue.text) && !/rel="canonical"/.test(catalogue.text), 'a company\'s public catalogue can be indexed, and is not claimed to be the homepage');
+  const robots = await raw('/robots.txt');
+  ok(/^text\/plain/.test(robots.type) && /Sitemap: https:\/\/www\.maksops\.co\.in\/sitemap\.xml/.test(robots.text) && /Disallow: \/q\//.test(robots.text),
+    'robots.txt is a real robots.txt, pointing at the sitemap and away from private quote links');
+  const sitemap = await raw('/sitemap.xml');
+  const locs = [...sitemap.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  ok(/xml/.test(sitemap.type) && Object.keys(PUBLIC).every((p) => locs.includes(SITE_URL + p)) && locs.length === Object.keys(PUBLIC).length,
+    `the sitemap lists the ${locs.length} public pages, on the canonical host`);
+
   console.log('');
   ok(errs.length === 0, `no JavaScript or console errors${errs.length ? ': ' + errs[0].slice(0, 110) : ''}`);
   ok(external.length === 0,

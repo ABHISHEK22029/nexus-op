@@ -37,6 +37,8 @@
 .mp-small { font-size: 0.875rem; color: var(--text-muted); }
 .mp-eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brand-amber); }
 .mp-accent { color: var(--brand-amber); }
+/* the label above a page's h1, when it is part of the heading */
+.mp-h1-kicker { display: flex; justify-content: center; margin-bottom: 20px; font-family: var(--font-body); line-height: 1.4; }
 .is-dark .mp-h1, .is-dark .mp-h2, .is-dark .mp-h3 { color: #fff; }
 .is-dark .mp-lede, .is-dark .mp-body, .is-dark .mp-small { color: var(--mp-dark-mute); }
 .is-dark .mp-accent { color: hsl(32 100% 62%); }

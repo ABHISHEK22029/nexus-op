@@ -4,6 +4,7 @@ import { ArrowRight, Play, Volume2, Check } from 'lucide-react';
 import MarketingNav from '../components/MarketingNav';
 import MarketingFooter from '../components/MarketingFooter';
 import usePageMeta from '../hooks/usePageMeta';
+import { PAGES } from '../lib/seo';
 import FlowShowcase from '../components/marketing/flow/FlowShowcase';
 import { SCENES } from '../components/marketing/flow/story';
 import { Section, Head, CtaBand } from '../components/marketing/page/parts';
@@ -23,10 +24,7 @@ import { playStage, playWalkthroughWithVoice } from '../components/marketing/pag
    ══════════════════════════════════════════════════════════════════════ */
 
 const HowItWorks = () => {
-  usePageMeta(
-    'How it works — Maks Ops',
-    'One order through Maks Ops, step by step: an enquiry from your catalogue, the quotation, the order, buying what is short, the goods receipt, production and the GST invoice.',
-  );
+  usePageMeta(PAGES['/how-it-works'].title, PAGES['/how-it-works'].description, '/how-it-works');
 
   return (
     <div className="mp">

@@ -97,7 +97,7 @@ const FAKE = () => {
   ok(pg.entries === KEYS.length && pg.transcripts === KEYS.length, `every chapter is listed, with its transcript (${pg.entries}/${KEYS.length})`);
   ok(JSON.stringify(pg.watch) === JSON.stringify(KEYS.map((k) => `#${k}`)), 'and a "Watch from here" link to each');
   ok(pg.nav && pg.footer, 'the top menu and the footer link to it');
-  ok(!pg.nexus && /See Maks Ops/.test(pg.title), `no "Nexus", and its own title ("${pg.title}")`);
+  ok(!pg.nexus && /See MaksOps/.test(pg.title), `no "Nexus", and its own title ("${pg.title}")`);
 
   /* ── waits to be started ── */
   console.log('\n  ── starting');
