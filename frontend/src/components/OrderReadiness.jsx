@@ -94,7 +94,11 @@ export default function OrderReadiness({ orderId, defaultOpen = false }) {
                           style={{ borderTop: '1px solid var(--border-subtle)', background: isBlocker ? 'rgba(220,38,38,0.06)' : 'transparent' }}>
                           <td style={{ ...cell, fontWeight: isBlocker ? 700 : 400 }}>{m.material}</td>
                           <td style={{ ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(m.per_unit)} <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>{m.base_uom}</span></td>
-                          <td style={{ ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(m.available)}</td>
+                          <td style={{ ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                            {num(m.available)}
+                            {m.on_floor > 0 && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }} data-on-floor>+ {num(m.on_floor)} issued to this order</div>}
+                            {m.held_elsewhere > 0 && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }} data-held-elsewhere>− {num(m.held_elsewhere)} held for other orders</div>}
+                          </td>
                           <td style={{ ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: isBlocker ? 700 : 400, color: isBlocker ? '#dc2626' : 'inherit' }}>
                             {m.can_make == null ? '—' : `${m.can_make} units`}
                           </td>

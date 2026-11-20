@@ -9,16 +9,53 @@ const { assertOwned } = require('../shared/ownerScope');
 const stock = require('../shared/stock');
 const { runList } = require('../shared/listQuery');
 const { assertRefs } = require('../shared/ownedRefs');
+const { convert, loadUoms } = require('../shared/uom');
 
 const round = (n, d = 2) => (n == null ? null : Math.round(n * 10 ** d) / 10 ** d);
+
+/* The spellings people type for the units in the uom table. */
+const UNIT_ALIASES = {
+  kgs: 'kg', kilo: 'kg', kilos: 'kg', kilogram: 'kg', kilograms: 'kg',
+  gm: 'g', gms: 'g', gram: 'g', grams: 'g',
+  t: 'mt', ton: 'mt', tons: 'mt', tonne: 'mt', tonnes: 'mt', mts: 'mt',
+  qtl: 'quintal', quintals: 'quintal',
+  pc: 'nos', pcs: 'nos', piece: 'nos', pieces: 'nos', no: 'nos', 'nos.': 'nos', numbers: 'nos',
+};
+const unitCode = (u) => { const k = String(u || '').trim().toLowerCase(); return UNIT_ALIASES[k] || k; };
+
+/* The material a consumption line came from, for converting its quantity:
+   sheets issued by the piece have a weight per piece, or dimensions to
+   work one out from. */
+const materialOf = (r) => ({
+  base_uom: r.rm_base_uom, weight_per_piece_kg: r.rm_weight_per_piece_kg,
+  length_mm: r.rm_length_mm, width_mm: r.rm_width_mm, thickness_mm: r.rm_thickness_mm, density_kg_m3: r.rm_density_kg_m3,
+});
+
+/* One quantity in another unit, for one material; null when it cannot be
+   worked out — never a guess. */
+function inUnit(qty, from, to, { uoms, item = {}, itemUoms = [] }) {
+  const f = unitCode(from || to), t = unitCode(to || from);
+  if (f === t) return Number(qty) || 0;
+  const c = convert(Number(qty) || 0, f, t, { uoms, item: { ...item, base_uom: unitCode(item.base_uom) }, itemUoms });
+  return c.ok ? c.qty : null;
+}
 
 /* The yield arithmetic, over rows already in memory.
 
    Kept separate from the fetching so the single-order and the many-order
    paths compute yield the same way by construction, rather than by two
-   people remembering to keep them in step. */
+   people remembering to keep them in step.
+
+   Material issued is a WEIGHT, set against the finished weight. Every
+   line's quantity used to be added up whatever its unit, so 500 bolts in
+   nos went in beside 180 kg of sheet as 680 "kg" and yield read absurd
+   figures. Each line now carries `kg` (computeYields): its weight, or null
+   when it has none — those still count towards cost, and are counted in
+   `unweighedLines` so the screen can say why they are left out. */
 function yieldFrom(consRows, outRows, scrapRows) {
-  const input        = consRows.reduce((s, r) => s + (r.consumed_qty || 0), 0);
+  const kgOf         = (r) => (r.kg !== undefined ? r.kg : unitCode(r.uom || 'kg') === 'kg' ? Number(r.consumed_qty) || 0 : null);
+  const input        = consRows.reduce((s, r) => s + (kgOf(r) || 0), 0);
+  const unweighed    = consRows.filter(r => kgOf(r) == null).length;
   const materialCost = consRows.reduce((s, r) => s + (r.consumed_qty || 0) * (r.unit_cost || 0), 0);
   const outputWeight = outRows.reduce((s, r) => s + (r.output_weight || 0), 0);
   const outputQty    = outRows.reduce((s, r) => s + (r.output_qty || 0), 0);
@@ -46,7 +83,33 @@ function yieldFrom(consRows, outRows, scrapRows) {
     netMaterialCost: round(netCost),
     costPerUnit:   outputQty > 0 ? round(netCost / outputQty) : null,
     balanced:      input > 0 ? Math.abs(loss) < input * 0.001 : true,
+    unweighedLines: unweighed,
   };
+}
+
+/* Consumption lines with what converting them needs: the stock row's
+   material and that material's own unit factors. */
+async function consumptionWithMaterial(where, params) {
+  const rows = (await db.query(
+    `SELECT pc.*, i.raw_material_id, i.owner_id AS stock_owner,
+            COALESCE(rm.base_uom, rm.unit) AS rm_base_uom, rm.weight_per_piece_kg AS rm_weight_per_piece_kg,
+            rm.length_mm AS rm_length_mm, rm.width_mm AS rm_width_mm, rm.thickness_mm AS rm_thickness_mm,
+            rm.density_kg_m3 AS rm_density_kg_m3
+       FROM production_consumption pc
+       LEFT JOIN inventory i ON i.id = pc.inventory_id
+       LEFT JOIN raw_materials rm ON rm.id = i.raw_material_id
+      WHERE ${where} ORDER BY pc.id`, params)).rows;
+  const ids = [...new Set(rows.map(r => r.raw_material_id).filter(Boolean))];
+  const itemUoms = {};
+  if (ids.length) {
+    (await db.query('SELECT raw_material_id, uom_code, qty_in_base FROM item_uom WHERE raw_material_id = ANY($1)', [ids]))
+      .rows.forEach(r => { (itemUoms[r.raw_material_id] ||= []).push(r); });
+  }
+  const uoms = await loadUoms(db);
+  for (const r of rows) {
+    r.kg = inUnit(r.consumed_qty, r.uom || 'kg', 'kg', { uoms, item: materialOf(r), itemUoms: itemUoms[r.raw_material_id] || [] });
+  }
+  return { rows, uoms, itemUoms };
 }
 
 /* Yields for MANY production orders in three queries, not three per order.
@@ -68,7 +131,7 @@ async function computeYields(orderIds) {
   if (!ids.length) return out;
 
   const [cons, outp, scrap] = await Promise.all([
-    db.query('SELECT * FROM production_consumption WHERE production_order_id = ANY($1)', [ids]),
+    consumptionWithMaterial('pc.production_order_id = ANY($1)', [ids]),
     db.query('SELECT * FROM production_output      WHERE production_order_id = ANY($1)', [ids]),
     db.query('SELECT * FROM production_scrap       WHERE production_order_id = ANY($1)', [ids]),
   ]);
@@ -87,6 +150,70 @@ async function computeYields(orderIds) {
     out.set(id, yieldFrom(c.get(id) || [], o.get(id) || [], s.get(id) || []));
   }
   return out;
+}
+
+/* The material a job is PLANNED to use — the bill of materials "Make"
+   copied in — each line with what has been issued against it and the
+   stock it can be issued from. Planning moves nothing: the store issues
+   against these lines through addConsumption, which takes the stock.
+
+   Issued counts a line from stock of the same material, and a typed-in
+   line of the same name (it was recorded as used, from stock or not —
+   leaving it out would invite issuing it a second time). */
+async function planFor(order, cons, orgId) {
+  const lines = (await db.query(
+    `SELECT p.*, COALESCE(rm.base_uom, rm.unit) AS rm_base_uom, rm.weight_per_piece_kg AS rm_weight_per_piece_kg,
+            rm.length_mm AS rm_length_mm, rm.width_mm AS rm_width_mm, rm.thickness_mm AS rm_thickness_mm,
+            rm.density_kg_m3 AS rm_density_kg_m3
+       FROM production_material_plan p LEFT JOIN raw_materials rm ON rm.id = p.raw_material_id
+      WHERE p.production_order_id = $1 ORDER BY p.sort_order, p.id`, [order.id])).rows;
+  if (!lines.length) return [];
+
+  const owner = order.owner_id ?? orgId ?? null;
+  const ids = [...new Set(lines.map(l => l.raw_material_id).filter(Boolean))];
+  const names = [...new Set(lines.filter(l => !l.raw_material_id).map(l => String(l.item_name).toLowerCase()))];
+  const itemUoms = {};
+  if (ids.length) {
+    (await db.query('SELECT raw_material_id, uom_code, qty_in_base FROM item_uom WHERE raw_material_id = ANY($1)', [ids]))
+      .rows.forEach(r => { (itemUoms[r.raw_material_id] ||= []).push(r); });
+  }
+  /* This company's stock of each material: rows holding something first,
+     the main stock before a named stock list. */
+  const stockRows = (await db.query(
+    `SELECT i.id, i."itemName", i.quantity, i.uom, i.unit_cost, i.raw_material_id, sl.name AS stock_list_name
+       FROM inventory i LEFT JOIN stock_lists sl ON sl.id = i.stock_list_id
+      WHERE i.owner_id IS NOT DISTINCT FROM $1
+        AND (i.raw_material_id = ANY($2::int[]) OR (i.raw_material_id IS NULL AND LOWER(i."itemName") = ANY($3::text[])))
+      ORDER BY (i.quantity > 0) DESC, (i.stock_list_id IS NULL) DESC, i.quantity DESC, i.id`,
+    [owner, ids, names])).rows;
+
+  const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  return lines.map(l => {
+    const ctx = { uoms: cons.uoms, item: materialOf(l), itemUoms: itemUoms[l.raw_material_id] || [] };
+    const against = cons.rows.filter(r => (l.raw_material_id && r.raw_material_id === l.raw_material_id)
+      || (!r.inventory_id && same(r.item_name, l.item_name))
+      || (!l.raw_material_id && same(r.item_name, l.item_name)));
+    let issued = 0, unconverted = 0;
+    for (const r of against) {
+      const q = inUnit(r.consumed_qty, r.uom || l.uom, l.uom, ctx);
+      if (q == null) unconverted++; else issued += q;
+    }
+    const remaining = Math.max(0, Number(l.planned_qty) - issued);
+    const s = stockRows.find(r => (l.raw_material_id ? r.raw_material_id === l.raw_material_id : same(r.itemName, l.item_name)));
+    const remainingInStockUnit = s ? inUnit(remaining, l.uom, s.uom || l.uom, ctx) : null;
+    return {
+      id: l.id, raw_material_id: l.raw_material_id, item_name: l.item_name, uom: l.uom,
+      planned_qty: round(Number(l.planned_qty), 4),
+      issued_qty: round(issued, 4),
+      remaining_qty: round(remaining, 4),
+      issued_unconverted_lines: unconverted,
+      stock: s ? { inventoryId: s.id, itemName: s.itemName, quantity: Number(s.quantity) || 0, uom: s.uom, unitCost: s.unit_cost, stockListName: s.stock_list_name || null } : null,
+      /* What the Issue button offers: the rest of the plan, in the stock
+         row's own unit, no more than is on the shelf. */
+      suggested_issue_qty: s && remainingInStockUnit != null
+        ? round(Math.max(0, Math.min(remainingInStockUnit, Number(s.quantity) || 0)), 4) : null,
+    };
+  });
 }
 
 // One order's yield. Still used by the detail screen, where one is all you need.
@@ -207,10 +334,11 @@ exports.getOrderById = async (req, res) => {
     const o = await db.query('SELECT * FROM production_orders WHERE id = $1', [req.params.id]);
     if (!o.rows[0]) return res.status(404).json({ error: 'Production order not found' });
     const [cons, out, scrap] = await Promise.all([
-      db.query('SELECT * FROM production_consumption WHERE production_order_id = $1 ORDER BY id', [req.params.id]),
+      consumptionWithMaterial('pc.production_order_id = $1', [req.params.id]),
       db.query('SELECT * FROM production_output WHERE production_order_id = $1 ORDER BY id', [req.params.id]),
       db.query('SELECT * FROM production_scrap WHERE production_order_id = $1 ORDER BY id', [req.params.id]),
     ]);
+    const plan = await planFor(o.rows[0], cons, req.user?.orgId);
     // Traceability: if this was made from a customer order, surface its number + customer.
     let sourceOrder = null;
     if (o.rows[0].customer_order_id) {
@@ -222,11 +350,12 @@ exports.getOrderById = async (req, res) => {
     }
     res.json({
       ...o.rows[0],
+      plan,
       consumption: cons.rows,
       output: out.rows,
       scrap: scrap.rows,
       sourceOrder,
-      yield: await computeYield(req.params.id),
+      yield: yieldFrom(cons.rows, out.rows, scrap.rows),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -311,6 +440,9 @@ exports.addConsumption = async (req, res) => {
     res.json({ id: r.rows[0].id, yield: await computeYield(orderId) });
   } catch (err) {
     await client.query('ROLLBACK');
+    /* Someone issued the same stock a moment earlier: the check above read
+       a balance that the ledger then refused to take below zero. */
+    if (stock.isShortStock(err)) return res.status(409).json({ error: `${err.message} Receive the material first, or issue less.`, onHand: err.detail.onHand });
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -459,6 +591,12 @@ exports.deleteLine = async (req, res) => {
     res.json({ success: true, yield: await computeYield(r.rows[0].production_order_id) });
   } catch (err) {
     await client.query('ROLLBACK');
+    /* Output that has already left — dispatched, or used — cannot be
+       taken back off the shelf: it is not on it. */
+    if (stock.isShortStock(err)) {
+      const d = err.detail, u = d.uom ? ` ${d.uom}` : '';
+      return res.status(409).json({ error: `These goods have already left stock: ${d.onHand}${u} of ${d.itemName} is left, and this line made ${d.needed}${u}. Pull back the challan that sent them first, or correct the count on Stock on hand.` });
+    }
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -488,21 +626,23 @@ exports.getSummary = async (req, res) => {
 };
 
 // POST /production/from-order-item/:itemId — fabricate a customer-order line,
-// pre-filling raw-material consumption from the SKU's Bill of Materials.
+// planning its raw material from the SKU's Bill of Materials.
 exports.createFromOrderItem = async (req, res) => {
   const { projectId } = req.body;   // optional — the order line is the context
+  const client = await db.getClient();
   try {
+    await client.query('BEGIN');
     /* An order LINE carries no owner; it inherits from its order. Scoping on
        the line's own id is impossible, so the check joins up to the order —
        otherwise anyone could start production against a competitor's line
        and read the product and quantity back out of the result. */
-    const item = (await db.query(
+    const item = (await client.query(
       `SELECT coi.* FROM customer_order_items coi
        JOIN customer_orders co ON co.id = coi.customer_order_id
        WHERE coi.id = $1${isCrossTenant(req.user?.role) ? '' : ' AND co.owner_id = $2'}`,
       isCrossTenant(req.user?.role) ? [req.params.itemId] : [req.params.itemId, req.user?.orgId]
     )).rows[0];
-    if (!item) return res.status(404).json({ error: 'Order line not found' });
+    if (!item) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order line not found' }); }
     const prodNumber = await nextProdNumber(projectId, req.user?.orgId);
     /* owner_id is set here for the same reason createOrder sets it: an
        unowned production order is invisible to owner scoping, and its
@@ -511,28 +651,38 @@ exports.createFromOrderItem = async (req, res) => {
        against the wrong one. createOrder was fixed for this; this path was
        not, so every production order started from the "Make" button on an
        order line — the normal way to start one — was still unowned. */
-    const po = await db.query(
+    const po = await client.query(
       `INSERT INTO production_orders ("projectId", prod_number, product_name, planned_qty, output_uom, customer_order_id, sku_id, owner_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [projectId || null, prodNumber, item.description, item.quantity || null, item.unit || 'nos',
        item.customer_order_id, item.sku_id, req.user?.orgId || null]
     );
     const prodId = po.rows[0].id;
+    /* The bill of materials is the PLAN, not an issue. It was written into
+       production_consumption — material issued — so the job showed 800 kg
+       issued that never left the shelf, at ₹0, and the real issue from
+       stock then counted it twice. The store issues against these lines
+       on the job's screen, and that is when stock moves (migration 077). */
     let bomLines = 0;
     if (item.sku_id) {
-      const bom = (await db.query('SELECT * FROM sku_bom WHERE sku_id = $1', [item.sku_id])).rows;
+      const bom = (await client.query(
+        'SELECT *, COALESCE(uom_code, uom) AS unit FROM sku_bom WHERE sku_id = $1 ORDER BY id', [item.sku_id])).rows;
       for (const b of bom) {
-        const consumedQty = round((b.qty_per_unit || 0) * (item.quantity || 0));
-        await db.query(
-          `INSERT INTO production_consumption (production_order_id, item_name, consumed_qty, uom) VALUES ($1,$2,$3,$4)`,
-          [prodId, b.component_name, consumedQty, b.uom || 'kg']
+        await client.query(
+          `INSERT INTO production_material_plan (production_order_id, raw_material_id, item_name, planned_qty, uom, sort_order)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [prodId, b.raw_material_id || null, b.component_name, round((Number(b.qty_per_unit) || 0) * (Number(item.quantity) || 0), 4),
+           b.unit || 'kg', bomLines++]
         );
-        bomLines++;
       }
     }
-    await db.query(`UPDATE customer_orders SET status = 'In Procurement' WHERE id = $1 AND status = 'Open'`, [item.customer_order_id]);
+    await client.query(`UPDATE customer_orders SET status = 'In Procurement' WHERE id = $1 AND status = 'Open'`, [item.customer_order_id]);
+    await client.query('COMMIT');
     res.json({ id: prodId, prodNumber, bomLines });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 };
 
 exports.computeYield = computeYield;

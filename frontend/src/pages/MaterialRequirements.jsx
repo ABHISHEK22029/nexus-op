@@ -236,7 +236,10 @@ export default function MaterialRequirements() {
                           {m.is_critical && <span style={{ marginLeft: 6, color: '#dc2626', fontWeight: 700 }}>CRITICAL</span>}
                         </div>
                       </td>
-                      <td style={tdNum}>{num(m.required)} <U>{m.base_uom}</U></td>
+                      <td style={tdNum}>
+                        {num(m.required)} <U>{m.base_uom}</U>
+                        {m.on_floor > 0 && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 400 }} data-on-floor>{num(m.on_floor)} more already issued</div>}
+                      </td>
                       <td style={tdNum}>{num(m.available)}</td>
                       <td style={{ ...tdNum, fontWeight: 700, color: m.shortfall > 0 ? '#dc2626' : 'var(--text-muted)' }}>{m.shortfall > 0 ? num(m.shortfall) : '—'}</td>
                       <td style={tdNum}>{m.on_order > 0 ? num(m.on_order) : '—'}</td>

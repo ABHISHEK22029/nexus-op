@@ -56,8 +56,10 @@ exports.prefill = async (req, res) => {
     const s = scopedById(req, req.params.orderId);
     const co = (await db.query(`SELECT * FROM customer_orders WHERE ${s.where}`, s.params)).rows[0];
     if (!co) return res.status(404).json({ error: 'Customer order not found' });
+    /* The product travels with the line, so dispatch takes stock by
+       product rather than by however the line happens to be spelt. */
     const items = (await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [co.id])).rows
-      .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0 }));
+      .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0, skuId: it.sku_id || null }));
     const customer = co.customer_id ? (await db.query(
       'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [co.customer_id, co.owner_id])).rows[0] : null;
     res.json({ customerOrder: co, customerId: co.customer_id, customer, /* Ship-to first: the place of supply is where the goods GO, and a
@@ -89,7 +91,10 @@ exports.create = async (req, res) => {
   if (!items || !items.length) return res.status(400).json({ error: 'Add at least one item' });
   /* Both ids are this company's. A challan against another company's
      order, once dispatched, set THAT order to Delivered. */
-  if (!await assertRefs(db, req, res, { customers: [customerId], customer_orders: [customerOrderId] })) return;
+  if (!await assertRefs(db, req, res, {
+    customers: [customerId], customer_orders: [customerOrderId],
+    skus: items.map(it => it.skuId).filter(Boolean),
+  })) return;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -111,9 +116,9 @@ exports.create = async (req, res) => {
     let so = 0;
     for (const l of lines) {
       await client.query(
-        `INSERT INTO delivery_challan_items (delivery_challan_id, description, hsn, uom, quantity, rate, amount, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [dcId, l.description, l.hsn || null, l.uom || 'nos', l.quantity || 0, l.rate || 0, l.amount || 0, so++]);
+        `INSERT INTO delivery_challan_items (delivery_challan_id, description, hsn, uom, quantity, rate, amount, sort_order, sku_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [dcId, l.description, l.hsn || null, l.uom || 'nos', l.quantity || 0, l.rate || 0, l.amount || 0, so++, l.skuId || null]);
     }
     await client.query('COMMIT');
     res.json({ id: dcId, challanNumber: num, totalValue });
@@ -130,7 +135,9 @@ exports.setStatus = async (req, res) => {
   try {
     await client.query('BEGIN');
     const s = scopedById(req, req.params.id);
-    const dc = (await client.query(`SELECT * FROM delivery_challans WHERE ${s.where}`, s.params)).rows[0];
+    /* Locked, so a double click is two dispatches in a row rather than two
+       at once that both read stock_applied = false. */
+    const dc = (await client.query(`SELECT * FROM delivery_challans WHERE ${s.where} FOR UPDATE`, s.params)).rows[0];
     if (!dc) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'not found' }); }
 
     await client.query('UPDATE delivery_challans SET status = $1 WHERE id = $2', [status, req.params.id]);
@@ -147,23 +154,43 @@ exports.setStatus = async (req, res) => {
     const goingOut = status === 'Dispatched' || status === 'Delivered';
     let moved = 0;
     let orderProgress = null;
+    const notInStock = [];
 
     if (goingOut && !dc.stock_applied) {
       const items = (await client.query(
-        'SELECT * FROM delivery_challan_items WHERE delivery_challan_id = $1', [req.params.id]
+        'SELECT * FROM delivery_challan_items WHERE delivery_challan_id = $1 ORDER BY sort_order', [req.params.id]
       )).rows;
       for (const it of items) {
         if (!(Number(it.quantity) > 0)) continue;
+        /* By product first, then by name. An item the company has no stock
+           record of at all — job work, a sample, goods out for repair — is
+           not stock this challan can take from: it goes, nothing is taken,
+           and the reply says so. It used to get an empty row taken below
+           zero, which is also what happened to a misspelt line while the
+           real stock stayed on the shelf. */
         const invRow = await stock.resolveInventoryRow(client, {
-          ownerId: dc.owner_id, itemName: it.description, uom: it.uom, itemType: 'finished', outbound: true,
+          ownerId: dc.owner_id, skuId: it.sku_id || null, itemName: it.description,
+          uom: it.uom, itemType: 'finished', outbound: true, create: false,
         });
-        await stock.stockOut(client, {
-          ownerId: dc.owner_id, inventoryId: invRow.id, itemName: it.description,
-          quantity: it.quantity, uom: it.uom, unitCost: invRow.unit_cost,
-          movementType: 'dispatch', refType: 'delivery_challan',
-          refId: Number(req.params.id), refNumber: dc.challan_number,
-          note: 'Goods dispatched to the customer', userId: req.user?.id,
-        });
+        if (!invRow) { notInStock.push(it.description); continue; }
+        try {
+          await stock.stockOut(client, {
+            ownerId: dc.owner_id, inventoryId: invRow.id, skuId: it.sku_id || invRow.sku_id || null, itemName: it.description,
+            quantity: it.quantity, uom: it.uom, unitCost: invRow.unit_cost,
+            movementType: 'dispatch', refType: 'delivery_challan',
+            refId: Number(req.params.id), refNumber: dc.challan_number,
+            note: 'Goods dispatched to the customer', userId: req.user?.id,
+          });
+        } catch (e) {
+          if (!stock.isShortStock(e)) throw e;
+          await client.query('ROLLBACK');
+          const d = e.detail, u = d.uom ? ` ${d.uom}` : '';
+          return res.status(409).json({
+            error: `Only ${d.onHand}${u} of ${it.description} is in stock; this challan sends ${d.needed}${u}. `
+              + 'Record the production output or receive the goods first, or send what you have now and the rest on a second challan.',
+            shortStock: { ...d, itemName: it.description },
+          });
+        }
         moved++;
       }
       await client.query(
@@ -208,7 +235,7 @@ exports.setStatus = async (req, res) => {
     await client.query('COMMIT');
 
     if (status === 'Dispatched') notify({ org: dc.owner_id }, { type: 'GOODS_DISPATCHED', title: `Dispatched · ${dc.challan_number}`, message: 'Goods dispatched to the customer', entityType: 'delivery_challan', entityId: Number(req.params.id), link: '/delivery-challans' });
-    res.json({ success: true, status, stockLinesMoved: moved, orderProgress });
+    res.json({ success: true, status, stockLinesMoved: moved, notInStock, orderProgress });
   } catch (e) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: e.message });

@@ -182,6 +182,9 @@ exports.create = async (req, res) => {
 exports.adjust = async (req, res) => {
   const { countedQuantity, reason } = req.body || {};
   if (countedQuantity == null) return res.status(400).json({ error: 'countedQuantity is required' });
+  if (!Number.isFinite(Number(countedQuantity)) || Number(countedQuantity) < 0) {
+    return res.status(400).json({ error: 'A count is a number of zero or more.' });
+  }
 
   const client = await db.getClient();
   try {

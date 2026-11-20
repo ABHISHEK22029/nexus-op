@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Plus, PackageMinus, PackagePlus, Recycle, Scale, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Trash2, Plus, PackageMinus, PackagePlus, Recycle, Scale, ShoppingBag, ClipboardList } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtCompactQty, fmtINR, fmtQty } from '../lib/format';
@@ -65,6 +65,21 @@ export default function ProductionOrder() {
       ? { ...cons, inventoryId: String(row.id), itemName: row.itemName, uom: row.uom || 'kg', unitCost: row.unit_cost ?? '' }
       : { ...cons, inventoryId: '', itemName: '' });
   };
+  /* Issue against a planned line: the form below is filled with the
+     plan's stock row and what is left to issue, to check and press +.
+     The row is added to the picker if the first page of stock missed it. */
+  const issueFromPlan = (p) => {
+    const s = p.stock;
+    if (!stock.some(r => String(r.id) === String(s.inventoryId))) {
+      setStock(list => [...list, { id: s.inventoryId, itemName: s.itemName, quantity: s.quantity, uom: s.uom, unit_cost: s.unitCost, stock_list_name: s.stockListName }]);
+    }
+    setCons({ inventoryId: String(s.inventoryId), itemName: s.itemName, consumedQty: p.suggested_issue_qty ?? '', uom: s.uom || p.uom || 'kg', unitCost: s.unitCost ?? '' });
+    setTimeout(() => {
+      const q = document.querySelector('[data-issue-qty]');
+      q?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      q?.focus();
+    }, 50);
+  };
 
   const post = async (path, body, okMsg) => {
     try {
@@ -80,7 +95,9 @@ export default function ProductionOrder() {
   const delLine = async (kind, lineId) => {
     try {
       const r = await fetch(`${API}/production/${kind}/line/${lineId}`, { method: 'DELETE' });
-      if (!r.ok) throw new Error('Failed to delete');
+      /* The server says why — finished goods that have already been
+         dispatched cannot be taken back off the shelf. */
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not remove the line');
       toast.success('Removed'); load();
     } catch (e) { toast.error(e.message); }
   };
@@ -156,7 +173,9 @@ export default function ProductionOrder() {
             color={y.balanced ? 'var(--text-primary)' : '#ef4444'} note={y.balanced ? 'Balances ✓' : 'Does not balance — check the entries'}
             how="Issued − finished − scrap − remnant" missing={issued ? null : 'Issue material first; then this shows what is not accounted for'} />
           <Metric label="Material issued" value={kg(y.inputWeight)} exact={`${fmtQty(y.inputWeight)} kg`}
-            how="Total of Raw Material Consumed below" missing={issued ? null : 'Nothing issued yet — add it under Raw Material Consumed'} />
+            note={y.unweighedLines > 0 ? `${y.unweighedLines} line${y.unweighedLines > 1 ? 's' : ''} not in a weight left out — give the material a weight per piece` : null}
+            how="Total of Raw Material Consumed below, in kg"
+            missing={issued ? null : y.unweighedLines > 0 ? 'Material issued has no weight — give it a weight per piece to see yield' : 'Nothing issued yet — add it under Raw Material Consumed'} />
           <Metric label="Output" value={kg(y.outputWeight)} exact={`${fmtQty(y.outputWeight)} kg`} note={pieces ? `${fmtCompactQty(y.outputQty)} pcs` : null}
             how="Total weight under Finished Output below" missing={weighed ? null : pieces ? `${fmtCompactQty(y.outputQty)} pcs recorded — add their weight (kg)` : 'No output recorded yet'} />
           <Metric label="Net material cost" value={fmtCompactINR(y.netMaterialCost)} exact={fmtINR(y.netMaterialCost)} note={`Gross ${fmtCompactINR(y.materialCost)}`}
@@ -165,6 +184,56 @@ export default function ProductionOrder() {
             how="Net material cost ÷ pieces made" missing={!costed ? 'Needs a ₹/kg rate on the material issued' : !pieces ? 'Record the pieces made (Pcs) to see this' : null} />
         </div>
       </div>
+
+      {/* Planned material: the bill of materials "Make" copied in. Nothing
+          here has left stock; the store issues against each line below. */}
+      {order.plan?.length > 0 && (
+        <div style={{ ...card, marginBottom: 16 }} data-plan>
+          <div style={{ ...secHead, marginBottom: 4 }}><ClipboardList size={17} style={{ color: 'var(--brand-amber)' }} /> Planned material</div>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 10px' }}>
+            From the product's bill of materials. It leaves stock when you issue it.
+          </p>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.03em' }}>
+                  <th style={{ padding: '6px 10px' }}>Material</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right' }}>Planned</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right' }}>Issued</th>
+                  <th style={{ padding: '6px 10px', textAlign: 'right' }}>In stock</th>
+                  <th style={{ padding: '6px 10px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {order.plan.map(p => {
+                  const done = p.remaining_qty <= 0;
+                  const onHand = p.stock?.quantity || 0;
+                  const cellN = { padding: '8px 10px', fontSize: '0.82rem', color: 'var(--text-secondary)', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
+                  return (
+                    <tr key={p.id} style={{ borderTop: '1px solid var(--border-subtle)' }} data-plan-line={p.item_name}>
+                      <td style={{ padding: '8px 10px', fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 600 }}>{p.item_name}</td>
+                      <td style={cellN}>{fmtQty(p.planned_qty)} {p.uom}</td>
+                      <td style={cellN}>{fmtQty(p.issued_qty)} {p.uom}</td>
+                      <td style={cellN}>{p.stock ? `${fmtQty(onHand)} ${p.stock.uom || ''}` : '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {done ? <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#10b981' }}>Issued ✓</span>
+                          : !p.stock ? <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }} title="Receive it against a purchase order, or add it on Stock on hand">No stock of this yet</span>
+                          : onHand <= 0 ? <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#ef4444' }}>Out of stock</span>
+                          : <button className="btn-secondary btn-sm" onClick={() => issueFromPlan(p)} data-issue-plan>
+                              Issue{p.suggested_issue_qty ? ` ${fmtQty(p.suggested_issue_qty)} ${p.stock.uom || ''}` : ''}
+                            </button>}
+                        {!done && p.stock && onHand > 0 && p.suggested_issue_qty != null && p.suggested_issue_qty < p.remaining_qty && p.stock.uom === p.uom && (
+                          <div style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: 3 }}>Short {fmtQty(p.remaining_qty - p.suggested_issue_qty)} {p.uom}</div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Three entry sections */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: 16 }}>
@@ -179,8 +248,8 @@ export default function ProductionOrder() {
               </select>
             </div>
             {!cons.inventoryId && <div style={{ flex: 2, minWidth: 120 }}><label style={label}>Material *</label><input style={input} placeholder="MS Steel" value={cons.itemName} onChange={e => setCons({ ...cons, itemName: e.target.value })} /></div>}
-            <div style={{ flex: 1, minWidth: 70 }}><label style={label}>Qty (kg) *</label><input style={input} type="number" placeholder="100" value={cons.consumedQty} onChange={e => setCons({ ...cons, consumedQty: e.target.value })} /></div>
-            <div style={{ flex: 1, minWidth: 70 }}><label style={label}>₹/kg</label><input style={input} type="number" placeholder="60" value={cons.unitCost} onChange={e => setCons({ ...cons, unitCost: e.target.value })} /></div>
+            <div style={{ flex: 1, minWidth: 70 }}><label style={label}>Qty ({cons.uom || 'kg'}) *</label><input style={input} type="number" placeholder="100" value={cons.consumedQty} onChange={e => setCons({ ...cons, consumedQty: e.target.value })} data-issue-qty /></div>
+            <div style={{ flex: 1, minWidth: 70 }}><label style={label}>₹/{cons.uom || 'kg'}</label><input style={input} type="number" placeholder="60" value={cons.unitCost} onChange={e => setCons({ ...cons, unitCost: e.target.value })} /></div>
             <button className="btn-primary btn-sm" style={{ padding: '9px 12px' }} aria-label="Issue material" onClick={async () => {
               if (!cons.itemName || cons.consumedQty === '') return toast.error('Material + qty required');
               const body = { ...cons, uom: cons.uom || 'kg', inventoryId: cons.inventoryId ? Number(cons.inventoryId) : undefined };

@@ -4,7 +4,8 @@
    The question this answers, for every material:
        how much do we NEED, how much do we HAVE, how much must we BUY?
 
-       Required  = Σ over open order lines: (ordered − produced) × bom qty
+       Required  = Σ over open order lines: (ordered − produced) × bom qty,
+                   less what is already issued to their jobs (4d)
        Available = stock on hand
        Shortfall = max(0, Required − Available)
        On Order  = open PO quantities
@@ -166,6 +167,69 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
   const itemUoms = {};
   itemUomRows.forEach(r => { (itemUoms[r.raw_material_id] ||= []).push(r); });
 
+  /* A quantity in a material's stock unit; null when it cannot be worked
+     out, which is then left out rather than guessed. */
+  const inBase = (qty, uom, id) => {
+    const rm = materialById.get(id);
+    const from = String(uom || '').toLowerCase(), to = String(rm?.base_uom || '').toLowerCase();
+    if (!rm || !from || !to || from === to) return Number(qty) || 0;
+    const c = convert(Number(qty) || 0, from, to, { uoms, item: rm, itemUoms: itemUoms[id] || [] });
+    return c.ok ? c.qty : null;
+  };
+
+  /* ── 4d. Material on the shop floor, and material held for a job ──
+     ISSUED material has left stock and sits on the floor for its order.
+     Required kept counting it while Available had already dropped, so the
+     board called it short twice over and "Raise purchase orders" bought it
+     again. What an order's jobs were issued, beyond what their finished
+     output has used, comes off that order's need (5, below).
+
+     PLANNED material — a job's bill of materials not yet issued (migration
+     077) — is held for that job's order. It is still in stock, so the board
+     is unchanged; but another order's readiness must not count it as free,
+     or two orders both "can build" from the same 100 kg. */
+  const floorParams = [];
+  const floorRows = (await db.query(`
+    SELECT po.id AS prod_id, po.customer_order_id AS order_id, po.sku_id, i.raw_material_id, pc.uom,
+           SUM(pc.consumed_qty)::numeric AS qty
+      FROM production_consumption pc
+      JOIN production_orders po ON po.id = pc.production_order_id
+      JOIN inventory i ON i.id = pc.inventory_id
+     WHERE po.customer_order_id IS NOT NULL AND i.raw_material_id IS NOT NULL${own('po.owner_id', floorParams)}
+     GROUP BY 1, 2, 3, 4, 5`, floorParams)).rows;
+  const planParams = [];
+  const planRows = (await db.query(`
+    SELECT po.id AS prod_id, po.customer_order_id AS order_id, p.raw_material_id, p.uom,
+           SUM(p.planned_qty)::numeric AS qty
+      FROM production_material_plan p
+      JOIN production_orders po ON po.id = p.production_order_id
+      JOIN customer_orders co ON co.id = po.customer_order_id
+     WHERE p.raw_material_id IS NOT NULL AND COALESCE(po.status, '') <> 'Completed'
+       AND co.status = ANY($${planParams.push(OPEN_ORDER_STATES)})${own('po.owner_id', planParams)}
+     GROUP BY 1, 2, 3, 4`, planParams)).rows;
+
+  const issuedFor = new Map();     // order|sku|material -> issued, stock unit
+  const issuedByJob = new Map();   // job|material -> issued, stock unit
+  for (const r of floorRows) {
+    const q = inBase(r.qty, r.uom, r.raw_material_id);
+    if (q == null) continue;
+    const k = `${r.order_id}|${r.sku_id}|${r.raw_material_id}`;
+    issuedFor.set(k, (issuedFor.get(k) || 0) + q);
+    const j = `${r.prod_id}|${r.raw_material_id}`;
+    issuedByJob.set(j, (issuedByJob.get(j) || 0) + q);
+  }
+  const heldFor = new Map();       // order|material -> planned, not yet issued
+  const heldTotal = new Map();     // material -> across every open order
+  for (const r of planRows) {
+    const planned = inBase(r.qty, r.uom, r.raw_material_id);
+    if (planned == null) continue;
+    const held = Math.max(0, planned - (issuedByJob.get(`${r.prod_id}|${r.raw_material_id}`) || 0));
+    if (!held) continue;
+    const k = `${r.order_id}|${r.raw_material_id}`;
+    heldFor.set(k, (heldFor.get(k) || 0) + held);
+    heldTotal.set(r.raw_material_id, (heldTotal.get(r.raw_material_id) || 0) + held);
+  }
+
   /* ── 4a. On order, in each material's stock unit ──
      5 MT on order and a shortfall in kg are compared in kg. A line whose
      unit cannot be converted is counted as written, as it always was. */
@@ -301,17 +365,28 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
         standard_rate: rm.standard_rate != null ? Number(rm.standard_rate) : null,
         is_critical: !!rm.is_critical,
         required: 0,
+        on_floor: 0,
         available: stock.get(key) || 0,
         on_order: onOrder.get(key) || 0,
         orders: [],
         order_ids: [],
       });
     }
-    const m = byMaterial.get(key);
-    m.required = r4(m.required + need);
-    if (!m.orders.includes(d.order_number)) m.orders.push(d.order_number);
-    if (need > 0 && !m.order_ids.includes(d.order_id)) m.order_ids.push(d.order_id);
+    /* On the floor for this line: issued to its jobs, less what the output
+       made so far has used. That much of the need no longer comes out of
+       stock (4d). */
+    const perUnitBase = remaining > 0 ? need / remaining : 0;
+    const issued = issuedFor.get(`${d.order_id}|${d.sku_id}|${key}`) || 0;
+    const onFloor = Math.min(need, Math.max(0, issued - Number(d.produced_qty) * perUnitBase));
+    const fromStock = Math.max(0, need - onFloor);
 
+    const m = byMaterial.get(key);
+    m.required = r4(m.required + fromStock);
+    m.on_floor = r4(m.on_floor + onFloor);
+    if (!m.orders.includes(d.order_number)) m.orders.push(d.order_number);
+    if (fromStock > 0 && !m.order_ids.includes(d.order_id)) m.order_ids.push(d.order_id);
+
+    const heldHere = heldFor.get(`${d.order_id}|${key}`) || 0;
     lines.push({
       order_id: d.order_id, order_number: d.order_number, line_id: d.line_id,
       product: d.product_name || d.line_description,
@@ -319,6 +394,8 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
       raw_material_id: key, material: rm.name || d.component_name,
       per_unit: perUnit, bom_uom: from, base_uom: to,
       need: r4(need), available: stock.get(key) || 0, conversion,
+      on_floor: r4(onFloor),
+      held_elsewhere: r4(Math.max(0, (heldTotal.get(key) || 0) - heldHere)),
     });
   }
 
@@ -446,12 +523,17 @@ exports.orderReadiness = async (req, res) => {
     for (const l of lines) {
       if (!byLine.has(l.line_id)) byLine.set(l.line_id, { line_id: l.line_id, product: l.product, ordered: l.ordered, produced: l.produced, remaining: l.remaining, materials: [] });
       const perUnitInBase = l.remaining > 0 ? l.need / l.remaining : 0;
+      /* What this order can count on: stock not held for another order's
+         job, plus what is already on the floor for this one. */
+      const usable = Math.max(0, l.available - l.held_elsewhere) + l.on_floor;
       byLine.get(l.line_id).materials.push({
         raw_material_id: l.raw_material_id, material: l.material,
         per_unit: r4(perUnitInBase), base_uom: l.base_uom,
         available: l.available,
+        on_floor: l.on_floor,
+        held_elsewhere: l.held_elsewhere,
         // How many finished units this ONE material can support.
-        can_make: perUnitInBase > 0 ? Math.floor(l.available / perUnitInBase) : Infinity,
+        can_make: perUnitInBase > 0 ? Math.floor(r4(usable / perUnitInBase)) : Infinity,
       });
     }
 

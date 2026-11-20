@@ -242,13 +242,10 @@ const stockOf = async (owner, where, params) => {
     ok(out.status === 200 && scrap.status === 200, 'output (120 brackets) and scrap (17.4 kg) recorded');
     const pd = (await call(A, 'GET', `/production/${prod.body.id}`)).body;
     const yieldPct = pd.yield?.yieldPct;
-    /* KNOWN GAP (open): "Make" from an order line writes the bill of
-       materials in as material already consumed, without taking it out of
-       stock — so issuing the sheet from stock, as the screen invites,
-       counts it twice and halves the yield (47.1% here, not 94.2%). Kept
-       visible, not failed, until Make is fixed; then make this an ok(). */
-    if (near(yieldPct, 94.2, 0.05)) ok(true, `yield: 282.6 kg of brackets from 300 kg of sheet = ${yieldPct}%`);
-    else note(`known gap: yield reads ${yieldPct}% — Make counts the bill of materials as issued, so issuing from stock doubles the input (should be 94.2%)`);
+    /* "Make" used to write the bill of materials in as material already
+       consumed, so issuing the sheet from stock counted it twice and halved
+       the yield (47.1%). It is the job's plan now (migration 077). */
+    ok(near(yieldPct, 94.2, 0.05), `yield: 282.6 kg of brackets from 300 kg of sheet = ${yieldPct}%`);
     const finished = await stockOf(OWNER, "LOWER(\"itemName\") = LOWER($2)", ['SS304 Mounting Bracket']).catch(() => null);
     ok(finished === null || near(finished, 120), `the 120 brackets are in stock as finished goods (${finished})`);
 

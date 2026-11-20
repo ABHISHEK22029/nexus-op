@@ -63,7 +63,9 @@ export default function DeliveryChallans() {
     try {
       const d = await fetch(`${API}/delivery-challans/prefill/${orderId}`).then(r => r.json());
       setHead(h => ({ ...h, customerOrderId: orderId, customerId: d.customerId || '', placeOfSupply: d.placeOfSupply || '' }));
-      if (d.items?.length) setLines(d.items.map(it => ({ description: it.description, hsn: it.hsn || '', quantity: it.quantity, uom: it.uom || 'nos', rate: it.rate || '' })));
+      /* skuId rides along unseen: dispatch takes stock by product, not by
+         however the line is spelt. */
+      if (d.items?.length) setLines(d.items.map(it => ({ description: it.description, hsn: it.hsn || '', quantity: it.quantity, uom: it.uom || 'nos', rate: it.rate || '', skuId: it.skuId || null })));
     } catch { /* ignore */ }
   };
 
@@ -93,10 +95,14 @@ export default function DeliveryChallans() {
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ status }),
     });
-    if (!res.ok) {
-      const b = await res.json().catch(() => ({}));
-      return toast.error(b.detail || b.error || 'Could not update the status');
-    }
+    const b = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(b.detail || b.error || 'Could not update the status');
+    /* Items with no stock record — job work, samples, goods out for
+       repair — go without taking anything from stock. Say which, so a
+       misspelt line is noticed rather than hidden. */
+    if (b.notInStock?.length) {
+      toast.warning(`${status}. Not in your stock list, so stock didn't change for: ${b.notInStock.join(', ')}`);
+    } else if (status !== 'Draft') toast.success(status);
     q.reload();
   };
 

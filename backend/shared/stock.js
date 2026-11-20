@@ -18,6 +18,26 @@
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+/* Stock cannot go below zero.
+
+   Nothing used to stop it. Dispatching 2,000 with 520 on the shelf left
+   −1,480, and every screen that reads stock — can-build, shortfalls, the
+   purchase plan — then worked from a number that described nothing. The
+   rule lives here, in the one function every movement goes through, so a
+   path written next year inherits it instead of having to remember it.
+
+   Callers turn this into a 409 that says what is short (isShortStock). */
+class ShortStockError extends Error {
+  constructor({ itemName, uom, onHand, needed }) {
+    const u = uom ? ` ${uom}` : '';
+    super(`Only ${r2(onHand)}${u} of ${itemName || 'this item'} is in stock; this needs ${r2(needed)}${u}.`);
+    this.code = 'SHORT_STOCK';
+    this.status = 409;
+    this.detail = { itemName: itemName || null, uom: uom || null, onHand: r2(onHand), needed: r2(needed), short: r2(needed - onHand) };
+  }
+}
+const isShortStock = (e) => e?.code === 'SHORT_STOCK';
+
 /**
  * Record one stock movement and apply it to the balance.
  *
@@ -28,11 +48,27 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
  * @param m.quantity       SIGNED: positive in, negative out
  * @param m.movementType   one of the CHECK values in migration 034
  * @param m.refType/refId/refNumber   the document that caused it
+ * @param m.allowNegative  only for repair scripts correcting history
  */
 async function move(client, m) {
   const qty = Number(m.quantity);
   if (!Number.isFinite(qty) || qty === 0) return null;   // nothing to record
   if (!m.inventoryId) throw new Error('stock.move needs an inventoryId');
+
+  /* The balance moves first, and a movement out only lands if the result
+     stays at zero or above. One statement, so two dispatches at the same
+     moment cannot both read 520 and both take 400: the second waits for
+     the first's row lock and is then checked against what is left. */
+  const guard = qty < 0 && !m.allowNegative ? ' AND ROUND(COALESCE(quantity,0) + $1, 2) >= 0' : '';
+  const moved = await client.query(
+    `UPDATE inventory SET quantity = COALESCE(quantity,0) + $1, last_movement_at = NOW() WHERE id = $2${guard} RETURNING id`,
+    [r2(qty), m.inventoryId]
+  );
+  if (!moved.rowCount) {
+    const row = (await client.query('SELECT "itemName", quantity, uom FROM inventory WHERE id = $1', [m.inventoryId])).rows[0];
+    if (!row) throw new Error(`stock.move: no stock row ${m.inventoryId}`);
+    throw new ShortStockError({ itemName: m.itemName || row.itemName, uom: m.uom || row.uom, onHand: Number(row.quantity) || 0, needed: Math.abs(qty) });
+  }
 
   const { rows } = await client.query(
     `INSERT INTO stock_movements
@@ -44,11 +80,6 @@ async function move(client, m) {
      m.itemName || '', r2(qty), m.uom || null, m.unitCost ?? null,
      m.movementType, m.refType || null, m.refId || null, m.refNumber || null,
      m.note || null, m.userId || null, m.reversesMovementId || null]
-  );
-
-  await client.query(
-    `UPDATE inventory SET quantity = COALESCE(quantity,0) + $1, last_movement_at = NOW() WHERE id = $2`,
-    [r2(qty), m.inventoryId]
   );
 
   return rows[0].id;
@@ -66,7 +97,7 @@ async function move(client, m) {
  * same owner — name last because two owners may legitimately both have
  * "MS Plate 10mm" and they are not the same stock.
  */
-async function resolveInventoryRow(client, { ownerId, skuId, rawMaterialId, itemName, uom, projectId, itemType, unitCost, stockListId = null, outbound = false }) {
+async function resolveInventoryRow(client, { ownerId, skuId, rawMaterialId, itemName, uom, projectId, itemType, unitCost, stockListId = null, outbound = false, create = true }) {
   const owner = ownerId ?? null;
   /* Goods receipts, production and dispatch move the main stock (no list).
      A row in a named stock list — the site store, a second godown — is the
@@ -121,6 +152,12 @@ async function resolveInventoryRow(client, { ownerId, skuId, rawMaterialId, item
       if (rows[0]) return rows[0];
     }
   }
+
+  /* Goods going out of a row that does not exist: there is nothing to take
+     them from. Making an empty row here and taking it below zero is how a
+     misspelt challan line hid the real stock — the caller decides what an
+     item with no stock record means for it. */
+  if (!create) return null;
 
   const { rows } = await client.query(
     `INSERT INTO inventory ("projectId", "itemName", quantity, uom, item_type,
@@ -197,4 +234,4 @@ async function reconcile(db, ownerId, isAdmin) {
   return { checked: rows.length, drifted, healthy: drifted.length === 0 };
 }
 
-module.exports = { move, stockIn, stockOut, resolveInventoryRow, reverseFor, reconcile };
+module.exports = { move, stockIn, stockOut, resolveInventoryRow, reverseFor, reconcile, ShortStockError, isShortStock };
