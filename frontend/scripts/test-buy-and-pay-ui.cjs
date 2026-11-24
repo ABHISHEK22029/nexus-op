@@ -459,7 +459,7 @@ const until = async (fn, ms = 15000) => {
 
     /* ═════════════════════════════════════════════════════════════════ */
     step(5, 'Dashboard, with the invoice and the bill both open');
-    await go('/dashboard', /Everything at a glance/);
+    await go('/dashboard', /Sales, purchases and stock across the business|Everything at a glance/);
     await waitFor(() => [...document.querySelectorAll('.dash-kpi-value')].some(v => /₹/.test(v.textContent)), 20000);
     await settle(800);
     const kpis = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.dash-kpi')].map(k => [
@@ -632,7 +632,7 @@ const until = async (fn, ms = 15000) => {
 
     /* ═════════════════════════════════════════════════════════════════ */
     step(11, 'Notifications');
-    await go('/dashboard', /Everything at a glance/);
+    await go('/dashboard', /Sales, purchases and stock across the business|Everything at a glance/);
     await page.click('button[aria-label^="Account"]');
     await waitFor(() => !!document.querySelector('[data-open-notifications]'));
     await page.click('[data-open-notifications]');

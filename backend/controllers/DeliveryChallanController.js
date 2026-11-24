@@ -11,7 +11,7 @@ const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { runList } = require('../shared/listQuery');
 const { notify } = require('../notify');
-const { syncOrderDelivery } = require('../shared/orderProgress');
+const { syncOrderDelivery, lineProgress, overDispatch } = require('../shared/orderProgress');
 const { assertRefs } = require('../shared/ownedRefs');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
@@ -57,14 +57,31 @@ exports.prefill = async (req, res) => {
     const co = (await db.query(`SELECT * FROM customer_orders WHERE ${s.where}`, s.params)).rows[0];
     if (!co) return res.status(404).json({ error: 'Customer order not found' });
     /* The product travels with the line, so dispatch takes stock by
-       product rather than by however the line happens to be spelt. */
-    const items = (await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [co.id])).rows
-      .map(it => ({ description: it.description, hsn: '', uom: it.unit || 'nos', quantity: it.quantity, rate: it.target_price || 0, skuId: it.sku_id || null }));
+       product rather than by however the line happens to be spelt.
+       Only what is still to go: a second challan from the same order
+       started again from the full quantity, so the same goods went out
+       twice. The HSN comes from the order line, else the product. */
+    const { lines } = await lineProgress(db, co.id, co.owner_id);
+    const raw = (await db.query(
+      `SELECT i.id, i.target_price, i.rate, s.hsn AS sku_hsn FROM customer_order_items i
+         LEFT JOIN skus s ON s.id = i.sku_id AND s.owner_id = $2
+        WHERE i.customer_order_id = $1`, [co.id, co.owner_id])).rows;
+    const byId = new Map(raw.map(r => [r.id, r]));
+    const items = lines
+      .map(l => ({ l, left: Math.round((l.ordered - l.dispatched) * 10000) / 10000 }))
+      .filter(x => x.left > 0.0005)
+      .map(({ l, left }) => ({
+        description: l.description, hsn: l.hsn || byId.get(l.id)?.sku_hsn || '', uom: l.uom || 'nos',
+        quantity: left, ordered: l.ordered, alreadySent: l.dispatched,
+        rate: Number(byId.get(l.id)?.target_price ?? byId.get(l.id)?.rate) || 0, skuId: l.skuId,
+      }));
     const customer = co.customer_id ? (await db.query(
       'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [co.customer_id, co.owner_id])).rows[0] : null;
     res.json({ customerOrder: co, customerId: co.customer_id, customer, /* Ship-to first: the place of supply is where the goods GO, and a
          challan is the document that travels with them. */
-      placeOfSupply: customer?.shipping_state || customer?.state || '', items });
+      placeOfSupply: customer?.shipping_state || customer?.state || '', items,
+      nothingLeft: items.length === 0 && lines.length > 0,
+      message: items.length === 0 && lines.length > 0 ? `Everything on ${co.order_number} has already been sent.` : null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
@@ -80,7 +97,15 @@ exports.getById = async (req, res) => {
       'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [dc.customer_id, dc.owner_id])).rows[0] : null;
     let company = null;
     try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
-    res.json({ ...dc, items, customer, company });
+    /* The order it ships and the invoices billing that order, so the
+       challan can say "against your PO …" and link both ways. */
+    const order = dc.customer_order_id ? (await db.query(
+      'SELECT id, order_number, customer_po_ref FROM customer_orders WHERE id = $1 AND owner_id IS NOT DISTINCT FROM $2',
+      [dc.customer_order_id, dc.owner_id])).rows[0] || null : null;
+    const invoices = order ? (await db.query(
+      `SELECT id, invoice_number, status FROM sales_invoices
+        WHERE customer_order_id = $1 AND owner_id IS NOT DISTINCT FROM $2 ORDER BY id`, [order.id, dc.owner_id])).rows : [];
+    res.json({ ...dc, items, customer, company, order, invoices });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
@@ -95,23 +120,48 @@ exports.create = async (req, res) => {
     customers: [customerId], customer_orders: [customerOrderId],
     skus: items.map(it => it.skuId).filter(Boolean),
   })) return;
+  /* A quantity is a number above zero. A line of −5 or "abc" went in as
+     it was and, once dispatched, put goods back on the shelf. */
+  for (const [n, it] of items.entries()) {
+    if (!String(it.description || '').trim()) return res.status(400).json({ error: `Line ${n + 1}: say what is being sent.` });
+    const q = Number(it.quantity);
+    if (!Number.isFinite(q) || q <= 0) return res.status(400).json({ error: `Line ${n + 1}: the quantity must be more than zero.` });
+    if (it.rate != null && it.rate !== '' && (!Number.isFinite(Number(it.rate)) || Number(it.rate) < 0)) {
+      return res.status(400).json({ error: `Line ${n + 1}: the rate must be a number, 0 or more.` });
+    }
+  }
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+    /* Not more than the order asked for (a little over on weight and
+       length). Draft challans don't count — only what has gone. */
+    let co = null;
+    if (customerOrderId) {
+      co = (await client.query('SELECT id, order_number, owner_id FROM customer_orders WHERE id = $1 FOR UPDATE', [customerOrderId])).rows[0];
+      const over = co && await overDispatch(client, { orderId: co.id, orderNumber: co.order_number, ownerId: co.owner_id, items });
+      if (over) { await client.query('ROLLBACK'); return res.status(409).json({ error: over }); }
+    }
     const lines = items.map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
     const totalValue = r2(lines.reduce((s, l) => s + l.amount, 0));
+    /* Where the goods go, as it was on the day: the challan printed the
+       customer's CURRENT ship-to, so editing an address rewrote every old
+       challan sent to the old one. */
+    const cust = (await client.query(
+      'SELECT name, shipping_address, billing_address, shipping_state, state FROM customers WHERE id = $1', [customerId])).rows[0] || {};
     /* A challan number travels with the goods under Rule 55, so two loads
        carrying the same one is a real problem at a checkpoint. */
-    const num = await allocate(client, { ownerId: req.user?.orgId, docType: 'delivery_challan' });
+    const num = await allocate(client, { ownerId: req.user?.orgId, docType: 'delivery_challan', date: challanDate || null });
     const { rows } = await client.query(
       `INSERT INTO delivery_challans (owner_id, customer_id, customer_order_id, challan_number, challan_date,
-         dispatch_through, vehicle_no, lr_no, place_of_supply, total_value, notes)
-       VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7,$8,$9,$10,$11) RETURNING id`,
+         dispatch_through, vehicle_no, lr_no, place_of_supply, total_value, notes,
+         ship_to_name, ship_to_address, ship_to_state)
+       VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
       /* Rule 55 requires the date on a delivery challan — it is the document
          that travels with the goods. Same empty-date-field cause as the
          quotation and the invoice. */
       [req.user?.orgId || null, customerId, customerOrderId || null, num, challanDate || null,
-       dispatchThrough || null, vehicleNo || null, lrNo || null, placeOfSupply || null, totalValue, notes || null]);
+       dispatchThrough || null, vehicleNo || null, lrNo || null, placeOfSupply || null, totalValue, notes || null,
+       cust.name || null, cust.shipping_address || cust.billing_address || null, cust.shipping_state || cust.state || null]);
     const dcId = rows[0].id;
     let so = 0;
     for (const l of lines) {
@@ -155,11 +205,22 @@ exports.setStatus = async (req, res) => {
     let moved = 0;
     let orderProgress = null;
     const notInStock = [];
+    let warning = null;
 
     if (goingOut && !dc.stock_applied) {
       const items = (await client.query(
         'SELECT * FROM delivery_challan_items WHERE delivery_challan_id = $1 ORDER BY sort_order', [req.params.id]
       )).rows;
+      /* Not more than the order asked for, counting what other challans
+         have already sent. Two drafts made from the same order would
+         otherwise each send the whole of it. */
+      if (dc.customer_order_id) {
+        const co = (await client.query('SELECT id, order_number, owner_id FROM customer_orders WHERE id = $1 FOR UPDATE', [dc.customer_order_id])).rows[0];
+        const over = co && await overDispatch(client, {
+          orderId: co.id, orderNumber: co.order_number, ownerId: dc.owner_id, items, excludeChallanId: dc.id,
+        });
+        if (over) { await client.query('ROLLBACK'); return res.status(409).json({ error: over }); }
+      }
       for (const it of items) {
         if (!(Number(it.quantity) > 0)) continue;
         /* By product first, then by name. An item the company has no stock
@@ -212,6 +273,15 @@ exports.setStatus = async (req, res) => {
         'UPDATE delivery_challans SET stock_applied = FALSE, stock_applied_at = NULL WHERE id = $1',
         [req.params.id]
       );
+      /* The goods are back on the shelf, but an invoice already raised for
+         this order still bills them. Said, so it is put right. */
+      if (dc.customer_order_id) {
+        const inv = (await client.query(
+          `SELECT invoice_number FROM sales_invoices
+            WHERE customer_order_id = $1 AND owner_id IS NOT DISTINCT FROM $2 AND COALESCE(status,'') <> 'Cancelled'
+            ORDER BY id`, [dc.customer_order_id, dc.owner_id])).rows.map(r => r.invoice_number);
+        if (inv.length) warning = `The goods are back in stock, but ${inv.join(', ')} still bill${inv.length === 1 ? 's' : ''} this order. If they did not go, cancel the invoice or raise a credit note.`;
+      }
     }
 
     /* Advance the linked order by COMPARING QUANTITIES, not by assuming a
@@ -228,14 +298,17 @@ exports.setStatus = async (req, res) => {
     /* Moved into shared/orderProgress so the invoice path uses the same
        comparison. It used to live only here, and SalesInvoiceController set
        'Delivered' unconditionally — running after this one and undoing it. */
-    if (goingOut && dc.customer_order_id) {
+    /* Either way: a challan pulled back to Draft takes its quantities off
+       the order too, or the order kept reading Delivered after the only
+       dispatch was reversed. */
+    if (dc.customer_order_id) {
       orderProgress = await syncOrderDelivery(client, dc.customer_order_id, dc.owner_id);
     }
 
     await client.query('COMMIT');
 
-    if (status === 'Dispatched') notify({ org: dc.owner_id }, { type: 'GOODS_DISPATCHED', title: `Dispatched · ${dc.challan_number}`, message: 'Goods dispatched to the customer', entityType: 'delivery_challan', entityId: Number(req.params.id), link: '/delivery-challans' });
-    res.json({ success: true, status, stockLinesMoved: moved, notInStock, orderProgress });
+    if (status === 'Dispatched') notify({ org: dc.owner_id }, { type: 'GOODS_DISPATCHED', title: `Dispatched · ${dc.challan_number}`, message: 'Goods dispatched to the customer', entityType: 'delivery_challan', entityId: Number(req.params.id), link: `/delivery-challans/${req.params.id}` });
+    res.json({ success: true, status, stockLinesMoved: moved, notInStock, orderProgress, warning });
   } catch (e) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: e.message });

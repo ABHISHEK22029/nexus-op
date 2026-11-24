@@ -175,7 +175,10 @@ function layoutProblems() {
     /* ── Stock on hand: tiles, cards, unlinked rows ── */
     await go('/inventory', /Stock value/i);
     const stockTile = await page.evaluate(() => { const t = document.querySelector('[data-tile="stock-value"] div[title]'); return t ? { text: t.innerText.trim(), title: t.title } : null; });
-    ok(stockTile && /Cr$/.test(stockTile.text) && /^₹[\d,]+$/.test(stockTile.title), `stock value is compact (${stockTile?.text}), exact on hover (${stockTile?.title})`);
+    /* Paise allowed: finished goods now carry their material cost (the
+       bracket job below: ₹26,07,240 over 4,324 pieces), so the exact figure
+       need not be whole rupees. */
+    ok(stockTile && /Cr$/.test(stockTile.text) && /^₹[\d,]+(\.\d{2})?$/.test(stockTile.title), `stock value is compact (${stockTile?.text}), exact on hover (${stockTile?.title})`);
     const cardsOk = await page.evaluate(() => [...document.querySelectorAll('[data-stock-card]')].map(c => {
       const r = c.getBoundingClientRect(); const p = c.querySelector('[data-pill]').getBoundingClientRect(); const q = c.querySelector('[data-qty]');
       return { qty: q.textContent.trim(), title: q.parentElement.title, inside: p.right <= r.right + 1 && p.left >= r.left - 1 };
@@ -198,10 +201,10 @@ function layoutProblems() {
     ok(N >= 6 && unlinkedCards.length === N && unlinkedCards.every(t => /Not linked to an item/.test(t) && /Link/.test(t)), `all ${N} unlinked rows say “Not linked to an item” with a Link button (${unlinkedCards.length})`);
     ok(await waitText(new RegExp(`${N} of ${N} stock rows are not linked`)), 'the page says how many rows shortfalls cannot count');
 
-    await go('/dashboard', /Everything at a glance|Executive dashboard/i);
+    await go('/dashboard', /Sales, purchases and stock across the business|Everything at a glance|Executive dashboard/i);
     await waitText(/Stock rows linked to a material or product/);
     const fixHref = await page.evaluate(() => {
-      const row = [...document.querySelectorAll('a')].find(a => /Fix this/.test(a.textContent) && /inventory/.test(a.getAttribute('href')));
+      const row = [...document.querySelectorAll('a')].find(a => /Fix this|Link stock/.test(a.textContent) && /inventory/.test(a.getAttribute('href')));
       return row ? row.getAttribute('href') : null;
     });
     ok(fixHref === '/inventory?unlinked=1', `the setup banner's Fix this goes to Stock on hand, unlinked rows (${fixHref})`);

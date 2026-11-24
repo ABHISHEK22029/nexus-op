@@ -12,9 +12,11 @@
    searched. A search shows its own subtotal separately, so looking for one
    vendor never appears to change what the company owes.
    ══════════════════════════════════════════════════════════ */
+import { Link } from 'react-router-dom';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Wallet, X, IndianRupee, Building2, AlertTriangle, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
 import FitNumber from '../components/FitNumber';
@@ -35,6 +37,8 @@ export default function Payables() {
   const [loading, setLoading] = useState(true);
   const [payBill, setPayBill] = useState(null);
   const [form, setForm] = useState({ amount: '', mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' });
+  const [paying, setPaying] = useState(false);
+  const { confirm } = useConfirm();
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [offset, setOffset] = useState(0);
@@ -59,15 +63,25 @@ export default function Payables() {
   useEffect(() => { load(); }, [load]);
 
   const openPay = (b) => { setPayBill(b); setForm({ amount: String(b.outstanding), mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' }); };
-  const submitPay = async () => {
+  /* One click, one payment — a double click recorded a part payment twice.
+     The same amount again within two minutes is asked about. */
+  const submitPay = async (confirmDuplicate = false) => {
     if (!(Number(form.amount) > 0)) { toast.error('Enter an amount'); return; }
+    if (paying) return;
+    setPaying(true);
     try {
-      const res = await fetch(`${API}/grn-bills/${payBill.id}/payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Failed');
+      const res = await fetch(`${API}/grn-bills/${payBill.id}/payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, confirmDuplicate }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.status === 409 && d.duplicate) {
+        setPaying(false);
+        if (await confirm({ title: 'Record a second payment?', message: d.error, confirmLabel: 'Yes, record it', cancelLabel: 'No, it was a double click' })) return submitPay(true);
+        return;
+      }
+      if (!res.ok) throw new Error(d.error || 'Could not record the payment');
       toast.success(`Paid — bill is now ${d.paymentStatus}`);
       setPayBill(null); load();
     } catch (e) { toast.error(e.message); }
+    finally { setPaying(false); }
   };
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
@@ -168,7 +182,7 @@ export default function Payables() {
                 ) : (
                   <>
                     <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Nothing outstanding 🎉</div>
-                    <div style={{ fontSize: '0.85rem', marginTop: 4 }}>Vendor bills appear here after you generate a GRN bill (Procurement → GRN).</div>
+                    <div style={{ fontSize: '0.85rem', marginTop: 4 }}>A vendor's bill shows here once you record it against the goods that arrived, on <Link to="/grn" style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>Goods received</Link>.</div>
                   </>
                 )}
               </div>
@@ -186,7 +200,7 @@ export default function Payables() {
                     const overdue = b.age_days > 0;
                     return (
                       <tr key={b.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>{b.bill_number}</td>
+                        <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700 }}><Link to={`/grn-bills/${b.id}`} data-payable-bill={b.id} style={{ color: 'var(--text-primary)' }}>{b.bill_number}</Link></td>
                         <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{b.vendor_name || '—'}</td>
                         <td style={{ padding: '11px 14px', fontSize: '0.82rem', color: overdue ? 'var(--accent-red)' : 'var(--text-secondary)' }}>
                           {fmtDate(b.due_date || b.bill_date)}
@@ -253,7 +267,7 @@ export default function Payables() {
               <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>Reference</label><input style={input} value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })} placeholder="UTR / cheque no." /></div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-              <button onClick={submitPay} className="btn-primary btn-sm">Record payment</button>
+              <button onClick={() => submitPay()} disabled={paying} className="btn-primary btn-sm">{paying ? 'Saving…' : 'Record payment'}</button>
               <button onClick={() => setPayBill(null)} className="btn-secondary">Cancel</button>
             </div>
           </div>

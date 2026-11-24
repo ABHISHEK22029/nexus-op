@@ -14,6 +14,11 @@ const UI = process.env.UI_BASE || 'http://127.0.0.1:5173';
 const API = process.env.API_BASE || 'http://localhost:5099';
 const EMAIL = process.env.UI_EMAIL, PASSWORD = process.env.UI_PASSWORD;
 if (!EMAIL || !PASSWORD) { console.error('set UI_EMAIL and UI_PASSWORD'); process.exit(1); }
+/* A throwaway account only. This deletes a company profile; it used to
+   delete EVERY company's profile and restore only the signed-in one's, so
+   one run against the shared database left every other business with no
+   name, GSTIN, address or bank details. */
+if (!/@example\.test$/i.test(EMAIL)) { console.error('UI_EMAIL must be a throwaway @example.test account'); process.exit(1); }
 
 const results = [];
 const step = (name, ok, detail = '') => {
@@ -34,7 +39,9 @@ function runSql(sql) {
 }
 async function deleteProfileRow() {
   try {
-    const out = runSql('DELETE FROM company_profile');
+    /* This account's company only — never the whole table. */
+    const email = String(EMAIL).replace(/'/g, "''");
+    const out = runSql(`DELETE FROM company_profile WHERE owner_id = (SELECT COALESCE(org_id, id) FROM users WHERE LOWER(email) = LOWER('${email}'))`);
     return { ok: true, detail: out.trim().split('\n').pop() };
   } catch (e) {
     return { ok: false, detail: e.message.slice(0, 160) };

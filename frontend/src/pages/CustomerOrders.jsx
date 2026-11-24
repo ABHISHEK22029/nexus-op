@@ -7,7 +7,7 @@
    screen would ever tell you it exists.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files, Factory } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useProject } from '../context/ProjectContext';
@@ -18,21 +18,33 @@ import { today } from '../lib/dates';
 import UnitSelect from '../components/UnitSelect';
 import FitNumber from '../components/FitNumber';
 import StatusSelect from '../components/StatusSelect';
+import { PartySelect } from '../components/QuickAddParty';
+import OrderPanel from '../components/OrderPanel';
+import { useConfirm } from '../context/ConfirmContext';
+import SaveAsProduct from '../components/SaveAsProduct';
+import UrgencyBadge, { orderUrgency } from '../components/UrgencyBadge';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 /* 'Partially Delivered' is set automatically by a dispatch that ships some
    of the order, so it must be a value this dropdown can display — otherwise
    the select falls back to blank and looks like the status was lost. */
-const STATUSES = ['Open', 'In Procurement', 'Partially Delivered', 'Delivered', 'Closed'];
-const STATUS_COLOR = { Open: '#2563eb', 'In Procurement': '#d97706', 'Partially Delivered': '#8b5cf6', Delivered: '#10b981', Closed: '#64748b' };
+const STATUSES = ['Open', 'In Procurement', 'In Production', 'Partially Delivered', 'Delivered', 'Closed'];
+const STATUS_COLOR = { Open: '#2563eb', 'In Procurement': '#d97706', 'In Production': '#0891b2', 'Partially Delivered': '#8b5cf6', Delivered: '#10b981', Closed: '#64748b' };
 
 export default function CustomerOrders() {
   const toast = useToast();
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
   const { activeProject } = useProject();
   const { can } = usePermissions();
-  const [making, setMaking] = useState(null);
+  const [saving, setSaving] = useState(false);
+  /* ?open=ID — an order opened from elsewhere (a quotation, an invoice, a
+     job). It may not be on the first page of the list, so it is shown on
+     its own above it. */
+  const [params, setParams] = useSearchParams();
+  const openId = Number(params.get('open')) || null;
+  const [focus, setFocus] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [skus, setSkus] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -55,8 +67,21 @@ export default function CustomerOrders() {
     setCustomers(Array.isArray(c) ? c : (c.items || []));
     setSkus(Array.isArray(s) ? s : (s.items || []));
   };
-  const load = () => { loadPickLists(); q.reload(); };
+  const loadFocus = async (id) => {
+    if (!id) { setFocus(null); return; }
+    const r = await fetch(`${API}/customer-orders/${id}`);
+    const d = await r.json().catch(() => ({}));
+    setFocus(r.ok ? d : { error: d.error || 'Order not found' });
+  };
+  /* The open order's panel, read again after something changed in it. */
+  const refreshDetail = async (id) => {
+    const d = await fetch(`${API}/customer-orders/${id}`).then(r => r.json()).catch(() => null);
+    if (d) setDetail(prev => ({ ...prev, [id]: d }));
+    if (openId === id) loadFocus(id);
+  };
+  const load = () => { loadPickLists(); q.reload(); Object.keys(detail).forEach(id => refreshDetail(Number(id))); };
   useEffect(() => { loadPickLists(); }, []);
+  useEffect(() => { loadFocus(openId); /* eslint-disable-next-line */ }, [openId]);
 
   const setLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
 
@@ -68,7 +93,7 @@ export default function CustomerOrders() {
   const orderTotal = () => lines.reduce((sum, l) => sum + lineTotal(l), 0);
   const pickSku = (i, skuId) => {
     const sku = skus.find(s => String(s.id) === String(skuId));
-    setLine(i, sku ? { skuId, description: sku.name, unit: sku.unit || 'nos', targetPrice: sku.price || '' } : { skuId: '' });
+    setLine(i, sku ? { skuId, description: sku.name, unit: sku.unit || 'nos', targetPrice: sku.price || '', hsn: sku.hsn || '' } : { skuId: '' });
   };
 
   const create = async (e) => {
@@ -78,6 +103,8 @@ export default function CustomerOrders() {
        only as targetPrice, every order typed here was saved at ₹0. */
     const items = lines.filter(l => l.description.trim()).map(l => ({ ...l, rate: l.targetPrice }));
     if (!items.length) { toast.error('Add at least one line item'); return; }
+    if (saving) return;            // a double click made two orders
+    setSaving(true);
     try {
       const res = await fetch(`${API}/customer-orders`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...head, items }) });
       const d = await res.json();
@@ -87,6 +114,7 @@ export default function CustomerOrders() {
       setLines([{ skuId: '', description: '', quantity: '', unit: 'nos', targetPrice: '' }]);
       load();
     } catch (err) { toast.error(err.message); }
+    finally { setSaving(false); }
   };
 
   const toggle = async (id) => {
@@ -97,46 +125,21 @@ export default function CustomerOrders() {
       setDetail(prev => ({ ...prev, [id]: d }));
     }
   };
+  /* Refusals are shown: both used to ignore the answer, so a delete the
+     server refused looked like a click that did nothing. */
   const setStatus = async (id, status) => {
-    await fetch(`${API}/customer-orders/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    const r = await fetch(`${API}/customer-orders/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); toast.error(d.error || 'Could not change the status'); }
     load();
   };
-  const del = async (id) => {
-    if (!window.confirm('Delete this customer order?')) return;
-    await fetch(`${API}/customer-orders/${id}`, { method: 'DELETE' }); load();
-  };
-
-  // One click: turn a customer-order line into a linked vendor quotation.
-  const raiseQuotation = async (item) => {
-    try {
-      const res = await fetch(`${API}/quotations`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ partDescription: item.description, quantity: item.quantity, unit: item.unit, customerOrderItemId: item.id }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
-      toast.success(`Quotation raised for “${item.description}”`);
-      navigate('/quotations');
-    } catch (err) { toast.error(err.message); }
-  };
-
-  // One click: fabricate this line in-house — spins up a production order and
-  // pre-fills what to consume from the SKU's recipe (BOM) × ordered qty.
-  const makeProduction = async (item) => {
-
-    setMaking(item.id);
-    try {
-      const res = await fetch(`${API}/production/from-order-item/${item.id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: activeProject?.id ?? null }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Failed');
-      toast.success(d.bomLines > 0
-        ? `${d.prodNumber} created — ${d.bomLines} material(s) from recipe`
-        : `${d.prodNumber} created — set a recipe (BOM) on the SKU to auto-fill materials`);
-      navigate('/production');
-    } catch (err) { toast.error(err.message); }
-    finally { setMaking(null); }
+  const del = async (o) => {
+    if (!(await confirm({ title: `Delete ${o.order_number}?`, message: "The order and its lines are removed for good. Orders with challans, invoices or jobs can't be deleted — close those instead.", confirmLabel: 'Delete order', tone: 'danger' }))) return;
+    const r = await fetch(`${API}/customer-orders/${o.id}`, { method: 'DELETE' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { toast.error(d.error || 'Could not delete the order'); return; }
+    toast.success(`${o.order_number} deleted`);
+    if (openId === o.id) setParams({});
+    load();
   };
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14 };
@@ -173,11 +176,8 @@ export default function CustomerOrders() {
         <form onSubmit={create} style={{ ...card, padding: 18, marginBottom: 18 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 14 }}>
             <div><label style={lbl}>Customer *</label>
-              <select style={input} value={head.customerId} onChange={e => setHead({ ...head, customerId: e.target.value })}>
-                <option value="">— Select customer —</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              {customers.length === 0 && <div style={{ fontSize: '0.7rem', color: 'var(--accent-red)', marginTop: 3 }}>Add a customer first (Customers page).</div>}
+              <PartySelect style={input} parties={customers} setParties={setCustomers} value={head.customerId}
+                onChange={id => setHead(h => ({ ...h, customerId: id }))} />
             </div>
             <div><label style={lbl}>Customer PO Ref</label><input style={input} placeholder="TST/PO/889" value={head.customerPoRef} onChange={e => setHead({ ...head, customerPoRef: e.target.value })} /></div>
             <div><label style={lbl}>Order Date</label><input style={input} type="date" value={head.orderDate} onChange={e => setHead({ ...head, orderDate: e.target.value })} /></div>
@@ -201,7 +201,10 @@ export default function CustomerOrders() {
                   </div>
                 )}
               </div>
-              <div style={{ flex: 2, minWidth: 160 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} placeholder="Part / product" aria-label={`Line ${i + 1} description`} autoComplete="off" /></div>
+              <div style={{ flex: 2, minWidth: 160 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} placeholder="Part / product" aria-label={`Line ${i + 1} description`} autoComplete="off" />
+                {!l.skuId && <SaveAsProduct description={l.description} unit={l.unit} price={l.targetPrice} hsn={l.hsn}
+                  onSaved={p => { setSkus(list => [...list, p]); setLine(i, { skuId: String(p.id) }); }} />}
+              </div>
               {/* Unit, quantity, rate, total — in that order, matching the
                   purchase order screen, which already read this way. A person
                   entering "10539.4 Kgs at ₹62" reaches for the unit while
@@ -252,10 +255,23 @@ export default function CustomerOrders() {
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button type="submit" className="btn-primary btn-sm">Create Order</button>
+            <button type="submit" className="btn-primary btn-sm" disabled={saving}>{saving ? 'Saving…' : 'Create Order'}</button>
             <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancel</button>
           </div>
         </form>
+      )}
+
+      {openId && focus && (
+        <div data-focus-order={openId} style={{ ...card, padding: '12px 16px', marginBottom: 16, borderColor: 'var(--brand-amber)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <b style={{ fontFamily: 'var(--font-mono)' }}>{focus.order_number || `Order #${openId}`}</b>
+            <span style={{ color: 'var(--text-secondary)' }}>{focus.customer?.name}</span>
+            {focus.status && <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 99, color: STATUS_COLOR[focus.status], background: `${STATUS_COLOR[focus.status] || '#64748b'}1f` }}>{focus.status}</span>}
+            <button onClick={() => setParams({})} aria-label="Close" style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={16} /></button>
+          </div>
+          {focus.error ? <p style={{ color: 'var(--text-muted)' }}>{focus.error}</p>
+            : <OrderPanel order={focus} canWrite={canWrite} projectId={activeProject?.id} onChanged={() => { loadFocus(openId); q.reload(); }} />}
+        </div>
       )}
 
       <ListToolbar
@@ -291,6 +307,8 @@ export default function CustomerOrders() {
                     <td style={{ padding: '11px 14px', color: 'var(--text-muted)' }}>{expanded === o.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</td>
                     <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                       {o.order_number}
+                      {/* How late it is, beside the number and apart from its status. */}
+                      {orderUrgency(o) && <div style={{ marginTop: 3 }}><UrgencyBadge u={orderUrgency(o)} /></div>}
                       {/* The delivery the quotation promised, as the date this
                           order must ship by (set when a quotation converts). */}
                       {o.expected_shipment_date && (
@@ -316,61 +334,13 @@ export default function CustomerOrders() {
                     <td style={{ padding: '11px 14px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                       {/* Hidden when the API would refuse it anyway. */}
                       {canDelete && (
-                        <button onClick={() => del(o.id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Trash2 size={15} /></button>
+                        <button onClick={() => del(o)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Trash2 size={15} /></button>
                       )}
                     </td>
                   </tr>
                   {expanded === o.id && detail[o.id] && (
                     <tr><td colSpan={7} style={{ padding: '0 14px 14px', background: 'var(--bg-elevated)' }}>
-                      {/* Can we actually build this, and what's stopping us?
-                          Answered before the line items, because it decides
-                          whether starting the job is even possible today. */}
-                      <div style={{ paddingTop: 12 }}>
-                        <OrderReadiness orderId={o.id} />
-                      </div>
-                      <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', padding: '4px 0 6px' }}>Line items</div>
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <tbody>
-                          {(detail[o.id].items || []).map(it => (
-                            <tr key={it.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                              <td style={{ padding: '7px 4px', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.84rem' }}>{it.description}</td>
-                              <td style={{ padding: '7px 4px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{it.quantity} {it.unit}</td>
-                              <td style={{ padding: '7px 4px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{it.target_price ? `target ${fmtINR(it.target_price)}` : ''}</td>
-                              <td style={{ padding: '7px 4px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                <button onClick={() => makeProduction(it)} disabled={making === it.id} title="Fabricate this line in-house" className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 6, opacity: making === it.id ? 0.6 : 1 }}>
-                                  <Factory size={13} /> {making === it.id ? 'Making…' : 'Make'}
-                                </button>
-                                <button onClick={() => raiseQuotation(it)} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                  <Files size={13} /> Raise Quotation
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {/* What was bought for this order, so a job's material
-                          can be followed from the order to the vendor. */}
-                      {(detail[o.id].purchaseOrders || []).length > 0 && (
-                        <div data-order-pos style={{ marginTop: 10 }}>
-                          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', padding: '4px 0 6px' }}>Purchase orders for this order</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            {detail[o.id].purchaseOrders.map(p => (
-                              <Link key={p.id} to={`/po/${p.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--bg-surface)', textDecoration: 'none', fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                <b style={{ fontFamily: 'var(--font-mono)' }}>{p.po_number}</b>
-                                <span style={{ color: 'var(--text-secondary)' }}>{p.vendor_name}</span>
-                                <span style={{ color: 'var(--text-muted)' }}>{p.status}{p.approval_status === 'Pending Approval' ? ' · needs sign-off' : ''}</span>
-                                {p.value != null && <span style={{ fontWeight: 600 }}>{fmtINR(p.value)}</span>}
-                              </Link>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 8 }}>
-                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}><b>Make</b> to fabricate in-house · <b>Raise Quotation</b> to buy-out from vendors · then bill the customer →</div>
-                        <button onClick={() => navigate(`/customer-orders/${o.id}/invoice`)} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          <Files size={14} /> Create Invoice
-                        </button>
-                      </div>
+                      <OrderPanel order={detail[o.id]} canWrite={canWrite} projectId={activeProject?.id} onChanged={() => { refreshDetail(o.id); q.reload(); }} />
                     </td></tr>
                   )}
                 </React.Fragment>

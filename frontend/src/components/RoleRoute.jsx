@@ -76,7 +76,7 @@ function ModuleOff({ module }) {
         {MODULE_NAMES[module] || module} is turned off. Nothing has been deleted — switch it
         back on in <strong>Configure → Modules</strong> and everything is where you left it.
       </p>
-      <Link to="/" className="btn-secondary" style={{ textDecoration: 'none' }}>Back to dashboard</Link>
+      <Link to="/dashboard" className="btn-secondary" style={{ textDecoration: 'none' }}>Back to dashboard</Link>
     </div>
   );
 }
@@ -100,7 +100,7 @@ function Denied({ role, roleLabel, what, action }) {
         cover {action === 'open' ? 'opening' : action === 'view' ? 'viewing' : 'changing'} {what}.
         Ask an administrator if you need it.
       </p>
-      <Link to="/" className="btn-secondary" style={{ textDecoration: 'none' }}>Back to dashboard</Link>
+      <Link to="/dashboard" className="btn-secondary" style={{ textDecoration: 'none' }}>Back to dashboard</Link>
     </div>
   );
 }

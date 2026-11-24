@@ -9,7 +9,8 @@
    that flatters.
    ══════════════════════════════════════════════════════════ */
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import UrgencyBadge, { invoiceUrgency } from '../components/UrgencyBadge';
 import { ReceiptIndianRupee, Trash2, Plus } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
@@ -108,7 +109,7 @@ export default function SalesInvoices() {
       <div style={{ ...card, overflow: 'hidden' }}>
         {q.rows.length === 0 ? (
           <EmptyState q={q} icon={ReceiptIndianRupee} noun="invoices"
-            hint="Open a Customer Order → “Create Invoice”." />
+            hint={<>Bill a customer order from its panel on <Link to="/customer-orders" style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>Orders</Link>, or use “Invoice without an order” above.</>} />
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -127,7 +128,11 @@ export default function SalesInvoices() {
                         onClick={() => navigate(`/sales-invoices/${r.id}`)}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>{r.invoice_number}</td>
+                      <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {r.invoice_number}
+                        {/* How late the money is, beside the number and apart from the status. */}
+                        {invoiceUrgency(r) && <div style={{ marginTop: 3, fontFamily: 'var(--font-body)' }}><UrgencyBadge u={invoiceUrgency(r)} /></div>}
+                      </td>
                       <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{r.customer_name || '—'}</td>
                       <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontVariantNumeric: 'tabular-nums', textAlign: 'right', whiteSpace: 'nowrap' }}>{rup(r.net_amount)}</td>
                       <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: '#10b981', fontVariantNumeric: 'tabular-nums', textAlign: 'right', whiteSpace: 'nowrap' }}>{rup(r.amount_paid)}</td>

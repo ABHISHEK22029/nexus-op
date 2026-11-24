@@ -91,6 +91,14 @@ exports.create = async (req, res) => {
   if (!itemName && !rawMaterialId && !skuId) {
     return res.status(400).json({ error: 'Give the item a name, or link it to a material or product' });
   }
+  /* A quantity on hand is zero or more. A negative one was quietly turned
+     positive further down (stockIn takes the size), so −50 added 50. */
+  if (quantity != null && quantity !== '' && (!Number.isFinite(Number(quantity)) || Number(quantity) < 0)) {
+    return res.status(400).json({ error: 'The quantity on hand must be a number, 0 or more. To take stock away, use Count.' });
+  }
+  if (unitCost != null && unitCost !== '' && (!Number.isFinite(Number(unitCost)) || Number(unitCost) < 0)) {
+    return res.status(400).json({ error: 'The cost must be a number, 0 or more.' });
+  }
   const qty = Number(quantity) || 0;
 
   const client = await db.getClient();
@@ -135,8 +143,12 @@ exports.create = async (req, res) => {
       stockListId: listId,
     });
 
-    // Optional attributes the ledger doesn't own.
-    if (unitCost != null || minStockLevel != null || category || location) {
+    /* Optional attributes the ledger doesn't own. The cost is set here only
+       when nothing is coming in with it; stock that arrives at a cost is
+       averaged into what is on the shelf by the movement below, and writing
+       the new price first re-valued the whole balance at it. */
+    const costOnRow = qty > 0 && unitCost != null && unitCost !== '' ? null : (unitCost === '' ? null : unitCost);
+    if (costOnRow != null || minStockLevel != null || category || location) {
       await client.query(
         `UPDATE inventory SET
            unit_cost = COALESCE($1, unit_cost),
@@ -144,7 +156,7 @@ exports.create = async (req, res) => {
            category = COALESCE($3, category),
            location = COALESCE($4, location)
          WHERE id = $5`,
-        [unitCost ?? null, minStockLevel ?? null, category || null, location || null, row.id]);
+        [costOnRow ?? null, minStockLevel ?? null, category || null, location || null, row.id]);
     }
 
     /* The quantity arrives as a MOVEMENT, not as a column write, so the
@@ -192,7 +204,9 @@ exports.adjust = async (req, res) => {
     const params = [req.params.id];
     let scope = '';
     if (!isCrossTenant(req.user?.role)) { params.push(req.user.orgId); scope = ` AND owner_id = $${params.length}`; }
-    const row = (await client.query(`SELECT * FROM inventory WHERE id = $1${scope}`, params)).rows[0];
+    /* Locked: a count read without it could be overtaken by an issue a
+       moment later and come back as a server error. */
+    const row = (await client.query(`SELECT * FROM inventory WHERE id = $1${scope} FOR UPDATE`, params)).rows[0];
     if (!row) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Stock item not found' }); }
 
     const delta = Number(countedQuantity) - Number(row.quantity || 0);
@@ -223,7 +237,9 @@ exports.adjust = async (req, res) => {
    through shared/stock, which is the only way the two can disagree. */
 exports.reconcile = async (req, res) => {
   try {
-    const r = await stock.reconcile(db, req.user?.id, isCrossTenant(req.user?.role));
+    /* The company's stock, not the signed-in person's: by user id, a team
+       member always got "healthy, 0 checked". */
+    const r = await stock.reconcile(db, req.user?.orgId ?? req.user?.id, isCrossTenant(req.user?.role));
     res.json(r);
   } catch (e) { res.status(500).json({ error: e.message }); }
 };

@@ -214,7 +214,10 @@ function groupByVendor(materials, choices = {}) {
       byVendor.set(key, { vendorId: key, vendorName: vendor.name, lines: [], total: 0 });
     }
     const basket = byVendor.get(key);
-    const rate = Number(vendor.price) || 0;
+    /* The vendor's price, else the material's standard rate. A vendor linked
+       without a price gave ₹0 lines that skipped sign-off and brought stock
+       in at nothing, while the board showed the order at the standard rate. */
+    const rate = Number(vendor.price) || Number(m.standard_rate) || 0;
     const line = {
       raw_material_id: m.raw_material_id,
       material: m.material,

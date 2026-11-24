@@ -21,12 +21,16 @@ const getToken = () => localStorage.getItem(TOKEN_KEY);
    was changed", "This account has been switched off". Without it a person
    was simply back at the sign-in page with no idea why. */
 export const SIGNED_OUT_KEY = 'maks_signed_out_reason';
+export const RETURN_KEY = 'maks_return_to';
 function forceLogout(reason) {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   try { if (reason && String(reason).length <= 160) sessionStorage.setItem(SIGNED_OUT_KEY, JSON.stringify({ reason: String(reason), at: Date.now() })); } catch { /* private mode */ }
   // Avoid redirect loops on the auth screens themselves (login / signup).
   if (!/^\/(login|signup)/.test(window.location.pathname)) {
+    /* Where they were, so signing in again goes back there rather than to
+       the dashboard — half an hour into an invoice, that is the page. */
+    try { sessionStorage.setItem(RETURN_KEY, window.location.pathname + window.location.search); } catch { /* private mode */ }
     window.location.assign('/login');
   }
 }

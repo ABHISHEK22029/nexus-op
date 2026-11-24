@@ -11,7 +11,7 @@
    stopped. The count is computed server-side over the whole filtered set.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Truck, Plus, Trash2, X, Eye } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
@@ -22,6 +22,8 @@ import { today } from '../lib/dates';
 import UnitSelect from '../components/UnitSelect';
 import FitNumber from '../components/FitNumber';
 import StatusSelect from '../components/StatusSelect';
+import { PartySelect } from '../components/QuickAddParty';
+import { useConfirm } from '../context/ConfirmContext';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Draft', 'Dispatched', 'Delivered'];
@@ -31,6 +33,7 @@ const rupee = (n) => fmtINR(n);
 
 export default function DeliveryChallans() {
   const toast = useToast();
+  const { confirm } = useConfirm();
   const navigate = useNavigate();
   const { can } = usePermissions();
   const q = useListQuery('delivery-challans', { pageSize: 25 });
@@ -39,16 +42,25 @@ export default function DeliveryChallans() {
   const [showForm, setShowForm] = useState(false);
   const [head, setHead] = useState({ customerId: '', customerOrderId: '', challanDate: today(), dispatchThrough: '', vehicleNo: '', lrNo: '', placeOfSupply: '' });
   const [lines, setLines] = useState([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
+  const [skus, setSkus] = useState([]);
+  const [saving, setSaving] = useState(false);
+  /* ?order=ID — "Create challan" pressed on an order. */
+  const [params, setParams] = useSearchParams();
 
   // Only the pick-lists for the form load here; the list itself is q's job.
   useEffect(() => {
     (async () => {
-      const [c, o] = await Promise.all([
+      const [c, o, k] = await Promise.all([
         fetch(`${API}/customers`).then(r => r.ok ? r.json() : []),
         fetch(`${API}/customer-orders`).then(r => r.ok ? r.json() : []),
+        fetch(`${API}/skus`).then(r => r.ok ? r.json() : []),
       ]);
       setCustomers(Array.isArray(c) ? c : []); setOrders(Array.isArray(o) ? o : []);
+      setSkus(Array.isArray(k) ? k : (k.items || []));
+      const fromOrder = params.get('order');
+      if (fromOrder) { setShowForm(true); prefillFromOrder(fromOrder); setParams({}, { replace: true }); }
     })();
+    /* eslint-disable-next-line */
   }, []);
 
   const setLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
@@ -62,10 +74,11 @@ export default function DeliveryChallans() {
     if (!orderId) return;
     try {
       const d = await fetch(`${API}/delivery-challans/prefill/${orderId}`).then(r => r.json());
-      setHead(h => ({ ...h, customerOrderId: orderId, customerId: d.customerId || '', placeOfSupply: d.placeOfSupply || '' }));
+      setHead(h => ({ ...h, customerOrderId: orderId, customerId: d.customerId ? String(d.customerId) : '', placeOfSupply: d.placeOfSupply || '' }));
       /* skuId rides along unseen: dispatch takes stock by product, not by
-         however the line is spelt. */
+         however the line is spelt. Only what is still to go is filled in. */
       if (d.items?.length) setLines(d.items.map(it => ({ description: it.description, hsn: it.hsn || '', quantity: it.quantity, uom: it.uom || 'nos', rate: it.rate || '', skuId: it.skuId || null })));
+      else if (d.nothingLeft) toast.info ? toast.info(d.message) : toast.warning(d.message);
     } catch { /* ignore */ }
   };
 
@@ -74,12 +87,14 @@ export default function DeliveryChallans() {
     if (!head.customerId) { toast.error('Pick a customer'); return; }
     const items = lines.filter(l => l.description.trim());
     if (!items.length) { toast.error('Add at least one item'); return; }
+    if (saving) return;            // a double click made two challans
+    setSaving(true);
     const token = getToken();
     const res = await fetch(`${API}/delivery-challans`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ ...head, items }),
-    });
+    }).finally(() => setSaving(false));
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.detail || d.error || 'Could not create the challan');
     toast.success(`Challan ${d.challanNumber} created`);
@@ -89,6 +104,10 @@ export default function DeliveryChallans() {
   };
 
   const setStatus = async (id, status) => {
+    const dc = q.rows.find(r => r.id === id);
+    const out = ['Dispatched', 'Delivered'].includes(dc?.status);
+    if (status === 'Dispatched' && !out && !(await confirm({ title: `Dispatch ${dc?.challan_number || 'this challan'}?`, message: 'Its goods are taken out of stock now.', confirmLabel: 'Dispatch' }))) return;
+    if (status === 'Draft' && out && !(await confirm({ title: `Pull ${dc?.challan_number || 'this challan'} back to Draft?`, message: 'Its goods go back into stock, as if they never left.', confirmLabel: 'Pull back' }))) return;
     const token = getToken();
     const res = await fetch(`${API}/delivery-challans/${id}/status`, {
       method: 'PATCH',
@@ -100,14 +119,16 @@ export default function DeliveryChallans() {
     /* Items with no stock record — job work, samples, goods out for
        repair — go without taking anything from stock. Say which, so a
        misspelt line is noticed rather than hidden. */
-    if (b.notInStock?.length) {
+    if (b.warning) toast.warning(b.warning);
+    else if (b.notInStock?.length) {
       toast.warning(`${status}. Not in your stock list, so stock didn't change for: ${b.notInStock.join(', ')}`);
     } else if (status !== 'Draft') toast.success(status);
+    else toast.success('Back to Draft — the goods are back in stock');
     q.reload();
   };
 
   const del = async (dc) => {
-    if (!window.confirm(`Delete ${dc.challan_number}?`)) return;
+    if (!(await confirm({ title: `Delete ${dc.challan_number}?`, message: "A draft challan is removed for good. This can't be undone.", confirmLabel: 'Delete challan', tone: 'danger' }))) return;
     const token = getToken();
     const res = await fetch(`${API}/delivery-challans/${dc.id}`, {
       method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -160,10 +181,8 @@ export default function DeliveryChallans() {
               </select>
             </div>
             <div><label style={lbl}>Customer *</label>
-              <select style={input} value={head.customerId} onChange={e => setHead({ ...head, customerId: e.target.value })}>
-                <option value="">— Select —</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <PartySelect style={input} parties={customers} setParties={setCustomers} value={head.customerId}
+                onChange={id => setHead(h => ({ ...h, customerId: id }))} />
             </div>
             <div><label style={lbl}>Challan Date</label><input style={input} type="date" value={head.challanDate} onChange={e => setHead({ ...head, challanDate: e.target.value })} /></div>
             <div><label style={lbl}>Dispatch through</label><input style={input} value={head.dispatchThrough} onChange={e => setHead({ ...head, dispatchThrough: e.target.value })} placeholder="Transporter" /></div>
@@ -174,6 +193,18 @@ export default function DeliveryChallans() {
           <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>Items dispatched</div>
           {lines.map((l, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
+              {skus.length > 0 && (
+                <div style={{ flex: 1.3 }}><label style={lbl}>Product</label>
+                  <select style={input} value={l.skuId || ''} aria-label={`Line ${i + 1} product`} data-challan-product={i}
+                    onChange={e => {
+                      const p = skus.find(x => String(x.id) === e.target.value);
+                      setLine(i, p ? { skuId: p.id, description: p.name, uom: p.unit || l.uom, hsn: p.hsn || l.hsn, rate: l.rate || p.price || '' } : { skuId: null });
+                    }}>
+                    <option value="">Not a product</option>
+                    {skus.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+              )}
               <div style={{ flex: 2.5 }}><label style={lbl}>Description *</label><input style={input} value={l.description} onChange={e => setLine(i, { description: e.target.value })} /></div>
               <div style={{ flex: 0.9 }}><label style={lbl}>HSN</label><input style={input} value={l.hsn} inputMode="numeric" maxLength={8} onChange={e => setLine(i, { hsn: e.target.value.replace(/\D/g, '') })} /></div>
               {/* Unit before quantity, as everywhere else. The money column
@@ -197,7 +228,7 @@ export default function DeliveryChallans() {
           ))}
           <button type="button" onClick={() => setLines([...lines, { description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }])} className="btn-secondary" style={{ fontSize: '0.78rem', marginTop: 4 }}><Plus size={14} /> Add line</button>
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button type="submit" className="btn-primary btn-sm">Create Challan</button>
+            <button type="submit" className="btn-primary btn-sm" disabled={saving}>{saving ? 'Saving…' : 'Create Challan'}</button>
             <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancel</button>
           </div>
         </form>

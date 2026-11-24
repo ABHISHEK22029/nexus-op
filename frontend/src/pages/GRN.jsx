@@ -8,7 +8,7 @@
    batch stencilled on it, and the chainage it was tipped at.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { PackageCheck, AlertTriangle, ReceiptText } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
@@ -40,6 +40,10 @@ const GRN = () => {
      sent no line, and the server asked "which one?" with database ids. */
   const [lines, setLines] = useState([]);
   const [poTick, setPoTick] = useState(0);
+  const [saving, setSaving] = useState(false);
+  /* ?po=ID — "Receive" pressed on a purchase order: that order is chosen. */
+  const [params] = useSearchParams();
+  const wantPo = params.get('po');
 
   const canWrite = can('grn', 'write');
 
@@ -63,6 +67,7 @@ const GRN = () => {
            or approved PO was offered too, and the server then refused it. */
         setPos(rows.filter(p => ['Dispatched', 'Partially Received'].includes(p.status)));
         setPoNo(Object.fromEntries(rows.map(p => [p.id, p.poNumber])));
+        if (wantPo && rows.some(p => String(p.id) === String(wantPo) && ['Dispatched', 'Partially Received'].includes(p.status))) choosePo(String(wantPo));
       })
       .catch(err => toast.error(err.message || 'Something went wrong'));
   }, [activeProject, poTick]);
@@ -104,6 +109,9 @@ const GRN = () => {
       toast.error('Please select a PO and enter the received quantity');
       return;
     }
+    if (!(Number(newItem.receivedQuantity) > 0)) { toast.error('Enter the quantity that arrived — more than zero'); return; }
+    if (saving) return;            // a double click booked the goods twice
+    setSaving(true);
     if (openLines.length > 1 && !newItem.poLineItemId) {
       toast.error('Choose which line of the purchase order arrived');
       return;
@@ -136,7 +144,7 @@ const GRN = () => {
       q.reload();
     } catch (err) {
       toast.error(err.response?.data?.error || err.message || 'Something went wrong');
-    }
+    } finally { setSaving(false); }
   };
 
   /* No Delete here. A receipt adds the goods to stock and counts against
@@ -195,12 +203,12 @@ const GRN = () => {
             </div>}
             <div className="flex-1 min-w-[150px]">
                <label className="block text-xs font-medium text-gray-500 mb-1">Quantity received{unit && <span style={{ fontWeight: 400 }}> ({unit.trim()})</span>}</label>
-               <input type="number" min="0" className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newItem.receivedQuantity} onChange={handleQtyChange}
+               <input type="number" min="0" step="any" inputMode="decimal" className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" value={newItem.receivedQuantity} onChange={handleQtyChange}
                  placeholder={line ? `${Number(line.outstanding).toLocaleString('en-IN')} to come` : 'e.g. 180'} aria-label="Quantity received" />
             </div>
 
-            <button type="submit" className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              Generate GRN
+            <button type="submit" disabled={saving} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {saving ? 'Saving…' : 'Generate GRN'}
             </button>
           </form>
         </div>
@@ -229,7 +237,7 @@ const GRN = () => {
               {q.rows.map((req) => (
                 <tr key={req.id} className="hover:bg-white/[0.02] transition-colors text-gray-300">
                   <td className="px-6 py-4 font-medium" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-primary)' }}>{req.grn_number || `GRN-${req.id.toString().padStart(5, '0')}`}</td>
-                  <td className="px-6 py-4" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{poNo[req.poId] || `PO-${req.poId}`}</td>
+                  <td className="px-6 py-4" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}><Link to={`/po/${req.poId}`} style={{ color: 'inherit' }}>{poNo[req.poId] || `PO-${req.poId}`}</Link></td>
                   <td className="px-6 py-4">{req.vehicleNumber || '—'}</td>
                   <td className="px-6 py-4 font-bold text-right" style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{Number(req.receivedQuantity).toLocaleString('en-IN')}</td>
                   <td className="px-6 py-4">

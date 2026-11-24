@@ -29,8 +29,11 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
   /* Server-side search + pagination. Previously this fetched the entire table
      every time and filtered nothing — fine at 20 rows, unusable at 20,000. */
   const PAGE_SIZE = 25;
-  const [search, setSearch] = useState('');
-  const [debounced, setDebounced] = useState('');
+  /* ?q= in the address starts the list searched for it (a search result
+     for a product opens Products narrowed to it). */
+  const urlQ = () => { try { return new URLSearchParams(window.location.search).get('q') || ''; } catch { return ''; } };
+  const [search, setSearch] = useState(urlQ);
+  const [debounced, setDebounced] = useState(urlQ);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);

@@ -16,7 +16,10 @@
    transaction — a dispatch that fails partway must not leave stock removed.
    ══════════════════════════════════════════════════════════ */
 
-const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+/* Quantities are kept to 4 places (migrations 066, 071). Rounding each
+   movement to 2 took 0.13 kg off the shelf for a 0.125 kg issue, and a
+   0.004 issue wrote a zero line that moved nothing. */
+const r2 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
 
 /* Stock cannot go below zero.
 
@@ -59,10 +62,21 @@ async function move(client, m) {
      stays at zero or above. One statement, so two dispatches at the same
      moment cannot both read 520 and both take 400: the second waits for
      the first's row lock and is then checked against what is left. */
-  const guard = qty < 0 && !m.allowNegative ? ' AND ROUND(COALESCE(quantity,0) + $1, 2) >= 0' : '';
+  const guard = qty < 0 && !m.allowNegative ? ' AND ROUND(COALESCE(quantity,0) + $1, 4) >= 0' : '';
+  /* Goods coming in at a cost average into what is on the shelf: 100 kg
+     at ₹60 and 100 kg at ₹75 is 200 kg at ₹67.50. The row's cost was only
+     ever set when it was created, so a price change never reached stock
+     value or what a job's material cost. */
+  const cost = Number(m.unitCost);
+  const average = qty > 0 && Number.isFinite(cost) && cost > 0 && m.averageCost !== false;
   const moved = await client.query(
-    `UPDATE inventory SET quantity = COALESCE(quantity,0) + $1, last_movement_at = NOW() WHERE id = $2${guard} RETURNING id`,
-    [r2(qty), m.inventoryId]
+    average
+      ? `UPDATE inventory SET quantity = COALESCE(quantity,0) + $1,
+           unit_cost = CASE WHEN COALESCE(quantity,0) > 0 AND COALESCE(unit_cost,0) > 0
+                            THEN ROUND((quantity * unit_cost + $1 * $3) / (quantity + $1), 4) ELSE $3 END,
+           last_movement_at = NOW() WHERE id = $2 RETURNING id`
+      : `UPDATE inventory SET quantity = COALESCE(quantity,0) + $1, last_movement_at = NOW() WHERE id = $2${guard} RETURNING id`,
+    average ? [r2(qty), m.inventoryId, cost] : [r2(qty), m.inventoryId]
   );
   if (!moved.rowCount) {
     const row = (await client.query('SELECT "itemName", quantity, uom FROM inventory WHERE id = $1', [m.inventoryId])).rows[0];

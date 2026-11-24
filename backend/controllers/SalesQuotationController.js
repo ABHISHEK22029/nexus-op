@@ -209,7 +209,7 @@ exports.create = async (req, res) => {
     const t = compute(items, { discount, gstRate, interstate, roundOff }, { strictUnits: true });
     /* From a sequence, not a count. COUNT(*) + 1 reissues a number after a
        delete and hands the same one to two people creating at once. */
-    const qnum = await allocate(client, { ownerId: req.user?.orgId, docType: 'quotation' });
+    const qnum = await allocate(client, { ownerId: req.user?.orgId, docType: 'quotation', date: quoteDate });
     const { rows } = await client.query(
       `INSERT INTO sales_quotations (owner_id, customer_id, quote_number, quote_date, valid_until,
          sub_total, discount, gst_rate, interstate, cgst, sgst, igst, gst_total, round_off, net_amount, amount_in_words, notes, terms,
@@ -480,21 +480,30 @@ exports.convertToOrder = async (req, res) => {
                $6,$7,'flat',$8,$9,
                $10,$11,$12,$13,$14,$15,$16,
                $17,$18, CURRENT_DATE + $19::int) RETURNING id, order_date, expected_shipment_date`,
-      [q.owner_id, q.customer_id, onum, q.quote_number, notes.join(' · '),
+      [q.owner_id, q.customer_id, onum, null, notes.join(' · '),
        t.subTotal, Number(q.discount) || 0, Number(q.gst_rate) || 0, !!q.interstate,
        t.cgst, t.sgst, t.igst, t.gstTotal, Number(q.round_off) || 0, t.net, amountInWords(t.net),
        q.terms || null, q.payment_terms_days || null, days]);
     const orderId = co.rows[0].id;
     const shipBy = co.rows[0].expected_shipment_date || null;
+    /* The line as quoted, HSN and all. Only the description, quantity and
+       price came across, so the invoice raised from the order had no HSN —
+       a particular Rule 46 requires. The customer's PO number is left for
+       them to give: it was set to our own quotation number, and the invoice
+       then printed "Your PO: QT-0007". */
+    let so = 0;
     for (const it of items) {
       await client.query(
-        `INSERT INTO customer_order_items (customer_order_id, sku_id, description, quantity, unit, target_price)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [orderId, it.sku_id, it.description, it.quantity, it.uom || 'nos', it.rate]);
+        `INSERT INTO customer_order_items (customer_order_id, sku_id, description, hsn, quantity, unit, rate, target_price, amount, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9)`,
+        [orderId, it.sku_id, it.description, it.hsn || null, it.quantity, it.uom || 'nos', it.rate,
+         Math.round((Number(it.quantity) || 0) * (Number(it.rate) || 0) * 100) / 100, so++]);
     }
     await client.query(`UPDATE sales_quotations SET status = 'Converted', converted_order_id = $1 WHERE id = $2`, [orderId, q.id]);
+    /* the enquiry it answered is won */
+    await client.query(`UPDATE enquiries SET status = 'Won', updated_at = NOW() WHERE quotation_id = $1 AND owner_id IS NOT DISTINCT FROM $2`, [q.id, q.owner_id]);
     await client.query('COMMIT');
-    notify({ org: q.owner_id }, { type: 'QUOTE_CONVERTED', title: `Quotation ${q.quote_number} won`, message: `Converted to order ${onum}${shipBy ? ` · ship by ${shipBy}` : ''}`, entityType: 'customer_order', entityId: orderId, link: '/customer-orders' });
+    notify({ org: q.owner_id }, { type: 'QUOTE_CONVERTED', title: `Quotation ${q.quote_number} won`, message: `Converted to order ${onum}${shipBy ? ` · ship by ${shipBy}` : ''}`, entityType: 'customer_order', entityId: orderId, link: `/customer-orders?open=${orderId}` });
     res.json({ success: true, orderId, orderNumber: onum, orderDate: co.rows[0].order_date, expectedShipmentDate: shipBy });
   } catch (e) { await client.query('ROLLBACK'); res.status(e.status || 500).json({ error: e.message }); }
   finally { client.release(); }
@@ -503,11 +512,23 @@ exports.convertToOrder = async (req, res) => {
 // DELETE /sales-quotations/:id
 exports.remove = async (req, res) => {
   try {
-    if (!await assertOwned(db, req, res, 'sales_quotations', req.params.id, { columns: 'id' })) return;
+    const q = await assertOwned(db, req, res, 'sales_quotations', req.params.id, { columns: 'id, quote_number, converted_order_id' });
+    if (!q) return;
+    /* An order made from it keeps it as its source. */
+    if (q.converted_order_id) {
+      return res.status(409).json({ error: `${q.quote_number} became an order, so it can't be deleted. Delete the order first if that was a mistake.` });
+    }
+    /* A quotation made from an enquiry could not be deleted at all: the
+       enquiry's link to it has no ON DELETE rule, and the raw database error
+       came back as the message. The enquiry goes back to waiting for one. */
+    await db.query(`UPDATE enquiries SET quotation_id = NULL, updated_at = NOW() WHERE quotation_id = $1`, [q.id]);
     const r = await db.query('DELETE FROM sales_quotations WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (e.code === '23503') return res.status(409).json({ error: 'Other records still point at this quotation, so it can\'t be deleted.' });
+    res.status(500).json({ error: e.message });
+  }
 };
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -677,7 +698,7 @@ exports.publicRespond = async (req, res) => {
     const { rows: [done] } = await db.query(
       `UPDATE sales_quotations
           SET status = $2, responded_at = NOW(), response_name = $3, response_note = $4
-        WHERE accept_token = $1 AND responded_at IS NULL AND status IN ('Draft', 'Sent')
+        WHERE accept_token = $1 AND responded_at IS NULL AND status = 'Sent'
           AND (valid_until IS NULL OR valid_until >= ${TODAY_IST})
         RETURNING id, owner_id, quote_number, customer_id`,
       [token, status, name, note || null]);
@@ -727,7 +748,7 @@ exports.publicRespond = async (req, res) => {
       type: status === 'Accepted' ? 'QUOTE_ACCEPTED' : 'QUOTE_DECLINED',
       title: `Quotation ${done.quote_number} ${verb}`,
       message: `${who} ${verb} it online${note ? `: “${note.slice(0, 140)}”` : '.'}`,
-      entityType: 'sales_quotation', entityId: done.id, link: '/sales-quotations',
+      entityType: 'sales_quotation', entityId: done.id, link: `/sales-quotations/${done.id}`,
     });
     res.json(view);
   } catch (e) {

@@ -33,6 +33,10 @@ const SERIES = {
   /* Five digits, as receipts have always been written (GRN-00031). They
      used to be the database id; migration 074 numbered them per company. */
   goods_receipt:    { label: 'Goods receipt',    prefix: 'GRN-', pad: 5, table: 'grn',                column: 'grn_number' },
+  /* Production orders were COUNT + 1 per project: numbers repeated across
+     projects, a deleted job's number came back, and two started at once
+     could collide. Numbers already used are skipped (taken, below). */
+  production_order: { label: 'Production order', prefix: 'PROD-', pad: 4, table: 'production_orders', column: 'prod_number' },
 };
 
 const HAS_FY = /\{FY\}/i;
@@ -91,7 +95,13 @@ async function context(exec, ownerId, docType, date) {
  * Take the next number. Must run inside the caller's transaction, so a
  * document that is rolled back does not use one up.
  */
-async function allocate(client, { ownerId, docType, date = new Date() }) {
+/* The document's own date decides its financial year: an invoice dated
+   30 March and raised on 2 April belongs to the year that ended. A missing
+   or unreadable date means today. */
+const asDate = (d) => { const x = d ? new Date(d) : new Date(); return Number.isNaN(x.getTime()) ? new Date() : x; };
+
+async function allocate(client, { ownerId, docType, date }) {
+  date = asDate(date);
   const c = await context(client, ownerId, docType, date);
   for (let i = 0; i < MAX_SKIP; i++) {
     const { rows } = await client.query(
@@ -106,7 +116,8 @@ async function allocate(client, { ownerId, docType, date = new Date() }) {
 }
 
 /** What the next document would be numbered, without taking it. */
-async function peek(exec, { ownerId, docType, date = new Date() }) {
+async function peek(exec, { ownerId, docType, date }) {
+  date = asDate(date);
   const c = await context(exec, ownerId, docType, date);
   let last = 0;
   try {

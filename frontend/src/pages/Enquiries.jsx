@@ -11,10 +11,11 @@
    find.
    ══════════════════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Inbox, Phone, Mail, Building2, ArrowRight, Check, X, Clock } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Inbox, Phone, Mail, Building2, ArrowRight, Check, X, Clock, Plus, FileText } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { getToken } from '../lib/apiAuth';
+import LogEnquiry, { SOURCE_LABEL } from '../components/LogEnquiry';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -37,6 +38,10 @@ export default function Enquiries() {
   const [open, setOpen] = useState(null);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [logging, setLogging] = useState(false);
+  /* For a converted enquiry: the customer it goes to — the likely match
+     already on file, unless 'new' is chosen. */
+  const [useExisting, setUseExisting] = useState(true);
 
   const api = async (path, opts = {}) => {
     const token = getToken();
@@ -64,7 +69,7 @@ export default function Enquiries() {
   const openOne = async (row) => {
     try {
       const d = await api(`/enquiries/${row.id}`);
-      setOpen(d);
+      setOpen(d); setUseExisting(true);
       if (row.status === 'New') {
         await api(`/enquiries/${row.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'Read' }) });
         load();
@@ -82,8 +87,9 @@ export default function Enquiries() {
 
   const convert = async (e) => {
     try {
-      const d = await api(`/enquiries/${e.id}/convert`, { method: 'POST' });
-      toast.success(`${d.customerName} added as a customer`);
+      const body = e.likelyCustomer ? (useExisting ? { customerId: e.likelyCustomer.id } : { newCustomer: true }) : {};
+      const d = await api(`/enquiries/${e.id}/convert`, { method: 'POST', body: JSON.stringify(body) });
+      toast.success(d.existingCustomer ? `For ${d.customerName}, already a customer` : `${d.customerName} added as a customer`);
       /* Hand the prefill to the quotation builder rather than creating the
          quotation here: what they asked for is not yet what you will
          charge, and somebody has to price it. */
@@ -96,13 +102,19 @@ export default function Enquiries() {
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-      <div style={{ marginBottom: 18 }}>
+      <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 240 }}>
         <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
           <Inbox size={23} style={{ color: 'var(--brand-amber)' }} /> Enquiries
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
-          People who found your catalogue and asked for something. Converting one adds them as a customer.
+          Everyone who asked for something: from your catalogue, by phone, WhatsApp or email. Converting one starts the quotation.
         </p>
+        </div>
+        <button onClick={() => setLogging(true)} className="btn-primary btn-sm" data-log-enquiry
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Plus size={14} /> Log an enquiry
+        </button>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginBottom: 16 }}>
@@ -132,7 +144,8 @@ export default function Enquiries() {
         <div style={{ ...card, padding: 40, textAlign: 'center' }}>
           <Inbox size={28} style={{ color: 'var(--text-muted)', marginBottom: 10 }} />
           <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-            No enquiries yet. Publish your catalogue in <strong>Configure → Catalogue</strong> and share the link.
+            No enquiries yet. When someone phones or messages you for a price, <button onClick={() => setLogging(true)} style={linkBtn}>log it here</button>.
+            To let buyers send them to you directly, <Link to="/catalogue" style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>publish your catalogue</Link> and share the link.
           </p>
         </div>
       ) : (
@@ -153,7 +166,7 @@ export default function Enquiries() {
                   {e.company && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · {e.name}</span>}
                 </div>
                 <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {e.ref} · {e.item_count} item{e.item_count === 1 ? '' : 's'}{e.message ? ` · ${e.message}` : ''}
+                  {e.ref} · {SOURCE_LABEL[e.source] || 'Catalogue'} · {e.item_count} item{e.item_count === 1 ? '' : 's'}{e.message ? ` · ${e.message}` : ''}
                 </div>
               </div>
               <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
@@ -178,7 +191,7 @@ export default function Enquiries() {
                   {open.company || open.name}
                 </h2>
                 <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>
-                  {open.ref} · {when(open.created_at)}
+                  {open.ref} · {SOURCE_LABEL[open.source] || 'Catalogue'} · {when(open.created_at)}
                 </p>
               </div>
               <button onClick={() => setOpen(null)} aria-label="Close"
@@ -214,17 +227,33 @@ export default function Enquiries() {
               </tbody>
             </table>
 
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {!open.customer_id && (
-                <button onClick={() => convert(open)} className="btn-primary btn-sm"
+            {!open.customer_id && open.likelyCustomer && (
+              <div data-likely-customer style={{ background: 'var(--bg-elevated)', borderRadius: 9, padding: '10px 12px', marginBottom: 12, fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>This looks like {open.likelyCustomer.name}, already a customer.</div>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+                  <input type="radio" checked={useExisting} onChange={() => setUseExisting(true)} /> Quote to {open.likelyCustomer.name}
+                </label>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', marginTop: 3 }}>
+                  <input type="radio" checked={!useExisting} onChange={() => setUseExisting(false)} /> Add {open.company || open.name} as a new customer
+                </label>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {open.quotation_id ? (
+                <Link to={`/sales-quotations/${open.quotation_id}`} className="btn-primary btn-sm" data-open-quotation
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
+                  <FileText size={14} /> Open quotation {open.quotation_number || ''}
+                </Link>
+              ) : (
+                <button onClick={() => convert(open)} className="btn-primary btn-sm" data-convert-enquiry
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <ArrowRight size={14} /> Convert to quotation
+                  <ArrowRight size={14} /> {open.customer_id ? 'Make the quotation' : 'Convert to quotation'}
                 </button>
               )}
               {open.customer_id && (
-                <span style={{ fontSize: '0.82rem', color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <Check size={14} /> Already a customer
-                </span>
+                <Link to={`/customers/${open.customer_id}`} style={{ fontSize: '0.82rem', color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: 5, textDecoration: 'none' }}>
+                  <Check size={14} /> {open.customer_name || 'Customer'}
+                </Link>
               )}
               <button onClick={() => setStatus(open.id, 'Won')} className="btn-secondary btn-sm">Mark won</button>
               <button onClick={() => setStatus(open.id, 'Ignored')} className="btn-secondary btn-sm">Ignore</button>
@@ -232,9 +261,11 @@ export default function Enquiries() {
           </div>
         </div>
       )}
+      {logging && <LogEnquiry onClose={() => setLogging(false)} onLogged={(d) => { setLogging(false); toast.success(`${d.ref} logged`); load(); }} />}
     </div>
   );
 }
 
+const linkBtn = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--brand-amber)', fontWeight: 600, font: 'inherit' };
 const th = { textAlign: 'left', padding: '7px 8px', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid var(--border-subtle)' };
 const td = { padding: '8px', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)' };

@@ -321,7 +321,7 @@ exports.create = async (req, res) => {
       invNumber = typed;
       await noteUsed(client, { ownerId: req.user?.orgId, docType: 'sales_invoice', number: typed });
     } else {
-      invNumber = await allocate(client, { ownerId: req.user?.orgId, docType: 'sales_invoice' });
+      invNumber = await allocate(client, { ownerId: req.user?.orgId, docType: 'sales_invoice', date: invoiceDate });
     }
     const c = tax.customer || {};
     /* A due date was optional here and the builder never sent one, so new
@@ -395,7 +395,10 @@ exports.list = async (req, res) => {
     // Joined in a subquery so the customer/party name is searchable too —
     // people look for "Apollo", not for an invoice number they don't have.
     const result = await runList(db, {
-      table: `(SELECT si.*, c.name AS customer_name FROM sales_invoices si LEFT JOIN customers c ON c.id = si.customer_id) AS si`,
+      /* credited: credit notes against each invoice, so what is owed agrees
+         with the customer's page (opening + billed − received − credits). */
+      table: `(SELECT si.*, c.name AS customer_name, COALESCE((SELECT SUM(n.total) FROM credit_debit_notes n WHERE n.party_type = 'customer' AND n.note_type = 'credit' AND n.ref_id = si.id AND n.owner_id IS NOT DISTINCT FROM si.owner_id), 0) AS credited
+                 FROM sales_invoices si LEFT JOIN customers c ON c.id = si.customer_id) AS si`,
       query: req.query,
       searchColumns: ["invoice_number","customer_name","status","place_of_supply"],
       filterColumns: ["status","customer_id"],
@@ -412,7 +415,8 @@ exports.list = async (req, res) => {
       summary: `COUNT(*)::int AS count,
                 COALESCE(SUM(net_amount) FILTER (WHERE status <> 'Cancelled'),0)::numeric AS billed,
                 COALESCE(SUM(COALESCE(amount_paid,0)) FILTER (WHERE status <> 'Cancelled'),0)::numeric AS received,
-                COALESCE(SUM(GREATEST(net_amount - COALESCE(amount_paid,0), 0)) FILTER (WHERE status <> 'Cancelled'),0)::numeric AS outstanding`,
+                COALESCE(SUM(credited) FILTER (WHERE status <> 'Cancelled'),0)::numeric AS credited,
+                COALESCE(SUM(GREATEST(net_amount - COALESCE(amount_paid,0) - credited, 0)) FILTER (WHERE status <> 'Cancelled'),0)::numeric AS outstanding`,
     });
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -489,11 +493,23 @@ exports.addPayment = async (req, res) => {
      *
      * Read inside the transaction and FOR UPDATE, or two payments landing
      * together each see the old total and both pass. */
-    const cur = (await client.query(
-      `SELECT s.net_amount, s.status,
-              COALESCE((SELECT SUM(amount) FROM sales_payments WHERE sales_invoice_id = s.id), 0) AS paid
-         FROM sales_invoices s WHERE s.id = $1 FOR UPDATE`,
-      [req.params.id])).rows[0];
+    /* Locked first, and what is paid read in its own statement: summed in
+       the locking statement, a payment that waited on the lock still saw
+       the total from before the one it waited for. */
+    const head = (await client.query('SELECT id, net_amount, status FROM sales_invoices WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    const cur = head ? { ...head, paid: (await client.query(
+      'SELECT COALESCE(SUM(amount), 0) AS paid FROM sales_payments WHERE sales_invoice_id = $1', [req.params.id])).rows[0].paid } : null;
+    /* The same amount again within two minutes is a double click far more
+       often than a second receipt. Said, and recorded when it is meant. */
+    if (head && !req.body.confirmDuplicate) {
+      const twin = (await client.query(
+        `SELECT 1 FROM sales_payments WHERE sales_invoice_id = $1 AND amount = $2 AND created_at > NOW() - INTERVAL '2 minutes' LIMIT 1`,
+        [req.params.id, Number(amount)])).rows[0];
+      if (twin) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `A payment of ₹${Number(amount).toLocaleString('en-IN')} was recorded on this invoice a moment ago. Is this a second payment?`, duplicate: true });
+      }
+    }
     /* A cancelled invoice is not owed, so nothing is received against it. */
     if (cur?.status === 'Cancelled') {
       await client.query('ROLLBACK');
@@ -622,14 +638,21 @@ exports.update = async (req, res) => {
         || (await client.query('SELECT * FROM sales_invoice_items WHERE sales_invoice_id = $1 ORDER BY sort_order', [inv.id])).rows;
       const tax = await resolveTax(client, inv.owner_id, set.customer_id ?? inv.customer_id,
         set.place_of_supply ?? inv.place_of_supply);
+      /* When the states can't settle it (the company's state isn't set, or
+         the place of supply is unreadable), an IGST/CGST choice made by hand
+         stands — what was sent now, else what the draft already had. Every
+         later edit used to quietly turn a hand-picked IGST into CGST+SGST. */
+      const inter = tax.interstateKnown
+        ? tax.interstate
+        : ('interstate' in req.body && req.body.interstate != null ? !!req.body.interstate : !!inv.interstate);
       const t = compute(items, {
         discount: set.discount ?? inv.discount,
         gstRate: set.gst_rate ?? inv.gst_rate,
-        interstate: tax.interstate,
+        interstate: inter,
         roundOff: set.round_off ?? inv.round_off,
       }, { strictUnits: !!req.body.items });
       Object.assign(set, {
-        sub_total: t.subTotal, interstate: tax.interstate, cgst: t.cgst, sgst: t.sgst,
+        sub_total: t.subTotal, interstate: inter, cgst: t.cgst, sgst: t.sgst,
         igst: t.igst, gst_total: t.gstTotal, net_amount: t.net,
         amount_in_words: amountInWords(t.net),
         place_of_supply: set.place_of_supply ?? tax.placeOfSupply ?? inv.place_of_supply,
@@ -803,11 +826,18 @@ exports.remove = async (req, res) => {
        lost either. */
     const r = await db.query(
       `DELETE FROM sales_invoices s WHERE s.id = $1
+          AND COALESCE(s.status, 'Draft') = 'Draft'
           AND COALESCE(s.amount_paid, 0) <= 0.005
           AND NOT EXISTS (SELECT 1 FROM sales_payments p WHERE p.sales_invoice_id = s.id)`, [req.params.id]);
     if (!r.rowCount) {
-      const still = (await db.query('SELECT COALESCE(amount_paid, 0) AS paid FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0];
+      const still = (await db.query('SELECT COALESCE(amount_paid, 0) AS paid, status, invoice_number FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0];
       if (!still) return res.status(404).json({ error: 'not found' });
+      /* Once sent, an invoice's number is part of the GST record. Deleting
+         it left a gap in the series and any credit note against it pointing
+         at nothing. Cancelled, it keeps its number and says why. */
+      if (Number(still.paid) <= 0.005 && (still.status || 'Draft') !== 'Draft') {
+        return res.status(409).json({ error: `${still.invoice_number} has been issued (${still.status}), so it can't be deleted. Cancel it instead: a cancelled invoice keeps its number, so the GST series has no gap.` });
+      }
       return res.status(409).json({
         error: `Reverse its payments first. ₹${Number(still.paid).toLocaleString('en-IN', { maximumFractionDigits: 2 })} has been received against this invoice.`,
       });

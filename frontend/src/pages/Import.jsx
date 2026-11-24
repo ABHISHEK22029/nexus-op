@@ -53,14 +53,25 @@ export default function Import() {
   const runImport = async () => {
     if (!rows.length) return;
     setBusy(true); let ok = 0, fail = 0;
-    for (const row of rows) {
+    /* Why each failed row failed, for the first few — "check required
+       fields" left people guessing which field, on which row. */
+    const reasons = [];
+    for (const [n, row] of rows.entries()) {
       const body = {}; Object.keys(row).forEach(k => { if (row[k] !== '') body[k] = row[k]; });
+      /* A vendor needs a type; the sheet seldom has one, and every row
+         failed for it while the page said only the name was needed. */
+      if (target === 'vendors' && !body.type) body.type = body.supply_category || 'Supplier';
       try {
         const res = await fetch(`${API}/${target}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        res.ok ? ok++ : fail++;
-      } catch { fail++; }
+        if (res.ok) ok++;
+        else {
+          fail++;
+          const d = await res.json().catch(() => ({}));
+          if (reasons.length < 6) reasons.push(`Row ${n + 2}${body.name ? ` (${body.name})` : ''}: ${d.error || d.message || `refused (${res.status})`}`);
+        }
+      } catch { fail++; if (reasons.length < 6) reasons.push(`Row ${n + 2}: could not reach the server`); }
     }
-    setBusy(false); setResult({ ok, fail }); setRows([]); setHeaders([]);
+    setBusy(false); setResult({ ok, fail, reasons }); setRows([]); setHeaders([]);
     toast.success(`Imported ${ok} row${ok !== 1 ? 's' : ''}${fail ? `, ${fail} failed` : ''}`);
   };
 
@@ -103,8 +114,14 @@ export default function Import() {
       {result && (
         <div style={{ ...card, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, color: result.fail ? 'var(--accent-red)' : '#10b981' }}>
           {result.fail ? <AlertCircle size={18} /> : <Check size={18} />}
-          <span style={{ fontWeight: 600 }}>Imported {result.ok} row{result.ok !== 1 ? 's' : ''}{result.fail ? ` · ${result.fail} failed (check required fields / duplicates)` : ''}.</span>
+          <span style={{ fontWeight: 600 }}>Imported {result.ok} row{result.ok !== 1 ? 's' : ''}{result.fail ? ` · ${result.fail} failed` : ''}.</span>
         </div>
+      )}
+      {result?.reasons?.length > 0 && (
+        <ul data-import-reasons style={{ ...card, marginTop: -8, marginBottom: 16, paddingLeft: 34, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+          {result.reasons.map(r => <li key={r}>{r}</li>)}
+          {result.fail > result.reasons.length && <li>…and {result.fail - result.reasons.length} more</li>}
+        </ul>
       )}
 
       {rows.length > 0 && (

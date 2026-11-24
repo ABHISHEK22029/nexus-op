@@ -79,6 +79,7 @@ import { ProjectProvider, useProject } from './context/ProjectContext';
 import { AuthProvider } from './context/AuthContext';
 import { UiConfigProvider } from './context/UiConfigContext';
 import { ToastProvider } from './context/ToastContext';
+import { ConfirmProvider } from './context/ConfirmContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute from './components/RoleRoute';
@@ -86,6 +87,7 @@ import Tutorial from './components/Tutorial';
 import { TutorialProvider } from './context/TutorialContext';
 import AskAi from './components/AskAi';
 import AccountButton from './components/AccountButton';
+import GlobalSearch from './components/GlobalSearch';
 
 /* ─── There is no top bar any more ─────────────────────────
    It was ~275 lines inline here, then a tidier TopBar component, and now
@@ -157,6 +159,8 @@ const AppLayout = ({ children }) => (
         <AppNav />
         <main className="app-main" style={{ position: 'relative' }}>
           <AccountButton />
+          {/* Search everything: Ctrl+K, or the field at the top of the side menu. */}
+          <GlobalSearch />
           <div className="app-page">
             <RoleRoute><ScreenBoundary>{children}</ScreenBoundary></RoleRoute>
           </div>
@@ -325,6 +329,7 @@ const NotFound = () => {
 function App() {
   return (
     <ToastProvider>
+      <ConfirmProvider>
       <AuthProvider>
         {/* Permissions sit just inside auth: they're fetched with the
             session and everything below — nav, route guards, action
@@ -339,6 +344,7 @@ function App() {
           </UiConfigProvider>
         </PermissionProvider>
       </AuthProvider>
+      </ConfirmProvider>
     </ToastProvider>
   );
 }

@@ -24,6 +24,7 @@ import { ArrowLeft, Plus, Trash2, ReceiptIndianRupee, Hash, AlertTriangle, Setti
 import { useToast } from '../context/ToastContext';
 import { today } from '../lib/dates';
 import UnitSelect from '../components/UnitSelect';
+import { PartySelect } from '../components/QuickAddParty';
 import { lineProblems, discountAmount, adjustmentProblems, money } from '../lib/lineChecks';
 import { GST_STATES, stateCode, stateName } from '../lib/gstStates';
 
@@ -163,7 +164,7 @@ export default function SalesInvoiceBuilder() {
         setItems(inv.items.map(it => ({ description: it.description || '', hsn: it.hsn || '', uom: it.uom || 'nos', quantity: it.quantity ?? '', rate: it.rate ?? '', customerOrderItemId: it.customer_order_item_id ?? null })));
       });
     } else {
-      fetch(`${API}/customers?limit=500`).then(r => (r.ok ? r.json() : [])).then(d => {
+      fetch(`${API}/customers`).then(r => (r.ok ? r.json() : [])).then(d => {
         const list = Array.isArray(d) ? d : (d.items || d.rows || []);
         setCustomers(list);
         const pre = new URLSearchParams(location.search).get('customer');
@@ -232,6 +233,8 @@ export default function SalesInvoiceBuilder() {
           body: JSON.stringify({ ...(confirm ? { confirmAboveOrder: true } : {}),
             invoice_number: f.invoiceNumber.trim(), invoice_date: f.invoiceDate || null, due_date: f.dueDate || null,
             discount: t.disc, gst_rate: Number(f.gstRate) || 0, round_off: Number(f.roundOff) || 0,
+            /* the IGST / CGST choice made here stands when the states can't decide it */
+            interstate,
             notes: f.notes || null, terms: f.terms || null,
             place_of_supply: f.posCode ? stateName(f.posCode) : null, place_of_supply_code: f.posCode || null,
             reverse_charge: !!f.reverseCharge, eway_bill_no: f.ewayBillNo || null,
@@ -268,7 +271,7 @@ export default function SalesInvoiceBuilder() {
     finally { setSaving(false); }
   };
 
-  const back = mode === 'order' ? '/customer-orders' : mode === 'edit' ? `/sales-invoices/${id}` : '/sales-invoices';
+  const back = mode === 'order' ? `/customer-orders?open=${coId}` : mode === 'edit' ? `/sales-invoices/${id}` : '/sales-invoices';
   const title = mode === 'edit' ? 'Edit invoice' : 'New tax invoice';
   const ref = mode === 'order'
     ? <>Order <b>{ctx?.customerOrder?.order_number}</b> · Customer <b>{ctx?.customer?.name || '—'}</b></>
@@ -320,10 +323,8 @@ export default function SalesInvoiceBuilder() {
         {mode === 'new' && (
           <div style={{ marginTop: 12, maxWidth: 420 }}>
             <Field label="Customer">
-              <select style={S.input} value={customerId || ''} onChange={e => pickCustomer(e.target.value)} aria-label="Customer">
-                <option value="">Choose a customer…</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <PartySelect style={S.input} parties={customers} setParties={setCustomers} value={customerId || ''}
+                placeholder="Choose a customer…" onChange={id => pickCustomer(id)} />
             </Field>
           </div>
         )}

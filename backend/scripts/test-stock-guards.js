@@ -105,7 +105,9 @@ const register = async (tag) => (await fetch(`${API}/auth/register`, {
       `the sheet line offers to issue what is on the shelf: ${planSheet()?.suggested_issue_qty} of 180 kg`);
     ok(near(j.yield.inputWeight, 0) && near(j.yield.materialCost, 0), 'yield and cost wait for the real issue');
     const coStatus = (await q('SELECT status FROM customer_orders WHERE id = $1', [o1.id]))[0]?.status;
-    ok(coStatus === 'In Procurement', `the order moves to In Procurement (${coStatus})`);
+    /* "Make" means it is being made (it read In Procurement before the
+       order had a status for that). */
+    ok(coStatus === 'In Production', `the order moves to In Production (${coStatus})`);
 
     /* ── 2. issuing against the plan moves stock ──────────────────────── */
     section('2. issuing against the plan takes it from stock, once');

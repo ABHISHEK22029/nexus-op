@@ -91,6 +91,12 @@ router.post('/', async (req, res) => {
   if (!poId || receivedQuantity === undefined) {
     return res.status(400).json({ error: 'poId and receivedQuantity are required' });
   }
+  /* More than zero. A 0 receipt moved nothing, yet its bill prefilled the
+     full ordered quantity; a negative one took stock out and lowered what
+     the PO showed as received. */
+  if (!Number.isFinite(Number(receivedQuantity)) || Number(receivedQuantity) <= 0) {
+    return res.status(400).json({ error: 'Enter the quantity that arrived — more than zero.' });
+  }
 
   /* One transaction for the whole receipt.
 
@@ -106,7 +112,9 @@ router.post('/', async (req, res) => {
     /* Yours only. Read by id alone, another company could book a receipt
        against this PO — moving its received quantity and status. */
     const s = scopedById(req, poId);
-    const poResult = await client.query(`SELECT * FROM purchase_orders WHERE ${s.where}`, s.params);
+    /* Locked: two receipts at once (a double click, two people at the
+       gate) both passed the over-receipt check and both added the stock. */
+    const poResult = await client.query(`SELECT * FROM purchase_orders WHERE ${s.where} FOR UPDATE`, s.params);
     const po = poResult.rows[0];
     /* Now that this runs in a transaction, a bare `return` here would leave
        it open until the pool reclaimed the connection. On a pooler capped at

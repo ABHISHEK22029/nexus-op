@@ -17,6 +17,7 @@ import { amountInWords } from '../lib/amountInWords';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, ArrowRightLeft, Clock , Mail, Download } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../context/ConfirmContext';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
 import {
@@ -41,6 +42,7 @@ export default function SalesQuotationDoc() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { confirm } = useConfirm();
   const [q, setQ] = useState(null);
   const [emailing, setEmailing] = useState(false);
   const [err, setErr] = useState(false);
@@ -75,13 +77,13 @@ export default function SalesQuotationDoc() {
   const isConverted = q?.status === 'Converted' || !!q?.converted_order_id;
 
   const convert = async () => {
-    if (!window.confirm(`Convert ${q.quote_number} into a customer order?`)) return;
+    if (!(await confirm({ title: `Turn ${q.quote_number} into an order?`, message: 'An order is made with its lines, prices and delivery. The quotation is marked Converted and can no longer be edited.', confirmLabel: 'Make the order' }))) return;
     try {
       const res = await fetch(`${API}/sales-quotations/${id}/convert`, { method: 'POST' });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed');
       toast.success(`Won! Created order ${d.orderNumber}`);
-      navigate('/customer-orders');
+      navigate(`/customer-orders?open=${d.orderId}`);
     } catch (e) { toast.error(e.message); }
   };
 
@@ -177,7 +179,7 @@ export default function SalesQuotationDoc() {
           <button onClick={() => printAs(fileName)} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
           {q.status !== 'Converted'
             ? <button onClick={convert} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowRightLeft size={15} /> Convert to Order</button>
-            : <button onClick={() => navigate('/customer-orders')} className="btn-secondary">View order →</button>}
+            : <button onClick={() => navigate(q.converted_order_id ? `/customer-orders?open=${q.converted_order_id}` : '/customer-orders')} className="btn-secondary">View order →</button>}
         </div>
       </div>
 

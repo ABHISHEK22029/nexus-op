@@ -8,7 +8,8 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Layers } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Layers, Plus } from 'lucide-react';
+import BomModal from './BomModal';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const num = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 });
@@ -18,6 +19,8 @@ export default function OrderReadiness({ orderId, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [bomFor, setBomFor] = useState(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!orderId) return;
@@ -29,25 +32,46 @@ export default function OrderReadiness({ orderId, defaultOpen = false }) {
       .catch(e => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [orderId]);
+  }, [orderId, reload]);
 
   if (loading) return <Shell><span style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>Checking material availability…</span></Shell>;
   if (error) return <Shell><span style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>{error}</span></Shell>;
   if (!data) return null;
 
-  // No bill of materials — say so plainly rather than implying everything is fine.
+  // No bill of materials — say so plainly, and offer the next step.
   if (!data.lines?.length) {
     return (
       <Shell tone="#6b7280">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.86rem', color: 'var(--text-secondary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.86rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }} data-readiness-no-bom>
           <Layers size={15} /> {data.message || 'No bill of materials for this order, so readiness cannot be calculated.'}
+          {(data.missingBom || []).map(p => (
+            <button key={p.skuId} type="button" onClick={() => setBomFor({ id: p.skuId, name: p.name })} data-add-bom={p.skuId}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid var(--border-default)', borderRadius: 7,
+                padding: '3px 9px', cursor: 'pointer', color: 'var(--brand-amber)', fontWeight: 600, fontSize: '0.8rem' }}>
+              <Plus size={13} /> Add bill of materials for {p.name}
+            </button>
+          ))}
+        </div>
+        {bomFor && <BomModal sku={bomFor} onClose={(saved) => { setBomFor(null); if (saved) setReload(n => n + 1); }} />}
+      </Shell>
+    );
+  }
+
+  /* Everything made: nothing to check. A delivered order read
+     "All 0 can be built with stock on hand". */
+  if (data.nothingLeft) {
+    return (
+      <Shell tone="#6b7280">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.86rem', color: 'var(--text-secondary)' }}>
+          <CheckCircle2 size={15} /> {data.summary || 'Everything on this order has been made'}
         </div>
       </Shell>
     );
   }
 
-  const blocked = data.blocked > 0;
-  const tone = blocked ? '#dc2626' : '#16a34a';
+  const unknown = (data.unknown || []).length > 0;
+  const blocked = data.blocked > 0 || unknown;
+  const tone = unknown ? '#d97706' : blocked ? '#dc2626' : '#16a34a';
 
   return (
     <Shell tone={tone}>
@@ -55,9 +79,11 @@ export default function OrderReadiness({ orderId, defaultOpen = false }) {
         style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
         {blocked ? <AlertTriangle size={17} style={{ color: tone, flexShrink: 0 }} /> : <CheckCircle2 size={17} style={{ color: tone, flexShrink: 0 }} />}
         <span style={{ fontWeight: 700, fontSize: '0.93rem', color: 'var(--text-primary)' }}>
-          {blocked
-            ? <>Can build <span style={{ color: tone }}>{data.buildable} of {data.ordered}</span> — blocked by <span style={{ color: tone }}>{data.blocking}</span></>
-            : <>All {data.ordered} can be built with stock on hand</>}
+          {unknown
+            ? <>Can't check <span style={{ color: tone }}>{data.unknown.join(', ')}</span>: its units don't convert to the stock's</>
+            : blocked
+              ? <>Can build <span style={{ color: tone }}>{data.buildable} of {data.ordered}</span> — blocked by <span style={{ color: tone }}>{data.blocking}</span></>
+              : <>All {data.ordered} can be built with stock on hand</>}
         </span>
         <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.78rem' }}>
           {open ? 'Hide' : 'Details'} {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}

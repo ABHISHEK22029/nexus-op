@@ -39,8 +39,20 @@ const istYearMonth = (d) => {
   return { y: Number(parts.find((p) => p.type === 'year').value), m: Number(parts.find((p) => p.type === 'month').value) - 1 };
 };
 
+/* The month a financial year starts, however the profile says it: "April",
+   "Apr", "april", "4". An unreadable value is April, the Indian default —
+   anything not spelt exactly used to mean January. */
+function monthIndex(v) {
+  if (v == null || v === '') return 3;
+  const n = Number(v);
+  if (Number.isInteger(n) && n >= 1 && n <= 12) return n - 1;
+  const k = String(v).trim().slice(0, 3).toLowerCase();
+  const i = MONTHS.findIndex(m => m.slice(0, 3).toLowerCase() === k);
+  return i >= 0 ? i : 3;
+}
+
 function financialYear(date = new Date(), fyStartMonth = 'April') {
-  const startIdx = Math.max(0, MONTHS.indexOf(fyStartMonth));   // 0-based; April = 3
+  const startIdx = monthIndex(fyStartMonth);   // 0-based; April = 3
   const { y, m } = istYearMonth(date);
   const startYear = m >= startIdx ? y : y - 1;
   /* A year starting in January is a calendar year — "FY2026-27" would be a

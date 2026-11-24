@@ -18,6 +18,8 @@ const { runList } = require('../shared/listQuery');
 const { assertRefs, skuIdsOf } = require('../shared/ownedRefs');
 const { posForOrder } = require('../shared/poOrders');
 const { prepareLines } = require('../shared/lineChecks');
+const { billedLines } = require('../shared/orderBilling');
+const { lineProgress, syncOrderDelivery } = require('../shared/orderProgress');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
 /* ── Customer Orders ── */
@@ -119,7 +121,7 @@ exports.createOrder = async (req, res) => {
     /* This one was already owner-scoped, which is why it looked safe — but a
        count still reissues a number after a delete, and two people creating
        at once both read it before either commits. */
-    const orderNumber = await allocate(client, { ownerId: req.user?.orgId, docType: 'customer_order' });
+    const orderNumber = await allocate(client, { ownerId: req.user?.orgId, docType: 'customer_order', date: orderDate });
 
     const { rows } = await client.query(
       `INSERT INTO customer_orders
@@ -174,11 +176,145 @@ exports.getOrderById = async (req, res) => {
     if (!o.rows[0]) return res.status(404).json({ error: 'Order not found' });
     const cust = await db.query('SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)',
       [o.rows[0].customer_id, o.rows[0].owner_id]);
-    const items = await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY id', [req.params.id]);
+    const items = await db.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1 ORDER BY sort_order, id', [req.params.id]);
     /* the purchase orders bought for it (migration 076) */
     const purchaseOrders = await posForOrder(db, o.rows[0].id);
-    res.json({ ...o.rows[0], customer: cust.rows[0] || null, items: items.rows, purchaseOrders });
+    res.json({
+      ...o.rows[0], customer: cust.rows[0] || null, items: await withProgress(db, o.rows[0], items.rows), purchaseOrders,
+      documents: await documentsFor(db, o.rows[0]),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* Everything made from an order, so the order can show and link to it:
+   the quotation it came from, its production jobs, challans, invoices and
+   the credit notes against those invoices. The order panel showed only the
+   quotation and the purchase orders — an order shipped and billed looked
+   untouched. */
+async function documentsFor(q, order) {
+  const own = [order.id, order.owner_id];
+  const [quotation, jobs, challans, invoices] = await Promise.all([
+    q.query(`SELECT id, quote_number FROM sales_quotations WHERE converted_order_id = $1 AND owner_id IS NOT DISTINCT FROM $2 ORDER BY id LIMIT 1`, own),
+    q.query(`SELECT id, prod_number, status, product_name, planned_qty FROM production_orders WHERE customer_order_id = $1 AND owner_id IS NOT DISTINCT FROM $2 ORDER BY id`, own),
+    q.query(`SELECT id, challan_number, status, challan_date, total_value FROM delivery_challans WHERE customer_order_id = $1 AND owner_id IS NOT DISTINCT FROM $2 ORDER BY id`, own),
+    q.query(`SELECT id, invoice_number, status, invoice_date, net_amount, amount_paid FROM sales_invoices WHERE customer_order_id = $1 AND owner_id IS NOT DISTINCT FROM $2 ORDER BY id`, own),
+  ]);
+  const invIds = invoices.rows.map(r => r.id);
+  const notes = invIds.length ? (await q.query(
+    `SELECT id, note_number, note_type, total, ref_id FROM credit_debit_notes
+      WHERE party_type = 'customer' AND ref_id = ANY($1::int[]) AND owner_id IS NOT DISTINCT FROM $2 ORDER BY id`,
+    [invIds, order.owner_id])).rows : [];
+  return { quotation: quotation.rows[0] || null, jobs: jobs.rows, challans: challans.rows, invoices: invoices.rows, notes };
+}
+
+/* Each line with how much has gone on challans and how much is billed. */
+async function withProgress(q, order, rows) {
+  const [billed, sent] = await Promise.all([billedLines(q, order.id), lineProgress(q, order.id, order.owner_id)]);
+  const b = new Map(billed.map(l => [l.id, l])), d = new Map(sent.lines.map(l => [l.id, l]));
+  return rows.map(r => ({ ...r, billed: b.get(r.id)?.billed || 0, dispatched: d.get(r.id)?.dispatched || 0 }));
+}
+
+/* PATCH /customer-orders/:id — change an order after it is placed.
+   There was no way to: a customer who changed a quantity, or sent their PO
+   number after the order was keyed in, meant deleting the order and making
+   it again — impossible once anything hung off it. Lines are changed in
+   place (they keep their ids, which invoice lines point at); a line cannot
+   go below what has already been sent or billed, and one that has been
+   sent, billed or put into production cannot be taken off. */
+exports.updateOrder = async (req, res) => {
+  const b = req.body || {};
+  if (!await assertOwned(db, req, res, 'customer_orders', req.params.id, { columns: 'id' })) return;
+  if (b.items !== undefined && (!Array.isArray(b.items) || !b.items.length)) {
+    return res.status(400).json({ error: 'An order needs at least one line.' });
+  }
+  if (b.items && !await assertRefs(db, req, res, { skus: skuIdsOf(b.items) })) return;
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const order = (await client.query('SELECT * FROM customer_orders WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
+    if (order.status === 'Closed') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `${order.order_number} is closed. Set it back to Open first.` });
+    }
+    const head = {
+      customer_po_ref: 'customerPoRef', order_date: 'orderDate', expected_shipment_date: 'expectedShipmentDate',
+      notes: 'notes', payment_terms_days: 'paymentTermsDays', terms: 'terms',
+    };
+    const sets = [], vals = [];
+    for (const [col, key] of Object.entries(head)) {
+      if (!(key in b)) continue;
+      const v = b[key] === '' ? null : b[key];
+      if (col === 'payment_terms_days' && v != null && (!Number.isInteger(Number(v)) || Number(v) < 0)) {
+        await client.query('ROLLBACK'); return res.status(400).json({ error: 'Payment terms are a number of days, 0 or more.' });
+      }
+      vals.push(v); sets.push(`${col} = $${vals.length}`);
+    }
+    if (b.items) {
+      let lines;
+      try { lines = prepareLines(b.items); } catch (e) {
+        await client.query('ROLLBACK'); return res.status(e.status || 400).json({ error: e.message });
+      }
+      const current = (await client.query('SELECT * FROM customer_order_items WHERE customer_order_id = $1', [order.id])).rows;
+      const byId = new Map(current.map(r => [r.id, r]));
+      const progress = new Map((await withProgress(client, order, current)).map(r => [r.id, r]));
+      const made = new Set((await client.query(
+        'SELECT DISTINCT sku_id FROM production_orders WHERE customer_order_id = $1 AND sku_id IS NOT NULL', [order.id])).rows.map(r => r.sku_id));
+      const keep = new Set();
+      for (const [n, l] of lines.entries()) {
+        const id = Number(l.id) || null;
+        if (!id) continue;
+        if (!byId.has(id)) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Line ${n + 1} is not on this order.` }); }
+        keep.add(id);
+        const p = progress.get(id);
+        const sent = p?.dispatched || 0, billed = p?.billed || 0, floor = Math.max(sent, billed);
+        if (Number(l.quantity) < floor - 0.0005) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: `“${l.description}”: ${floor} has already been ${sent >= billed ? 'sent' : 'billed'}, so the quantity can't go below that.` });
+        }
+      }
+      for (const r of current) {
+        if (keep.has(r.id)) continue;
+        const p = progress.get(r.id);
+        const why = (p?.dispatched || 0) > 0 ? 'sent' : (p?.billed || 0) > 0 ? 'billed' : (r.sku_id && made.has(r.sku_id)) ? 'put into production' : null;
+        if (why) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: `“${r.description}” has already been ${why}, so it can't be taken off the order.` });
+        }
+      }
+      const t = computeOrder(lines, {
+        discount: order.discount, discountType: order.discount_type, gstRate: order.gst_rate ?? 18, interstate: !!order.interstate,
+        taxDeductionType: order.tax_deduction_type, taxDeductionRate: order.tax_deduction_rate, adjustment: order.adjustment, roundOff: order.round_off,
+      });
+      for (const r of current) if (!keep.has(r.id)) await client.query('DELETE FROM customer_order_items WHERE id = $1', [r.id]);
+      for (const [n, l] of t.lines.entries()) {
+        const id = Number(l.id) || null;
+        const v = [l.skuId || null, l.description, l.hsn || null, l.quantity || null, l.unit || l.uom || 'nos',
+          l.rate ?? l.targetPrice ?? null, l.targetPrice ?? l.rate ?? null, l.amount, n];
+        if (id) {
+          await client.query(
+            `UPDATE customer_order_items SET sku_id = $1, description = $2, hsn = $3, quantity = $4, unit = $5, rate = $6,
+                    target_price = $7, amount = $8, sort_order = $9 WHERE id = $10 AND customer_order_id = $11`, [...v, id, order.id]);
+        } else {
+          await client.query(
+            `INSERT INTO customer_order_items (sku_id, description, hsn, quantity, unit, rate, target_price, amount, sort_order, customer_order_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [...v, order.id]);
+        }
+      }
+      for (const [col, v] of [['sub_total', t.subTotal], ['cgst', t.cgst], ['sgst', t.sgst], ['igst', t.igst], ['gst_total', t.gstTotal],
+        ['tax_deduction_amount', t.taxDeductionAmount], ['round_off', t.roundOff], ['total', t.total], ['amount_in_words', amountInWords(t.total)]]) {
+        vals.push(v); sets.push(`${col} = $${vals.length}`);
+      }
+    }
+    if (!sets.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Nothing to change.' }); }
+    vals.push(order.id);
+    await client.query(`UPDATE customer_orders SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+    /* a quantity raised on a delivered order re-opens it, and the reverse */
+    await syncOrderDelivery(client, order.id, order.owner_id);
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (e) { await client.query('ROLLBACK').catch(() => {}); res.status(500).json({ error: e.message }); }
+  finally { client.release(); }
 };
 
 exports.updateOrderStatus = async (req, res) => {
@@ -188,7 +324,9 @@ exports.updateOrderStatus = async (req, res) => {
      part-shipped order had to be either Open (understating progress) or
      Delivered (telling the floor a job with units outstanding is finished).
      The challan sets it automatically by comparing quantities. */
-  const allowed = ['Open', 'In Procurement', 'Partially Delivered', 'Delivered', 'Closed'];
+  /* 'In Production' — the requirements engine always counted it as an open
+     state; an order just could never be put in it. */
+  const allowed = ['Open', 'In Procurement', 'In Production', 'Partially Delivered', 'Delivered', 'Closed'];
   if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
   try {
     if (!await assertOwned(db, req, res, 'customer_orders', req.params.id, { columns: 'id' })) return;
@@ -199,12 +337,38 @@ exports.updateOrderStatus = async (req, res) => {
 };
 
 exports.deleteOrder = async (req, res) => {
+  if (!await assertOwned(db, req, res, 'customer_orders', req.params.id, { columns: 'id' })) return;
+  const client = await db.getClient();
   try {
-    if (!await assertOwned(db, req, res, 'customer_orders', req.params.id, { columns: 'id' })) return;
-    const r = await db.query('DELETE FROM customer_orders WHERE id = $1', [req.params.id]);
-    if (!r.rowCount) return res.status(404).json({ error: 'not found' });
+    await client.query('BEGIN');
+    const order = (await client.query('SELECT id, order_number, owner_id FROM customer_orders WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'not found' }); }
+    /* Not while anything was made from it. An invoice or PO made the delete
+       fail with a raw database error the screen ignored; challans and jobs
+       (no foreign key) were left pointing at an order that was gone. */
+    const d = await documentsFor(client, order);
+    const pos = await posForOrder(client, order.id);
+    const list = (rows, one, key) => rows.length ? `${rows.length} ${one}${rows.length > 1 ? 's' : ''} (${rows.map(x => x[key]).join(', ')})` : null;
+    const what = [
+      list(d.invoices, 'invoice', 'invoice_number'), list(d.challans, 'challan', 'challan_number'),
+      list(d.jobs, 'production order', 'prod_number'), pos.length ? `${pos.length} purchase order${pos.length > 1 ? 's' : ''}` : null,
+    ].filter(Boolean);
+    if (what.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `${order.order_number} can't be deleted: it has ${what.join(', ')}. Close the order instead, or remove those first.` });
+    }
+    /* The quotation it came from can be converted again. */
+    await client.query(
+      `UPDATE sales_quotations SET converted_order_id = NULL, status = 'Accepted' WHERE converted_order_id = $1 AND owner_id IS NOT DISTINCT FROM $2`,
+      [order.id, order.owner_id]);
+    await client.query('DELETE FROM customer_orders WHERE id = $1', [order.id]);
+    await client.query('COMMIT');
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e.code === '23503') return res.status(409).json({ error: 'Other records still point at this order. Close it instead of deleting it.' });
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 };
 
 /* ── Quotations (Q1 / Q2 / Q3) ── */

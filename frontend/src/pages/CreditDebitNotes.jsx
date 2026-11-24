@@ -18,7 +18,7 @@
      missing them cannot be filed as it stands.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FileMinus, Plus, Trash2, X, Eye } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
@@ -26,6 +26,8 @@ import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components
 
 import { getToken } from '../lib/apiAuth';
 import UnitSelect from '../components/UnitSelect';
+import { PartySelect } from '../components/QuickAddParty';
+import { useConfirm } from '../context/ConfirmContext';
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -42,6 +44,13 @@ export default function CreditDebitNotes() {
   const [showForm, setShowForm] = useState(false);
   const [head, setHead] = useState({ noteType: 'credit', partyType: 'customer', partyId: '', noteDate: '', refNumber: '', refDate: '', gstRate: '18', reason: '' });
   const [lines, setLines] = useState([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
+  const [saving, setSaving] = useState(false);
+  const { confirm } = useConfirm();
+  /* The chosen party's own invoices (or bills), offered as the original
+     the note adjusts — typed from memory, a wrong number made a note that
+     referenced nothing. */
+  const [refs, setRefs] = useState([]);
+  const [params, setParams] = useSearchParams();
 
   // Only the pick-lists for the form load here; the list itself is q's job.
   useEffect(() => {
@@ -53,6 +62,41 @@ export default function CreditDebitNotes() {
       setCustomers(Array.isArray(c) ? c : []); setVendors(Array.isArray(v) ? v : []);
     })();
   }, []);
+
+  /* ?invoice=ID — "Credit note" pressed on an invoice: the customer, the
+     invoice, its date and rate, and its lines are carried over, so only
+     the quantities being credited need changing. */
+  useEffect(() => {
+    const invId = Number(params.get('invoice'));
+    if (!invId) return;
+    (async () => {
+      const r = await fetch(`${API}/sales-invoices/${invId}`);
+      if (!r.ok) { toast.error('Could not open that invoice'); return; }
+      const inv = await r.json();
+      setShowForm(true);
+      setHead(h => ({ ...h, noteType: 'credit', partyType: 'customer', partyId: String(inv.customer_id || ''),
+        refNumber: inv.invoice_number || '', refId: inv.id, refDate: String(inv.invoice_date || '').slice(0, 10),
+        gstRate: String(inv.gst_rate ?? h.gstRate) }));
+      if ((inv.items || []).length) {
+        setLines(inv.items.map(it => ({ description: it.description || '', hsn: it.hsn || '', quantity: it.quantity ?? '', uom: it.uom || 'nos', rate: it.rate ?? '' })));
+      }
+      setParams({}, { replace: true });
+    })();
+    /* eslint-disable-next-line */
+  }, []);
+
+  useEffect(() => {
+    if (!head.partyId) { setRefs([]); return; }
+    const url = head.partyType === 'customer'
+      ? `${API}/sales-invoices?customer_id=${head.partyId}&limit=100`
+      : `${API}/grn-bills?limit=200`;
+    fetch(url).then(r => (r.ok ? r.json() : [])).then(d => {
+      const rows = Array.isArray(d) ? d : (d.items || []);
+      setRefs(head.partyType === 'customer'
+        ? rows.filter(x => x.status !== 'Cancelled').map(x => ({ number: x.invoice_number, date: String(x.invoice_date || '').slice(0, 10), id: x.id }))
+        : rows.filter(x => String(x.vendor_id) === String(head.partyId)).map(x => ({ number: x.bill_number, date: String(x.bill_date || '').slice(0, 10), id: x.id })));
+    }).catch(() => setRefs([]));
+  }, [head.partyId, head.partyType]);
 
   // A credit note usually goes to a customer, a debit note to a vendor — default sensibly but stay flexible.
   const onType = (noteType) => setHead(h => ({ ...h, noteType, partyType: noteType === 'credit' ? 'customer' : 'vendor', partyId: '' }));
@@ -70,12 +114,14 @@ export default function CreditDebitNotes() {
     if (!head.partyId) { toast.error(`Pick a ${head.partyType}`); return; }
     const items = lines.filter(l => l.description.trim());
     if (!items.length) { toast.error('Add at least one line'); return; }
+    if (saving) return;             // a double click made two notes
+    setSaving(true);
     const token = getToken();
     const res = await fetch(`${API}/credit-debit-notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ ...head, items }),
-    });
+    }).finally(() => setSaving(false));
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.detail || d.error || 'Could not create the note');
     toast.success(`${d.noteNumber} created`);
@@ -85,7 +131,7 @@ export default function CreditDebitNotes() {
   };
 
   const del = async (n) => {
-    if (!window.confirm(`Delete ${n.note_number}?`)) return;
+    if (!(await confirm({ title: `Delete ${n.note_number}?`, message: "The note is removed for good. This can't be undone.", confirmLabel: 'Delete note', tone: 'danger' }))) return;
     const token = getToken();
     const res = await fetch(`${API}/credit-debit-notes/${n.id}`, {
       method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -143,12 +189,19 @@ export default function CreditDebitNotes() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
             <div><label style={lbl}>{head.partyType === 'vendor' ? 'Vendor' : 'Customer'} *</label>
-              <select style={input} value={head.partyId} onChange={e => setHead({ ...head, partyId: e.target.value })}>
-                <option value="">— Select —</option>
-                {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              <PartySelect key={head.partyType} kind={head.partyType} style={input} parties={parties}
+                setParties={head.partyType === 'vendor' ? setVendors : setCustomers} value={head.partyId}
+                onChange={id => setHead(h => ({ ...h, partyId: id }))} />
             </div>
-            <div><label style={lbl}>Against (invoice/bill)</label><input style={input} value={head.refNumber} onChange={e => setHead({ ...head, refNumber: e.target.value })} placeholder="INV-0007 / GB-0003" /></div>
+            <div><label style={lbl}>Against (invoice/bill)</label>
+              <input style={input} list="note-refs" value={head.refNumber} data-note-ref
+                onChange={e => {
+                  const v = e.target.value, hit = refs.find(r => r.number === v);
+                  setHead(h => ({ ...h, refNumber: v, refId: hit ? hit.id : undefined, refDate: hit ? hit.date : h.refDate }));
+                }}
+                placeholder={refs.length ? 'Pick or type the number' : 'INV-0007 / GB-0003'} />
+              <datalist id="note-refs">{refs.map(r => <option key={r.id} value={r.number}>{r.date}</option>)}</datalist>
+            </div>
             {/* The original's date is required on a note (GST Section 34).
                 Left blank, it is taken from your own invoice or bill when the
                 number above is one of them. */}
@@ -187,7 +240,7 @@ export default function CreditDebitNotes() {
             <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Total (incl. GST): <b style={{ color: 'var(--brand-amber)' }}>{rupee(total)}</b></div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button type="submit" className="btn-primary btn-sm">Create Note</button>
+            <button type="submit" className="btn-primary btn-sm" disabled={saving}>{saving ? 'Saving…' : 'Create Note'}</button>
             <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancel</button>
           </div>
         </form>

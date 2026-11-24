@@ -44,12 +44,37 @@ function weightPerPiece({ length_mm, width_mm, thickness_mm, density_kg_m3 }) {
  * @param {Array}  ctx.itemUoms  item_uom rows for this item
  * @returns {{ok:true, qty:number, ...}|{ok:false, reason:string}}
  */
+/* How units are actually written. A vendor's quote says "Kgs", "Pcs",
+   "No's" or "Mtr"; the PO line kept it as written, and receiving it was
+   then refused — `Cannot convert 100 kgs into kg … Unknown unit "kgs"`. A
+   unit the table knows is kept as it is; a spelling of one becomes it. */
+const UNIT_ALIASES = {
+  nos: ['nos', 'no', "no's", 'nos.', 'number', 'numbers', 'pcs', 'pc', 'piece', 'pieces', 'ea', 'each', 'unit', 'units'],
+  set: ['set', 'sets'], pair: ['pair', 'pairs', 'pr'], dozen: ['dozen', 'doz', 'dz'],
+  box: ['box', 'boxes', 'bx'], sheet: ['sheet', 'sheets', 'sht', 'shts'],
+  kg: ['kg', 'kgs', 'kilogram', 'kilograms', 'kilo', 'kilos'], g: ['g', 'gm', 'gms', 'gram', 'grams', 'gr'],
+  mt: ['mt', 'mts', 'tonne', 'tonnes', 'ton', 'tons', 'metric ton', 'metric tonne'], quintal: ['quintal', 'quintals', 'qtl'],
+  m: ['m', 'mtr', 'mtrs', 'meter', 'meters', 'metres', 'rmt', 'rm'], mm: ['mm'], cm: ['cm'],
+  ft: ['ft', 'feet', 'foot', 'rft'], inch: ['inch', 'inches'],
+  sqm: ['sqm', 'sq m', 'square metre', 'square meter', 'm2'], sqft: ['sqft', 'sq ft', 'sft', 'square feet', 'square foot'],
+  m3: ['m3', 'cubic metre', 'cubic meter', 'cbm'], cum: ['cum'], ltr: ['ltr', 'ltrs', 'l', 'litre', 'litres', 'liter', 'liters', 'lit'],
+};
+const UNIT_LOOKUP = new Map();
+Object.entries(UNIT_ALIASES).forEach(([code, list]) => list.forEach((a) => UNIT_LOOKUP.set(a, code)));
+function unitCode(v, uoms = null) {
+  const raw = String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!raw) return '';
+  if (uoms && uoms.has(raw)) return raw;
+  const bare = raw.replace(/\.$/, '');
+  return UNIT_LOOKUP.get(raw) || UNIT_LOOKUP.get(bare) || UNIT_LOOKUP.get(bare.replace(/ /g, '')) || raw;
+}
+
 function convert(qty, fromCode, toCode, { uoms, item = {}, itemUoms = [] } = {}) {
   const n = Number(qty);
   if (!Number.isFinite(n)) return { ok: false, reason: 'Quantity is not a number' };
 
-  const from = String(fromCode || '').toLowerCase();
-  const to = String(toCode || '').toLowerCase();
+  const from = unitCode(fromCode, uoms);
+  const to = unitCode(toCode, uoms);
   if (!from || !to) return { ok: false, reason: 'Missing unit' };
   if (from === to) return { ok: true, qty: round(n), via: 'identity' };
 
@@ -58,7 +83,7 @@ function convert(qty, fromCode, toCode, { uoms, item = {}, itemUoms = [] } = {})
   if (!uFrom) return { ok: false, reason: `Unknown unit "${fromCode}"` };
   if (!uTo) return { ok: false, reason: `Unknown unit "${toCode}"` };
 
-  const base = String(item.base_uom || '').toLowerCase();
+  const base = unitCode(item.base_uom, uoms);
   const uBase = uoms.get(base);
 
   // Explicit conversions win over derived ones — a user-entered factor is a
@@ -176,4 +201,4 @@ async function itemContext(db, rawMaterialId, uoms) {
   return { uoms: uoms || await loadUoms(db), item, itemUoms };
 }
 
-module.exports = { convert, weightPerPiece, loadUoms, uomCacheClear, itemContext, round };
+module.exports = { convert, unitCode, weightPerPiece, loadUoms, uomCacheClear, itemContext, round };

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import VendorPicker from '../components/VendorPicker';
+import { useConfirm } from '../context/ConfirmContext';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2, ShieldCheck, ShoppingCart } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
@@ -21,6 +22,8 @@ const PurchaseOrders = () => {
   const { can } = usePermissions();
   const [vendors, setVendors] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [raising, setRaising] = useState(false);
+  const { confirm, prompt } = useConfirm();
   const [company, setCompany] = useState(null);
 
   /* The order list comes through the shared list hook — searched, filtered
@@ -171,15 +174,14 @@ const PurchaseOrders = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const vendor = vendors.find(v => v.id == formData.vendorId);
-    if (!vendor?.gstin) {
-      toast.error("Selected vendor must have a valid GSTIN. Please update vendor details first.");
-      return;
-    }
+    if (!vendor) { toast.error('Choose the vendor this order goes to.'); return; }
+    if (raising) return;           // a double click raised two POs
     if (items.some(i => !i.description || i.quantity <= 0 || i.unitPrice <= 0)) {
       toast.error("Please fill all line items correctly (Description, Qty > 0, Price > 0).");
       return;
     }
 
+    setRaising(true);
     try {
       const totalQty = items.reduce((sum, i) => sum + Number(i.quantity), 0);
       const amountInWords = numberToWords(totalValue);
@@ -207,7 +209,7 @@ const PurchaseOrders = () => {
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.error || "Failed to create PO");
-    }
+    } finally { setRaising(false); }
   };
 
   const handleAction = (poId, action, extraPayload = {}) => {
@@ -221,8 +223,13 @@ const PurchaseOrders = () => {
   };
 
   // Approval sign-off (Admin/Manager) for POs held above the threshold.
-  const signOff = (poId, decision) => {
-    const remark = decision === 'Rejected' ? (window.prompt('Reason for rejection (optional):') || '') : '';
+  const signOff = async (poId, decision) => {
+    let remark = '';
+    if (decision === 'Rejected') {
+      const r = await prompt({ title: 'Reject this purchase order?', message: 'It stays on record as rejected, and stops counting as material on order.', label: 'Reason (optional)', confirmLabel: 'Reject', tone: 'danger' });
+      if (r == null) return;
+      remark = r;
+    }
     axios.patch(`${API}/po/${poId}/approval`, { decision, remark })
       /* Sign-off is not approval: the PO stays Pending until Approve is
          pressed, and the message said "PO approved" either way. */
@@ -283,7 +290,8 @@ const PurchaseOrders = () => {
               <VendorPicker
                 vendors={vendors}
                 value={formData.vendorId}
-                onChange={id => setFormData({ ...formData, vendorId: id })}
+                onChange={id => setFormData(f => ({ ...f, vendorId: id }))}
+                onVendorAdded={v => setVendors(vs => [...vs, v])}
               />
               {gstType && (
                 <div className="mt-1 text-xs text-amber-500/80">
@@ -439,7 +447,7 @@ const PurchaseOrders = () => {
 
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors">Cancel</button>
-            <button type="submit" className="bg-amber-600 hover:bg-amber-500 text-white font-medium px-6 py-2 rounded-lg transition-colors flex items-center gap-2">Raise Order</button>
+            <button type="submit" disabled={raising} className="bg-amber-600 hover:bg-amber-500 text-white font-medium px-6 py-2 rounded-lg transition-colors flex items-center gap-2">{raising ? 'Saving…' : 'Raise Order'}</button>
           </div>
         </form>
       )}
@@ -491,7 +499,7 @@ const PurchaseOrders = () => {
                   {/* the customer orders it was bought for */}
                   {po.forOrders?.length > 0 && (
                     <div data-po-for style={{ fontFamily: 'var(--font-body)', fontWeight: 500, fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                      for {po.forOrders.map(o => o.orderNumber).join(', ')}
+                      for {po.forOrders.map((o, k) => <React.Fragment key={o.id}>{k > 0 && ', '}<Link to={`/customer-orders?open=${o.id}`} onClick={e => e.stopPropagation()} style={{ color: 'inherit', textDecoration: 'underline' }}>{o.orderNumber}</Link></React.Fragment>)}
                     </div>
                   )}
                 </td>
@@ -541,15 +549,22 @@ const PurchaseOrders = () => {
                       Dispatch
                     </button>
                   )}
-                  {canWrite && po.status === 'Dispatched' && (
+                  {/* One line, nothing received yet: receive it in full here,
+                      as before. Several lines, or a part already in: the
+                      receipt form, where the line, quantity and vehicle are
+                      said — a several-line PO booked from here came back with
+                      a raw "say which line… 41:" message. */}
+                  {canWrite && ['Dispatched', 'Partially Received'].includes(po.status) && (
                     <button
-                      onClick={() => { if(window.confirm('Receive goods and update inventory?')) { handleAction(po.id, 'grn', { receivedQuantity: po.quantity }); } }}
+                      onClick={() => (po.status === 'Dispatched' && Number(po.line_count || 0) <= 1
+                        ? confirm({ title: `Receive ${po.poNumber || 'this order'} in full?`, message: 'Everything on it is added to stock now. To receive part of it, or note the vehicle, use Goods received.', confirmLabel: 'Receive in full' }).then(ok => ok && handleAction(po.id, 'grn', { receivedQuantity: po.quantity }))
+                        : navigate(`/grn?po=${po.id}`))} data-po-receive={po.id}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: '1px solid hsl(213,80%,55%,0.4)', background: 'hsl(213,80%,55%,0.1)', color: 'hsl(213,80%,45%)', transition: 'all 180ms' }}
                       onMouseEnter={e => { e.currentTarget.style.background = 'hsl(213,80%,50%)'; e.currentTarget.style.color = '#fff'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = 'hsl(213,80%,55%,0.1)'; e.currentTarget.style.color = 'hsl(213,80%,45%)'; }}
                     >
                       <PackageCheck size={13} />
-                      Receive GRN
+                      {po.status === 'Dispatched' && Number(po.line_count || 0) <= 1 ? 'Receive GRN' : 'Receive goods'}
                     </button>
                   )}
                   <button

@@ -147,7 +147,22 @@ async function syncPoReceipt(client, poId) {
     return { ...t, status: null, changed: false };
   }
 
-  const status = t.complete ? 'Delivered' : 'Partially Received';
+  /* Complete only when EVERY line is. Comparing the order's total let
+     1,020 kg of plate (inside the tolerance) close a PO for 1,000 kg of
+     plate and 20 kg of bolts — the bolts could then never be received, and
+     dropped out of "on order". Receipts made before lines were named count
+     against the only line of a one-line order; on an older multi-line
+     order with such receipts, the whole-order comparison stays. */
+  let complete = t.complete;
+  const lines = await lineProgress(client, poId);
+  if (lines.length) {
+    const unassigned = Number((await client.query(
+      'SELECT COALESCE(SUM("receivedQuantity"), 0) AS q FROM grn WHERE "poId" = $1 AND po_line_item_id IS NULL', [poId])).rows[0].q) || 0;
+    if (lines.length === 1) complete = lines[0].ordered > 0 && lines[0].received + unassigned >= lines[0].ordered - TOL;
+    else if (unassigned <= TOL) complete = lines.every(l => !(l.ordered > 0) || l.received >= l.ordered - TOL);
+  }
+  t.complete = complete;
+  const status = complete ? 'Delivered' : 'Partially Received';
   const r = await client.query(
     'UPDATE purchase_orders SET status = $1 WHERE id = $2',
     [status, poId]);

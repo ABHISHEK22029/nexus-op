@@ -26,6 +26,7 @@ const creditDebitNoteController = require('./controllers/CreditDebitNoteControll
 const materialReqController = require('./controllers/MaterialRequirementsController');
 const vendorItemController = require('./controllers/VendorItemController');
 const customerSummaryController = require('./controllers/CustomerSummaryController');
+const searchController = require('./controllers/SearchController');
 const adminController = require('./controllers/AdminController');
 const { profileFor } = require('./shared/companyProfile');
 const stockController = require('./controllers/StockController');
@@ -299,6 +300,9 @@ app.use(scopeProjectAccess);
 const UNGATED = new Set([
   'auth', 'health', 'public', 'dashboard', 'activities', 'notifications',
   'attachments', 'kb', 'ai', 'uploads', 'metal-prices', 'setup',
+  /* spans every kind of record; checks each kind's read permission itself
+     (controllers/SearchController) */
+  'search',
 ]);
 
 app.use((req, res, next) => {
@@ -661,7 +665,7 @@ app.post('/vendors', async (req, res) => {
       `INSERT INTO vendors (${quoted}) VALUES (${ph}) RETURNING id`,
       [projectId || null, req.user?.orgId ?? req.user?.id ?? null, ...values]
     );
-    await logActivity(projectId, 'VENDOR_ADDED', `Vendor "${name}" added to project`, req.user?.orgId ?? req.user?.id ?? null);
+    await logActivity(projectId, 'VENDOR_ADDED', `Vendor "${name}" added`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({ id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -696,11 +700,11 @@ app.get('/po', async (req, res) => {
          from the screen carries its prices there, and its header price is
          empty), the header's qty × price otherwise. */
       table: `(SELECT po.*, v.name AS "vendorName", wo.name AS "workOrderName",
-                      COALESCE(li.lines_value, COALESCE(po.quantity,0) * COALESCE(po."unitPrice",0)) AS order_value
+                      COALESCE(li.lines_value, COALESCE(po.quantity,0) * COALESCE(po."unitPrice",0)) AS order_value, COALESCE(li.line_count, 0) AS line_count
                  FROM purchase_orders po
                  LEFT JOIN vendors v ON po."vendorId" = v.id
                  LEFT JOIN work_orders wo ON po."workOrderId" = wo.id
-                 LEFT JOIN (SELECT "poId", SUM(COALESCE(quantity,0) * COALESCE("unitPrice",0)) AS lines_value
+                 LEFT JOIN (SELECT "poId", SUM(COALESCE(quantity,0) * COALESCE("unitPrice",0)) AS lines_value, COUNT(*)::int AS line_count
                               FROM po_line_items GROUP BY "poId") li ON li."poId" = po.id) AS po`,
       where, params,
       query: req.query,
@@ -713,7 +717,7 @@ app.get('/po', async (req, res) => {
          `awaiting_approval` is the queue the page exists to clear. */
       summary: `COUNT(*)::int AS count,
                 COALESCE(SUM(order_value),0)::numeric AS value,
-                COUNT(*) FILTER (WHERE COALESCE(approval_status,'Pending') = 'Pending')::int AS awaiting_approval,
+                COUNT(*) FILTER (WHERE approval_status = 'Pending Approval' AND status = 'Pending')::int AS awaiting_approval,
                 COUNT(*) FILTER (WHERE status = 'Delivered')::int AS delivered`,
     });
     /* each PO's customer orders, for the "For CO-0012" beside it */
@@ -1037,7 +1041,7 @@ app.patch('/po/:id/approve', async (req, res) => {
     if (po.approval_status === 'Rejected')
       return res.status(409).json({ error: 'This PO was rejected in sign-off and cannot proceed' });
     await db.query(`UPDATE purchase_orders SET status = 'Approved' WHERE id = $1`, [req.params.id]);
-    await logActivity(po.projectId, 'PO_APPROVED', `PO-${po.id} "${po.itemName}" approved`, req.user?.orgId ?? req.user?.id ?? null);
+    await logActivity(po.projectId, 'PO_APPROVED', `${po.poNumber || `PO-${po.id}`} "${po.itemName}" approved`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({ success: true, status: 'Approved' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1055,7 +1059,7 @@ app.patch('/po/:id/approval', allow('po-approval', 'write'), async (req, res) =>
     const po = (await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id])).rows[0];
     if (!po) return res.status(404).json({ error: 'PO not found' });
     await db.query(`UPDATE purchase_orders SET approval_status = $1, approval_remark = $2 WHERE id = $3`, [decision, remark || null, req.params.id]);
-    await logActivity(po.projectId, 'PO_APPROVAL', `PO-${po.id} sign-off: ${decision}${remark ? ' — ' + remark : ''}`, req.user?.orgId ?? req.user?.id ?? null);
+    await logActivity(po.projectId, 'PO_APPROVAL', `${po.poNumber || `PO-${po.id}`} sign-off: ${decision}${remark ? ' — ' + remark : ''}`, req.user?.orgId ?? req.user?.id ?? null);
     notify({ org: po.owner_id }, { type: 'APPROVAL_NEEDED', title: `PO ${po.poNumber} ${decision.toLowerCase()}`, message: `${req.user.name || 'A manager'} ${decision === 'Approved' ? 'signed off' : 'rejected'} this PO`, entityType: 'po', entityId: Number(req.params.id), link: `/po/${req.params.id}` });
     res.json({ success: true, approvalStatus: decision });
   } catch (err) {
@@ -1128,6 +1132,7 @@ app.get('/catalogue/photos/:photoId/image',          allow('catalogue', 'read'),
 app.delete('/catalogue/photos/:photoId',             allow('catalogue', 'write'), catalogueController.deletePhoto);
 
 app.get('/enquiries',                 allow('enquiries', 'read'),  catalogueController.listEnquiries);
+app.post('/enquiries',                allow('enquiries', 'write'), catalogueController.createEnquiry);
 app.get('/enquiries/:id',             allow('enquiries', 'read'),  catalogueController.getEnquiry);
 app.patch('/enquiries/:id/status',    allow('enquiries', 'write'), catalogueController.setEnquiryStatus);
 app.post('/enquiries/:id/convert',    allow('enquiries', 'write'), catalogueController.convertEnquiry);
@@ -1172,7 +1177,7 @@ app.patch('/po/:id/dispatch', async (req, res) => {
     if (po.status !== 'Approved')
       return res.status(400).json({ error: `Cannot dispatch a PO with status "${po.status}"` });
     await db.query(`UPDATE purchase_orders SET status = 'Dispatched' WHERE id = $1`, [req.params.id]);
-    await logActivity(po.projectId, 'PO_DISPATCHED', `PO-${po.id} "${po.itemName}" dispatched to vendor`, req.user?.orgId ?? req.user?.id ?? null);
+    await logActivity(po.projectId, 'PO_DISPATCHED', `${po.poNumber || `PO-${po.id}`} "${po.itemName}" sent to the vendor`, req.user?.orgId ?? req.user?.id ?? null);
     res.json({ success: true, status: 'Dispatched' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1345,6 +1350,8 @@ app.get('/material-requirements', materialReqController.list);
 
 /* ── Vendor <-> material: who supplies what ── */
 app.get('/customers/:id/summary', customerSummaryController.summary);
+/* One search across orders, invoices, customers, POs, products … */
+app.get('/search', searchController.search);
 
 /* ── Configurator (Administrator only) ─────────────────────────
    'admin' is deliberately absent from RESOURCES in shared/roles.js, so
@@ -1399,9 +1406,11 @@ app.get('/setup/first-steps',       setupController.firstSteps);
    anyone who can see a vendor or a customer; changed by whoever can change
    them, because a category is created in the act of classifying. */
 app.get('/supply-categories',        supplyCategoryController.list);
-app.post('/supply-categories',       allow('vendors', 'write'), supplyCategoryController.create);
-app.patch('/supply-categories/:id',  allow('vendors', 'write'), supplyCategoryController.update);
-app.delete('/supply-categories/:id', allow('vendors', 'delete'), supplyCategoryController.remove);
+/* Checked by the general guard against the supply-categories grant (Sales
+   holds it, to classify customers); 'vendors' write refused Sales here. */
+app.post('/supply-categories',       supplyCategoryController.create);
+app.patch('/supply-categories/:id',  supplyCategoryController.update);
+app.delete('/supply-categories/:id', supplyCategoryController.remove);
 
 app.get('/inventory/unmatched', async (req, res) => {
   try {
@@ -1449,6 +1458,19 @@ app.patch('/inventory/:id', async (req, res) => {
       `SELECT id, owner_id FROM inventory WHERE id = $1${scoped ? ' AND owner_id = $2' : ''}`,
       scoped ? [req.params.id, req.user?.orgId ?? req.user?.id] : [req.params.id])).rows[0];
     if (!item) return res.status(404).json({ error: 'Stock item not found' });
+    /* The unit a stock row is counted in is fixed once stock has moved in
+       it: changing kg to nos would re-read every movement in the new unit. */
+    if ('uom' in req.body) {
+      const cur = (await db.query(
+        `SELECT uom, EXISTS (SELECT 1 FROM stock_movements WHERE inventory_id = $1) AS moved FROM inventory WHERE id = $1`, [item.id])).rows[0];
+      if (cur?.moved && String(req.body.uom || '').trim().toLowerCase() !== String(cur.uom || '').trim().toLowerCase()) {
+        return res.status(409).json({ error: `This stock is counted in ${cur.uom || 'its unit'} and has movements, so its unit can't change. Add a new stock item in the other unit instead.` });
+      }
+    }
+    if ('unit_cost' in req.body && req.body.unit_cost !== '' && req.body.unit_cost != null
+        && (!Number.isFinite(Number(req.body.unit_cost)) || Number(req.body.unit_cost) < 0)) {
+      return res.status(400).json({ error: 'The cost must be a number, 0 or more.' });
+    }
     for (const [col, table] of [['raw_material_id', 'raw_materials'], ['sku_id', 'skus']]) {
       const v = req.body[col];
       if (v == null || v === '') continue;
@@ -1628,6 +1650,13 @@ app.get('/skus/:id/bom', async (req, res) => {
 });
 app.put('/skus/:id/bom', async (req, res) => {
   const lines = Array.isArray(req.body.lines) ? req.body.lines : [];
+  /* How much of each material one unit takes is more than zero. A line of
+     0 or −2 kg was saved, and readiness then read "needs nothing". */
+  for (const [n, l] of lines.entries()) {
+    if (!l || (!l.componentName && !l.rawMaterialId)) continue;
+    const q = Number(l.qtyPerUnit);
+    if (!Number.isFinite(q) || q <= 0) return res.status(400).json({ error: `Line ${n + 1}: how much one unit takes must be more than zero.` });
+  }
   try {
     if (!await assertOwned(db, req, res, 'skus', req.params.id, { columns: 'id' })) return;
     /* …and every material a line names is yours too. */
@@ -1668,6 +1697,61 @@ app.delete('/production/:kind/line/:lineId', productionController.deleteLine);
 /* ══════════════════════════════════════════════════════════
    SALES & PROCUREMENT MASTERS (owner-scoped CRUD)
    ══════════════════════════════════════════════════════════ */
+/* What a referencing table is called on screen, for "in use" answers.
+   "In use elsewhere — remove dependents first" never said WHERE, so
+   nobody could act on it. */
+const USED_ON = {
+  customer_orders: 'orders', customer_order_items: 'order lines', sales_quotations: 'quotations', sales_quotation_items: 'quotation lines',
+  sales_invoices: 'invoices', sales_invoice_items: 'invoice lines', delivery_challans: 'delivery challans', delivery_challan_items: 'challan lines',
+  credit_debit_notes: 'credit or debit notes', enquiries: 'enquiries', enquiry_items: 'enquiries', sku_bom: 'bills of materials',
+  inventory: 'stock', stock_movements: 'stock history', po_line_items: 'purchase orders', purchase_orders: 'purchase orders',
+  production_orders: 'production orders', production_material_plan: 'production plans', production_consumption: 'production records',
+  vendor_items: "vendors' supply lists", item_uom: 'unit conversions', vendor_quotation_lines: 'vendor quotations', recurring_invoices: 'recurring invoices',
+};
+const NOUN = { customers: 'customer', skus: 'product', raw_materials: 'material', expenses: 'expense' };
+function inUseMessage(table, e) {
+  const where = USED_ON[e?.table] || 'other records';
+  return `This ${NOUN[table] || 'record'} is used on ${where}, so it can't be deleted. Remove it from there first${table === 'customers' ? ', or just leave it' : ''}.`;
+}
+/* A database rule broken by what was typed, said in words rather than as
+   the rule's name: an empty customer name came back as a 500 reading
+   'violates check constraint "customers_name_not_blank"'. */
+function inputProblem(table, e) {
+  if (e?.code === '23514' && /name/.test(e.constraint || '')) return { status: 400, error: `Give the ${NOUN[table] || 'record'} a name.` };
+  if (e?.code === '23514') return { status: 400, error: 'One of the values is not allowed. Check the numbers and try again.' };
+  if (e?.code === '23505') return { status: 409, error: `There is already a ${NOUN[table] || 'record'} with that name or code.` };
+  if (e?.code === '22P02' || e?.code === '22003') return { status: 400, error: 'One of the numbers is not a number, or is too large.' };
+  return null;
+}
+
+/* What each master must hold before it is saved. Checked before the
+   generic create and edit, which store anything they are given: a product
+   with no name and a price of −50 went in, as did two products with the
+   same code. */
+function masterProblem(table, body, { creating }) {
+  const has = (k) => k in body;
+  const num = (k) => body[k] === '' || body[k] == null ? null : Number(body[k]);
+  if (table === 'skus' || table === 'raw_materials') {
+    const what = table === 'skus' ? 'product' : 'material';
+    if ((creating || has('name')) && !String(body.name ?? '').trim()) return `Give the ${what} a name.`;
+    for (const k of ['price', 'standard_rate', 'moq', 'lead_time_days']) {
+      if (has(k) && num(k) != null && (!Number.isFinite(num(k)) || num(k) < 0)) return `The ${k === 'price' ? 'price' : k === 'standard_rate' ? 'rate' : k.replace(/_/g, ' ')} must be a number, 0 or more.`;
+    }
+  }
+  if (table === 'expenses') {
+    if ((creating || has('amount')) && (!Number.isFinite(num('amount')) || num('amount') <= 0)) return 'Enter the amount spent — more than zero.';
+  }
+  if (table === 'customers' && (creating || has('name')) && !String(body.name ?? '').trim()) return 'Give the customer a name.';
+  return null;
+}
+async function duplicateCode(table, body, ownerId, exceptId = null) {
+  if (table !== 'skus' || !String(body.sku_code ?? '').trim()) return null;
+  const { rows } = await db.query(
+    `SELECT name FROM skus WHERE owner_id IS NOT DISTINCT FROM $1 AND LOWER(TRIM(sku_code)) = LOWER(TRIM($2)) AND id <> COALESCE($3::int, -1) LIMIT 1`,
+    [ownerId, body.sku_code, exceptId]);
+  return rows[0] ? `The code ${String(body.sku_code).trim()} is already used by “${rows[0].name}”. Give this product its own code.` : null;
+}
+
 function registerOwnedCrud(route, table, cols, searchCols) {
   app.get(`/${route}`, async (req, res) => {
     try {
@@ -1695,6 +1779,9 @@ function registerOwnedCrud(route, table, cols, searchCols) {
   });
   app.post(`/${route}`, async (req, res) => {
     try {
+      const problem = masterProblem(table, req.body || {}, { creating: true })
+        || await duplicateCode(table, req.body || {}, req.user?.orgId ?? null);
+      if (problem) return res.status(problem.startsWith('The code') ? 409 : 400).json({ error: problem });
       const colList = cols.map(c => `"${c}"`).join(', ');
       const ph = cols.map((_, i) => `$${i + 2}`).join(', ');
       const vals = cols.map(c => (req.body[c] === undefined ? null : req.body[c]));
@@ -1703,7 +1790,11 @@ function registerOwnedCrud(route, table, cols, searchCols) {
         [req.user?.orgId || null, ...vals]
       );
       res.json({ id: rows[0].id });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+      const p = inputProblem(table, e);
+      if (p) return res.status(p.status).json({ error: p.error });
+      res.status(500).json({ error: e.message });
+    }
   });
   /* Read one — see the note on registerCrud. Same omission here, which is
      why the customer round-trip test's GET /customers/:id came back as an
@@ -1723,6 +1814,9 @@ function registerOwnedCrud(route, table, cols, searchCols) {
     try {
       const sets = cols.filter(c => c in req.body);
       if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
+      const problem = masterProblem(table, req.body, { creating: false })
+        || await duplicateCode(table, req.body, req.user?.orgId ?? null, Number(req.params.id) || null);
+      if (problem) return res.status(problem.startsWith('The code') ? 409 : 400).json({ error: problem });
       const clause = sets.map((c, i) => `"${c}" = $${i + 1}`).join(', ');
       const vals = sets.map(c => req.body[c]);
       // Owner-scoped: editing by id alone let any logged-in user modify
@@ -1733,7 +1827,11 @@ function registerOwnedCrud(route, table, cols, searchCols) {
         [...vals, req.params.id, ...own.params]);
       if (!rowCount) return res.status(404).json({ error: 'not found' });
       res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+      const p = inputProblem(table, e);
+      if (p) return res.status(p.status).json({ error: p.error });
+      res.status(500).json({ error: e.message });
+    }
   });
   app.delete(`/${route}/:id`, async (req, res) => {
     try {
@@ -1744,7 +1842,7 @@ function registerOwnedCrud(route, table, cols, searchCols) {
       if (!rowCount) return res.status(404).json({ error: 'not found' });
       res.json({ success: true });
     } catch (e) {
-      if (e.code === '23503') return res.status(409).json({ error: 'In use elsewhere — remove dependents first' });
+      if (e.code === '23503') return res.status(409).json({ error: inUseMessage(table, e) });
       res.status(500).json({ error: e.message });
     }
   });
@@ -1763,10 +1861,50 @@ registerOwnedCrud('customers',    'customers',     ['name', 'gstin', 'pan', 'con
      detail; both optional, because a customer added in a hurry should not
      be blocked on knowing. */
   'requirement_category', 'requirement']);
+/* Not a product that production orders were made for. They point at it
+   with no foreign key, so the delete went through and the job's next
+   output failed with a raw database error. */
+app.delete('/skus/:id', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT prod_number FROM production_orders WHERE sku_id = $1 AND owner_id IS NOT DISTINCT FROM $2 ORDER BY id LIMIT 6`,
+      [req.params.id, req.user?.orgId ?? null]);
+    if (rows.length) {
+      return res.status(409).json({ error: `This product has production orders (${rows.slice(0, 5).map(r => r.prod_number).join(', ')}${rows.length > 5 ? ', …' : ''}), so it can't be deleted.` });
+    }
+    next();
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 /* Searched by anything a product is known by — code, name, HSN, category,
    the catalogue's headline and use — not only the columns the form writes. */
 registerOwnedCrud('skus',         'skus',          ['sku_code', 'name', 'description', 'unit', 'price', 'hsn'],
   ['sku_code', 'name', 'description', 'hsn', 'catalogue_category', 'headline', 'use_case']);
+/* A material's unit, written as one: the form wrote `unit` only while
+   requirements, receipts and stock read `base_uom` first, so a material
+   edited to "nos" still counted in kg everywhere else. The two move
+   together, spelt as the unit table spells them ("Kgs" is kg), and the
+   unit can't change once stock is held in the old one. */
+const materialUnits = async (req, res, next) => {
+  try {
+    const { unitCode } = require('./shared/uom');
+    const b = req.body || {};
+    for (const k of ['unit', 'base_uom', 'purchase_uom']) if (b[k]) b[k] = unitCode(b[k]);
+    if (b.unit && !b.base_uom) b.base_uom = b.unit;
+    if (req.method === 'PATCH' && b.base_uom) {
+      const { rows: [cur] } = await db.query(
+        `SELECT rm.base_uom, rm.unit, EXISTS (SELECT 1 FROM inventory i JOIN stock_movements m ON m.inventory_id = i.id
+                                              WHERE i.raw_material_id = rm.id) AS stocked
+           FROM raw_materials rm WHERE rm.id = $1 AND rm.owner_id IS NOT DISTINCT FROM $2`, [req.params.id, req.user?.orgId ?? null]);
+      const was = cur && (cur.base_uom || cur.unit);
+      if (cur?.stocked && was && String(was).toLowerCase() !== String(b.base_uom).toLowerCase()) {
+        return res.status(409).json({ error: `This material is held in stock in ${was}, so its unit can't change to ${b.base_uom}. Add a new material in the other unit instead.` });
+      }
+    }
+    next();
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+app.post('/raw-materials', materialUnits);
+app.patch('/raw-materials/:id', materialUnits);
 /* base_uom … lead_time_days were dropped on create and edit, though the
    requirements engine reads every one of them. */
 registerOwnedCrud('raw-materials','raw_materials', ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn',
@@ -1778,6 +1916,7 @@ app.get('/customer-orders',            salesController.getOrders);
 app.post('/customer-orders',           salesController.createOrder);
 app.get('/customer-orders/:id',        salesController.getOrderById);
 app.patch('/customer-orders/:id/status', salesController.updateOrderStatus);
+app.patch('/customer-orders/:id',      salesController.updateOrder);
 app.delete('/customer-orders/:id',     salesController.deleteOrder);
 
 /* ── Quotations (Q1/Q2/Q3) ── */
@@ -1816,6 +1955,7 @@ app.get('/grn-bills',                  grnBillController.list);
 app.post('/grn-bills',                 grnBillController.create);
 app.get('/grn-bills/:id/payments',     grnBillController.payments);
 app.post('/grn-bills/:id/payment',     grnBillController.addPayment);
+app.delete('/grn-bills/:id/payments/:paymentId', grnBillController.reversePayment);
 app.get('/grn-bills/:id',              grnBillController.getById);
 app.patch('/grn-bills/:id/status',     grnBillController.setStatus);
 app.delete('/grn-bills/:id',           grnBillController.remove);
@@ -1999,6 +2139,25 @@ const grnMovedStock = async (req, res, next) => {
 
 registerCrud('projects', 'projects', ['name', 'clientName', 'type', 'startDate', 'endDate', 'status'], 'PROJECT_UPDATED');
 app.patch('/vendors/:id', checkFields('vendors', VENDOR_SPEC, ['gstin', 'pan']));
+/* Not a vendor that purchase orders or bills still name. There is no
+   foreign key from purchase_orders to vendors, so the delete went through
+   and the vendor's open PO printed with no vendor, and its bill landed in
+   Payables as "Unknown". Switch them off (status) instead. */
+app.delete('/vendors/:id', async (req, res, next) => {
+  try {
+    const own = req.user?.orgId ?? null;
+    const { rows: [u] } = await db.query(
+      `SELECT (SELECT COUNT(*) FROM purchase_orders WHERE "vendorId" = $1 AND owner_id IS NOT DISTINCT FROM $2)::int AS pos,
+              (SELECT COUNT(*) FROM grn_bills WHERE vendor_id = $1 AND owner_id IS NOT DISTINCT FROM $2)::int AS bills`,
+      [req.params.id, own]);
+    if (u.pos || u.bills) {
+      const what = [u.pos && `${u.pos} purchase order${u.pos > 1 ? 's' : ''}`, u.bills && `${u.bills} bill${u.bills > 1 ? 's' : ''}`]
+        .filter(Boolean).join(' and ');
+      return res.status(409).json({ error: `This vendor is on ${what}, so it can't be deleted. Mark it Inactive instead.` });
+    }
+    next();
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 registerCrud('vendors', 'vendors', VENDOR_COLUMNS, 'VENDOR_UPDATED');
 app.patch('/work-orders/:id', checkRefs({ vendorId: 'vendors', boqId: 'boq_items' }));
 registerCrud('work-orders', 'work_orders', ['name', 'vendorId', 'boqId', 'startDate', 'endDate', 'contractValue', 'status'], 'WO_UPDATED');
@@ -2157,9 +2316,15 @@ app.get('/dashboard', async (req, res) => {
                d AS today
           FROM (SELECT (NOW() AT TIME ZONE 'Asia/Kolkata')::date AS d) x
       ), issued AS (
-        SELECT id, net_amount, COALESCE(amount_paid, 0) AS paid, due_date,
-               COALESCE(invoice_date, (created_at AT TIME ZONE 'Asia/Kolkata')::date) AS on_date
-          FROM sales_invoices WHERE status <> 'Cancelled' ${salesOwner}
+        /* "paid" here is what is settled: money received, and credit notes
+           raised against the invoice. A fully credited invoice read as owed
+           — and overdue — on the dashboard while the customer's page said
+           nothing was. */
+        SELECT si.id, si.net_amount, COALESCE(si.amount_paid, 0) + COALESCE((SELECT SUM(n.total) FROM credit_debit_notes n
+                 WHERE n.party_type = 'customer' AND n.note_type = 'credit' AND n.ref_id = si.id
+                   AND n.owner_id IS NOT DISTINCT FROM si.owner_id), 0) AS paid, si.due_date,
+               COALESCE(si.invoice_date, (si.created_at AT TIME ZONE 'Asia/Kolkata')::date) AS on_date
+          FROM sales_invoices si WHERE si.status <> 'Cancelled' ${salesOwner.replace(/\bowner_id\b/g, 'si.owner_id')}
       )
       SELECT fy.start AS fy_start,
         (SELECT COALESCE(SUM(net_amount), 0) FROM issued

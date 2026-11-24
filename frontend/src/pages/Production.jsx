@@ -31,7 +31,16 @@ export default function Production() {
   const { can } = usePermissions();
   const [projSummary, setProjSummary] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ productName: '', plannedQty: '', outputUom: 'nos' });
+  const [form, setForm] = useState({ productName: '', plannedQty: '', outputUom: 'nos', skuId: '' });
+  /* A product picked from the list, so the finished goods go into stock as
+     that product — the one a challan from a customer order looks for. Typed
+     in only, they landed under the typed name and dispatch couldn't find
+     them. */
+  const [skus, setSkus] = useState([]);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    fetch(`${API}/skus`).then(r => (r.ok ? r.json() : [])).then(d => setSkus(Array.isArray(d) ? d : (d.items || []))).catch(() => {});
+  }, []);
 
   /* With a project chosen, it goes in as a baseline filter rather than a
      hand-built query string, so it composes with search instead of being
@@ -63,19 +72,22 @@ export default function Production() {
   const create = async (e) => {
     e.preventDefault();
 
-    if (!form.productName.trim()) { toast.error('Enter what you are producing'); return; }
+    if (!form.productName.trim() && !form.skuId) { toast.error('Pick the product, or type what you are producing'); return; }
+    if (saving) return;
+    setSaving(true);
     try {
       const res = await fetch(`${API}/production`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: activeProject?.id ?? null, ...form, plannedQty: form.plannedQty || null }),
+        body: JSON.stringify({ projectId: activeProject?.id ?? null, ...form, skuId: form.skuId || null, plannedQty: form.plannedQty || null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
       toast.success(`Production order ${data.prodNumber} created`);
-      setForm({ productName: '', plannedQty: '', outputUom: 'nos' });
+      setForm({ productName: '', plannedQty: '', outputUom: 'nos', skuId: '' });
       setShowForm(false);
       navigate(`/production/${data.id}`);
     } catch (err) { toast.error(err.message); }
+    finally { setSaving(false); }
   };
 
   const card = { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 14, padding: 18 };
@@ -136,9 +148,22 @@ export default function Production() {
       {/* Create form */}
       {showForm && canWrite && (
         <form onSubmit={create} style={{ ...card, marginBottom: 20, display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          {skus.length > 0 && (
+            <div style={{ flex: 2, minWidth: 200 }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Product</label>
+              <select style={input} value={form.skuId} data-production-product
+                onChange={e => {
+                  const p = skus.find(x => String(x.id) === e.target.value);
+                  setForm(f => ({ ...f, skuId: e.target.value, productName: p ? p.name : f.productName, outputUom: p?.unit || f.outputUom }));
+                }}>
+                <option value="">Not a saved product (type it)</option>
+                {skus.map(p => <option key={p.id} value={p.id}>{p.name}{p.sku_code ? ` · ${p.sku_code}` : ''}</option>)}
+              </select>
+            </div>
+          )}
           <div style={{ flex: 2, minWidth: 220 }}>
             <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>What are you producing? *</label>
-            <input style={input} placeholder="e.g. V-type Brackets, MS Gratings" value={form.productName} onChange={e => setForm({ ...form, productName: e.target.value })} />
+            <input style={input} placeholder="e.g. V-type Brackets, MS Gratings" value={form.productName} disabled={!!form.skuId} onChange={e => setForm({ ...form, productName: e.target.value })} />
           </div>
           <div style={{ flex: 1, minWidth: 120 }}>
             <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Planned Qty</label>
@@ -150,7 +175,7 @@ export default function Production() {
               <option value="nos">nos</option><option value="kg">kg</option><option value="sets">sets</option><option value="units">units</option>
             </select>
           </div>
-          <button type="submit" className="btn-primary btn-sm">Create & Open</button>
+          <button type="submit" className="btn-primary btn-sm" disabled={saving}>{saving ? 'Saving…' : 'Create & Open'}</button>
         </form>
       )}
 

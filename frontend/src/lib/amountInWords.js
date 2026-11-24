@@ -26,9 +26,13 @@ const words = (n) => {
 };
 
 export function amountInWords(value) {
-  let num = Math.round(Number(value) || 0);
-  if (num === 0) return 'Rupees Zero Only';
-  const negative = num < 0;
-  num = Math.abs(num);
-  return `Rupees ${negative ? 'Minus ' : ''}${words(num).replace(/\s+/g, ' ')} Only`;
+  /* Paise are spelled too: rounding to the rupee printed ₹11,800.50 as
+     "Eleven Thousand Eight Hundred One", a different amount from the
+     figure beside it. */
+  const paiseTotal = Math.round(Math.abs(Number(value) || 0) * 100);
+  const negative = (Number(value) || 0) < 0 && paiseTotal > 0;
+  const rupees = Math.floor(paiseTotal / 100), paise = paiseTotal % 100;
+  if (!rupees && !paise) return 'Rupees Zero Only';
+  const r = rupees ? words(rupees).replace(/\s+/g, ' ') : 'Zero';
+  return `Rupees ${negative ? 'Minus ' : ''}${r}${paise ? ` and ${two(paise)} Paise` : ''} Only`;
 }

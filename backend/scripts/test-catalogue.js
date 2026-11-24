@@ -228,8 +228,14 @@ const stranger = (path, opts = {}) => call(path, opts);
   ok((after.body.items || after.body).length === beforeCount + 1,
     'exactly one customer was created');
 
+  /* Converting again before a quotation is saved (the builder was closed)
+     hands back the same prefill for the same customer — it used to be a
+     409 with no way to reach the quotation again. No second customer. */
   const again = await call(`/enquiries/${id}/convert`, { method: 'POST' }, A.token);
-  ok(again.status === 409, `converting the same enquiry twice is refused (${again.status})`);
+  const afterAgain = await call('/customers?limit=100', {}, A.token);
+  ok(again.status === 200 && again.body.customerId === conv.body.customerId
+      && (afterAgain.body.items || afterAgain.body).length === beforeCount + 1,
+    `converting it again re-opens the same quotation, with no second customer (${again.status})`);
 
   /* ── clean up ───────────────────────────────────────────── */
   for (const t of ['enquiry_items', 'enquiries', 'catalogue_photos', 'catalogue_settings']) {

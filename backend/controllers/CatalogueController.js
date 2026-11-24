@@ -591,18 +591,96 @@ exports.listEnquiries = async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
+/* A customer this enquiry is probably from: the same phone, the same email,
+   or the same name. A repeat buyer who phones again was being added as a
+   second customer every time an enquiry of theirs was converted. */
+async function likelyCustomer(q, owner, e) {
+  const phone = String(e.phone || '').replace(/\D/g, '').slice(-10);
+  const email = String(e.email || '').trim().toLowerCase();
+  const name = String(e.company || e.name || '').trim().toLowerCase();
+  const { rows: [c] } = await q.query(
+    `SELECT id, name FROM customers
+      WHERE owner_id = $1
+        AND (($2 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10) = $2)
+          OR ($3 <> '' AND LOWER(TRIM(COALESCE(email, ''))) = $3)
+          OR ($4 <> '' AND LOWER(TRIM(name)) = $4))
+      ORDER BY id LIMIT 1`, [owner, phone.length === 10 ? phone : '', email, name]);
+  return c || null;
+}
+
 exports.getEnquiry = async (req, res) => {
   try {
     const owner = ownerOf(req);
     const admin = isCrossTenant(req.user?.role);
     const { rows: [e] } = await db.query(
-      `SELECT * FROM enquiries WHERE id = $1${admin ? '' : ' AND owner_id = $2'}`,
+      `SELECT e.*, c.name AS customer_name, q.quote_number AS quotation_number
+         FROM enquiries e
+         LEFT JOIN customers c ON c.id = e.customer_id
+         LEFT JOIN sales_quotations q ON q.id = e.quotation_id
+        WHERE e.id = $1${admin ? '' : ' AND e.owner_id = $2'}`,
       admin ? [req.params.id] : [req.params.id, owner]);
     if (!e) return res.status(404).json({ error: 'Enquiry not found' });
     const { rows: items } = await db.query(
       'SELECT * FROM enquiry_items WHERE enquiry_id = $1 ORDER BY sort_order, id', [e.id]);
-    res.json({ ...e, items });
+    const match = e.customer_id ? null : await likelyCustomer(db, e.owner_id, e);
+    res.json({ ...e, items, likelyCustomer: match });
   } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* POST /enquiries — an enquiry that came by phone, WhatsApp, email or at the
+   gate. Only the published catalogue could make one, so a business that had
+   not published it had an Enquiries screen that stayed empty for good, and
+   every phoned-in request went straight to a quotation with no record of
+   having been asked. */
+const ENQUIRY_SOURCES = ['phone', 'whatsapp', 'email', 'walk-in', 'referral', 'other'];
+exports.createEnquiry = async (req, res) => {
+  const owner = ownerOf(req);
+  const { name, company, phone, email, message, items, source } = req.body || {};
+  if (!String(name || '').trim() && !String(company || '').trim()) {
+    return res.status(400).json({ error: 'Who is asking? Give a name or a company.' });
+  }
+  const lines = Array.isArray(items) ? items.filter(i => String(i?.description || '').trim()) : [];
+  if (!lines.length) return res.status(400).json({ error: 'Add at least one thing they asked for.' });
+  if (lines.length > 50) return res.status(400).json({ error: 'That is more than 50 lines; split it into two enquiries.' });
+  for (const [n, l] of lines.entries()) {
+    const blank = l.quantity == null || String(l.quantity).trim() === '';
+    if (!blank && (!Number.isFinite(Number(l.quantity)) || Number(l.quantity) <= 0)) {
+      return res.status(400).json({ error: `Line ${n + 1}: the quantity must be more than zero, or left empty.` });
+    }
+  }
+  const src = ENQUIRY_SOURCES.includes(source) ? source : 'phone';
+  const skuIds = [...new Set(lines.map(l => Number(l.skuId)).filter(x => Number.isInteger(x) && x > 0))];
+  let client;
+  try {
+    /* Only this company's own products can be named on a line. */
+    const { rows: skuRows } = skuIds.length
+      ? await db.query('SELECT id FROM skus WHERE id = ANY($1) AND owner_id = $2', [skuIds, owner])
+      : { rows: [] };
+    if (skuRows.length !== skuIds.length) return res.status(400).json({ error: 'One of the products is not in your product list.' });
+    client = await db.getClient();
+    await client.query('BEGIN');
+    const who = String(name || company).trim().slice(0, 120);
+    const { rows: [enq] } = await client.query(
+      `INSERT INTO enquiries (owner_id, name, company, phone, email, message, status, source)
+       VALUES ($1,$2,$3,$4,$5,$6,'Read',$7) RETURNING id`,
+      [owner, who, String(company || '').trim().slice(0, 160), String(phone || '').trim().slice(0, 40),
+       String(email || '').trim().slice(0, 160), String(message || '').slice(0, 2000), src]);
+    const ref = `ENQ-${String(enq.id).padStart(4, '0')}`;
+    await client.query('UPDATE enquiries SET ref = $1 WHERE id = $2', [ref, enq.id]);
+    let so = 0;
+    for (const l of lines) {
+      await client.query(
+        `INSERT INTO enquiry_items (enquiry_id, sku_id, description, quantity, unit, note, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [enq.id, Number(l.skuId) > 0 ? Number(l.skuId) : null, String(l.description).trim().slice(0, 300),
+         Number(l.quantity) || null, String(l.unit || '').slice(0, 20), String(l.note || '').slice(0, 300), so++]);
+    }
+    await client.query('COMMIT');
+    res.json({ id: enq.id, ref });
+  } catch (e) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client?.release(); }
 };
 
 const ENQUIRY_STATUSES = ['New', 'Read', 'Quoted', 'Won', 'Ignored'];
@@ -631,24 +709,49 @@ exports.convertEnquiry = async (req, res) => {
   const client = await db.getClient();
   try {
     const owner = ownerOf(req);
+    /* Locked, so two quick clicks cannot make two customers. */
+    await client.query('BEGIN');
     const { rows: [e] } = await client.query(
-      'SELECT * FROM enquiries WHERE id = $1 AND owner_id = $2', [req.params.id, owner]);
-    if (!e) return res.status(404).json({ error: 'Enquiry not found' });
-    if (e.customer_id) {
+      'SELECT * FROM enquiries WHERE id = $1 AND owner_id = $2 FOR UPDATE', [req.params.id, owner]);
+    if (!e) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Enquiry not found' }); }
+    /* Converted AND quoted: the quotation is the place to carry on. Converted
+       but the quotation was never saved (the builder was closed): hand the
+       same prefill back for the same customer, rather than a dead end. */
+    if (e.quotation_id) {
+      const { rows: [q] } = await client.query('SELECT quote_number FROM sales_quotations WHERE id = $1', [e.quotation_id]);
+      await client.query('ROLLBACK');
       return res.status(409).json({
-        error: 'This enquiry has already been converted.',
+        error: `This enquiry is already quoted on ${q?.quote_number || 'a quotation'}. Open that quotation to carry on.`,
         customerId: e.customer_id, quotationId: e.quotation_id,
       });
     }
 
-    await client.query('BEGIN');
-    /* Their company name if they gave one, otherwise their own — an
-       enquiry from a person buying for themselves is still a customer. */
-    const custName = String(e.company || e.name).trim();
-    const { rows: [cust] } = await client.query(
-      `INSERT INTO customers (name, phone, email, owner_id)
-       VALUES ($1,$2,$3,$4) RETURNING id, name`,
-      [custName, e.phone || null, e.email || null, owner]);
+    let cust = null, reused = false;
+    if (e.customer_id) {
+      cust = (await client.query('SELECT id, name FROM customers WHERE id = $1 AND owner_id = $2', [e.customer_id, owner])).rows[0] || null;
+      reused = !!cust;
+    }
+    /* A customer picked on the screen, or one this enquiry plainly comes
+       from (same phone, email or name) — not a second copy of them. */
+    const picked = Number(req.body?.customerId);
+    if (!cust && Number.isInteger(picked) && picked > 0) {
+      cust = (await client.query('SELECT id, name FROM customers WHERE id = $1 AND owner_id = $2', [picked, owner])).rows[0] || null;
+      if (!cust) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'That customer is not in your list.' }); }
+      reused = true;
+    }
+    if (!cust && req.body?.newCustomer !== true) {
+      cust = await likelyCustomer(client, owner, e);
+      reused = !!cust;
+    }
+    if (!cust) {
+      /* Their company name if they gave one, otherwise their own — an
+         enquiry from a person buying for themselves is still a customer. */
+      const custName = String(e.company || e.name).trim();
+      cust = (await client.query(
+        `INSERT INTO customers (name, phone, email, owner_id)
+         VALUES ($1,$2,$3,$4) RETURNING id, name`,
+        [custName, e.phone || null, e.email || null, owner])).rows[0];
+    }
 
     await client.query(
       `UPDATE enquiries SET customer_id = $1, status = 'Quoted', updated_at = NOW() WHERE id = $2`,
@@ -670,6 +773,7 @@ exports.convertEnquiry = async (req, res) => {
     res.json({
       customerId: cust.id,
       customerName: cust.name,
+      existingCustomer: reused,
       prefill: {
         /* Which enquiry this is, so the quotation can be linked back to it
            (enquiries.quotation_id) and the builder can show what was asked. */

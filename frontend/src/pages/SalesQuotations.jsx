@@ -24,6 +24,9 @@ import { lineProblems, discountAmount, adjustmentProblems, money } from '../lib/
 import { suggestDeliveryDays } from '../lib/leadTime';
 import FitNumber from '../components/FitNumber';
 import StatusSelect from '../components/StatusSelect';
+import { PartySelect } from '../components/QuickAddParty';
+import SaveAsProduct from '../components/SaveAsProduct';
+import { useConfirm } from '../context/ConfirmContext';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STATUSES = ['Draft', 'Sent', 'Accepted', 'Rejected', 'Converted'];
@@ -48,6 +51,7 @@ function readEnquiryPrefill(search) {
 export default function SalesQuotations() {
   const toast = useToast();
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
   const { can } = usePermissions();
   const q = useListQuery('sales-quotations', { pageSize: 25 });
   const [customers, setCustomers] = useState([]);
@@ -175,7 +179,7 @@ export default function SalesQuotations() {
   };
 
   const convert = async (qt) => {
-    if (!window.confirm(`Convert ${qt.quote_number} into a customer order?`)) return;
+    if (!(await confirm({ title: `Turn ${qt.quote_number} into an order?`, message: 'An order is made with its lines, prices and delivery. The quotation is marked Converted and can no longer be edited.', confirmLabel: 'Make the order' }))) return;
     const token = getToken();
     const res = await fetch(`${API}/sales-quotations/${qt.id}/convert`, {
       method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -183,7 +187,7 @@ export default function SalesQuotations() {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.detail || d.error || 'Could not convert this quotation');
     toast.success(`Won! Created order ${d.orderNumber}`);
-    navigate('/customer-orders');
+    navigate(`/customer-orders?open=${d.orderId}`);
   };
 
   const setStatus = async (id, status) => {
@@ -201,7 +205,7 @@ export default function SalesQuotations() {
   };
 
   const del = async (qt) => {
-    if (!window.confirm(`Delete ${qt.quote_number}?`)) return;
+    if (!(await confirm({ title: `Delete ${qt.quote_number}?`, message: "The quotation is removed for good. This can't be undone.", confirmLabel: 'Delete quotation', tone: 'danger' }))) return;
     const token = getToken();
     const res = await fetch(`${API}/sales-quotations/${qt.id}`, {
       method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -257,10 +261,8 @@ export default function SalesQuotations() {
           )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
             <div><label style={lbl}>Customer *</label>
-              <select style={input} value={head.customerId} onChange={e => setHead({ ...head, customerId: e.target.value })} aria-label="Customer">
-                <option value="">— Select —</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <PartySelect style={input} parties={customers} setParties={setCustomers} value={head.customerId}
+                onChange={id => setHead(h => ({ ...h, customerId: id }))} />
             </div>
             <div><label style={lbl}>Quote Date</label><input style={input} type="date" value={head.quoteDate} onChange={e => setHead({ ...head, quoteDate: e.target.value })} /></div>
             <div><label style={lbl}>Valid Until</label><input style={input} type="date" value={head.validUntil} onChange={e => setHead({ ...head, validUntil: e.target.value })} /></div>
@@ -292,6 +294,8 @@ export default function SalesQuotations() {
               <div style={{ flex: 2 }}><label style={lbl}>Description *</label>
                 <input style={{ ...input, borderColor: rowProblems.rows.has(i) ? '#dc2626' : undefined }} value={l.description} onChange={e => setLine(i, { description: e.target.value })}
                   aria-label={`Line ${i + 1} description`} aria-invalid={rowProblems.rows.has(i)} autoComplete="off" placeholder="Item or service" />
+                {!l.skuId && <SaveAsProduct description={l.description} unit={l.uom} price={l.rate} hsn={l.hsn}
+                  onSaved={p => { setSkus(list => [...list, p]); setLine(i, { skuId: String(p.id) }); }} />}
               </div>
               {/* Unit, quantity, rate, total — the order a purchase order
                   is written in, and the order the printed quotation, the
@@ -436,7 +440,7 @@ export default function SalesQuotations() {
                         </button>
                       )}
                       {qt.status === 'Converted' && qt.converted_order_id && (
-                        <button onClick={() => navigate('/customer-orders')} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', marginRight: 6 }}>View order →</button>
+                        <button onClick={() => navigate(`/customer-orders?open=${qt.converted_order_id}`)} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '4px 10px', marginRight: 6 }}>View order →</button>
                       )}
                       {/* Hidden when the API would refuse it anyway. */}
                       {canDelete && (

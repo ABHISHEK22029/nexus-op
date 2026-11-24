@@ -147,7 +147,7 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
         ON li.raw_material_id IS NULL AND li.sku_id IS NULL
        AND rm.owner_id IS NOT DISTINCT FROM po.owner_id
        AND ${normed('rm.name')} = ${normed('li.description')}
-     WHERE po.status IN ${OPEN}${own('po.owner_id', onOrderParams)}
+     WHERE po.status IN ${OPEN} AND COALESCE(po.approval_status, '') <> 'Rejected'${own('po.owner_id', onOrderParams)}
        AND COALESCE(li.raw_material_id, rm.id) IS NOT NULL
     UNION ALL
     SELECT rm.id, NULL, GREATEST(COALESCE(po.quantity, 0) - COALESCE(po.received_quantity, 0), 0)::numeric
@@ -155,7 +155,7 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
       JOIN raw_materials rm
         ON rm.owner_id IS NOT DISTINCT FROM po.owner_id
        AND ${normed('rm.name')} = ${normed('po."itemName"')}
-     WHERE po.status IN ${OPEN}${own('po.owner_id', onOrderParams)}
+     WHERE po.status IN ${OPEN} AND COALESCE(po.approval_status, '') <> 'Rejected'${own('po.owner_id', onOrderParams)}
        AND NOT EXISTS (SELECT 1 FROM po_line_items x WHERE x."poId" = po.id)`, onOrderParams)).rows;
 
   // ── 4. Per-item conversion factors ──
@@ -338,7 +338,7 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
     // Convert the BOM quantity into the material's base unit.
     const from = String(d.bom_uom || rm.base_uom || '').toLowerCase();
     const to = String(rm.base_uom || '').toLowerCase();
-    let need = rawNeed, conversion = null;
+    let need = rawNeed, conversion = null, unconvertible = false;
     if (rawNeed > 0 && from && to && from !== to) {
       const item = {
         base_uom: rm.base_uom, weight_per_piece_kg: rm.weight_per_piece_kg,
@@ -349,6 +349,7 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
       else {
         issues.push({ level: 'error', material: rm.name, message: `Cannot convert the BOM quantity (${from}) into stock units (${to}). ${c.reason}` });
         need = 0;
+        unconvertible = true;
       }
     }
 
@@ -396,6 +397,7 @@ async function computeRequirements({ ownerId, admin, orderId = null, projectId =
       need: r4(need), available: stock.get(key) || 0, conversion,
       on_floor: r4(onFloor),
       held_elsewhere: r4(Math.max(0, (heldTotal.get(key) || 0) - heldHere)),
+      unconvertible,
     });
   }
 
@@ -509,58 +511,102 @@ exports.list = async (req, res) => {
 /* GET /customer-orders/:id/readiness — can we build it, and what blocks us? */
 exports.orderReadiness = async (req, res) => {
   try {
+    /* Yours only — another company's order id answered "No bill of
+       materials" rather than "not found". */
+    if (!isAdmin(req)) {
+      const own = (await db.query('SELECT 1 FROM customer_orders WHERE id = $1 AND owner_id = $2', [req.params.id, req.user?.orgId ?? -1])).rows[0];
+      if (!own) return res.status(404).json({ error: 'Order not found' });
+    }
     const { lines, issues } = await computeRequirements({
       ownerId: req.user?.orgId, admin: isAdmin(req),
       orderId: req.params.id, projectId: req.query.projectId || null,
     });
     if (!lines.length) {
-      return res.json({ buildable: 0, ordered: 0, blocking: null, lines: [], issues,
-        message: 'No bill of materials for this order, so material readiness cannot be computed.' });
+      /* Which lines are missing what, so the screen can offer the next step
+         rather than a sentence with no way forward: a product with no bill
+         of materials, or a line typed in that is not a product at all. */
+      const { rows: its } = await db.query(
+        `SELECT i.description, i.sku_id, s.name AS sku_name,
+                EXISTS (SELECT 1 FROM sku_bom b WHERE b.sku_id = i.sku_id) AS has_bom
+           FROM customer_order_items i LEFT JOIN skus s ON s.id = i.sku_id
+          WHERE i.customer_order_id = $1 ORDER BY i.sort_order, i.id`, [req.params.id]);
+      const missingBom = its.filter(i => i.sku_id && !i.has_bom).map(i => ({ skuId: i.sku_id, name: i.sku_name || i.description }));
+      const typedLines = its.filter(i => !i.sku_id).map(i => i.description);
+      return res.json({ buildable: 0, ordered: 0, blocking: null, lines: [], issues, missingBom, typedLines,
+        message: missingBom.length
+          ? `No bill of materials for ${missingBom.map(m => m.name).join(', ')}, so material readiness can't be worked out.`
+          : typedLines.length
+            ? 'The lines on this order are typed in, not picked from your products, so there is no bill of materials to check.'
+            : 'No bill of materials for this order, so material readiness cannot be computed.' });
     }
 
     // Group by order line: a product may need several materials.
     const byLine = new Map();
     for (const l of lines) {
       if (!byLine.has(l.line_id)) byLine.set(l.line_id, { line_id: l.line_id, product: l.product, ordered: l.ordered, produced: l.produced, remaining: l.remaining, materials: [] });
-      const perUnitInBase = l.remaining > 0 ? l.need / l.remaining : 0;
-      /* What this order can count on: stock not held for another order's
-         job, plus what is already on the floor for this one. */
-      const usable = Math.max(0, l.available - l.held_elsewhere) + l.on_floor;
-      byLine.get(l.line_id).materials.push({
-        raw_material_id: l.raw_material_id, material: l.material,
-        per_unit: r4(perUnitInBase), base_uom: l.base_uom,
-        available: l.available,
-        on_floor: l.on_floor,
-        held_elsewhere: l.held_elsewhere,
-        // How many finished units this ONE material can support.
-        can_make: perUnitInBase > 0 ? Math.floor(r4(usable / perUnitInBase)) : Infinity,
-      });
+      byLine.get(l.line_id).materials.push(l);
     }
 
+    /* The order's lines share the stock. Each was checked against all of it,
+       so two lines needing 10 kg a unit each read "All 20 can be built" from
+       100 kg, where 10 can. Stock not held for another order is handed out
+       line by line; what is already on the floor for a line is that line's
+       own. A material whose units cannot be converted counts as none —
+       readiness said "all can be built" while it could not check. */
+    const pool = new Map();
+    for (const l of lines) {
+      if (!pool.has(l.raw_material_id)) pool.set(l.raw_material_id, Math.max(0, l.available - l.held_elsewhere));
+    }
     const result = [...byLine.values()].map(line => {
+      const mats = line.materials.map(l => {
+        const perUnitInBase = l.remaining > 0 ? l.need / l.remaining : 0;
+        const usable = (pool.get(l.raw_material_id) || 0) + l.on_floor;
+        const canMake = l.unconvertible ? 0 : perUnitInBase > 0 ? Math.floor(r4(usable / perUnitInBase)) : Infinity;
+        return {
+          raw_material_id: l.raw_material_id, material: l.material,
+          per_unit: r4(perUnitInBase), base_uom: l.base_uom,
+          available: l.available, on_floor: l.on_floor, held_elsewhere: l.held_elsewhere,
+          unconvertible: !!l.unconvertible,
+          can_make: canMake, _perUnit: perUnitInBase,
+        };
+      });
       // The binding constraint: the material that runs out first.
-      const blocking = line.materials.reduce((worst, m) => (m.can_make < (worst?.can_make ?? Infinity) ? m : worst), null);
-      const buildable = Math.max(0, Math.min(line.remaining, blocking ? blocking.can_make : 0));
+      const blocking = mats.reduce((worst, m) => (m.can_make < (worst?.can_make ?? Infinity) ? m : worst), null);
+      const raw = Math.max(0, Math.min(line.remaining, blocking ? blocking.can_make : 0));
+      const buildable = Number.isFinite(raw) ? raw : line.remaining;
+      /* What building it takes out of the shared stock, for the next line. */
+      for (const m of mats) {
+        const l = line.materials.find(x => x.raw_material_id === m.raw_material_id);
+        const take = Math.max(0, buildable * m._perUnit - (l?.on_floor || 0));
+        pool.set(m.raw_material_id, Math.max(0, (pool.get(m.raw_material_id) || 0) - take));
+      }
       return {
-        ...line,
-        buildable: Number.isFinite(buildable) ? buildable : line.remaining,
+        line_id: line.line_id, product: line.product, ordered: line.ordered, produced: line.produced, remaining: line.remaining,
+        buildable,
         blocked_by: buildable < line.remaining && blocking ? blocking.material : null,
-        materials: line.materials.map(m => ({ ...m, can_make: Number.isFinite(m.can_make) ? m.can_make : null })),
+        materials: mats.map(({ _perUnit, ...m }) => ({ ...m, can_make: Number.isFinite(m.can_make) ? m.can_make : null })),
       };
     });
 
     const totalOrdered = result.reduce((s, l) => s + l.remaining, 0);
     const totalBuildable = result.reduce((s, l) => s + l.buildable, 0);
     const blockers = [...new Set(result.map(l => l.blocked_by).filter(Boolean))];
+    const unknown = [...new Set(result.flatMap(l => l.materials.filter(m => m.unconvertible).map(m => m.material)))];
 
     res.json({
       buildable: totalBuildable,
       ordered: totalOrdered,
       blocked: Math.max(0, totalOrdered - totalBuildable),
       blocking: blockers.length ? blockers.join(', ') : null,
-      summary: blockers.length
-        ? `Can build ${totalBuildable} of ${totalOrdered} — blocked by ${blockers.join(', ')}`
-        : `All ${totalOrdered} can be built with stock on hand`,
+      unknown,
+      nothingLeft: totalOrdered === 0,
+      summary: totalOrdered === 0
+        ? 'Everything on this order has been made'
+        : unknown.length
+          ? `Can't check ${unknown.join(', ')}: the bill of materials and the stock use units that don't convert`
+          : blockers.length
+            ? `Can build ${totalBuildable} of ${totalOrdered} — blocked by ${blockers.join(', ')}`
+            : `All ${totalOrdered} can be built with stock on hand`,
       lines: result,
       issues,
     });

@@ -39,8 +39,11 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
  *
  *  Pages that pass no `initialFilters` are unaffected. */
 export function useListQuery(endpoint, { pageSize = 25, initialFilters = {} } = {}) {
-  const [search, setSearch] = useState('');
-  const [debounced, setDebounced] = useState('');
+/* ?q= in the address starts the list searched for it — a search result or
+     a link can open a list already narrowed. */
+  const urlQ = () => { try { return new URLSearchParams(window.location.search).get('q') || ''; } catch { return ''; } };
+  const [search, setSearch] = useState(urlQ);
+  const [debounced, setDebounced] = useState(urlQ);
   const [filters, setFilters] = useState(initialFilters);
   const baseKeys = Object.keys(initialFilters);
   const [offset, setOffset] = useState(0);

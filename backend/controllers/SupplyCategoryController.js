@@ -99,13 +99,13 @@ exports.update = async (req, res) => {
     again. */
 exports.remove = async (req, res) => {
   try {
-    const row = await assertOwned(db, req, res, 'supply_categories', req.params.id, { columns: 'id, name, kind' });
+    const row = await assertOwned(db, req, res, 'supply_categories', req.params.id, { columns: 'id, name, kind, owner_id' });
     if (!row) return;
     const { rows: used } = await db.query(
       row.kind === 'vendor'
-        ? 'SELECT COUNT(*) c FROM vendors WHERE supply_category = $1'
-        : 'SELECT COUNT(*) c FROM customers WHERE requirement_category = $1',
-      [row.name]);
+        ? 'SELECT COUNT(*) c FROM vendors WHERE supply_category = $1 AND owner_id IS NOT DISTINCT FROM $2'
+        : 'SELECT COUNT(*) c FROM customers WHERE requirement_category = $1 AND owner_id IS NOT DISTINCT FROM $2',
+      [row.name, row.owner_id]);
     if (Number(used[0].c) > 0) {
       await db.query('UPDATE supply_categories SET is_active = FALSE WHERE id = $1', [req.params.id]);
       return res.json({ success: true, deactivated: true, inUse: Number(used[0].c) });

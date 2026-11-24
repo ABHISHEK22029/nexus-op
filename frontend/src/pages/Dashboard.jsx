@@ -4,7 +4,8 @@ import axios from 'axios';
 import {
   Users, ShoppingCart, Package, TrendingUp, Receipt,
   AlertTriangle, Activity, BarChart3, ChevronRight, RefreshCw, Clock,
-  IndianRupee, LayoutDashboard, Wallet,
+  IndianRupee, LayoutDashboard, Wallet, CheckCircle2, Truck, PackageCheck,
+  Building2, Undo2, ClipboardList, Ruler, Flag, Bell, FileText, Send,
 } from 'lucide-react';
 import {
   ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
@@ -33,23 +34,34 @@ const exactNum = (n) => (known(n) ? fmtQty(n) : undefined);
 
 /* ── Status colours ── */
 const STATUS_COLORS = {
-  Pending: '#94a3b8', Approved: '#60a5fa',
-  Dispatched: '#fbbf24', Delivered: '#34d399',
+  Pending: '#94a3b8', Approved: '#3b82f6', Dispatched: '#f59e0b',
+  'Partially Received': '#8b5cf6', Delivered: '#10b981', Cancelled: '#cbd5e1',
 };
+const STATUS_ORDER = ['Pending', 'Approved', 'Dispatched', 'Partially Received', 'Delivered', 'Cancelled'];
 
+/* What each kind of activity is called, and its mark. Icons rather than
+   emoji, which rendered differently on every machine and looked like
+   stickers next to the figures. */
 const TYPE_CONFIG = {
-  PO_CREATED: { color: '#F59E0B', icon: '📦', label: 'PO Created' },
-  PO_APPROVED: { color: '#3B82F6', icon: '✅', label: 'PO Approved' },
-  PO_DISPATCHED: { color: '#8B5CF6', icon: '🚚', label: 'Dispatched' },
-  GRN_RECEIVED: { color: '#10B981', icon: '📬', label: 'GRN' },
-  BILL_GENERATED: { color: '#EF4444', icon: '📄', label: 'Bill' },
-  BILL_SUBMITTED: { color: '#F43F5E', icon: '📨', label: 'Submitted' },
-  BILL_PAID: { color: '#22C55E', icon: '💰', label: 'Paid' },
-  INDENT_CREATED: { color: '#F97316', icon: '📋', label: 'Indent' },
-  INDENT_UPDATED: { color: '#EC4899', icon: '🔄', label: 'Updated' },
-  MB_ENTRY: { color: '#06B6D4', icon: '📐', label: 'MB Entry' },
-  MILESTONE_UPDATED: { color: '#A78BFA', icon: '🎯', label: 'Milestone' },
-  VENDOR_ADDED: { color: '#84CC16', icon: '🏢', label: 'Vendor' },
+  PO_CREATED: { color: '#F59E0B', icon: ShoppingCart, label: 'Purchase order raised' },
+  PO_APPROVED: { color: '#3B82F6', icon: CheckCircle2, label: 'Purchase order approved' },
+  PO_APPROVAL: { color: '#3B82F6', icon: CheckCircle2, label: 'Sign-off' },
+  PO_DISPATCHED: { color: '#8B5CF6', icon: Send, label: 'Sent to the vendor' },
+  GRN: { color: '#10B981', icon: PackageCheck, label: 'Goods received' },
+  GRN_RECEIVED: { color: '#10B981', icon: PackageCheck, label: 'Goods received' },
+  BILL_GENERATED: { color: '#EF4444', icon: Receipt, label: 'Bill' },
+  BILL_SUBMITTED: { color: '#F43F5E', icon: Receipt, label: 'Bill submitted' },
+  BILL_APPROVED: { color: '#22C55E', icon: Receipt, label: 'Bill approved' },
+  BILL_PAID: { color: '#22C55E', icon: Wallet, label: 'Paid' },
+  PAYMENT_REVERSED: { color: '#F59E0B', icon: Undo2, label: 'Payment reversed' },
+  INDENT_CREATED: { color: '#F97316', icon: ClipboardList, label: 'Indent' },
+  INDENT_UPDATED: { color: '#EC4899', icon: ClipboardList, label: 'Indent updated' },
+  MB_ENTRY: { color: '#06B6D4', icon: Ruler, label: 'Measurement' },
+  MILESTONE_UPDATED: { color: '#A78BFA', icon: Flag, label: 'Milestone' },
+  VENDOR_ADDED: { color: '#84CC16', icon: Building2, label: 'Vendor added' },
+  VENDOR_UPDATED: { color: '#84CC16', icon: Building2, label: 'Vendor updated' },
+  DISPATCH: { color: '#8B5CF6', icon: Truck, label: 'Dispatched' },
+  INVOICE: { color: '#3B82F6', icon: FileText, label: 'Invoice' },
 };
 
 /* ══════════════════════════════════════════════════════════
@@ -63,17 +75,17 @@ const TYPE_CONFIG = {
    step up and down wherever one card had a note and the next did not.
    Layout and hover: styles/dashboard.css.
    ══════════════════════════════════════════════════════════ */
-const KpiCard = ({ title, value, exact, sub, icon: Icon, accent, link }) => {
+const KpiCard = ({ title, value, exact, sub, icon: Icon, accent, link, alert = false }) => {
   const card = (
     <div className="dash-kpi" style={{ '--accent': accent }}>
       <div className="dash-kpi-top">
         <span className="dash-kpi-icon"><Icon size={17} /></span>
-        <span className="dash-kpi-label">{title}</span>
+        <span className="dash-kpi-label" title={title}>{title}</span>
       </div>
       <div className="dash-kpi-value">
         <FitNumber exact={exact}>{value || '—'}</FitNumber>
       </div>
-      <div className="dash-kpi-sub">{sub || '\u00A0'}</div>
+      <div className={`dash-kpi-sub${alert ? ' is-alert' : ''}`}>{sub || '\u00A0'}</div>
       {link && <div className="dash-kpi-foot">View details <ChevronRight size={12} /></div>}
     </div>
   );
@@ -94,20 +106,12 @@ const Group = ({ title, note, children }) => (
 /* ══════════════════════════════════════════════════════════
    SECTION HEADER — consistent card title style
    ══════════════════════════════════════════════════════════ */
-const SectionHeader = ({ icon: Icon, iconColor, title, action }) => (
-  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-      <div style={{
-        width: '34px', height: '34px', borderRadius: '10px',
-        background: `${iconColor}18`, border: `1px solid ${iconColor}30`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-      }}>
-        <Icon size={17} style={{ color: iconColor }} />
-      </div>
-      <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>
-        {title}
-      </h2>
-    </div>
+const SectionHeader = ({ icon: Icon, title, action }) => (
+  <div className="dash-panel-head">
+    <h2 className="dash-panel-title">
+      <span className="dash-panel-icon" aria-hidden="true"><Icon size={16} /></span>
+      {title}
+    </h2>
     {action}
   </div>
 );
@@ -115,38 +119,23 @@ const SectionHeader = ({ icon: Icon, iconColor, title, action }) => (
 /* ══════════════════════════════════════════════════════════
    ACTIVITY FEED ITEM
    ══════════════════════════════════════════════════════════ */
-const FeedItem = ({ activity, isLast }) => {
-  const cfg = TYPE_CONFIG[activity.type] || { color: '#94a3b8', icon: '🔔', label: activity.type };
-  const diff = Math.floor((Date.now() - new Date(activity.timestamp).getTime()) / 1000);
-  const timeAgo = diff < 60 ? `${diff}s` : diff < 3600 ? `${Math.floor(diff / 60)}m` : diff < 86400 ? `${Math.floor(diff / 3600)}h` : `${Math.floor(diff / 86400)}d`;
-
+const ago = (t) => {
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(t).getTime()) / 1000));
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
+  const d = Math.floor(diff / 86400);
+  return d === 1 ? 'yesterday' : `${d} days ago`;
+};
+const FeedItem = ({ activity }) => {
+  const cfg = TYPE_CONFIG[activity.type] || { color: '#94a3b8', icon: Bell, label: String(activity.type || 'Activity').replace(/_/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase()) };
+  const Icon = cfg.icon;
   return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: '12px',
-      padding: '12px 0',
-      borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)',
-    }}>
-      <div style={{
-        flexShrink: 0, width: '34px', height: '34px',
-        background: `${cfg.color}15`, border: `1px solid ${cfg.color}35`,
-        borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '0.9rem',
-      }}>
-        {cfg.icon}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500, lineHeight: 1.4, marginBottom: '4px' }}>
-          {activity.description}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{
-            fontSize: '0.62rem', fontWeight: 700, color: cfg.color,
-            background: `${cfg.color}12`, padding: '2px 8px',
-            borderRadius: '99px', border: `1px solid ${cfg.color}28`,
-            textTransform: 'uppercase', letterSpacing: '0.05em',
-          }}>{cfg.label}</span>
-          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{timeAgo} ago</span>
-        </div>
+    <div className="dash-feed-item" style={{ '--feed': cfg.color }}>
+      <span className="dash-feed-icon" aria-hidden="true"><Icon size={15} /></span>
+      <div className="dash-feed-text">
+        <div className="dash-feed-what">{activity.description}</div>
+        <div className="dash-feed-meta">{cfg.label} · {ago(activity.timestamp)}</div>
       </div>
     </div>
   );
@@ -201,7 +190,9 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeProject]);
+    /* `ready` too: when the remembered scope arrived after the first render,
+       nothing ran the fetch again and the tiles stayed on "—". */
+  }, [activeProject, ready]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => {
@@ -253,45 +244,43 @@ const Dashboard = () => {
   return (
     <div className="dash">
 
-      {/* The banner used to live only in the !activeProject branch above, so
-          it showed on the "select a project" screen and nowhere else — i.e.
-          never, for anyone who had picked a project. It belongs here, on the
-          screen people actually open. */}
-      <SetupReadiness />
-
       {/* ══ HEADER ══════════════════════════════════════════
-          A neutral dashboard mark: the orange lightning-bolt tile read as
-          the old logo now that the brand is the ribbon M. */}
+          The same title row as every other screen. It was a card of its own
+          with an orange strip and an "eyebrow", which with the setup banner
+          above it put two loud blocks between the person and the figures. */}
       <header className="dash-head">
         <div className="dash-head-main">
-          <span className="dash-head-icon" aria-hidden="true"><LayoutDashboard size={21} /></span>
-          <div style={{ minWidth: 0 }}>
-            <div className="dash-eyebrow">Dashboard</div>
-            <h1 className="dash-title">{activeProject ? activeProject.name : 'Everything at a glance'}</h1>
-            {/* The client / type / status strip describes a project. With none
-                selected there is nothing true to put there. */}
-            {!activeProject ? (
-              <div className="dash-sub">Sales, purchases and stock across the business</div>
-            ) : (
-              <div className="dash-sub" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <span>Client: <strong style={{ color: 'var(--text-secondary)' }}>{activeProject?.clientName}</strong></span>
-                <span style={{ textTransform: 'capitalize' }}>· {activeProject?.type}</span>
-                <span style={{
-                  fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: '99px',
-                  background: 'hsl(158,64%,52%,0.12)', color: 'var(--accent-emerald)', border: '1px solid hsl(158,64%,52%,0.3)',
-                }}>{activeProject?.status}</span>
-              </div>
-            )}
-          </div>
+          <h1 className="dash-title">
+            <LayoutDashboard size={22} className="dash-title-icon" aria-hidden="true" />
+            {activeProject ? activeProject.name : 'Dashboard'}
+          </h1>
+          {/* The client / type / status strip describes a project. With none
+              selected there is nothing true to put there. */}
+          {!activeProject ? (
+            <p className="dash-sub">Sales, purchases and stock across the business</p>
+          ) : (
+            <p className="dash-sub" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span>Client: <strong style={{ color: 'var(--text-secondary)' }}>{activeProject?.clientName}</strong></span>
+              <span style={{ textTransform: 'capitalize' }}>· {activeProject?.type}</span>
+              <span style={{
+                fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: '99px',
+                background: 'hsl(158,64%,52%,0.12)', color: 'var(--accent-emerald)', border: '1px solid hsl(158,64%,52%,0.3)',
+              }}>{activeProject?.status}</span>
+            </p>
+          )}
         </div>
         <div className="dash-head-side">
-          {lastRefresh && <span className="dash-refreshed">Updated {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
-          <button onClick={fetchStats} disabled={loading} className="dash-refresh">
-            <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          {lastRefresh && <span className="dash-refreshed">Updated {lastRefresh.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</span>}
+          <button onClick={fetchStats} disabled={loading} className="dash-refresh" aria-label="Refresh the figures">
+            <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} aria-hidden="true" />
             {loading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
       </header>
+
+      {/* What is missing before the figures can mean anything; gone once
+          everything is in place. */}
+      <SetupReadiness />
 
       {/* ══ MONEY ═══════════════════════════════════════════
           First, because it is the first question. From the sales invoices;
@@ -302,7 +291,8 @@ const Dashboard = () => {
         <KpiCard title="Received this year" value={fmtCrore(sales?.received)} exact={exactINR(sales?.received)} icon={TrendingUp} accent="#16A34A" link="/sales-invoices" sub="Payments in" />
         <KpiCard title="Outstanding" value={fmtCrore(sales?.outstanding)} exact={exactINR(sales?.outstanding)} icon={IndianRupee} accent="#D97706" link="/sales-invoices" sub="Owed by customers today" />
         <KpiCard title="Overdue" value={fmtCrore(sales?.overdueAmount)} exact={exactINR(sales?.overdueAmount)} icon={Clock} accent="#DC2626" link="/sales-invoices"
-          sub={sales ? `${sales.overdueCount} invoice${sales.overdueCount === 1 ? '' : 's'} past due` : undefined} />
+          alert={Number(sales?.overdueCount) > 0}
+          sub={sales ? (Number(sales.overdueCount) > 0 ? `${sales.overdueCount} invoice${sales.overdueCount === 1 ? '' : 's'} past due` : 'Nothing past due') : undefined} />
       </Group>
 
       {/* ══ PURCHASING AND STOCK ═════════════════════════════
@@ -311,12 +301,12 @@ const Dashboard = () => {
       <Group title="Purchasing and stock">
         <KpiCard title="Active vendors" value={fmtNum(stats?.totalVendors)} exact={exactNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" sub="Who you buy from" />
         <KpiCard title="Purchase orders" value={fmtNum(stats?.totalPOs)} exact={exactNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po"
-          sub={known(stats?.totalPOs) ? `${fmtNum(stats?.deliveredPOs ?? 0)} delivered · ${deliveryRate}%` : undefined} />
+          sub={known(stats?.totalPOs) ? (Number(stats.totalPOs) > 0 ? `${fmtNum(stats?.deliveredPOs ?? 0)} received in full` : 'None raised yet') : undefined} />
         {/* What is owed to vendors. It replaces "Units ordered", which added
             kilos to pieces to metres — a number with no unit. */}
         <KpiCard title="Owed to vendors" value={fmtCrore(stats?.payables?.outstanding)} exact={exactINR(stats?.payables?.outstanding)} icon={Wallet} accent="#0891B2" link="/payables"
           sub={known(stats?.payables?.count) ? `${stats.payables.count} unpaid bill${stats.payables.count === 1 ? '' : 's'}` : undefined} />
-        <KpiCard title="Stock items" value={fmtNum(stats?.inventoryCount)} exact={exactNum(stats?.inventoryCount)} icon={Package} accent="#D97706" link="/inventory" sub="Rows on Stock on hand" />
+        <KpiCard title="Stock items" value={fmtNum(stats?.inventoryCount)} exact={exactNum(stats?.inventoryCount)} icon={Package} accent="#D97706" link="/inventory" sub="Items on Stock on hand" />
       </Group>
 
       {/* ══ CONTRACTS ═══════════════════════════════════════
@@ -403,75 +393,51 @@ const Dashboard = () => {
           fixed 360px column used to push the page sideways on a phone. */}
       <div className="dash-bottom">
 
-        {/* PO Distribution */}
-        <div className="dash-panel">
-          <SectionHeader icon={ShoppingCart} iconColor="#8B5CF6" title="PO Status Mix" />
-          {pieData.length > 0 ? (
-            <>
-              <div style={{ height: '190px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                      outerRadius={80} innerRadius={50} paddingAngle={3} strokeWidth={0}>
-                      {pieData.map((entry) => (
-                        <Cell key={entry.name} fill={STATUS_COLORS[entry.name] || '#94a3b8'} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: '12px', fontSize: '0.78rem' }}
-                      formatter={(v, name) => [v, name]}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              {/* Custom legend */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-                {pieData.map(d => {
-                  const color = STATUS_COLORS[d.name] || '#94a3b8';
-                  const total = pieData.reduce((s, x) => s + x.value, 0);
-                  const pct = total > 0 ? Math.round((d.value / total) * 100) : 0;
-                  return (
-                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: color, flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', flex: 1 }}>{d.name}</span>
-                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>{d.value}</span>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{pct}%</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div style={{ height: '200px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', gap: '8px' }}>
-              <ShoppingCart size={32} style={{ opacity: 0.15 }} />
-              <p style={{ fontSize: '0.82rem' }}>No PO data yet</p>
+        {/* Purchase orders by status: a row each with its share. It was a
+            donut, which with one or two orders drew a plain ring and said
+            nothing. */}
+        <div className="dash-panel dash-span-1">
+          <SectionHeader icon={ShoppingCart} title="Purchase orders" />
+          {pieData.length > 0 ? (() => {
+            const total = pieData.reduce((sum, x) => sum + x.value, 0);
+            const rows = [...pieData].sort((a, b) => (STATUS_ORDER.indexOf(a.name) + 99) % 99 - (STATUS_ORDER.indexOf(b.name) + 99) % 99);
+            return (
+              <>
+                <div className="dash-status" data-po-status>
+                  {rows.map(d => {
+                    const color = STATUS_COLORS[d.name] || '#94a3b8';
+                    const pct = total > 0 ? Math.round((d.value / total) * 100) : 0;
+                    return (
+                      <div key={d.name} className="dash-status-row">
+                        <span className="dash-status-name"><span className="dash-status-dot" style={{ background: color }} />{d.name}</span>
+                        <span className="dash-status-count">{d.value}</span>
+                        <div className="dash-status-bar" aria-hidden="true"><span style={{ width: `${pct}%`, background: color }} /></div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="dash-status-total"><span>All purchase orders</span><b>{total}</b></div>
+              </>
+            );
+          })() : (
+            <div className="dash-panel-empty">
+              <ShoppingCart size={28} style={{ opacity: 0.2 }} aria-hidden="true" />
+              <p style={{ margin: 0 }}>No purchase orders yet. <Link to="/purchase-orders">Raise one</Link> when you buy material.</p>
             </div>
           )}
         </div>
 
-        {/* Live Activity Feed */}
-        <div className="dash-panel" style={{ display: 'flex', flexDirection: 'column' }}>
-          <SectionHeader
-            icon={Activity} iconColor="#EC4899"
-            title="Recent Activity"
-            action={
-              <Link to="/activity" style={{
-                fontSize: '0.75rem', fontWeight: 600, color: 'var(--brand-amber)',
-                textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px',
-              }}>
-                View all <ChevronRight size={13} />
-              </Link>
-            }
-          />
-          <div style={{ flex: 1, overflow: 'hidden' }}>
+        {/* Recent activity */}
+        <div className="dash-panel dash-span-3">
+          <SectionHeader icon={Activity} title="Recent activity"
+            action={<Link to="/activity" className="dash-panel-link">View all <ChevronRight size={13} /></Link>} />
+          <div className="dash-feed">
             {stats?.recentActivities?.length > 0 ? (
-              stats.recentActivities.map((a, i) => (
-                <FeedItem key={a.id} activity={a} isLast={i === stats.recentActivities.length - 1} />
-              ))
+              stats.recentActivities.map((a) => <FeedItem key={a.id} activity={a} />)
             ) : (
-              <div style={{ height: '200px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', gap: '12px' }}>
-                <Clock size={32} style={{ opacity: 0.15 }} />
-                <p style={{ fontSize: '0.82rem' }}>No activity yet — start by creating a PO or GRN</p>
+              <div className="dash-panel-empty">
+                <Clock size={28} style={{ opacity: 0.2 }} aria-hidden="true" />
+                <p style={{ margin: 0 }}>Nothing yet. This fills up as you take <Link to="/customer-orders">orders</Link>, buy material and send invoices.</p>
               </div>
             )}
           </div>

@@ -283,7 +283,7 @@ const istDay = (offset = 0) => new Date(Date.now() + 5.5 * 3600e3 + offset * 864
     item('17', '“stock rows linked — Fix this”, and linking one');
     await go('/dashboard', /glance|Dashboard/i);
     await waitText(/Stock rows linked to a material or product/);
-    const fixHref = await page.evaluate(() => [...document.querySelectorAll('a')].find(a => /Fix this/.test(a.textContent) && /inventory/.test(a.getAttribute('href')))?.getAttribute('href'));
+    const fixHref = await page.evaluate(() => [...document.querySelectorAll('a')].find(a => /Fix this|Link stock/.test(a.textContent) && /inventory/.test(a.getAttribute('href')))?.getAttribute('href'));
     ok(fixHref === '/inventory?unlinked=1', `Fix this goes to the unlinked stock rows (${fixHref})`);
     await go('/inventory?unlinked=1', /Show all stock/);
     await page.evaluate((n) => [...document.querySelectorAll('button[aria-label^="Link "]')].find(b => b.getAttribute('aria-label').includes(n))?.click(), `Angle 50x50x6 ${stamp}`);

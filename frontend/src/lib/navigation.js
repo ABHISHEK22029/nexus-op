@@ -116,9 +116,10 @@ export const MODULES = [
       { label: 'Indents', path: '/indent', resource: 'indent', module: 'contracting' },
       /* Quotations that arrived as files. Same resource as Vendor quotes —
          the same people raise and decide on both. */
-      { label: 'Quotation files', path: '/vendor-quotations', resource: 'quotations',
-        hint: 'Upload vendor Excel/PDF/Word quotes and compare them' },
-      { label: 'Vendor quotes', path: '/quotations', resource: 'quotations',
+      { label: 'Vendor quotations', path: '/vendor-quotations', resource: 'quotations',
+        hint: 'Upload the quotes vendors sent and compare them' },
+      { label: 'Ask for quotes', path: '/quotations', resource: 'quotations',
+        hint: 'Ask up to three vendors to price one item',
         badge: { endpoint: 'quotations', field: 'awaiting_quotes', tone: 'info', title: 'still short of three quotes' } },
       { group: 'Buy & receive' },
       { label: 'Purchase orders', path: '/purchase-orders', resource: 'po',
@@ -161,10 +162,10 @@ export const MODULES = [
       { group: 'Make' },
       { label: 'Production orders', path: '/production', resource: 'production',
         badge: { endpoint: 'production', field: 'no_output', tone: 'warn', title: 'with nothing produced yet' } },
-      { label: 'Work orders', path: '/workorders', resource: 'work-orders' },
+      { label: 'Work orders', path: '/workorders', resource: 'work-orders', module: 'contracting' },
       { group: 'Plan' },
-      { label: 'Projects', path: '/projects', resource: 'projects' },
-      { label: 'Milestones', path: '/milestones', resource: 'milestones',
+      { label: 'Projects', path: '/projects', resource: 'projects', module: 'contracting' },
+      { label: 'Milestones', path: '/milestones', resource: 'milestones', module: 'contracting',
         badge: { endpoint: 'milestones', field: 'behind_plan', tone: 'danger', title: 'behind plan' } },
       { group: 'Measure' },
       { label: 'Bill of quantities', path: '/boq', resource: 'boq', module: 'contracting' },
@@ -191,12 +192,12 @@ export const MODULES = [
       { group: 'Company' },
       { label: 'Company profile', path: '/company-profile', resource: 'company-profile' },
       { label: 'Document numbering', path: '/document-numbering', resource: 'company-profile' },
-      { label: 'Automation', path: '/automation', resource: 'automation-settings' },
+      { label: 'Automation', path: '/automation', resource: 'recurring' },
       { group: 'People' },
       { label: 'Team', path: '/users', resource: 'users' },
       { group: 'Data' },
       { label: 'Import data', path: '/import' },
-      { label: 'Process flow', path: '/flow' },
+      { label: 'Process flow', path: '/flow', module: 'contracting' },
     ],
   },
   /* The Configurator is its own rail entry, not a line inside Settings.
@@ -273,6 +274,7 @@ export const PATH_RESOURCES = (() => {
     '/raw-materials': 'raw-materials',
     '/po': 'po',
     '/items': 'skus',
+    '/grn-bills': 'grn-bills',
   });
   return map;
 })();

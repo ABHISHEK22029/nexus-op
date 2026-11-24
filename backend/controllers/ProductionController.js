@@ -10,6 +10,7 @@ const stock = require('../shared/stock');
 const { runList } = require('../shared/listQuery');
 const { assertRefs } = require('../shared/ownedRefs');
 const { convert, loadUoms } = require('../shared/uom');
+const { allocate } = require('../shared/docSeries');
 
 const round = (n, d = 2) => (n == null ? null : Math.round(n * 10 ** d) / 10 ** d);
 
@@ -233,11 +234,8 @@ async function computeYield(orderId) {
    in the same second can collide. That is a pre-existing issue across every
    document series here and wants a sequence per series; noted, not fixed
    in this change. */
-async function nextProdNumber(projectId, ownerId) {
-  const { rows } = projectId
-    ? await db.query('SELECT COUNT(*) c FROM production_orders WHERE "projectId" = $1', [projectId])
-    : await db.query('SELECT COUNT(*) c FROM production_orders WHERE owner_id = $1 AND "projectId" IS NULL', [ownerId ?? -1]);
-  return `PROD-${String(parseInt(rows[0].c) + 1).padStart(4, '0')}`;
+async function nextProdNumber(exec, ownerId) {
+  return allocate(exec, { ownerId: ownerId ?? null, docType: 'production_order' });
 }
 
 /* ── Orders ─────────────────────────────────────────────── */
@@ -303,22 +301,34 @@ exports.getOrders = async (req, res) => {
 };
 
 exports.createOrder = async (req, res) => {
-  const { projectId, workOrderId, productName, plannedQty, outputUom, notes } = req.body;
-  /* productName is the only genuine requirement. A production order does not
-     need a project: "make 200 brackets for Apollo" is a complete instruction. */
-  if (!productName) return res.status(400).json({ error: 'productName is required' });
+  const { projectId, workOrderId, plannedQty, outputUom, notes, skuId } = req.body;
+  let { productName } = req.body;
+  /* A product from the list, or a name typed in. Typed in only, the
+     finished goods went into stock under that name, and a challan made from
+     a customer order — which looks for the PRODUCT — could not find them. */
+  const sku = Number(skuId) > 0 ? Number(skuId) : null;
+  if (!productName && !sku) return res.status(400).json({ error: 'Say what is being made: pick a product or type its name.' });
+  if (plannedQty != null && plannedQty !== '' && (!Number.isFinite(Number(plannedQty)) || Number(plannedQty) <= 0)) {
+    return res.status(400).json({ error: 'The quantity to make must be more than zero.' });
+  }
   try {
     /* The production list shows the work order's name; it must be yours. */
-    if (!await assertRefs(db, req, res, { work_orders: [workOrderId] })) return;
-    const prodNumber = await nextProdNumber(projectId, req.user?.orgId);
+    if (!await assertRefs(db, req, res, { work_orders: [workOrderId], skus: sku ? [sku] : [] })) return;
+    let unit = outputUom;
+    if (sku) {
+      const p = (await db.query('SELECT name, unit FROM skus WHERE id = $1', [sku])).rows[0];
+      productName = productName || p?.name;
+      unit = unit || p?.unit;
+    }
+    const prodNumber = await nextProdNumber(db, req.user?.orgId);
     const { rows } = await db.query(
-      `INSERT INTO production_orders ("projectId", "workOrderId", prod_number, product_name, planned_qty, output_uom, notes, owner_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      `INSERT INTO production_orders ("projectId", "workOrderId", prod_number, product_name, planned_qty, output_uom, notes, owner_id, sku_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       /* owner_id was never set here. The column existed, nothing populated
          it, so every production order was unowned — invisible to owner
          scoping and the reason finished goods landed on a NULL-owner stock
          row while dispatch used the challan owner. */
-      [projectId || null, workOrderId || null, prodNumber, productName, plannedQty || null, outputUom || 'nos', notes || null, req.user?.orgId || null]
+      [projectId || null, workOrderId || null, prodNumber, productName, plannedQty || null, unit || 'nos', notes || null, req.user?.orgId || null, sku]
     );
     res.json({ id: rows[0].id, prodNumber });
   } catch (err) {
@@ -378,7 +388,16 @@ exports.updateStatus = async (req, res) => {
 
 exports.deleteOrder = async (req, res) => {
   try {
-    if (!await assertOwned(db, req, res, 'production_orders', req.params.id, { columns: 'id' })) return;
+    if (!await assertOwned(db, req, res, 'production_orders', req.params.id, { columns: 'id, prod_number' })) return;
+    /* Not while stock moved for it. Its lines went with it and the material
+       issued and goods made stayed moved, with nothing to say why. Removing
+       each line puts its stock back; then the job can go. */
+    const { rows: [m] } = await db.query(
+      `SELECT (SELECT COUNT(*) FROM production_consumption WHERE production_order_id = $1 AND inventory_id IS NOT NULL)::int AS issued,
+              (SELECT COUNT(*) FROM production_output WHERE production_order_id = $1 AND stock_applied)::int AS made`, [req.params.id]);
+    if (m.issued || m.made) {
+      return res.status(409).json({ error: `Material was issued or goods were made on this job, so it can't be deleted yet. Remove those lines first — that puts the stock back — then delete it.` });
+    }
     const r = await db.query('DELETE FROM production_orders WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
@@ -451,9 +470,18 @@ exports.addConsumption = async (req, res) => {
 
 /* ── Output (finished goods) ────────────────────────────── */
 exports.addOutput = async (req, res) => {
-  const { itemName, outputQty, uom, outputWeight } = req.body;
+  const { outputQty, uom, outputWeight } = req.body;
+  let { itemName } = req.body;
   const orderId = req.params.id;
-  if (!itemName) return res.status(400).json({ error: 'itemName is required' });
+  /* Made means more than zero. A negative "produced" raised what the
+     requirements thought was still to make and turned cost per unit
+     negative. */
+  if (!Number.isFinite(Number(outputQty)) || Number(outputQty) <= 0) {
+    return res.status(400).json({ error: 'Enter how many were made — more than zero.' });
+  }
+  if (outputWeight != null && outputWeight !== '' && (!Number.isFinite(Number(outputWeight)) || Number(outputWeight) < 0)) {
+    return res.status(400).json({ error: 'The weight must be a number, 0 or more.' });
+  }
   /* Yours only: this route had no ownership check, so any signed-in user
      could add output to another company's production order by its id. */
   if (!await assertOwned(db, req, res, 'production_orders', orderId, { columns: 'id' })) return;
@@ -462,9 +490,20 @@ exports.addOutput = async (req, res) => {
     await client.query('BEGIN');
 
     const order = (await client.query(
-      'SELECT id, owner_id, sku_id, prod_number, "projectId" FROM production_orders WHERE id = $1', [orderId]
+      'SELECT id, owner_id, sku_id, prod_number, product_name, "projectId" FROM production_orders WHERE id = $1 FOR UPDATE', [orderId]
     )).rows[0];
     if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Production order not found' }); }
+    /* What the job makes, unless the screen named something else. */
+    itemName = String(itemName || '').trim() || order.product_name;
+    if (!itemName) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Say what was made.' }); }
+    /* Finished goods carry the material that went into them. Without a cost
+       they entered stock at ₹0, so stock value missed every finished item.
+       Material issued so far, spread over everything made so far. */
+    const { rows: [c] } = await client.query(
+      `SELECT COALESCE((SELECT SUM(consumed_qty * COALESCE(unit_cost, 0)) FROM production_consumption WHERE production_order_id = $1), 0) AS material,
+              COALESCE((SELECT SUM(output_qty) FROM production_output WHERE production_order_id = $1), 0) AS made`, [orderId]);
+    const madeAfter = Number(c.made) + Number(outputQty);
+    const unitCost = Number(c.material) > 0 && madeAfter > 0 ? Math.round((Number(c.material) / madeAfter) * 10000) / 10000 : null;
 
     /* Find or create the stock row for this finished item. The first run of
        a new product has no inventory row yet, and refusing the output
@@ -498,6 +537,7 @@ exports.addOutput = async (req, res) => {
         itemName,
         quantity: outputQty,
         uom: uom || 'nos',
+        unitCost,
         movementType: 'production_output',
         refType: 'production_order',
         refId: Number(orderId),
@@ -521,7 +561,10 @@ exports.addOutput = async (req, res) => {
 exports.addScrap = async (req, res) => {
   const { scrapType, scrapQty, uom, reason, saleValue, isSold } = req.body;
   const orderId = req.params.id;
-  if (scrapQty == null) return res.status(400).json({ error: 'scrapQty is required' });
+  if (!Number.isFinite(Number(scrapQty)) || Number(scrapQty) <= 0) return res.status(400).json({ error: 'Enter the scrap quantity — more than zero.' });
+  if (saleValue != null && saleValue !== '' && (!Number.isFinite(Number(saleValue)) || Number(saleValue) < 0)) {
+    return res.status(400).json({ error: 'The sale value must be a number, 0 or more.' });
+  }
   /* Yours only: this route had no ownership check, so any signed-in user
      could add scrap to another company's production order by its id. */
   if (!await assertOwned(db, req, res, 'production_orders', orderId, { columns: 'id' })) return;
@@ -553,6 +596,10 @@ exports.deleteLine = async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+    /* Locked, and gone-already checked first: a double click on Remove put
+       the material back on the shelf twice. */
+    const still = (await client.query(`SELECT id FROM ${table} WHERE id = $1 FOR UPDATE`, [lineId])).rows[0];
+    if (!still) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'That line has already been removed.' }); }
     if (kind === 'consumption') {
       /* The stock row's owner: production_consumption has no owner_id of its
          own, and reading row.owner_id wrote the return with no organisation. */
@@ -575,10 +622,15 @@ exports.deleteLine = async (req, res) => {
        were never made — the mirror image of the bug just fixed, and harder
        to spot because the balance would be too HIGH rather than too low. */
     if (kind === 'output') {
-      const row = (await client.query('SELECT * FROM production_output WHERE id = $1', [lineId])).rows[0];
+      /* The owner from the stock row: production_output has no owner of its
+         own, so the reversal was written with none and vanished from the
+         company's stock history. */
+      const row = (await client.query(
+        `SELECT po.*, i.owner_id AS stock_owner, i.sku_id AS stock_sku FROM production_output po
+           LEFT JOIN inventory i ON i.id = po.inventory_id WHERE po.id = $1`, [lineId])).rows[0];
       if (row?.inventory_id && row.stock_applied) {
         await stock.stockOut(client, {
-          ownerId: row.owner_id, inventoryId: row.inventory_id, itemName: row.item_name,
+          ownerId: row.stock_owner, inventoryId: row.inventory_id, skuId: row.stock_sku || null, itemName: row.item_name,
           quantity: row.output_qty, uom: row.uom,
           movementType: 'adjustment', refType: 'production_output', refId: Number(lineId),
           note: 'Output line deleted — finished goods removed from stock', userId: req.user?.id,
@@ -615,8 +667,11 @@ exports.getSummary = async (req, res) => {
         ? await db.query('SELECT id FROM production_orders')
         : await db.query('SELECT id FROM production_orders WHERE owner_id = $1', [req.user?.orgId ?? -1]);
     const ys = [...(await computeYields(rows.map(o => o.id))).values()];
-    const withInput = ys.filter(y => y.inputWeight > 0);
-    const avgYield = withInput.length ? round(withInput.reduce((s, y) => s + (y.yieldPct || 0), 0) / withInput.length) : null;
+    /* Weighted by what went in, and only jobs that have made something:
+       a plain average counted every job still in progress as 0%. */
+    const withInput = ys.filter(y => y.inputWeight > 0 && Number(y.yieldPct) > 0);
+    const inSum = withInput.reduce((s, y) => s + y.inputWeight, 0);
+    const avgYield = inSum > 0 ? round(withInput.reduce((s, y) => s + y.yieldPct * y.inputWeight, 0) / inSum) : null;
     const scrapRecovered = round(ys.reduce((s, y) => s + (y.scrapRecovery || 0), 0));
     const totalInput = round(ys.reduce((s, y) => s + (y.inputWeight || 0), 0));
     res.json({ orders: rows.length, avgYieldPct: avgYield, scrapRecovered, totalInputWeight: totalInput });
@@ -643,7 +698,30 @@ exports.createFromOrderItem = async (req, res) => {
       isCrossTenant(req.user?.role) ? [req.params.itemId] : [req.params.itemId, req.user?.orgId]
     )).rows[0];
     if (!item) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order line not found' }); }
-    const prodNumber = await nextProdNumber(projectId, req.user?.orgId);
+    /* Make, again? Every press opened another job for the full quantity,
+       and the second job's plan held the same material a second time. A
+       line that already has a job is said, and made again only when asked;
+       a new job plans what is not already planned. */
+    const others = (await client.query(
+      `SELECT prod_number, status, COALESCE(planned_qty, 0) AS planned FROM production_orders
+        WHERE customer_order_id = $1 AND owner_id IS NOT DISTINCT FROM $2
+          AND (($3::int IS NOT NULL AND sku_id = $3) OR ($3::int IS NULL AND LOWER(TRIM(product_name)) = LOWER(TRIM($4))))
+        ORDER BY id`, [item.customer_order_id, req.user?.orgId ?? null, item.sku_id || null, item.description])).rows;
+    const already = others.reduce((s, o) => s + Number(o.planned), 0);
+    const asked = Number(req.body?.quantity);
+    const qty = asked > 0 ? asked : Math.max(0, (Number(item.quantity) || 0) - already);
+    if (others.length && !req.body?.again) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `${others.map(o => `${o.prod_number} (${o.status})`).join(', ')} already make${others.length === 1 ? 's' : ''} this line${already ? ` — ${already} of ${Number(item.quantity) || 0} planned` : ''}. Open ${others.length === 1 ? 'it' : 'them'}, or start another job for the rest.`,
+        existing: others.map(o => o.prod_number), remaining: Math.max(0, (Number(item.quantity) || 0) - already),
+      });
+    }
+    if (!(qty > 0)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `All ${Number(item.quantity) || 0} on this line are already planned (${others.map(o => o.prod_number).join(', ')}).` });
+    }
+    const prodNumber = await nextProdNumber(client, req.user?.orgId);
     /* owner_id is set here for the same reason createOrder sets it: an
        unowned production order is invisible to owner scoping, and its
        finished goods land on a NULL-owner stock row while dispatch looks up
@@ -654,7 +732,7 @@ exports.createFromOrderItem = async (req, res) => {
     const po = await client.query(
       `INSERT INTO production_orders ("projectId", prod_number, product_name, planned_qty, output_uom, customer_order_id, sku_id, owner_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [projectId || null, prodNumber, item.description, item.quantity || null, item.unit || 'nos',
+      [projectId || null, prodNumber, item.description, qty, item.unit || 'nos',
        item.customer_order_id, item.sku_id, req.user?.orgId || null]
     );
     const prodId = po.rows[0].id;
@@ -671,14 +749,15 @@ exports.createFromOrderItem = async (req, res) => {
         await client.query(
           `INSERT INTO production_material_plan (production_order_id, raw_material_id, item_name, planned_qty, uom, sort_order)
            VALUES ($1,$2,$3,$4,$5,$6)`,
-          [prodId, b.raw_material_id || null, b.component_name, round((Number(b.qty_per_unit) || 0) * (Number(item.quantity) || 0), 4),
+          [prodId, b.raw_material_id || null, b.component_name, round((Number(b.qty_per_unit) || 0) * qty, 4),
            b.unit || 'kg', bomLines++]
         );
       }
     }
-    await client.query(`UPDATE customer_orders SET status = 'In Procurement' WHERE id = $1 AND status = 'Open'`, [item.customer_order_id]);
+    /* It is being made, which is what the order now says. */
+    await client.query(`UPDATE customer_orders SET status = 'In Production' WHERE id = $1 AND status IN ('Open', 'In Procurement')`, [item.customer_order_id]);
     await client.query('COMMIT');
-    res.json({ id: prodId, prodNumber, bomLines });
+    res.json({ id: prodId, prodNumber, bomLines, plannedQty: qty, noBom: !!item.sku_id && bomLines === 0, noProduct: !item.sku_id });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: e.message });

@@ -461,8 +461,16 @@ exports.listUsers = async (req, res) => {
               m.name AS reports_to_name,
               rd.label AS role_label, rd.role IS NULL AS role_is_legacy
        FROM users u
-       LEFT JOIN role_definitions rd ON rd.role = u.role
-       LEFT JOIN users m ON m.id = u.reports_to${scope}
+       /* The role's label from the person's own company or the built-in
+          list, and their manager only if that manager is in the same
+          company. Unscoped, a reports_to of any id returned that person's
+          name — anyone's, on any company — and a role name two companies
+          both used came back twice. */
+       LEFT JOIN LATERAL (
+         SELECT r.label, r.role FROM role_definitions r
+          WHERE r.role = u.role AND (r.org_id IS NULL OR r.org_id = COALESCE(u.org_id, u.id))
+          ORDER BY r.org_id NULLS LAST LIMIT 1) rd ON TRUE
+       LEFT JOIN users m ON m.id = u.reports_to AND COALESCE(m.org_id, m.id) = COALESCE(u.org_id, u.id)${scope}
        ORDER BY u.id`, params
     );
     res.json({
@@ -504,6 +512,14 @@ exports.updateUser = async (req, res) => {
     const problem = firstProblem(req.body, PERSON_SPEC, { existing: found });
     if (problem) return res.status(400).json(problem);
 
+    /* Reports to someone in the same company, or nobody. Any number was
+       stored, and the people list then showed that user's name. */
+    if ('reports_to' in req.body && req.body.reports_to && Number(req.body.reports_to) !== id) {
+      const org = req.user?.orgId ?? req.user?.id;
+      const mgr = (await db.query(
+        'SELECT 1 FROM users WHERE id = $1 AND COALESCE(org_id, id) = $2', [Number(req.body.reports_to), org])).rows[0];
+      if (!mgr && !isCrossTenant(req.user?.role)) return res.status(400).json({ error: 'They can only report to someone in your company.' });
+    }
     // Nobody reports to themselves, and a blank code is NULL not ''.
     const values = cols.map(c => {
       const v = req.body[c];
@@ -690,9 +706,23 @@ exports.resetPassword = async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
   try {
-    const user = await userInOrg(req, res, id, 'id, email');
-        if (!user) return;
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    const user = await userInOrg(req, res, id, 'id, email, role');
+    if (!user) return;
+    /* Not yourself (the comment above always said so; nothing checked it),
+       not the company's founder, and not a platform administrator — unless
+       the caller is one. Role changes and switching people off already
+       protected the founder; this did not, so an Owner-role employee could
+       set the founder's password and sign in as them. */
+    const platform = isCrossTenant(req.user?.role);
+    if (id === req.user?.id) {
+      return res.status(400).json({ error: 'Change your own password from your account menu, not here.' });
+    }
+    if (!platform && id === Number(req.user?.orgId ?? req.user?.id)) {
+      return res.status(403).json({ error: "Only the company's founder can change the founder's password. They can use “Forgot password” on the sign-in page." });
+    }
+    if (!platform && isCrossTenant(user.role)) {
+      return res.status(403).json({ error: 'Only a platform administrator can reset that account.' });
+    }
 
     const bcrypt = require('bcryptjs');
     const hash = await bcrypt.hash(password, 10);

@@ -316,7 +316,7 @@ const POInvoice = () => {
         <div data-po-for className="print:hidden no-print" style={{ marginTop: 16, fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
           Bought for{' '}
           {po.forOrders.map((o, i) => (
-            <React.Fragment key={o.id}>{i > 0 && ', '}<Link to="/customer-orders" style={{ fontWeight: 700, color: 'var(--brand-amber)' }}>{o.orderNumber}</Link></React.Fragment>
+            <React.Fragment key={o.id}>{i > 0 && ', '}<Link to={`/customer-orders?open=${o.id}`} style={{ fontWeight: 700, color: 'var(--brand-amber)' }}>{o.orderNumber}</Link></React.Fragment>
           ))}
         </div>
       )}

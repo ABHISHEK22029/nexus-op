@@ -105,44 +105,96 @@ exports.create = async (req, res) => {
   /* The party is this company's customer or vendor. Another company's id
      was read for the tax and shown on the note as the party. */
   if (!await assertRefs(db, req, res, { [partyType === 'vendor' ? 'vendors' : 'customers']: [partyId] })) return;
+  /* Each line: what, how many (above zero), at what rate (0 or more). A
+     line of −100 × ₹500 went in and turned a credit note into a debit. */
+  for (const [n, it] of items.entries()) {
+    if (!String(it?.description || '').trim()) return res.status(400).json({ error: `Line ${n + 1} needs a description.` });
+    const q = Number(it.quantity), r = Number(it.rate);
+    if (!Number.isFinite(q) || q <= 0) return res.status(400).json({ error: `Line ${n + 1}: the quantity must be more than zero.` });
+    if (!Number.isFinite(r) || r < 0) return res.status(400).json({ error: `Line ${n + 1}: the rate must be a number, 0 or more.` });
+  }
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-    const interstate = await deriveInterstate(client, partyType, partyId, req.user?.orgId);
     /* The original's number AND date (Section 34). There was nowhere to give
        the date, so every note counted as "missing invoice ref" for good.
        Now it is asked for; and when the number is one of this company's own
-       invoices or vendor bills, its date and link are filled in from it. */
+       invoices or vendor bills, its date and link are filled in from it.
+       Found by its id as well as its number — a note raised from the
+       invoice itself named it by id and still printed "not referenced" —
+       and only when it is THIS party's: a note to one customer could name
+       another customer's invoice. */
     let ref = { type: refType || null, id: refId || null, date: refDate || null };
-    const refNo = String(refNumber || '').trim();
-    if (refNo && (!ref.date || !ref.id)) {
-      const own = req.user?.orgId ?? null;
-      const found = partyType === 'customer'
+    let refNo = String(refNumber || '').trim();
+    let original = null;
+    const own = req.user?.orgId ?? null;
+    if (refNo || ref.id) {
+      const byId = Number(ref.id) > 0 ? Number(ref.id) : null;
+      original = partyType === 'customer'
         ? (await client.query(
-            `SELECT id, COALESCE(invoice_date, created_at::date) AS d FROM sales_invoices
-              WHERE LOWER(invoice_number) = LOWER($1) AND owner_id IS NOT DISTINCT FROM $2 ORDER BY id DESC LIMIT 1`, [refNo, own])).rows[0]
+            `SELECT id, invoice_number AS number, COALESCE(invoice_date, created_at::date) AS d, customer_id AS party_id,
+                    net_amount, gst_rate, interstate, status
+               FROM sales_invoices
+              WHERE owner_id IS NOT DISTINCT FROM $1 AND ${byId ? 'id = $2' : 'LOWER(invoice_number) = LOWER($2)'}
+              ORDER BY id DESC LIMIT 1`, [own, byId || refNo])).rows[0]
         : (await client.query(
-            `SELECT id, bill_date AS d FROM grn_bills
-              WHERE (LOWER(bill_number) = LOWER($1) OR LOWER(vendor_bill_ref) = LOWER($1)) AND owner_id IS NOT DISTINCT FROM $2
-              ORDER BY id DESC LIMIT 1`, [refNo, own])).rows[0];
-      if (found) ref = { type: ref.type || (partyType === 'customer' ? 'sales_invoice' : 'grn_bill'), id: ref.id || found.id, date: ref.date || found.d };
+            `SELECT id, bill_number AS number, bill_date AS d, vendor_id AS party_id, net_amount, gst_rate, interstate, NULL AS status
+               FROM grn_bills
+              WHERE owner_id IS NOT DISTINCT FROM $1 AND ${byId ? 'id = $2' : '(LOWER(bill_number) = LOWER($2) OR LOWER(vendor_bill_ref) = LOWER($2))'}
+              ORDER BY id DESC LIMIT 1`, [own, byId || refNo])).rows[0];
+      if (!original && byId) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `That ${partyType === 'customer' ? 'invoice' : 'bill'} is not one of yours.` });
+      }
+      if (original && Number(original.party_id) !== Number(partyId)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `${original.number} is for a different ${partyType}. A note adjusts the ${partyType === 'customer' ? 'invoice' : 'bill'} of the same ${partyType}.` });
+      }
+      if (original) {
+        ref = { type: ref.type || (partyType === 'customer' ? 'sales_invoice' : 'grn_bill'), id: original.id, date: ref.date || original.d };
+        refNo = original.number || refNo;
+      }
     }
+    /* Taxed the way the original was: a note reverses that supply, so its
+       IGST or CGST + SGST and its rate are the original's, not whatever the
+       customer's record says today. */
+    const interstate = original && original.interstate != null
+      ? !!original.interstate
+      : await deriveInterstate(client, partyType, partyId, req.user?.orgId);
+    const rate = original && original.gst_rate != null ? Number(original.gst_rate) || 0 : Number(gstRate) || 0;
     const lines = items.map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
     const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
-    const gstTotal = r2(subTotal * (Number(gstRate) || 0) / 100);
+    const gstTotal = r2(subTotal * rate / 100);
+    /* A credit note can give back at most what the invoice charged, less
+       notes already raised against it. A ₹59,000 note against a ₹2,360
+       invoice went through. */
+    if (original && noteType === (partyType === 'customer' ? 'credit' : 'debit')) {
+      const before = Number((await client.query(
+        `SELECT COALESCE(SUM(total), 0) AS t FROM credit_debit_notes
+          WHERE owner_id IS NOT DISTINCT FROM $1 AND ref_id = $2 AND party_type = $3 AND note_type = $4`,
+        [own, original.id, partyType, noteType])).rows[0].t) || 0;
+      const room = r2((Number(original.net_amount) || 0) - before);
+      if (r2(subTotal + gstTotal) > room + 0.5) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: `This note is ₹${r2(subTotal + gstTotal).toLocaleString('en-IN')}, more than is left on ${original.number}: `
+            + `₹${(Number(original.net_amount) || 0).toLocaleString('en-IN')}${before ? `, less ₹${before.toLocaleString('en-IN')} already credited` : ''}, leaves ₹${Math.max(0, room).toLocaleString('en-IN')}.`,
+        });
+      }
+    }
     const cgst = interstate ? 0 : r2(gstTotal / 2);
     const sgst = interstate ? 0 : r2(gstTotal - cgst);
     const igst = interstate ? gstTotal : 0;
     const total = r2(subTotal + gstTotal);
     /* Credit and debit notes run separate series (CN-, DN- unless the
        business set its own), so the document type carries the note type. */
-    const num = await allocate(client, { ownerId: req.user?.orgId, docType: `note_${noteType}` });
+    const num = await allocate(client, { ownerId: req.user?.orgId, docType: `note_${noteType}`, date: noteDate });
     const { rows } = await client.query(
       `INSERT INTO credit_debit_notes (owner_id, note_type, party_type, party_id, ref_type, ref_id, ref_number, note_number, note_date, reason,
          sub_total, gst_rate, interstate, cgst, sgst, igst, gst_total, total, amount_in_words, notes, ref_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::date, CURRENT_DATE),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::date) RETURNING id`,
       [req.user?.orgId || null, noteType, partyType, partyId, ref.type, ref.id, refNo || null, num, noteDate || null, reason || null,
-       subTotal, gstRate || 0, interstate, cgst, sgst, igst, gstTotal, total, amountInWords(total), notes || null, ref.date || null]);
+       subTotal, rate, interstate, cgst, sgst, igst, gstTotal, total, amountInWords(total), notes || null, ref.date || null]);
     const nid = rows[0].id;
     let so = 0;
     for (const l of lines) {

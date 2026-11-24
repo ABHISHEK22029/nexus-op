@@ -22,6 +22,7 @@ import React, { useState, useEffect } from 'react';
 import { Star, Clock, Package, Info } from 'lucide-react';
 import { getToken } from '../lib/apiAuth';
 import { fmtINR } from '../lib/format';
+import QuickAddParty, { ADD_NEW, AddNewOption } from './QuickAddParty';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 /* Paise always as two digits (lib/format). */
@@ -34,7 +35,9 @@ export default function VendorPicker({
   className = '',
   selectClassName = '',
   labelClassName = '',
+  onVendorAdded,
 }) {
+  const [adding, setAdding] = useState(false);
   const [materials, setMaterials] = useState([]);
   const [materialId, setMaterialId] = useState('');
   const [supplying, setSupplying] = useState(null);   // null = not narrowed
@@ -95,7 +98,7 @@ export default function VendorPicker({
       <select
         required
         value={value || ''}
-        onChange={e => onChange(e.target.value)}
+        onChange={e => (e.target.value === ADD_NEW ? setAdding(true) : onChange(e.target.value))}
         aria-label="Vendor"
         className={selectClassName || 'w-full bg-[#1A1A1E] border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500'}
       >
@@ -114,7 +117,12 @@ export default function VendorPicker({
                 {v.name} {v.gstin ? `(GST: ${v.gstin})` : '(No GST)'}
               </option>
             ))}
+        {onVendorAdded && <AddNewOption kind="vendor" />}
       </select>
+      {adding && (
+        <QuickAddParty kind="vendor" onClose={() => setAdding(false)}
+          onAdded={(v) => { setAdding(false); setMaterialId(''); onVendorAdded(v); onChange(String(v.id)); }} />
+      )}
 
       {note && (
         <div className="mt-1 text-xs text-gray-400 flex items-start gap-1">

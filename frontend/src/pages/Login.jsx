@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Loader2, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
-import { SIGNED_OUT_KEY } from '../lib/apiAuth';
+import { SIGNED_OUT_KEY, RETURN_KEY } from '../lib/apiAuth';
 import MaksOpsLogo from '../components/brand/MaksOpsLogo';
 
 /* The demo login used to be two string literals here, which meant a working
@@ -25,6 +25,7 @@ const DEMO_AVAILABLE = Boolean(DEMO_EMAIL && DEMO_PASSWORD);
 export default function Login() {
   const { login, loading, error, token } = useAuth();
   const [params] = useSearchParams();
+  const location = useLocation();
   /* Arriving from a reset: say it worked, and keep the address. */
   const justReset = params.get('reset') === '1';
   const [email, setEmail]       = useState(() => params.get('email') || '');
@@ -64,7 +65,12 @@ export default function Login() {
       try { sessionStorage.removeItem(SIGNED_OUT_KEY); } catch { /* private mode */ }
       // Hard navigation so all context providers re-init WITH the token
       // present (ProjectProvider fetches /projects once on mount).
-      window.location.assign('/dashboard');
+      /* Back to where they were when the session ended (or the page that
+         sent them here), never off-site and never to an auth screen. */
+      let back = location.state?.from || null;
+      try { back = back || sessionStorage.getItem(RETURN_KEY); sessionStorage.removeItem(RETURN_KEY); } catch { /* private mode */ }
+      const safe = typeof back === 'string' && back.startsWith('/') && !back.startsWith('//') && !/^\/(login|signup|reset-password|forgot-password)/.test(back);
+      window.location.assign(safe ? back : '/dashboard');
     } catch (err) {
       setLocalErr(err.message || 'Login failed');
     }

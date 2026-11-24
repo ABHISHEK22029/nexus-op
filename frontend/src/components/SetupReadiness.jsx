@@ -14,27 +14,35 @@
 
    It disappears entirely once everything is in place. A permanent setup
    banner is one people stop seeing.
+
+   Laid out as a checklist on the page's own surface, not an orange alert:
+   it sits above everything on the Home screen, and a block of amber there
+   made the whole page read as an error. Each row lines up the same way —
+   the mark, what it is and how far along, why it matters, and a button
+   that says what it does.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle2, CircleAlert, ListChecks, ArrowRight } from 'lucide-react';
 import { getToken } from '../lib/apiAuth';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-/* Where each check's fix actually lives, so the row is a link rather than
-   an instruction to go and find something. */
-const FIX_PATH = {
-  company: '/company-profile',
-  /* Straight to the rows that need it, each with a Link button. Plain
-     /inventory showed every card with nothing to say which were unlinked
-     or how to link one. */
-  stock_links: '/inventory?unlinked=1',
-  boms: '/items',
-  vendor_links: '/vendors?tab=supplies',
-  open_orders: '/customer-orders',
-  parties: '/customers',
+/* Where each check's fix actually lives, and what the button says — a
+   row is a way through, not an instruction to go and find something. */
+const FIX = {
+  company: { to: '/company-profile', label: 'Open company profile' },
+  name: { to: '/company-profile', label: 'Add your business name' },
+  /* Straight to the rows that need it, each with a Link button. */
+  stock_links: { to: '/inventory?unlinked=1', label: 'Link stock' },
+  boms: { to: '/items', label: 'Add bills of materials' },
+  vendor_links: { to: '/vendors?tab=supplies', label: 'Link vendors' },
+  open_orders: { to: '/customer-orders', label: 'Go to orders' },
+  parties: { to: '/customers', label: 'Add customers' },
 };
+/* Customers on file but no vendors: the button goes to vendors. */
+const fixFor = (c) => (c.key === 'parties' && c.missing === 'vendors'
+  ? { to: '/vendors', label: 'Add a vendor' } : FIX[c.key]);
 
 export default function SetupReadiness({ compact = false }) {
   const [data, setData] = useState(null);
@@ -51,69 +59,49 @@ export default function SetupReadiness({ compact = false }) {
   if (!data || data.ready) return null;   // nothing to say once it's set up
 
   const blocking = data.checks.filter(c => !c.ok);
+  const done = data.checks.filter(c => c.ok);
 
   return (
-    <div className="setup-ready" style={{
-      background: 'rgba(245,158,11,0.08)',
-      border: '1px solid rgba(245,158,11,0.35)',
-      borderRadius: 12, padding: '14px 16px', marginBottom: 18,
-    }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 9, width: '100%',
-          background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left',
-        }}
-      >
-        <AlertTriangle size={17} style={{ color: '#b45309', flexShrink: 0 }} />
-        <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
-          {data.headline}
-        </span>
-        <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', display: 'flex' }}>
-          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </span>
+    <section className="setup-ready" aria-label="Setting up">
+      <button type="button" className="setup-ready-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <span className="setup-ready-mark" aria-hidden="true"><ListChecks size={16} /></span>
+        <span className="setup-ready-title">{data.headline}</span>
+        <span className="setup-ready-count">{done.length} of {data.checks.length} done</span>
+        <span className="setup-ready-chev" aria-hidden="true">{open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
       </button>
 
       {open && (
-        <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
-          {blocking.map(c => (
-            /* Layout in index.css (.setup-row): badge, explanation and Fix
-               this side by side; on a narrow screen the badge takes its own
-               line, so the explanation is not squeezed to a word a line. */
-            <div key={c.key} className="setup-row">
-              <span className="setup-row-have" style={{
-                fontSize: '0.72rem', fontWeight: 800, color: '#b45309',
-                background: 'rgba(245,158,11,0.15)', padding: '2px 8px', borderRadius: 6,
-                /* "GSTIN set, bank details missing" on one line pushed the
-                   row out of the banner on a phone; it wraps instead. */
-                maxWidth: 150, marginTop: 1,
-              }}>{c.have}</span>
-
-              <div>
-                <div style={{ fontWeight: 600, fontSize: '0.87rem', color: 'var(--text-primary)' }}>{c.label}</div>
-                {/* The cost, not the chore — this is what makes it worth doing. */}
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.45 }}>
-                  {c.cost}
+        <div className="setup-ready-body">
+          {blocking.map(c => {
+            const fix = fixFor(c);
+            return (
+              <div key={c.key} className="setup-row" data-setup-row={c.key}>
+                <CircleAlert size={16} className="setup-row-mark" aria-hidden="true" />
+                <div className="setup-row-text">
+                  <div className="setup-row-title">
+                    {c.label}
+                    {c.have && <span className="setup-row-have">{c.have}</span>}
+                  </div>
+                  {/* The cost, not the chore — this is what makes it worth doing. */}
+                  <div className="setup-row-cost">{c.cost}</div>
                 </div>
+                {fix && (
+                  <Link to={fix.to} className="setup-row-fix">
+                    {fix.label} <ArrowRight size={13} aria-hidden="true" />
+                  </Link>
+                )}
               </div>
+            );
+          })}
 
-              {FIX_PATH[c.key] && (
-                <Link to={FIX_PATH[c.key]} className="btn-secondary"
-                  style={{ textDecoration: 'none', fontSize: '0.78rem', padding: '4px 11px', whiteSpace: 'nowrap' }}>
-                  Fix this
-                </Link>
-              )}
-            </div>
-          ))}
-
-          {data.checks.some(c => c.ok) && (
-            <div style={{ paddingTop: 8, borderTop: '1px solid rgba(245,158,11,0.2)', fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <CheckCircle2 size={13} style={{ color: '#10b981' }} />
-              Already done: {data.checks.filter(c => c.ok).map(c => c.label.toLowerCase()).join(' · ')}
+          {done.length > 0 && (
+            <div className="setup-ready-done">
+              <CheckCircle2 size={14} aria-hidden="true" />
+              <span><b>Done:</b> {done.map(c => c.label.toLowerCase()).join(' · ')}</span>
             </div>
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }

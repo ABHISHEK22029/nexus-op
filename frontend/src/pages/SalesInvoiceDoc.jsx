@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import CompanyLogo from '../components/CompanyLogo';
 import InlineEdit from '../components/InlineEdit';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail, Pencil, Undo2, Ban } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail, Pencil, Undo2, Ban, FileMinus } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { usePermissions } from '../context/PermissionContext';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
@@ -22,19 +23,26 @@ export default function SalesInvoiceDoc() {
   const navigate = useNavigate();
   const toast = useToast();
   const { can } = usePermissions();
+  const { confirm, prompt } = useConfirm();
   const [inv, setInv] = useState(null);
   const [pay, setPay] = useState({ amount: '', mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' });
   const ref = useRef(null);
   const [emailing, setEmailing] = useState(false);
   const [making, setMaking] = useState(false);
+  const [paying, setPaying] = useState(false);
+  /* A wrong or deleted id, or one this role can't open, showed "Loading
+     invoice…" for good, with no way back. */
+  const [missing, setMissing] = useState('');
 
-  const load = () => fetch(`${API}/sales-invoices/${id}`).then(r => r.ok ? r.json() : null).then(setInv);
+  const load = () => fetch(`${API}/sales-invoices/${id}`)
+    .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) { setMissing(r.status === 403 ? 'Your role can\'t open invoices.' : (d.error || 'This invoice was not found. It may have been deleted.')); return null; } setMissing(''); return d; })
+    .then(d => { if (d) setInv(d); });
   useEffect(() => { load(); }, [id]);
 
   /* The server decides what may be set; a refusal is said, not swallowed —
      the menu used to look as if it had worked and then snap back. */
   const setStatus = async (status) => {
-    if (status === 'Cancelled' && !window.confirm(`Cancel ${inv.invoice_number}?\n\nIt keeps its number, is marked Cancelled, and is no longer owed. This cannot be undone.`)) return;
+    if (status === 'Cancelled' && !(await confirm({ title: `Cancel ${inv.invoice_number}?`, message: 'It keeps its number, is marked Cancelled, and is no longer owed. This cannot be undone.', confirmLabel: 'Cancel invoice', cancelLabel: 'Keep it', tone: 'danger' }))) return;
     const res = await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Could not change the status'); }
     else if (status === 'Cancelled') toast.success(`${inv.invoice_number} cancelled`);
@@ -44,7 +52,7 @@ export default function SalesInvoiceDoc() {
   /* Take back a payment recorded in error, or a cheque that bounced. The
      reason goes on the invoice's record, so it is asked for. */
   const reversePayment = async (p) => {
-    const reason = window.prompt(`Reverse the payment of ₹${rup(p.amount)}${p.paid_date ? ` received on ${p.paid_date}` : ''}?\n\nWhy is it being reversed?`);
+    const reason = await prompt({ title: `Reverse the payment of ₹${rup(p.amount)}?`, message: `${p.paid_date ? `Received on ${p.paid_date}. ` : ''}The invoice goes back to owing it, and the reason goes on its record.`, label: 'Why is it being reversed?', placeholder: 'e.g. cheque bounced', required: true, requiredMessage: 'Say why the payment is being reversed.', confirmLabel: 'Reverse payment' });
     if (reason == null) return;
     if (!reason.trim()) { toast.error('Say why the payment is being reversed'); return; }
     const res = await fetch(`${API}/sales-invoices/${id}/payments/${p.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) });
@@ -85,22 +93,40 @@ export default function SalesInvoiceDoc() {
      cancelled invoice stays cancelled. */
   const statusChoices = !inv || isCancelled || hasPayments ? [] : ['Draft', 'Sent', 'Cancelled'];
   const reopen = async () => {
-    if (!window.confirm(`Reopen ${inv.invoice_number} as a draft?\n\nIf it has already gone to the customer, send them the corrected copy once you have changed it.`)) return;
+    if (!(await confirm({ title: `Reopen ${inv.invoice_number} as a draft?`, message: 'If it has already gone to the customer, send them the corrected copy once you have changed it.', confirmLabel: 'Reopen' }))) return;
     const r = await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Draft' }) });
     if (!r.ok) { const d = await r.json().catch(() => ({})); toast.error(d.error || 'Could not reopen it'); return; }
     navigate(`/sales-invoices/${id}/edit`);
   };
 
-  const recordPayment = async () => {
+  /* One click, one payment: Add had no busy state, so a double click
+     recorded the money twice. The server also asks when the same amount
+     arrives twice within two minutes. */
+  const recordPayment = async (confirmDuplicate = false) => {
     if (!pay.amount || +pay.amount <= 0) { toast.error('Enter a payment amount'); return; }
-    const res = await fetch(`${API}/sales-invoices/${id}/payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pay) });
-    const d = await res.json();
-    if (!res.ok) { toast.error(d.error || 'Failed'); return; }
-    toast.success(`Payment recorded — ${d.status}`);
-    setPay({ amount: '', mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' });
-    load();
+    if (paying) return;
+    setPaying(true);
+    try {
+      const res = await fetch(`${API}/sales-invoices/${id}/payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...pay, confirmDuplicate }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.status === 409 && d.duplicate) {
+        setPaying(false);
+        if (await confirm({ title: 'Record a second payment?', message: d.error, confirmLabel: 'Yes, record it', cancelLabel: 'No, it was a double click' })) return recordPayment(true);
+        return;
+      }
+      if (!res.ok) { toast.error(d.error || 'Could not record the payment'); return; }
+      toast.success(`Payment recorded — ${d.status}`);
+      setPay({ amount: '', mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' });
+      load();
+    } finally { setPaying(false); }
   };
 
+  if (missing) return (
+    <div style={{ padding: 40, color: 'var(--text-muted)' }}>
+      <p>{missing}</p>
+      <button onClick={() => navigate('/sales-invoices')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All invoices</button>
+    </div>
+  );
   if (!inv) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading invoice…</div>;
   const co = inv.company || {};
   const date = inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -242,6 +268,11 @@ export default function SalesInvoiceDoc() {
               and printed, and there was no way to get it to the customer
               without leaving the product. */}
           <button onClick={() => setEmailing(true)} className="inv-act-btn"><Mail size={15} /> Email</button>
+          {/* The invoice says to correct it with a credit note; this is the
+              way there, with the invoice, customer, lines and rate carried. */}
+          {!isDraft && !isCancelled && can('credit-debit-notes', 'write') && (
+            <button onClick={() => navigate(`/credit-debit-notes?invoice=${inv.id}`)} data-raise-credit-note className="inv-act-btn"><FileMinus size={15} /> Credit note</button>
+          )}
           <button onClick={() => printAs(fileName)} className="inv-act-btn primary"><Printer size={15} /> Print</button>
         </div>
       </div>
@@ -294,7 +325,7 @@ export default function SalesInvoiceDoc() {
           <input style={{ ...input, width: 'auto', flex: '1 1 140px', minWidth: 120 }} placeholder="Reference / UTR" aria-label="Payment reference" value={pay.reference} onChange={e => setPay({ ...pay, reference: e.target.value })} />
           <span style={{ display: 'flex', gap: 10, flex: 'none' }}>
             <input style={{ ...input, width: 150, flex: 'none' }} type="date" aria-label="Payment date" value={pay.paidDate} onChange={e => setPay({ ...pay, paidDate: e.target.value })} />
-            <button onClick={recordPayment} className="btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} /> Add</button>
+            <button onClick={() => recordPayment()} disabled={paying} data-add-payment className="btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} /> {paying ? 'Saving…' : 'Add'}</button>
           </span>
         </div>
       )}
@@ -406,7 +437,7 @@ export default function SalesInvoiceDoc() {
           <span>Reverse Charge: <strong>{inv.reverse_charge ? 'Yes' : 'No'}</strong></span>
           <span className={inv.eway_bill_no ? undefined : 'print:hidden'}>E-Way Bill: <InlineEdit
             value={inv.eway_bill_no} field="eway_bill_no" canEdit onSave={patch} placeholder="add" /></span>
-          {inv.customer_order_id && <span>Order Ref: <strong>{inv.order?.order_number || `#${inv.customer_order_id}`}</strong></span>}
+          {inv.customer_order_id && <span>Order Ref: <strong><Link to={`/customer-orders?open=${inv.customer_order_id}`} data-invoice-order-link style={{ color: 'inherit' }}>{inv.order?.order_number || `#${inv.customer_order_id}`}</Link></strong></span>}
           {inv.order?.customer_po_ref && <span>Your PO: <strong>{inv.order.customer_po_ref}</strong></span>}
         </div>
 

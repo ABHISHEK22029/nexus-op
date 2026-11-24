@@ -16,6 +16,7 @@
 import React, { useState, useEffect, useSyncExternalStore } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import ScopeBar from './ScopeBar';
+import { SearchTrigger } from './GlobalSearch';
 import {
   ChevronLeft, ChevronRight, Sun, Moon, Home, Play,
 } from 'lucide-react';
@@ -168,6 +169,9 @@ export default function AppNav() {
           <MaksAppIcon size={34} radius={14} decorative />
         </button>
         <GuideButton />
+        {/* With the menu panel open its own search field is there; the rail
+            carries one when the panel is closed, and on a phone. */}
+        {(!shown || narrow) && <SearchTrigger variant="rail" />}
 
         <div className="nav-rail-items">
           {modules.map(m => {
@@ -201,6 +205,7 @@ export default function AppNav() {
               top bar: they answer "where am I", which is what the navigation
               beside them is for. */}
           <ScopeBar />
+          <div className="nav-panel-search"><SearchTrigger variant="panel" /></div>
           <div className="nav-panel-head">
             <span>{current?.label}</span>
             <button onClick={closePanel} title="Collapse menu" aria-label="Collapse menu">

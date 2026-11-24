@@ -14,7 +14,7 @@
       the driver gets stopped over.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Printer, Truck, AlertTriangle, Mail } from 'lucide-react';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
@@ -106,9 +106,22 @@ export default function DeliveryChallanDoc() {
           meta={[
             ['No.', dc.challan_number],
             ['Date', fmtDate(dc.challan_date)],
+            dc.order && ['Order', dc.order.order_number],
+            dc.order?.customer_po_ref && ['Your PO', dc.order.customer_po_ref],
             dc.status && ['Status', dc.status],
-          ]}
+          ].filter(Boolean)}
         />
+        {/* On screen only: where this challan came from and what billed it. */}
+        {(dc.order || (dc.invoices || []).length > 0) && (
+          <div className="print:hidden" data-challan-links style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: '0.8rem', margin: '-6px 0 14px', color: 'var(--text-secondary)' }}>
+            {dc.order && <span>Order <Link to={`/customer-orders?open=${dc.order.id}`} style={{ color: 'var(--brand-amber)', fontWeight: 700 }}>{dc.order.order_number}</Link></span>}
+            {(dc.invoices || []).length > 0 && (
+              <span>Invoiced on {dc.invoices.map((i, k) => (
+                <React.Fragment key={i.id}>{k > 0 && ', '}<Link to={`/sales-invoices/${i.id}`} style={{ color: 'var(--brand-amber)', fontWeight: 700 }}>{i.invoice_number}</Link>{i.status === 'Cancelled' ? ' (cancelled)' : ''}</React.Fragment>
+              ))}</span>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
           {/* Ship-to first: on this document it is the operative address. */}

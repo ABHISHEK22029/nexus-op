@@ -12,7 +12,7 @@
    customer's accounts team.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import Attachments from '../components/Attachments';
 import {
@@ -84,7 +84,11 @@ export default function CreditDebitNoteDoc() {
           <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap', fontSize: '0.85rem' }}>
             <span>Number: <strong style={{ fontFamily: 'var(--font-mono)' }}>
               {/* Red is for the person preparing it; on paper it is a blank. */}
-              {n.ref_number || <><em className="print:hidden" style={{ color: '#dc2626', fontFamily: 'inherit' }}>not referenced</em><span className="print-only">—</span></>}
+              {n.ref_number
+                ? (n.ref_id && /invoice|bill/.test(String(n.ref_type || ''))
+                  ? <Link to={String(n.ref_type).includes('bill') ? `/grn-bills/${n.ref_id}` : `/sales-invoices/${n.ref_id}`} data-note-ref-link style={{ color: 'inherit' }}>{n.ref_number}</Link>
+                  : n.ref_number)
+                : <><em className="print:hidden" style={{ color: '#dc2626', fontFamily: 'inherit' }}>not referenced</em><span className="print-only">—</span></>}
             </strong></span>
             <span>Dated: <strong>
               {n.ref_date ? fmtDate(n.ref_date) : <><em className="print:hidden" style={{ color: '#dc2626', fontWeight: 400 }}>not recorded</em><span className="print-only">—</span></>}

@@ -8,6 +8,8 @@ const TYPE_CONFIG = {
   PO_APPROVED:       { color: '#3B82F6', icon: '✅', label: 'PO Approved',       bg: 'rgba(59,130,246,0.12)'  },
   PO_DISPATCHED:     { color: '#8B5CF6', icon: '🚚', label: 'Dispatched',        bg: 'rgba(139,92,246,0.12)'  },
   GRN_RECEIVED:      { color: '#10B981', icon: '📬', label: 'GRN Received',      bg: 'rgba(16,185,129,0.12)'  },
+  GRN:               { color: '#10B981', icon: '📬', label: 'Goods received',    bg: 'rgba(16,185,129,0.12)'  },
+  PAYMENT_REVERSED:  { color: '#F59E0B', icon: '↩️', label: 'Payment reversed',  bg: 'rgba(245,158,11,0.12)'  },
   BILL_GENERATED:    { color: '#EF4444', icon: '📄', label: 'Bill Generated',    bg: 'rgba(239,68,68,0.12)'   },
   BILL_SUBMITTED:    { color: '#F43F5E', icon: '📨', label: 'Bill Submitted',    bg: 'rgba(244,63,94,0.12)'   },
   BILL_APPROVED:     { color: '#22C55E', icon: '💚', label: 'Bill Approved',     bg: 'rgba(34,197,94,0.12)'   },
@@ -187,7 +189,7 @@ const ActivityLog = () => {
             <Activity size={40} style={{ color: 'var(--text-muted)', opacity: 0.2, display: 'block', margin: '0 auto 16px' }} />
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 600 }}>No activity found</p>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '4px' }}>
-              {search || typeFilter !== 'ALL' ? 'Try clearing your filters' : 'Start creating POs, GRNs, and Bills to see events here'}
+              {search || typeFilter !== 'ALL' ? 'Try clearing your filters' : 'Things done in the app show here: orders, purchases, receipts, payments'}
             </p>
           </div>
         ) : (

@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft, Printer, Download, Undo2 } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../context/ConfirmContext';
+import { usePermissions } from '../context/PermissionContext';
 import Attachments from '../components/Attachments';
 import { docFileName, printAs } from '../lib/documentPdf';
 
@@ -10,20 +13,51 @@ const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits:
 export default function GrnBillDoc() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
+  const { can } = usePermissions();
+  const { prompt } = useConfirm();
   const [bill, setBill] = useState(null);
+  /* A wrong id or a refused one showed "Loading bill…" for good. */
+  const [missing, setMissing] = useState('');
   const ref = useRef(null);
 
-  useEffect(() => { fetch(`${API}/grn-bills/${id}`).then(r => r.ok ? r.json() : null).then(setBill); }, [id]);
+  const load = () => fetch(`${API}/grn-bills/${id}`).then(async r => {
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { setMissing(r.status === 403 ? 'Your role can\'t open vendor bills.' : (d.error === 'Not found' || !d.error ? 'This bill was not found. It may have been deleted.' : d.error)); return; }
+    setMissing(''); setBill(d);
+  });
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
+  /* Draft or Approved by hand; Paid follows the payments. The answer is
+     read: the page used to show the new status whatever the server said. */
   const setStatus = async (status) => {
-    await fetch(`${API}/grn-bills/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    const r = await fetch(`${API}/grn-bills/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { toast.error(d.error || d.detail || 'Could not change the status'); return; }
     setBill(b => ({ ...b, status }));
+  };
+  /* A payment made in error, taken back with a reason on the record. */
+  const reversePayment = async (p) => {
+    const reason = await prompt({ title: `Reverse the payment of ₹${rup(p.amount)}?`, message: 'The bill goes back to owing it, and the reason goes on its record.', label: 'Why is it being reversed?', placeholder: 'e.g. paid against the wrong bill', required: true, requiredMessage: 'Say why the payment is being reversed.', confirmLabel: 'Reverse payment' });
+    if (reason == null) return;
+    if (!reason.trim()) { toast.error('Say why the payment is being reversed'); return; }
+    const r = await fetch(`${API}/grn-bills/${id}/payments/${p.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { toast.error(d.error || 'Could not reverse the payment'); return; }
+    toast.success(`Payment reversed — bill ${d.paymentStatus}`);
+    load();
   };
   /* Browser print-to-PDF rather than html2canvas: the output stays real
      text, the print stylesheet controls page breaks, and the item table
      repeats its header. The filename comes from document.title. */
   const pdf = () => printAs(docFileName('Purchase Bill', bill.bill_number, bill.vendor?.name));
 
+  if (missing) return (
+    <div style={{ padding: 40, color: 'var(--text-muted)' }}>
+      <p>{missing}</p>
+      <button onClick={() => navigate('/payables')} className="inv-act-btn"><ArrowLeft size={15} /> Payables</button>
+    </div>
+  );
   if (!bill) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading bill…</div>;
   const co = bill.company || {};
   const date = bill.bill_date ? new Date(bill.bill_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -32,15 +66,35 @@ export default function GrnBillDoc() {
     <div style={{ maxWidth: 860, margin: '0 auto', paddingBottom: 40 }}>
       {/* Toolbar */}
       <div className="print:hidden" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <button onClick={() => navigate('/grn')} className="inv-act-btn"><ArrowLeft size={15} /> Back to GRN</button>
+        <button onClick={() => navigate('/payables')} className="inv-act-btn"><ArrowLeft size={15} /> Payables</button>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select value={bill.status} onChange={e => setStatus(e.target.value)} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }}>
-            {['Draft', 'Approved', 'Paid'].map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          {bill.payment_status && <span data-bill-payment-status style={{ fontSize: '0.8rem', fontWeight: 700, color: bill.payment_status === 'Paid' ? 'var(--accent-emerald, #10b981)' : 'var(--text-secondary)' }}>{bill.payment_status}</span>}
+          {can('grn-bills', 'write') ? (
+            <select value={bill.status === 'Paid' ? 'Approved' : bill.status} onChange={e => setStatus(e.target.value)} aria-label="Bill status" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-default)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }}>
+              {['Draft', 'Approved'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          ) : <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>{bill.status}</span>}
           <button onClick={pdf} className="inv-act-btn"><Download size={15} /> PDF</button>
           <button onClick={pdf} className="inv-act-btn primary"><Printer size={15} /> Print</button>
         </div>
       </div>
+
+      {(bill.payments || []).length > 0 && (
+        <div className="print:hidden" data-bill-payments style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)', marginBottom: 6 }}>Payments made</div>
+          {bill.payments.map(p => (
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid var(--border-subtle)', fontSize: '0.84rem' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>₹{rup(p.amount)}</span>
+              <span style={{ color: 'var(--text-muted)', flex: '1 1 160px' }}>
+                {String(p.paid_date || p.created_at || '').slice(0, 10)} · {p.mode || 'Bank'}{p.reference ? ` · ${p.reference}` : ''}
+              </span>
+              {can('grn-bills', 'delete') && (
+                <button onClick={() => reversePayment(p)} className="inv-act-btn" style={{ fontSize: '0.76rem', padding: '4px 10px' }}><Undo2 size={13} /> Reverse</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Attachments — challan / vendor bill (hidden on print) */}
       <div className="print:hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
@@ -54,7 +108,7 @@ export default function GrnBillDoc() {
           <div>
             <div className="inv-company-name">{co.name || co.tradeName || "Your organisation"}</div>
             <div className="inv-company-detail">
-              {co.address || '202, Plot No 130, Kavuri Hills, Jubilee Hills, Hyderabad 500033'}<br />
+              {co.address ? <>{co.address}<br /></> : <span className="print:hidden" style={{ color: '#dc2626', fontStyle: 'italic' }}>Add your address in Company profile<br /></span>}
               {co.gstin && <>GSTIN: <strong>{co.gstin}</strong><br /></>}
               {co.phone && <>Ph: {co.phone}</>}
             </div>
@@ -76,7 +130,11 @@ export default function GrnBillDoc() {
           </div>
           <div className="inv-party">
             <div className="inv-party-title">Against</div>
-            <div className="inv-party-detail">{bill.grn_number || (bill.grn_id ? `GRN-${String(bill.grn_id).padStart(5, '0')}` : '—')} · PO {bill.po_number || (bill.po_id ? `#${bill.po_id}` : '—')}</div>
+            <div className="inv-party-detail" data-bill-links>
+              {bill.grn_number || (bill.grn_id ? `GRN-${String(bill.grn_id).padStart(5, '0')}` : '—')} · PO {bill.po_id
+                ? <Link to={`/po/${bill.po_id}`} style={{ color: 'inherit', fontWeight: 700 }}>{bill.po_number || `#${bill.po_id}`}</Link>
+                : '—'}
+            </div>
           </div>
         </div>
 

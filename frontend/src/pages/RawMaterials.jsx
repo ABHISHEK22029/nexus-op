@@ -15,7 +15,7 @@ export default function RawMaterials() {
         { key: 'material_code', label: 'Material Code', placeholder: 'MSA-50' },
         { key: 'name', label: 'Name', required: true, placeholder: 'MS Angle 50x50x6' },
         { key: 'grade', label: 'Grade', placeholder: 'IS 2062' },
-        { key: 'unit', label: 'Unit', type: 'select', options: ['kg', 'nos', 'mtr', 'ton', 'sqm'] },
+        { key: 'unit', label: 'Unit', type: 'select', options: ['kg', 'nos', 'm', 'mt', 'sqm', 'sheet', 'set', 'ltr'] },
         { key: 'standard_rate', label: 'Standard Rate (₹)', type: 'number', placeholder: '62' },
         { key: 'hsn', label: 'HSN', placeholder: '7216', digits: true, maxLength: 8 },
       ]}

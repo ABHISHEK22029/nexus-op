@@ -77,10 +77,12 @@ exports.prefill = async (req, res) => {
     const received = Number(grn.receivedQuantity) || 0;
     const line = poLines.find(l => String(l.id) === String(grn.po_line_item_id)) || (poLines.length === 1 ? poLines[0] : null);
     const asItem = (li, qty) => ({ description: li.description, hsn: li.hsn || '', uom: li.uom || 'nos', quantity: qty, rate: li.unitPrice });
-    let items = line ? [asItem(line, received || line.quantity)]
+    /* Exactly what arrived — a receipt of 0 used to fall back to the whole
+       ordered quantity, billing goods that never came. */
+    let items = line ? [asItem(line, received)]
       : poLines.map(li => asItem(li, li.quantity));
     // Fall back to the PO header if no line items.
-    if (!items.length && po) items = [{ description: po.itemName, hsn: '', uom: 'nos', quantity: received || po.quantity, rate: po.unitPrice || 0 }];
+    if (!items.length && po) items = [{ description: po.itemName, hsn: '', uom: 'nos', quantity: received, rate: po.unitPrice || 0 }];
     const days = termDays(po?.paymentTerms, vendor?.payment_terms);
     const existing = await billFor(db, grn.id);
 
@@ -112,6 +114,22 @@ exports.prefill = async (req, res) => {
 exports.create = async (req, res) => {
   const { grnId, poId, vendorId, projectId, billDate, dueDate, vendorBillRef, items, freight, otherCharges, discount, gstRate, interstate, roundOff, notes } = req.body;
   if (!items || !items.length) return res.status(400).json({ error: 'Add at least one line item' });
+  /* Quantities above zero, rates and charges zero or more, a discount no
+     bigger than what it discounts — a negative line or an outsized discount
+     made a bill with a negative total. */
+  for (const [n, it] of items.entries()) {
+    const qn = Number(it.quantity), rt = Number(it.rate);
+    if (!Number.isFinite(qn) || qn <= 0) return res.status(400).json({ error: `Line ${n + 1}: the quantity must be more than zero.` });
+    if (!Number.isFinite(rt) || rt < 0) return res.status(400).json({ error: `Line ${n + 1}: the rate must be a number, 0 or more.` });
+  }
+  for (const [k, label] of [['freight', 'Freight'], ['otherCharges', 'Other charges'], ['discount', 'The discount']]) {
+    const v = req.body[k];
+    if (v != null && v !== '' && (!Number.isFinite(Number(v)) || Number(v) < 0)) return res.status(400).json({ error: `${label} must be a number, 0 or more.` });
+  }
+  {
+    const sub = items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.rate) || 0), 0) + (Number(freight) || 0) + (Number(otherCharges) || 0);
+    if ((Number(discount) || 0) > sub + 0.005) return res.status(400).json({ error: 'The discount is more than the bill it comes off.' });
+  }
   /* The vendor, the receipt and the PO it bills are this company's. The
      vendor id was stored as sent, so a bill could name another company's
      vendor and show their bank details on the bill. */
@@ -233,7 +251,10 @@ exports.getById = async (req, res) => {
 // PATCH /grn-bills/:id/status
 exports.setStatus = async (req, res) => {
   const { status } = req.body;
-  const allowed = ['Draft', 'Approved', 'Paid'];
+  /* Paid is what the payments say, not a menu choice: a bill set to Paid
+     by hand printed PAID while Payables still showed all of it owed. */
+  if (status === 'Paid') return res.status(400).json({ error: 'A bill becomes Paid when its payments add up to it. Record the payment instead.' });
+  const allowed = ['Draft', 'Approved'];
   if (!allowed.includes(status)) return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
   try {
     if (!await assertOwned(db, req, res, 'grn_bills', req.params.id, { columns: 'id' })) return;
@@ -246,6 +267,13 @@ exports.setStatus = async (req, res) => {
 exports.remove = async (req, res) => {
   try {
     if (!await assertOwned(db, req, res, 'grn_bills', req.params.id, { columns: 'id' })) return;
+    /* A bill that money has gone against is a record of that money. Deleting
+       it took its payments with it and let the same goods be billed and
+       paid again. The sales side has always refused this. */
+    const paid = Number((await db.query('SELECT COALESCE(SUM(amount),0) AS s FROM vendor_payments WHERE grn_bill_id = $1', [req.params.id])).rows[0].s) || 0;
+    if (paid > 0) {
+      return res.status(409).json({ error: `₹${paid.toLocaleString('en-IN')} has been paid against this bill. Reverse the payments first if the bill is wrong.` });
+    }
     const r = await db.query('DELETE FROM grn_bills WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'not found' });
     res.json({ success: true });
@@ -279,11 +307,23 @@ exports.addPayment = async (req, res) => {
        ask for it, and the payables total stops matching what is owed.
        FOR UPDATE so two payments entered at once cannot each read the
        old total and both be allowed. */
-    const cur = (await client.query(
-      `SELECT g.net_amount,
-              COALESCE((SELECT SUM(amount) FROM vendor_payments WHERE grn_bill_id = g.id), 0) AS paid
-         FROM grn_bills g WHERE g.id = $1 FOR UPDATE`,
-      [req.params.id])).rows[0];
+    /* Lock first, then read what is paid in a statement of its own: summed
+       in the same statement, a payment that waited on the lock still saw
+       the total from before the one it waited for. */
+    const locked = (await client.query('SELECT id, net_amount FROM grn_bills WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    const cur = locked ? { net_amount: locked.net_amount, paid: (await client.query(
+      'SELECT COALESCE(SUM(amount), 0) AS paid FROM vendor_payments WHERE grn_bill_id = $1', [req.params.id])).rows[0].paid } : null;
+    /* The same amount again within two minutes is a double click far more
+       often than a second payment. Said, and allowed when it is meant. */
+    if (locked && !req.body.confirmDuplicate) {
+      const twin = (await client.query(
+        `SELECT 1 FROM vendor_payments WHERE grn_bill_id = $1 AND amount = $2 AND created_at > NOW() - INTERVAL '2 minutes' LIMIT 1`,
+        [req.params.id, Number(amount)])).rows[0];
+      if (twin) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `A payment of ₹${Number(amount).toLocaleString('en-IN')} was recorded on this bill a moment ago. Is this a second payment?`, duplicate: true });
+      }
+    }
     if (cur) {
       const net = Number(cur.net_amount || 0);
       const already = Number(cur.paid || 0);
@@ -308,7 +348,7 @@ exports.addPayment = async (req, res) => {
     const pstatus = Number(paid) >= Number(bill.net_amount || 0) ? 'Paid' : Number(paid) > 0 ? 'Partially Paid' : 'Unpaid';
     await client.query('UPDATE grn_bills SET amount_paid = $1, payment_status = $2 WHERE id = $3', [r2(paid), pstatus, req.params.id]);
     await client.query('COMMIT');
-    notify({ org: bill.owner_id }, { type: 'VENDOR_PAID', title: `Vendor payment · ${bill.bill_number}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank transfer'} — ${pstatus}`, entityType: 'grn_bill', entityId: Number(req.params.id), link: '/payables' });
+    notify({ org: bill.owner_id }, { type: 'VENDOR_PAID', title: `Vendor payment · ${bill.bill_number}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank transfer'} — ${pstatus}`, entityType: 'grn_bill', entityId: Number(req.params.id), link: `/grn-bills/${req.params.id}` });
     res.json({ success: true, amountPaid: r2(paid), paymentStatus: pstatus });
   } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
   finally { client.release(); }
@@ -397,4 +437,42 @@ exports.payables = async (req, res) => {
       ...paginateBills(rows, req.query),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+/* DELETE /grn-bills/:id/payments/:paymentId — a payment entered in error.
+   There was no way back: a payment typed against the wrong bill stayed
+   there, and the only way to remove it was to delete the bill and its
+   record with it. Same as the sales side: a reason is required and goes on
+   the record. */
+exports.reversePayment = async (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'Say why this payment is being reversed. It goes on the bill’s record.' });
+  if (!await assertOwned(db, req, res, 'grn_bills', req.params.id, { columns: 'id' })) return;
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const bill = (await client.query(
+      'SELECT id, bill_number, owner_id, net_amount FROM grn_bills WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!bill) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bill not found' }); }
+    const gone = (await client.query(
+      `DELETE FROM vendor_payments WHERE id = $1 AND grn_bill_id = $2
+       RETURNING amount, mode, reference, COALESCE(paid_date, created_at::date)::text AS on_date`,
+      [req.params.paymentId, bill.id])).rows[0];
+    if (!gone) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'That payment is not on this bill' }); }
+    const paid = Number((await client.query(
+      'SELECT COALESCE(SUM(amount), 0) s FROM vendor_payments WHERE grn_bill_id = $1', [bill.id])).rows[0].s);
+    const pstatus = paid >= Number(bill.net_amount || 0) && paid > 0 ? 'Paid' : paid > 0 ? 'Partially Paid' : 'Unpaid';
+    await client.query('UPDATE grn_bills SET amount_paid = $1, payment_status = $2 WHERE id = $3', [r2(paid), pstatus, bill.id]);
+    const amt = `₹${Number(gone.amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    const via = [gone.mode, gone.reference && `ref ${gone.reference}`].filter(Boolean).join(', ');
+    await client.query(
+      `INSERT INTO activities ("projectId", type, description, timestamp, owner_id) VALUES (NULL, 'PAYMENT_REVERSED', $1, NOW(), $2)`,
+      [`Payment of ${amt} made on ${gone.on_date}${via ? ` (${via})` : ''} reversed on vendor bill ${bill.bill_number} — ${reason.slice(0, 300)}`,
+       bill.owner_id]);
+    await client.query('COMMIT');
+    res.json({ success: true, reversed: r2(gone.amount), amountPaid: r2(paid), paymentStatus: pstatus });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 };

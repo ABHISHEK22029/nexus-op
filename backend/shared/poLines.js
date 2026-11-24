@@ -3,6 +3,7 @@
    quotation, the shortfall planner, the RFQ comparison — so they all write
    lines the same way and all hold a large PO for sign-off. */
 const { notify } = require('../notify');
+const { unitCode, loadUoms } = require('./uom');
 
 /* Written inside the caller's transaction. Replaces any lines already on
    the PO, then sets its approval status from the owner's threshold. */
@@ -16,15 +17,23 @@ async function writePoLines(client, poId, items, orgId) {
     `SELECT id FROM ${table} WHERE id = ANY($1::int[]) AND owner_id IS NOT DISTINCT FROM $2`, [ids, orgId ?? null])).rows.map(r => r.id)) : new Set());
   const mats = await owned('raw_materials', idsOf('rawMaterialId', 'raw_material_id'));
   const skus = await owned('skus', idsOf('skuId', 'sku_id'));
+  /* Units in their standard spelling ("Kgs" is kg, "No's" is nos), and
+     the code kept when the unit table has it — receiving converts from
+     it. Lines are numbered when the caller did not number them; a missing
+     number was a raw database error. */
+  let uoms = null;
+  try { uoms = await loadUoms(client); } catch { /* conversion falls back to the text */ }
   let subtotal = 0;
-  for (const item of items) {
+  for (const [n, item] of items.entries()) {
+    const uom = unitCode(item.uom, uoms) || 'nos';
+    const code = uoms && uoms.has(uom) ? uom : null;
     subtotal += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
     const mat = Number(item.rawMaterialId ?? item.raw_material_id);
     const sku = Number(item.skuId ?? item.sku_id);
     await client.query(
-      `INSERT INTO po_line_items ("poId", sno, description, uom, hsn, quantity, "unitPrice", raw_material_id, sku_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [poId, item.sno, item.description, item.uom || "No's", item.hsn || null, item.quantity, item.unitPrice,
+      `INSERT INTO po_line_items ("poId", sno, description, uom, uom_code, hsn, quantity, "unitPrice", raw_material_id, sku_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [poId, Number(item.sno) > 0 ? Number(item.sno) : n + 1, item.description, uom, code, item.hsn || null, item.quantity, item.unitPrice,
        mats.has(mat) ? mat : null, mats.has(mat) ? null : (skus.has(sku) ? sku : null)]
     );
   }
