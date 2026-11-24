@@ -6,6 +6,7 @@ import Attachments from './Attachments';
 import { formProblems, fixMessage } from '../lib/validators';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 /* Reusable owner-scoped master (Customers / SKUs / Raw Materials).
@@ -15,6 +16,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
    PAN. A wrong value is marked under its field, and the save button says
    why it will not save rather than doing nothing. */
 export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity, summaryField, summaryLabel, rowAction, pair }) {
+  const { confirm } = useConfirm();
   const toast = useToast();
   const [rows, setRows] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -84,10 +86,28 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
   const showingTo = Math.min(total, (page + 1) * PAGE_SIZE);
 
   const resetChecks = () => { setTouched({}); setTried(false); setServerErr({}); };
-  const openNew = () => { setEditing(null); setOriginal(null); setForm(empty()); resetChecks(); setShowForm(true); };
+  /* What the form held when it opened, to tell whether anything was typed.
+     "Add" again, or the pencil on another row, used to replace a half-filled
+     form without a word — someone copying a GSTIN from an existing customer
+     lost the new one they were typing. Now it asks first. */
+  const [start, setStart] = useState(null);
+  const noun = title.replace(/s$/, '').toLowerCase();
+  const dirty = showForm && !!start && fields.some(f => String(form[f.key] ?? '') !== String(start[f.key] ?? ''));
+  const keepDraft = async () => dirty && !(await confirm({
+    title: 'Discard what you typed?',
+    message: editing ? `Your changes to this ${noun} aren't saved yet.` : `This ${noun} isn't saved yet.`,
+    confirmLabel: 'Discard', cancelLabel: 'Keep editing', tone: 'danger',
+  }));
+  const openNew = async () => {
+    if (await keepDraft()) return;
+    const f = empty(); setEditing(null); setOriginal(null); setForm(f); setStart(f); resetChecks(); setShowForm(true);
+  };
   /* The values it was opened with: an odd value an older record already
      holds is not re-checked unless it is changed. */
-  const openEdit = (row) => { setEditing(row.id); setOriginal({ ...empty(), ...row }); setForm(filled(row)); resetChecks(); setShowForm(true); };
+  const openEdit = async (row) => {
+    if (await keepDraft()) return;
+    const f = filled(row); setEditing(row.id); setOriginal({ ...empty(), ...row }); setForm(f); setStart(f); resetChecks(); setShowForm(true);
+  };
 
   const checks = Object.fromEntries(fields.filter(f => f.check).map(f => [f.key, f.check]));
   const problems = { ...formProblems(form, checks, { original, pair }), ...Object.fromEntries(Object.entries(serverErr).filter(([, v]) => v)) };
@@ -116,13 +136,15 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
         if (d.field && labels[d.field]) { setServerErr(x => ({ ...x, [d.field]: String(d.error || '').replace(/^[^:]+:\s*/, '') })); setTried(true); }
         throw new Error(d.error || 'Failed');
       }
-      toast.success(editing ? `${title} updated` : `${title} added`);
+      /* "Customer added", as the button says "Add Customer" — not "Customers added". */
+      const one = title.replace(/s$/, '');
+      toast.success(editing ? `${one} updated` : `${one} added`);
       setShowForm(false); setEditing(null); load();
     } catch (err) { toast.error(err.message); }
   };
 
   const del = async (row) => {
-    if (!window.confirm(`Delete "${row[fields[0].key] || row.name}"?`)) return;
+    if (!(await confirm({ title: `Delete “${row[fields[0].key] || row.name}”?`, message: "This can't be undone.", confirmLabel: 'Delete', tone: 'danger' }))) return;
     try {
       const res = await fetch(`${API}/${endpoint}/${row.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
@@ -183,7 +205,10 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
                   <CategoryPicker
                     kind={f.categoryKind || 'customer'}
                     value={form[f.key] ?? ''}
-                    onChange={(v) => setForm({ ...form, [f.key]: v })}
+                    /* A function update: a new category is saved first and
+                       reported after, and the form as it was then would undo
+                       whatever was typed in the meantime. */
+                    onChange={(v) => setField(f.key, v)}
                     placeholder={f.placeholder}
                   />
                 ) : f.type === 'select' ? (

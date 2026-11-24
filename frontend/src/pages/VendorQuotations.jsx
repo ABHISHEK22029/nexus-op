@@ -32,6 +32,7 @@ import UnitSelect from '../components/UnitSelect';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const token = () => localStorage.getItem('nexus_token');
 const auth = () => (token() ? { Authorization: `Bearer ${token()}` } : {});
@@ -59,6 +60,7 @@ const StatusChip = ({ status, note }) => {
 };
 
 export default function VendorQuotations() {
+  const { confirm } = useConfirm();
   const toast = useToast();
   const { can } = usePermissions();
   /* Ordering is the PO permission, not this screen's quotation one. */
@@ -135,7 +137,7 @@ export default function VendorQuotations() {
   };
 
   const remove = async (id) => {
-    if (!window.confirm('Remove this quotation and its file?')) return;
+    if (!(await confirm({ title: 'Remove this quotation?', message: 'Its uploaded file is removed with it.', confirmLabel: 'Remove quotation', tone: 'danger' }))) return;
     await fetch(`${API}/vendor-quotations/${id}`, { method: 'DELETE', headers: auth() });
     setPicked(p => p.filter(x => x !== id));
     setCmp(null);
@@ -179,7 +181,7 @@ export default function VendorQuotations() {
      takes the quotation's own lines and rates, refuses unchecked lines and a
      second PO from the same quotation, and holds a large one for sign-off. */
   const raisePo = async (q) => {
-    if (!window.confirm(`Raise a purchase order to ${q.vendor} from this quotation — ${q.linesQuoted} item${q.linesQuoted === 1 ? '' : 's'}, at the rates they quoted?`)) return;
+    if (!(await confirm({ title: `Raise a purchase order to ${q.vendor}?`, message: `${q.linesQuoted} item${q.linesQuoted === 1 ? '' : 's'} from this quotation, at the rates they quoted.`, confirmLabel: 'Raise PO' }))) return;
     setBusy(true);
     try {
       const r = await fetch(`${API}/vendor-quotations/${q.id}/to-po`, {

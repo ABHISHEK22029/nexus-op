@@ -6,6 +6,7 @@ import { usePermissions } from '../context/PermissionContext';
 import { today } from '../lib/dates';
 import { fmtINR } from '../lib/format';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 /* Paise always as two digits (lib/format). */
 const rupee = (n) => fmtINR(n);
@@ -16,6 +17,7 @@ const fmtDay = (d) => (d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLoca
 const jsonOf = (res) => res.json().catch(() => ({}));
 
 export default function Automation() {
+  const { confirm } = useConfirm();
   const toast = useToast();
   /* Buttons this person may use. The server refuses the rest anyway; a
      Viewer was offered every button and got a raw "Not permitted" — or, on
@@ -112,7 +114,7 @@ export default function Automation() {
     loadProfiles();
   };
   const removeProfile = async (p) => {
-    if (!window.confirm(`Delete recurring schedule “${p.title}”? What it has already made is kept.`)) return;
+    if (!(await confirm({ title: `Delete the schedule “${p.title}”?`, message: 'What it has already made is kept. Nothing new is made from it.', confirmLabel: 'Delete schedule', tone: 'danger' }))) return;
     try {
       const res = await fetch(`${API}/recurring/${p.id}`, { method: 'DELETE' });
       const d = await jsonOf(res);

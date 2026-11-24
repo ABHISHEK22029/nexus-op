@@ -6,7 +6,9 @@ import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 import { getToken } from '../lib/apiAuth';
 
+import { useConfirm } from '../context/ConfirmContext';
 const MeasurementBook = () => {
+  const { confirm } = useConfirm();
   const { activeProject, workOrders } = useProject();
   const toast = useToast();
   const { can } = usePermissions();
@@ -120,7 +122,7 @@ const MeasurementBook = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this measurement record?')) return;
+    if (!(await confirm({ title: 'Delete this measurement record?', message: "This can't be undone.", confirmLabel: 'Delete record', tone: 'danger' }))) return;
     try {
       await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/mb/${id}`, { method: 'DELETE' });
       toast.success('Measurement deleted');

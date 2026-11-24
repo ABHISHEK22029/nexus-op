@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Paperclip, Upload, Trash2, FileText, Image as ImageIcon, Loader2, ExternalLink } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const fmtSize = (b) => (b == null ? '' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`);
 
 /* Reusable file attachments for any record.
    <Attachments entityType="grn_bill" entityId={id} label="Documents" /> */
 export default function Attachments({ entityType, entityId, label = 'Attachments', compact = false }) {
+  const { confirm } = useConfirm();
   const toast = useToast();
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -61,7 +63,7 @@ export default function Attachments({ entityType, entityId, label = 'Attachments
   };
 
   const del = async (f) => {
-    if (!window.confirm(`Remove "${f.filename}"?`)) return;
+    if (!(await confirm({ title: `Remove “${f.filename}”?`, message: 'The file is deleted from this record.', confirmLabel: 'Remove file', tone: 'danger' }))) return;
     try { await fetch(`${API}/attachments/${f.id}`, { method: 'DELETE' }); toast.success('Removed'); load(); }
     catch { toast.error('Failed to remove'); }
   };

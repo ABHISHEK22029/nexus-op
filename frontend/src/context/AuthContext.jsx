@@ -13,6 +13,14 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
 
+  /* Signed in again at the box over the page (components/SessionGate), or
+     a fresh session from another tab: same person, new token. */
+  useEffect(() => {
+    const on = (e) => { const d = e.detail || {}; if (d.token) setToken(d.token); if (d.user) setUser(d.user); };
+    window.addEventListener('maks:session', on);
+    return () => window.removeEventListener('maks:session', on);
+  }, []);
+
   // Auto-validate token on app load
   useEffect(() => {
     if (token && !user) {

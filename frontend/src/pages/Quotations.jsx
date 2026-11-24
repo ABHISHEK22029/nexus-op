@@ -16,11 +16,13 @@ import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components
 import UnitSelect from '../components/UnitSelect';
 import { fmtINR } from '../lib/format';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 // The only three the table ever holds (migration 008_sales_procurement.sql).
 const STATUSES = ['Open', 'Selected', 'PO Raised'];
 
 export default function Quotations() {
+  const { confirm } = useConfirm();
   const toast = useToast();
   const navigate = useNavigate();
   const { activeProject } = useProject();
@@ -64,7 +66,7 @@ export default function Quotations() {
   };
   const delLine = async (lineId) => { await fetch(`${API}/quotations/quote/${lineId}`, { method: 'DELETE' }); load(); };
   const select = async (qid, lineId) => { await fetch(`${API}/quotations/${qid}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quoteLineId: lineId }) }); toast.success('Vendor selected'); load(); };
-  const del = async (qid) => { if (!window.confirm('Delete this quotation?')) return; await fetch(`${API}/quotations/${qid}`, { method: 'DELETE' }); load(); };
+  const del = async (qid) => { if (!(await confirm({ title: 'Delete this quotation?', message: "Its quoted lines go with it. This can't be undone.", confirmLabel: 'Delete quotation', tone: 'danger' }))) return; await fetch(`${API}/quotations/${qid}`, { method: 'DELETE' }); load(); };
 
   const genPO = async (qid) => {
 

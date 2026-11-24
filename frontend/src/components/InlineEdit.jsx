@@ -11,9 +11,11 @@
    you click it makes a careful person check the rest of the page.
 
    `canEdit` comes from the document's status, and mirrors what the server
-   allows — but the server is the authority. If it refuses, the old value
-   comes straight back and the reason is shown, rather than leaving the
-   screen claiming a change that did not happen.
+   allows — but the server is the authority. If it refuses, the box stays
+   open with what was typed and the reason beside it, so it can be fixed
+   rather than typed again; Escape or ✕ puts the old value back. Nothing
+   claims a change that did not happen: the document shows the old value
+   until a save succeeds.
 
    Never rendered as an input on paper: the wrapper carries `print:hidden`
    on the pencil and the input inherits the document's own type styles.
@@ -37,7 +39,8 @@ export default function InlineEdit({
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
 
-  useEffect(() => { setDraft(value ?? ''); }, [value]);
+  /* A reload changing the value under an open edit leaves the typing alone. */
+  useEffect(() => { if (!editing) setDraft(value ?? ''); }, [value, editing]);
   useEffect(() => { if (editing && inputRef.current) { inputRef.current.focus(); inputRef.current.select?.(); } }, [editing]);
 
   const commit = async () => {
@@ -46,9 +49,9 @@ export default function InlineEdit({
     const res = await onSave(field, draft);
     setBusy(false);
     if (res?.ok) { setEditing(false); return; }
-    /* Put the document back the way it was and say why. */
-    setDraft(value ?? '');
+    /* Keep what was typed, and say why it was refused. */
     setError(res?.error || 'Could not save');
+    setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const cancel = () => { setDraft(value ?? ''); setEditing(false); setError(null); };
@@ -86,7 +89,8 @@ export default function InlineEdit({
         type={type}
         value={draft}
         disabled={busy}
-        onChange={e => setDraft(e.target.value)}
+        onChange={e => { setDraft(e.target.value); setError(null); }}
+        aria-invalid={error ? true : undefined}
         onKeyDown={e => {
           if (e.key === 'Enter') { e.preventDefault(); commit(); }
           if (e.key === 'Escape') { e.preventDefault(); cancel(); }
@@ -106,6 +110,7 @@ export default function InlineEdit({
         style={{ border: 0, background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 0, padding: 2 }}>
         <X size={14} />
       </button>
+      {error && <span role="alert" style={{ fontSize: '0.7rem', color: '#dc2626' }}>{error}</span>}
     </span>
   );
 }

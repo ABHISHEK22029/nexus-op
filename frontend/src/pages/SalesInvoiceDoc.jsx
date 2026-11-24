@@ -43,9 +43,21 @@ export default function SalesInvoiceDoc() {
      the menu used to look as if it had worked and then snap back. */
   const setStatus = async (status) => {
     if (status === 'Cancelled' && !(await confirm({ title: `Cancel ${inv.invoice_number}?`, message: 'It keeps its number, is marked Cancelled, and is no longer owed. This cannot be undone.', confirmLabel: 'Cancel invoice', cancelLabel: 'Keep it', tone: 'danger' }))) return;
+    const before = inv.status;
     const res = await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Could not change the status'); }
     else if (status === 'Cancelled') toast.success(`${inv.invoice_number} cancelled`);
+    /* Draft and Sent go back and forth, so that change gets Undo rather
+       than a question. Cancelling is final, and keeps its question above. */
+    else if (before !== status && ['Draft', 'Sent'].includes(before)) {
+      const no = inv.invoice_number;
+      toast.undo(`${no} marked ${status}`, async () => {
+        const u = await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: before }) });
+        if (!u.ok) { const d = await u.json().catch(() => ({})); toast.error(d.error || 'Could not put it back'); }
+        else toast.success(`${no} is back to ${before}`);
+        load();
+      });
+    }
     load();
   };
 

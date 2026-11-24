@@ -111,11 +111,14 @@ const GRN = () => {
     }
     if (!(Number(newItem.receivedQuantity) > 0)) { toast.error('Enter the quantity that arrived — more than zero'); return; }
     if (saving) return;            // a double click booked the goods twice
-    setSaving(true);
+    /* Checked before "Saving…", not after: returning from here once left the
+       button stuck on Saving… for good, and the only way out was a refresh
+       that lost the vehicle, batch and quantity just typed. */
     if (openLines.length > 1 && !newItem.poLineItemId) {
       toast.error('Choose which line of the purchase order arrived');
       return;
     }
+    setSaving(true);
 
     const selectedPo = pos.find(p => p.id === parseInt(newItem.poId));
     const workOrderId = selectedPo ? selectedPo.workOrderId : 0;

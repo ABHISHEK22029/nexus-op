@@ -97,10 +97,23 @@ const codeFromOutbox = () => {
     /* The other device: its session started before the reset. */
     await otherPage.goto(`${UI}/sales-invoices`, { waitUntil: 'networkidle2' });
     await sleep(1500);
+    /* Since 24 Nov it is asked to sign in again over the page it is on
+       (components/SessionGate), so nothing typed there is lost — rather than
+       being sent to the sign-in page. Same reason, same need for the new password. */
     const otherUrl = otherPage.url();
-    const otherSays = await otherPage.evaluate(() => document.body.innerText);
-    ok(/\/login/.test(otherUrl) && /Your password was changed\. Sign in again\./.test(otherSays),
-      `a session open elsewhere is sent to sign-in, told why (${new URL(otherUrl).pathname})`);
+    const gate = await otherPage.waitForSelector('[data-session-gate]', { visible: true, timeout: 8000 }).catch(() => null);
+    const otherSays = gate ? await otherPage.$eval('[data-session-gate]', el => el.innerText) : '';
+    ok(!!gate && /Your password was changed\. Sign in again\./.test(otherSays) && /\/sales-invoices/.test(otherUrl),
+      `a session open elsewhere is asked to sign in again, told why, on the same page (${new URL(otherUrl).pathname})`);
+    if (gate) {
+      /* This "device" was given only a token, not the signed-in user a real
+         sign-in stores, so the box asks for the email as well. */
+      if (await otherPage.$('[data-session-gate-email]')) await otherPage.type('[data-session-gate-email]', email);
+      await otherPage.type('[data-session-gate-password]', NEW);
+      await otherPage.click('[data-session-gate-submit]');
+      const back = await otherPage.waitForSelector('[data-session-gate]', { hidden: true, timeout: 8000 }).then(() => true).catch(() => false);
+      ok(back && /\/sales-invoices/.test(otherPage.url()), 'the new password lets it carry on where it was');
+    }
 
     const wrongCode = await browser.newPage();
     await wrongCode.setViewport({ width: 1280, height: 800 });

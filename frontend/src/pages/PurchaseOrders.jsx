@@ -7,7 +7,8 @@ import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2, Shi
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
-import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
+import { useListQuery, ListToolbar, Pagination, EmptyState, QuickViews, BulkBar, SelectAllCell, SelectCell } from '../components/ListToolbar';
+import { useBulkAction } from '../components/useBulkAction';
 import { numberToWords } from '../utils/numberToWords';
 import UnitSelect from '../components/UnitSelect';
 import FitNumber from '../components/FitNumber';
@@ -43,6 +44,7 @@ const PurchaseOrders = () => {
   // Raising a PO and signing one off are deliberately different permissions.
   const canWrite = can('po', 'write');
   const canSignOff = can('po-approval', 'write');
+  const bulk = useBulkAction(q, 'po');
 
   const initialForm = {
     vendorId: '',
@@ -454,6 +456,10 @@ const PurchaseOrders = () => {
 
       {/* Status values are the ones the column actually holds — the
           purchase_orders CHECK constraint, plus the separate approval flag. */}
+      <QuickViews q={q} views={[
+          { key: 'approval', label: 'Waiting for sign-off', hint: 'Raised, waiting for someone to approve it', tone: 'soon' },
+          { key: 'to_receive', label: 'To receive', hint: 'Dispatched by the vendor, or part received' },
+        ]} />
       <ListToolbar
         q={q}
         placeholder="Search PO no., vendor, item, work order, quote ref…"
@@ -480,10 +486,20 @@ const PurchaseOrders = () => {
         ]}
       />
 
+      {canSignOff && <BulkBar q={q} noun="purchase orders" actions={[{
+        label: 'Sign off', icon: <ShieldCheck size={13} />,
+        onClick: (ids) => bulk(ids, {
+          action: 'sign_off', verb: 'signed off', noun: ['purchase order', 'purchase orders'],
+          title: (n) => `Sign off ${n} purchase order${n === 1 ? '' : 's'}?`,
+          message: 'Each can then be approved and sent to its vendor.',
+          confirmLabel: (n) => `Sign off ${n}`,
+        }),
+      }]} />}
       <div className="bg-[#111113] border border-white/5 rounded-xl overflow-hidden">
         <table className="w-full text-left">
           <thead>
             <tr className="border-b border-white/5 bg-white/[0.02]">
+              {canSignOff && <SelectAllCell q={q} />}
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">PO #</th>
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
               <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Item Details</th>
@@ -494,6 +510,7 @@ const PurchaseOrders = () => {
           <tbody className="divide-y divide-white/5">
             {q.rows.length > 0 ? q.rows.map((po) => (
               <tr key={po.id} className="table-row-animate hover:bg-white/[0.01]">
+                {canSignOff && <SelectCell q={q} id={po.id} />}
                 <td className="px-6 py-4 font-mono" style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                   {po.poNumber || `PO-${po.id.toString().padStart(4, '0')}`}
                   {/* the customer orders it was bought for */}
@@ -578,7 +595,7 @@ const PurchaseOrders = () => {
               </tr>
             )) : (
               <tr>
-                <td colSpan="5">
+                <td colSpan={canSignOff ? 6 : 5}>
                   {/* "None yet" and "none matched your search" are different
                       situations; showing the first when the second is true is
                       how people conclude their data is gone. */}

@@ -23,6 +23,7 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Plus, Upload, Trash2, Package } from 'lucide-react';
+import { useDiscardGuard } from './useDiscardGuard';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const MAX_PHOTOS = 6;
@@ -38,6 +39,9 @@ export default function CatalogueAddProduct({ open, api, toast, onClose, onCreat
   const [queued, setQueued] = useState([]);      // { file, url }
   const [busy, setBusy] = useState('');
   const fileRef = useRef(null);
+  /* A click on the dimmed area closes only if it starts there too, and asks
+     first once something is typed (components/useDiscardGuard). */
+  const guard = useDiscardGuard(onClose, { disabled: !!busy });
 
   /* Object URLs are created for the previews and have to be released, or
      opening this dialog a dozen times leaves a dozen images in memory. */
@@ -169,11 +173,11 @@ export default function CatalogueAddProduct({ open, api, toast, onClose, onCreat
   };
 
   return (
-    <div role="dialog" aria-label="Add a product" onClick={busy ? undefined : onClose} style={{
+    <div role="dialog" aria-label="Add a product" {...guard.backdropProps} style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 85,
       display: 'flex', justifyContent: 'flex-end',
     }}>
-      <form onClick={e => e.stopPropagation()} onSubmit={create} style={{
+      <form {...guard.panelProps} onSubmit={create} style={{
         width: 'min(560px, 100%)', height: '100%', overflowY: 'auto',
         background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column',
       }}>

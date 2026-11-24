@@ -22,6 +22,7 @@ import { getToken } from '../lib/apiAuth';
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtINR, fmtDate } from '../lib/format';
 import { PAYMENT_MODES, DEFAULT_PAYMENT_MODE } from '../lib/paymentModes';
+import { useDiscardGuard } from '../components/useDiscardGuard';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 /* Paise always as two digits (lib/format). */
@@ -62,6 +63,10 @@ export default function Payables() {
   }, [debounced, offset]);
   useEffect(() => { load(); }, [load]);
 
+  /* Selecting the amount by dragging past the box's edge used to close it;
+     now a click outside closes only if it starts there, and asks once
+     something is typed (components/useDiscardGuard). */
+  const payGuard = useDiscardGuard(() => setPayBill(null), { message: "The payment isn't recorded yet." });
   const openPay = (b) => { setPayBill(b); setForm({ amount: String(b.outstanding), mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' }); };
   /* One click, one payment — a double click recorded a part payment twice.
      The same amount again within two minutes is asked about. */
@@ -173,7 +178,7 @@ export default function Payables() {
           <div style={{ ...card, overflow: 'hidden' }}>
             {data.bills.length === 0 ? (
               <div style={{ padding: 44, textAlign: 'center', color: 'var(--text-muted)' }}>
-                <Wallet size={38} style={{ opacity: 0.35, marginBottom: 10 }} />
+                <Wallet size={38} style={{ opacity: 0.35, display: 'block', margin: '0 auto 10px' }} />
                 {data.isFiltered ? (
                   <>
                     <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No bills match “{search}”</div>
@@ -181,7 +186,7 @@ export default function Payables() {
                   </>
                 ) : (
                   <>
-                    <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Nothing outstanding 🎉</div>
+                    <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Nothing outstanding</div>
                     <div style={{ fontSize: '0.85rem', marginTop: 4 }}>A vendor's bill shows here once you record it against the goods that arrived, on <Link to="/grn" style={{ color: 'var(--brand-amber)', fontWeight: 600 }}>Goods received</Link>.</div>
                   </>
                 )}
@@ -249,8 +254,8 @@ export default function Payables() {
 
       {/* pay modal */}
       {payBill && (
-        <div onClick={() => setPayBill(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, ...card, boxShadow: 'var(--shadow-md)', padding: 22 }}>
+        <div {...payGuard.backdropProps} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div {...payGuard.panelProps} style={{ width: '100%', maxWidth: 420, ...card, boxShadow: 'var(--shadow-md)', padding: 22 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>Record payment</div>
               <button onClick={() => setPayBill(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>

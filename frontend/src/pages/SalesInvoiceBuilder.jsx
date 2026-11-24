@@ -28,6 +28,7 @@ import { PartySelect } from '../components/QuickAddParty';
 import { lineProblems, discountAmount, adjustmentProblems, money } from '../lib/lineChecks';
 import { GST_STATES, stateCode, stateName } from '../lib/gstStates';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 /* a minus goes before the rupee sign: −₹21.00, never ₹-21.00 */
@@ -119,6 +120,7 @@ function numberProblem(n) {
 }
 
 export default function SalesInvoiceBuilder() {
+  const { confirm } = useConfirm();
   const { coId, id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -180,7 +182,28 @@ export default function SalesInvoiceBuilder() {
     if (!cid) { setF(null); return; }
     const r = await fetch(`${API}/sales-invoices/prefill-customer/${cid}`);
     if (!r.ok) { toast.error('Could not load that customer'); return; }
-    fromPrefill(await r.json());
+    const d = await r.json();
+    /* A different customer changes who the invoice is for, not what is on
+       it. Picking one used to rebuild the whole form: the lines, notes,
+       terms, discount and e-way bill number typed for the wrong customer
+       were wiped, though a customer brings no lines of its own. Now only
+       their details change: bill-to, ship-to, place of supply, due date. */
+    setCtx(d);
+    setSupplier(d.supplierStateCode || null);
+    setSuggested(d.nextNumber || '');
+    const next = mapPrefillToForm(d);
+    setF(prev => (prev ? {
+      ...next,
+      invoiceNumber: prev.invoiceNumber || next.invoiceNumber,
+      invoiceDate: prev.invoiceDate || next.invoiceDate,
+      gstRate: prev.gstRate ?? next.gstRate,
+      ewayBillNo: prev.ewayBillNo, discount: prev.discount, discountMode: prev.discountMode, roundOff: prev.roundOff,
+      notes: prev.notes || next.notes, terms: prev.terms || next.terms,
+    } : next));
+    const typed = (it) => ['description', 'quantity', 'rate', 'hsn'].some(k => String(it[k] ?? '').trim());
+    setItems(list => (list.some(typed) || !(d.items || []).length
+      ? (list.length ? list : [blankLine()])
+      : d.items.map(it => ({ ...blankLine(), ...it, quantity: it.quantity ?? '', rate: it.rate ?? '', hsn: it.hsn || '' }))));
   };
 
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e?.target ? (e.target.type === 'checkbox' ? e.target.checked : e.target.value) : e }));
@@ -260,7 +283,7 @@ export default function SalesInvoiceBuilder() {
         }));
       res = await send(false);
       let d = await res.json().catch(() => ({}));
-      if (res.status === 409 && d.needsConfirm && window.confirm(`${d.error}\n\nBill it anyway?`)) {
+      if (res.status === 409 && d.needsConfirm && (await confirm({ title: d.error, message: 'Bill it anyway?', confirmLabel: 'Bill it anyway' }))) {
         res = await send(true);
         d = await res.json().catch(() => ({}));
       }

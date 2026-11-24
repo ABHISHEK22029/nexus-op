@@ -579,7 +579,7 @@ const until = async (fn, ms = 15000) => {
     await fill(await ctl('exp', /^Description/), expDesc);
     await shot('09-expense-form');
     await click('[data-bp="exp"] button[type="submit"]', /Add/);
-    ok(await waitToast(/Expenses added/), 'Add says the expense was added');
+    ok(await waitToast(/Expense added/), 'Add says the expense was added');
     const exp = await until(async () => (await api('GET', '/expenses')).find(e => e.description === expDesc));
     ok(exp && r2(exp.amount) === 3450.5 && exp.category === 'Freight / Transport' && exp.expense_date === istDay() && exp.paid_to === 'VRL Logistics' && exp.reference === 'LR-88231',
       `stored: ₹${exp?.amount}, ${exp?.category}, ${exp?.expense_date}, paid to ${exp?.paid_to}, ref ${exp?.reference}`);

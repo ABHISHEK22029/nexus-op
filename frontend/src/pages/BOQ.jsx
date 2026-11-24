@@ -22,9 +22,11 @@ import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const BOQ = () => {
+  const { confirm } = useConfirm();
   const { activeProject } = useProject();
   const toast = useToast();
   const { can } = usePermissions();
@@ -101,7 +103,7 @@ const BOQ = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this BOQ item?')) return;
+    if (!(await confirm({ title: 'Delete this BOQ item?', message: "It is removed from the bill of quantities. This can't be undone.", confirmLabel: 'Delete item', tone: 'danger' }))) return;
     try {
       await fetch(`${API}/boq/${id}`, {
         method: 'DELETE'

@@ -20,9 +20,11 @@ import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const WorkOrders = () => {
+  const { confirm } = useConfirm();
   const { activeProject } = useProject();
   const toast = useToast();
   const { can } = usePermissions();
@@ -80,7 +82,7 @@ const WorkOrders = () => {
   };
 
   const handleDelete = async (w) => {
-    if (!window.confirm('Delete this work order?')) return;
+    if (!(await confirm({ title: 'Delete this work order?', message: "This can't be undone.", confirmLabel: 'Delete work order', tone: 'danger' }))) return;
     try {
       await axios.delete(`${API}/work-orders/${w.id}`);
       q.reload();

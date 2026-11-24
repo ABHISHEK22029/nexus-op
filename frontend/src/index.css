@@ -1314,7 +1314,7 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
   display: flex; align-items: flex-start; justify-content: center;
   padding: 10vh 16px 16px;
   background: hsl(222 40% 8% / 0.45);
-  animation: fade-in 120ms ease;
+  animation: fade-in-fast 120ms ease;
 }
 .gs-panel {
   width: 100%; max-width: 640px; max-height: 72vh;
@@ -1408,7 +1408,7 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 .cd-overlay {
   position: fixed; inset: 0; z-index: 600;
   display: flex; align-items: center; justify-content: center; padding: 16px;
-  background: hsl(222 40% 8% / 0.45); animation: fade-in 120ms ease;
+  background: hsl(222 40% 8% / 0.45); animation: fade-in-fast 120ms ease;
 }
 .cd-panel {
   width: 100%; max-width: 440px;
@@ -1445,6 +1445,67 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 @media (max-width: 480px) { .cd-field { margin-left: 0; } .cd-actions { flex-direction: column-reverse; } .cd-btn { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .cd-overlay { animation: none; } }
 
+/* ── Sign in again (components/SessionGate) ─────────────────────────────
+   Over everything but the toasts. The page behind is blurred, not just
+   dimmed: the session has ended, so its figures shouldn't stay readable to
+   whoever walks up to the screen. It is all still there underneath. */
+.sg-overlay {
+  position: fixed; inset: 0; z-index: 5000;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: hsl(222 40% 8% / 0.55);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  animation: fade-in-fast 120ms ease;
+}
+.sg-panel {
+  width: 100%; max-width: 420px;
+  background: var(--bg-surface); color: var(--text-primary);
+  border: 1px solid var(--border-default); border-radius: 14px;
+  box-shadow: 0 24px 60px hsl(222 40% 8% / 0.32);
+  padding: 20px 20px 16px;
+}
+.sg-head { display: flex; gap: 14px; align-items: flex-start; }
+.sg-icon {
+  width: 36px; height: 36px; border-radius: 10px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--brand-amber); background: var(--brand-amber-muted);
+}
+.sg-title { margin: 6px 0 0; font-size: 1rem; font-weight: 700; line-height: 1.35; text-wrap: balance; }
+.sg-msg { margin: 6px 0 0; font-size: 0.86rem; color: var(--text-secondary); line-height: 1.55; }
+.sg-form { margin: 16px 0 0; display: grid; gap: 12px; }
+.sg-who { display: grid; gap: 2px; padding: 9px 12px; border-radius: 8px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
+.sg-email { font-size: 0.88rem; font-weight: 600; overflow-wrap: anywhere; }
+.sg-field { display: grid; gap: 6px; }
+.sg-label { font-size: 0.76rem; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.01em; }
+.sg-field input { width: 100%; box-sizing: border-box; }
+.sg-pass { position: relative; display: block; }
+.sg-pass input { padding-right: 40px; }
+.sg-eye {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.sg-eye:hover { color: var(--text-primary); background: var(--bg-elevated); }
+.sg-eye:focus-visible, .sg-link:focus-visible { outline: 2px solid var(--brand-amber); outline-offset: 2px; }
+.sg-err { font-size: 0.8rem; color: var(--accent-red); }
+.sg-actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+.sg-spacer { flex: 1; }
+.sg-link { font-size: 0.8rem; color: var(--text-secondary); text-decoration: underline; text-underline-offset: 2px; border-radius: 4px; }
+.sg-link:hover { color: var(--text-primary); }
+.sg-actions .cd-btn[disabled] { opacity: 0.7; cursor: progress; }
+@media (max-width: 480px) {
+  .sg-actions { flex-direction: column-reverse; align-items: stretch; }
+  .sg-actions .cd-btn { width: 100%; }
+  .sg-spacer { display: none; }
+  .sg-link { text-align: center; padding: 6px 0; }
+}
+@media (prefers-reduced-motion: reduce) { .sg-overlay { animation: none; } }
+[data-theme="dark"] .sg-overlay { background: hsl(225 40% 3% / 0.7); }
+[data-theme="dark"] .sg-panel {
+  background: var(--bg-elevated); border-color: var(--bg-overlay);
+  box-shadow: 0 24px 64px hsl(225 40% 2% / 0.6);
+}
+[data-theme="dark"] .sg-who { background: var(--bg-surface); }
+
 /* Dark mode: the page behind a box dims further, and the box sits a step
    lighter with a firmer edge, so it reads as lifted off the page. */
 [data-theme="dark"] .cd-overlay,
@@ -1454,4 +1515,41 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
   background: var(--bg-elevated);
   border-color: var(--bg-overlay);
   box-shadow: 0 24px 64px hsl(225 40% 2% / 0.6);
+}
+
+/* ── Ready-made views above a list (QuickViews) ──────────────────────────
+   Tabs, not chips: one is always chosen ("All" by default), and choosing
+   another replaces it. The chosen one carries the amber underline. */
+.qv {
+  display: flex; gap: 2px; margin: 0 0 12px; overflow-x: auto;
+  border-bottom: 1px solid var(--border-default);
+  scrollbar-width: none;
+}
+.qv::-webkit-scrollbar { display: none; }
+.qv-tab {
+  display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto;
+  padding: 8px 12px 9px; margin-bottom: -1px;
+  background: none; border: none; border-bottom: 2px solid transparent;
+  font: inherit; font-size: 0.84rem; font-weight: 600; color: var(--text-muted);
+  cursor: pointer; white-space: nowrap;
+}
+.qv-tab:hover { color: var(--text-primary); }
+.qv-tab:focus-visible { outline: 2px solid var(--brand-amber); outline-offset: -2px; border-radius: 6px; }
+.qv-tab.is-active { color: var(--text-primary); border-bottom-color: var(--brand-amber); }
+.qv-count {
+  min-width: 20px; padding: 1px 7px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums;
+  background: hsl(30 14% 91%); color: var(--text-muted);
+}
+.qv-tab.is-active .qv-count { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+.qv-count.qv-late { background: hsl(0 84% 60% / 0.12); color: hsl(0 72% 45%); }
+.qv-count.qv-soon { background: hsl(38 92% 50% / 0.14); color: hsl(32 90% 38%); }
+[data-theme="dark"] .qv-count { background: var(--bg-overlay); }
+[data-theme="dark"] .qv-tab.is-active .qv-count { color: hsl(38 92% 62%); }
+[data-theme="dark"] .qv-count.qv-late { color: hsl(0 85% 70%); background: hsl(0 84% 60% / 0.18); }
+[data-theme="dark"] .qv-count.qv-soon { color: hsl(38 92% 62%); background: hsl(38 92% 50% / 0.16); }
+
+/* Boxes and toasts appear without motion for anyone who has asked for less. */
+@media (prefers-reduced-motion: reduce) {
+  .cd-overlay, .gs-overlay { animation: none; }
 }

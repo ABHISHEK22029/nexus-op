@@ -35,6 +35,7 @@ import StockLinkDialog from '../components/StockLinkDialog';
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtCompactQty, fmtINR, fmtQty } from '../lib/format';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 /* Semantic colour, not theme colour — these read on cream and on charcoal
@@ -47,6 +48,7 @@ const TONE = {
 };
 
 export default function Inventory() {
+  const { confirm, prompt } = useConfirm();
   const toast = useToast();
   const [inventory, setInventory] = useState([]);
   const [search, setSearch] = useState('');
@@ -91,7 +93,7 @@ export default function Inventory() {
   const reloadAll = () => { load(); loadLists(); };
 
   const renameList = async (l) => {
-    const name = window.prompt('Rename the stock list', l.name);
+    const name = await prompt({ title: 'Rename the stock list', label: 'Name', initial: l.name, confirmLabel: 'Rename', required: true, requiredMessage: 'Give the list a name.' });
     if (name == null || !name.trim() || name.trim() === l.name) return;
     try {
       await axios.patch(`${API_BASE}/inventory/lists/${l.id}`, { name: name.trim() });
@@ -99,7 +101,7 @@ export default function Inventory() {
     } catch (err) { toast.error(err.response?.data?.error || 'Could not rename the list'); }
   };
   const removeList = async (l) => {
-    if (!window.confirm(`Remove the stock list “${l.name}”? Only an empty list can be removed.`)) return;
+    if (!(await confirm({ title: `Remove the stock list “${l.name}”?`, message: 'Only an empty list can be removed.', confirmLabel: 'Remove list', tone: 'danger' }))) return;
     try {
       await axios.delete(`${API_BASE}/inventory/lists/${l.id}`);
       toast.success(`“${l.name}” removed`); setListFilter('all'); reloadAll();

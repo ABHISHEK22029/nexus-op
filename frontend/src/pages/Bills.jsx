@@ -17,10 +17,12 @@ import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtINR } from '../lib/format';
 
+import { useConfirm } from '../context/ConfirmContext';
 // The state machine the server actually enforces (BILL_TRANSITIONS in index.js).
 const BILL_STATUSES = ['Draft', 'Under Review', 'Approved', 'Paid', 'Rejected'];
 
 const Bills = () => {
+  const { confirm } = useConfirm();
   const navigate = useNavigate();
   const toast = useToast();
   const { can } = usePermissions();
@@ -84,7 +86,7 @@ const Bills = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this bill? This cannot be undone.')) return;
+    if (!(await confirm({ title: 'Delete this bill?', message: "It is removed for good. This can't be undone.", confirmLabel: 'Delete bill', tone: 'danger' }))) return;
     try {
         await axios.delete(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/bills/${id}`);
         toast.success('Bill deleted');

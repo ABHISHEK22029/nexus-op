@@ -8,11 +8,12 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files, Factory } from 'lucide-react';
+import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files, Factory, Lock } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useProject } from '../context/ProjectContext';
 import { usePermissions } from '../context/PermissionContext';
-import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
+import { useListQuery, ListToolbar, Pagination, EmptyState, QuickViews, BulkBar, SelectAllCell, SelectCell } from '../components/ListToolbar';
+import { useBulkAction } from '../components/useBulkAction';
 import OrderReadiness from '../components/OrderReadiness';
 import { today } from '../lib/dates';
 import UnitSelect from '../components/UnitSelect';
@@ -56,6 +57,7 @@ export default function CustomerOrders() {
   // The orders list is the hook's job now — searched and paged server-side.
   const q = useListQuery('customer-orders', { pageSize: 25 });
   const orders = q.rows;
+  const bulk = useBulkAction(q, 'customer-orders');
 
   /* Only the form's pick-lists load whole here; they are pickers, not lists,
      and a form control that paginates is a form control nobody can use. */
@@ -127,9 +129,16 @@ export default function CustomerOrders() {
   };
   /* Refusals are shown: both used to ignore the answer, so a delete the
      server refused looked like a click that did nothing. */
-  const setStatus = async (id, status) => {
+  /* A status is changed at once, with Undo on the toast for seven seconds,
+     rather than an "are you sure" first: it can always be put back. */
+  const setStatus = async (id, status, undoing = false) => {
+    const before = orders.find(o => o.id === id);
     const r = await fetch(`${API}/customer-orders/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     if (!r.ok) { const d = await r.json().catch(() => ({})); toast.error(d.error || 'Could not change the status'); }
+    else if (undoing) toast.success(`${before?.order_number || 'The order'} is back to ${status}`);
+    else if (before && before.status !== status) {
+      toast.undo(`${before.order_number} marked ${status}`, () => setStatus(id, before.status, true));
+    }
     load();
   };
   const del = async (o) => {
@@ -274,6 +283,11 @@ export default function CustomerOrders() {
         </div>
       )}
 
+      <QuickViews q={q} views={[
+          { key: 'due_week', label: 'Due this week', hint: 'Ships within 7 days, not delivered yet', tone: 'soon' },
+          { key: 'late', label: 'Ship date passed', hint: 'Past the date it was to ship by, not delivered yet', tone: 'late' },
+          { key: 'to_bill', label: 'To bill', hint: 'Sent on a challan but not fully invoiced yet', tone: 'soon' },
+        ]} />
       <ListToolbar
         q={q}
         placeholder="Search order no., customer, PO ref…"
@@ -294,9 +308,19 @@ export default function CustomerOrders() {
         ) : (
           /* On a phone the table scrolls inside its card; the page does not. */
           <div style={{ overflowX: 'auto' }}>
+          {canWrite && q.selection.count > 0 && <div style={{ padding: '10px 10px 0' }}><BulkBar q={q} noun="orders" actions={[{
+            label: 'Close', icon: <Lock size={13} />,
+            onClick: (ids) => bulk(ids, {
+              action: 'close', verb: 'closed', noun: ['order', 'orders'],
+              title: (n) => `Close ${n} order${n === 1 ? '' : 's'}?`,
+              message: 'A closed order is finished: it leaves the work-to-do views. Its status can be changed back.',
+              confirmLabel: (n) => `Close ${n}`,
+            }),
+          }]} /></div>}
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
+                {canWrite && <SelectAllCell q={q} />}
                 {['', 'Order', 'Customer', 'PO Ref', 'Items', 'Status', ''].map((h, i) => <th key={i} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{h}</th>)}
               </tr>
             </thead>
@@ -304,6 +328,7 @@ export default function CustomerOrders() {
               {orders.map(o => (
                 <React.Fragment key={o.id}>
                   <tr style={{ borderTop: '1px solid var(--border-subtle)', cursor: 'pointer' }} onClick={() => toggle(o.id)}>
+                    {canWrite && <SelectCell q={q} id={o.id} />}
                     <td style={{ padding: '11px 14px', color: 'var(--text-muted)' }}>{expanded === o.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</td>
                     <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                       {o.order_number}
@@ -339,7 +364,7 @@ export default function CustomerOrders() {
                     </td>
                   </tr>
                   {expanded === o.id && detail[o.id] && (
-                    <tr><td colSpan={7} style={{ padding: '0 14px 14px', background: 'var(--bg-elevated)' }}>
+                    <tr><td colSpan={canWrite ? 8 : 7} style={{ padding: '0 14px 14px', background: 'var(--bg-elevated)' }}>
                       <OrderPanel order={detail[o.id]} canWrite={canWrite} projectId={activeProject?.id} onChanged={() => { refreshDetail(o.id); q.reload(); }} />
                     </td></tr>
                   )}

@@ -52,7 +52,9 @@ const NAME = `STOCKTEST-${Date.now().toString(36).toUpperCase()}`;
     count: [...document.querySelectorAll('button')].filter(b => /^count$/i.test(b.innerText.trim())).length,
   }));
   ok(buttons.add, 'an "Add stock" button is on the page');
-  ok(buttons.count > 0, `each card offers "Count" (${buttons.count} found)`);
+  /* A company with no stock yet has no cards to count: asked again once
+     the item below has been added. */
+  if (buttons.count > 0) ok(true, `each card offers "Count" (${buttons.count} found)`);
 
   /* ── add a stock item through the form ── */
   await page.evaluate(() => {
@@ -101,6 +103,10 @@ const NAME = `STOCKTEST-${Date.now().toString(36).toUpperCase()}`;
   const made = rows.find(r => r.itemName === NAME);
   ok(!!made, `the item exists in /inventory after submitting (${NAME})`);
   ok(Number(made?.quantity) === 250, `opening quantity stored as 250 → ${made?.quantity}`);
+  if (!buttons.count) {
+    const counts = await page.evaluate(() => [...document.querySelectorAll('button')].filter(b => /^count$/i.test(b.innerText.trim())).length);
+    ok(counts > 0, `each card offers "Count" (${counts} found, after the first item)`);
+  }
 
   let moves = [];
   if (made) {

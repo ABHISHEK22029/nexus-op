@@ -20,6 +20,7 @@
    Imported once for its side effects (main.jsx), after apiAuth.js.
    ══════════════════════════════════════════════════════════ */
 import axios from 'axios';
+import { sessionGateOpen } from './apiAuth.js';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const SLOW_MS = 5000;
@@ -42,7 +43,9 @@ const hideNote = () => { if (note) { note.remove(); note = null; } };
 
 const track = () => {
   let flagged = false;
-  const timer = setTimeout(() => { flagged = true; slow++; showNote(); }, SLOW_MS);
+  /* A request waiting at the sign-in box (lib/apiAuth.js) is not a slow
+     server: no "connecting" notice for it. */
+  const timer = setTimeout(() => { flagged = true; slow++; if (!sessionGateOpen()) showNote(); }, SLOW_MS);
   return () => {
     clearTimeout(timer);
     if (flagged && --slow <= 0) { slow = 0; hideNote(); }

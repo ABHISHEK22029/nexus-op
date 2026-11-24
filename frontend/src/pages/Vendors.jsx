@@ -27,6 +27,7 @@ import PageTabs, { useActiveTab } from '../components/PageTabs';
 import { getToken } from '../lib/apiAuth';
 import VendorSupplies from './VendorSupplies';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const TABS = [
@@ -58,6 +59,7 @@ export default function Vendors() {
 
 /* ── Tab 1: the directory ─────────────────────────────────── */
 function Directory() {
+  const { confirm } = useConfirm();
   const navigate = useNavigate();
   const toast = useToast();
   const { can } = usePermissions();
@@ -76,7 +78,7 @@ function Directory() {
 
   const del = async (e, vendor) => {
     e.stopPropagation();
-    if (!window.confirm(`Delete vendor "${vendor.name}"? This cannot be undone.`)) return;
+    if (!(await confirm({ title: `Delete the vendor “${vendor.name}”?`, message: "This can't be undone.", confirmLabel: 'Delete vendor', tone: 'danger' }))) return;
     const token = getToken();
     const res = await fetch(`${API}/vendors/${vendor.id}`, {
       method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -123,7 +125,7 @@ function Directory() {
      orders, some will refuse and some will not, and the user needs to know
      which. */
   const bulkDelete = async (ids) => {
-    if (!window.confirm(`Delete ${ids.length} vendor${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    if (!(await confirm({ title: `Delete ${ids.length} vendor${ids.length === 1 ? '' : 's'}?`, message: "This can't be undone.", confirmLabel: `Delete ${ids.length === 1 ? 'vendor' : 'vendors'}`, tone: 'danger' }))) return;
     const token = getToken();
     const results = await Promise.all(ids.map(async id => {
       const res = await fetch(`${API}/vendors/${id}`, {

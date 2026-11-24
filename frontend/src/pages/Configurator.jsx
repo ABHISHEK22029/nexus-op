@@ -36,6 +36,7 @@ import CatalogueSettings from '../components/CatalogueSettings';
 import { usePermissions } from '../context/PermissionContext';
 import { getToken } from '../lib/apiAuth';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const api = async (path, opts = {}) => {
@@ -238,6 +239,7 @@ function HealthBanner() {
 
 /* ── People ──────────────────────────────────────────────── */
 function People() {
+  const { prompt } = useConfirm();
   const toast = useToast();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -289,7 +291,7 @@ function People() {
   };
 
   const resetPassword = async (u) => {
-    const pw = window.prompt(`New password for ${u.name || u.email}? They should change it after signing in.`);
+    const pw = await prompt({ title: `New password for ${u.name || u.email}`, message: 'Tell them the password yourself. They should change it after signing in.', label: 'New password', placeholder: 'At least 8 characters', confirmLabel: 'Set password' });
     if (!pw) return;
     try {
       await api(`/admin/users/${u.id}/reset-password`, { method: 'POST', body: JSON.stringify({ password: pw }) });
@@ -340,10 +342,15 @@ function Roles() {
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const load = useCallback(async () => {
+  /* After saving one role, or adding a new one, the other roles keep their
+     unsaved ticks. Reloading used to clear every draft, so saving Sales
+     threw away the changes still waiting on Finance. */
+  const load = useCallback(async (opts) => {
+    const keep = opts && opts.keep === true;
     try {
       const [r, c] = await Promise.all([api('/admin/roles'), api('/admin/catalogue')]);
-      setData(r); setCat(c); setDraft({}); setErr('');
+      setData(r); setCat(c); setErr('');
+      setDraft(d => { if (!keep) return {}; const rest = { ...d }; if (opts.saved) delete rest[opts.saved]; return rest; });
     } catch (e) { setErr(e.message); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -377,7 +384,7 @@ function Roles() {
         method: 'PATCH', body: JSON.stringify({ permissions: draft[role] }),
       });
       toast.success(`${role} updated`);
-      load();
+      load({ keep: true, saved: role });
     } catch (e) { toast.error(e.message); }
     finally { setSaving(false); }
   };
@@ -399,7 +406,7 @@ function Roles() {
         </span>
       </div>
 
-      {creating && <NewRole roles={data.roles} onDone={() => { setCreating(false); load(); }} onCancel={() => setCreating(false)} />}
+      {creating && <NewRole roles={data.roles} onDone={() => { setCreating(false); load({ keep: true }); }} onCancel={() => setCreating(false)} />}
 
       {data.legacyRolesInUse.length > 0 && (
         <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '11px 14px', fontSize: '0.84rem' }}>
@@ -528,6 +535,7 @@ function Roles() {
 }
 
 function DeleteRole({ role, onDone }) {
+  const { confirm } = useConfirm();
   const toast = useToast();
   if (role.isSystem) {
     return <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>built-in</span>;
@@ -538,7 +546,7 @@ function DeleteRole({ role, onDone }) {
       disabled={blocked}
       title={blocked ? `${role.userCount} user(s) still assigned — move them first` : 'Delete this role'}
       onClick={async () => {
-        if (!window.confirm(`Delete the role “${role.label}”?`)) return;
+        if (!(await confirm({ title: `Delete the role “${role.label}”?`, message: "It is removed from this company's roles. This can't be undone.", confirmLabel: 'Delete role', tone: 'danger' }))) return;
         try { await api(`/admin/roles/${encodeURIComponent(role.role)}`, { method: 'DELETE' }); toast.success('Role deleted'); onDone(); }
         catch (e) { toast.error(e.message); }
       }}

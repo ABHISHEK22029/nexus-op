@@ -46,8 +46,15 @@ const { authenticate, requireRole } = require('./middleware/auth');
    long after module load — a distinction too subtle to rely on. */
 const { can, isCrossTenant, READ, WRITE, DELETE } = require('./shared/roles');
 const { ACTION_FOR_METHOD, allow } = require('./middleware/permissions');
+const { runBulk, callRoute } = require('./shared/bulk');
 const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
+/* Ready-made views on Purchase orders (?view=): the sign-off queue, and what
+   is on its way (the same POs that show a Receive button). */
+const PO_VIEWS = {
+  approval: `approval_status = 'Pending Approval' AND status = 'Pending'`,
+  to_receive: `status IN ('Dispatched','Partially Received')`,
+};
 const { andOwner, assertOwned } = require('./shared/ownerScope');
 const { assertRefs } = require('./shared/ownedRefs');
 const { docNumber, loadProfile, nextSeq, allocatePoNumber } = require('./shared/docNumber');
@@ -75,7 +82,9 @@ app.use((req, res, next) => {
   if (process.env.RENDER) res.set('Strict-Transport-Security', 'max-age=31536000');
   next();
 });
-app.use(cors());
+/* The app reads X-Session-Token (a renewed session, middleware/auth.js);
+   a browser only lets it see headers named here. */
+app.use(cors({ exposedHeaders: ['X-Session-Token'] }));
 app.use(express.json());
 
 /* ══════════════════════════════════════════════════════════
@@ -710,6 +719,7 @@ app.get('/po', async (req, res) => {
       query: req.query,
       searchColumns: ["poNumber", "vendorName", "itemName", "workOrderName", "status", "quoteRef"],
       filterColumns: ["status", "approval_status", "projectId", "vendorId", "workOrderId"],
+      views: PO_VIEWS,
       allowedSort: ["id", "poNumber", "itemName", "quantity", "unitPrice", "status", "approval_status", "createdAt"],
       defaultSort: 'id', defaultDir: 'DESC',
       /* Order value from the lines (above). It was qty × header price, and
@@ -973,11 +983,10 @@ app.put('/company-profile', allow('company-profile', 'write'), async (req, res) 
        first-run screen OVERWROTE the first business's name, GSTIN and bank
        details rather than creating its own. */
     const ownerId = req.user?.orgId ?? null;
-    const existing = await db.query(
-      ownerId != null
-        ? 'SELECT * FROM company_profile WHERE owner_id = $1 LIMIT 1'
-        : 'SELECT * FROM company_profile ORDER BY id LIMIT 1',
-      ownerId != null ? [ownerId] : []);
+    /* Never "the first profile in the table": that is another company's
+       name, GSTIN and bank details (migration 046). No company, no save. */
+    if (ownerId == null) return res.status(401).json({ error: 'Sign in again to save your company details.' });
+    const existing = await db.query('SELECT * FROM company_profile WHERE owner_id = $1 LIMIT 1', [ownerId]);
     /* Phone, email, GSTIN, PAN and bank details are printed on every invoice;
        a malformed IFSC or account number is a payment that bounces. Values
        already stored and sent back unchanged are not re-checked. */
@@ -1049,7 +1058,7 @@ app.patch('/po/:id/approve', async (req, res) => {
 });
 
 /* ── Approval sign-off (Admin/Manager) + automation settings ── */
-app.patch('/po/:id/approval', allow('po-approval', 'write'), async (req, res) => {
+const signOffPo = async (req, res) => {
   const { decision, remark } = req.body;
   if (!['Approved', 'Rejected'].includes(decision)) return res.status(400).json({ error: 'decision must be Approved or Rejected' });
   try {
@@ -1065,6 +1074,27 @@ app.patch('/po/:id/approval', allow('po-approval', 'write'), async (req, res) =>
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+};
+app.patch('/po/:id/approval', allow('po-approval', 'write'), signOffPo);
+
+/* Sign off several POs at once — the queue the page exists to clear.
+   Only a PO that is waiting for sign-off is signed off; the preview says
+   why any other is skipped. Same permission as one sign-off. */
+app.post('/po/bulk', allow('po-approval', 'write'), async (req, res) => {
+  if (req.body?.action !== 'sign_off') return res.status(400).json({ error: 'Unknown action. Try sign_off.' });
+  const org = req.user?.orgId ?? req.user?.id;
+  return runBulk(req, res, {
+    check: async (id) => {
+      const po = (await db.query('SELECT "poNumber", status, approval_status FROM purchase_orders WHERE id = $1 AND owner_id = $2', [id, org])).rows[0];
+      if (!po) return null;
+      const label = po.poNumber || `PO #${id}`;
+      if (po.approval_status === 'Rejected') return { label, reason: 'Rejected in sign-off' };
+      if (po.approval_status !== 'Pending Approval') return { label, reason: po.approval_status === 'Approved' ? 'Already signed off' : "Doesn't need sign-off" };
+      if (po.status !== 'Pending') return { label, reason: `Already ${po.status}` };
+      return { label };
+    },
+    apply: (id) => callRoute(signOffPo, req, { params: { id: String(id) }, body: { decision: 'Approved' } }),
+  });
 });
 
 app.get('/automation-settings', async (req, res) => {
@@ -1916,6 +1946,20 @@ app.get('/customer-orders',            salesController.getOrders);
 app.post('/customer-orders',           salesController.createOrder);
 app.get('/customer-orders/:id',        salesController.getOrderById);
 app.patch('/customer-orders/:id/status', salesController.updateOrderStatus);
+/* Close several orders at once (finished work off the list). */
+app.post('/customer-orders/bulk', async (req, res) => {
+  if (req.body?.action !== 'close') return res.status(400).json({ error: 'Unknown action. Try close.' });
+  const org = req.user?.orgId ?? req.user?.id;
+  return runBulk(req, res, {
+    check: async (id) => {
+      const o = (await db.query('SELECT order_number, status FROM customer_orders WHERE id = $1 AND owner_id = $2', [id, org])).rows[0];
+      if (!o) return null;
+      const label = o.order_number || `Order #${id}`;
+      return o.status === 'Closed' ? { label, reason: 'Already closed' } : { label };
+    },
+    apply: (id) => callRoute(salesController.updateOrderStatus, req, { params: { id: String(id) }, body: { status: 'Closed' } }),
+  });
+});
 app.patch('/customer-orders/:id',      salesController.updateOrder);
 app.delete('/customer-orders/:id',     salesController.deleteOrder);
 
@@ -1973,6 +2017,22 @@ app.post('/sales-invoices/:id/payment', salesInvoiceController.addPayment);
 /* DELETE, so the RBAC gate above checks sales-invoices delete. */
 app.delete('/sales-invoices/:id/payments/:paymentId', salesInvoiceController.reversePayment);
 app.patch('/sales-invoices/:id/status', salesInvoiceController.setStatus);
+/* Mark several drafts as sent at once. */
+app.post('/sales-invoices/bulk', async (req, res) => {
+  if (req.body?.action !== 'mark_sent') return res.status(400).json({ error: 'Unknown action. Try mark_sent.' });
+  const org = req.user?.orgId ?? req.user?.id;
+  return runBulk(req, res, {
+    check: async (id) => {
+      const inv = (await db.query('SELECT invoice_number, status, COALESCE(amount_paid, 0) AS paid FROM sales_invoices WHERE id = $1 AND owner_id = $2', [id, org])).rows[0];
+      if (!inv) return null;
+      const label = inv.invoice_number || `Invoice #${id}`;
+      if (inv.status !== 'Draft') return { label, reason: inv.status === 'Sent' ? 'Already sent' : `It is ${inv.status}` };
+      if (Number(inv.paid) > 0.005) return { label, reason: 'Money is already in; its status follows the payments' };
+      return { label };
+    },
+    apply: (id) => callRoute(salesInvoiceController.setStatus, req, { params: { id: String(id) }, body: { status: 'Sent' } }),
+  });
+});
 app.patch('/sales-invoices/:id',        salesInvoiceController.update);
 app.delete('/sales-invoices/:id',      salesInvoiceController.remove);
 

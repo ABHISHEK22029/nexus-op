@@ -14,8 +14,12 @@
 import React, { useState } from 'react';
 import { X, Save } from 'lucide-react';
 import { formProblems } from '../lib/validators';
+import { useDiscardGuard } from './useDiscardGuard';
 
 export default function PersonEditor({ person, people, onCancel, onSave }) {
+  /* A click on the dimmed area closes only if it starts there too, and asks
+     first once something is typed (components/useDiscardGuard). */
+  const guard = useDiscardGuard(onCancel);
   const [f, setF] = useState({
     id: person.id,
     name: person.name || '',
@@ -42,13 +46,13 @@ export default function PersonEditor({ person, people, onCancel, onSave }) {
 
   return (
     <div
-      onClick={onCancel}
+      {...guard.backdropProps}
       style={{
         position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,0.45)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
       }}
     >
-      <div onClick={e => e.stopPropagation()} style={{
+      <div {...guard.panelProps} style={{
         width: '100%', maxWidth: 540, background: 'var(--bg-surface)',
         border: '1px solid var(--border-default)', borderRadius: 16, padding: 22,
         maxHeight: '90vh', overflowY: 'auto',

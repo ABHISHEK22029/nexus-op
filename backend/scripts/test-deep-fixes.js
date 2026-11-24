@@ -215,6 +215,23 @@ const member = async (owner, tag, role) => {
     const igEdit = await call(A, 'PATCH', `/sales-invoices/${igInv.id}`, { items: [{ description: 'Service', quantity: 2, rate: 1000, uom: 'nos' }] });
     const igAfter = (await call(A, 'GET', `/sales-invoices/${igInv.id}`)).body;
     ok(igEdit.status === 200 && Number(igAfter.igst) === 360 && Number(igAfter.cgst) === 0, `IGST picked by hand (no state to decide it) stays IGST when the draft is edited (IGST ${igAfter.igst}, CGST ${igAfter.cgst})`);
+    /* The edit form sends the IGST/CGST choice with every save. That was
+       refused as "This invoice has been issued" — on a draft — so no draft
+       could be saved from the form at all (fixed 24 Nov). */
+    const formSave = await call(A, 'PATCH', `/sales-invoices/${igInv.id}`, { invoice_number: igAfter.invoice_number, interstate: false, notes: 'Saved from the form',
+      items: [{ description: 'Service', quantity: 2, rate: 1000, uom: 'nos' }] });
+    const fsAfter = (await call(A, 'GET', `/sales-invoices/${igInv.id}`)).body;
+    ok(formSave.status === 200, `a draft saved from the edit form, with its IGST/CGST choice, is accepted (${formSave.status}${formSave.body.error ? `: ${formSave.body.error}` : ''})`);
+    ok(Number(fsAfter.cgst) === 180 && Number(fsAfter.igst) === 0 && fsAfter.notes === 'Saved from the form', `with no state to decide it, the choice made on the form stands (CGST ${fsAfter.cgst}, IGST ${fsAfter.igst})`);
+    const stated = (await call(A, 'POST', '/sales-invoices', { customerId: custId, invoiceDate: today, gstRate: 18,
+      items: [{ description: 'Service', quantity: 1, rate: 1000, uom: 'nos' }] })).body;
+    const statedBefore = (await call(A, 'GET', `/sales-invoices/${stated.id}`)).body;
+    const statedSave = await call(A, 'PATCH', `/sales-invoices/${stated.id}`, { interstate: !statedBefore.interstate, items: [{ description: 'Service', quantity: 1, rate: 1000, uom: 'nos' }] });
+    const statedAfter = (await call(A, 'GET', `/sales-invoices/${stated.id}`)).body;
+    ok(statedSave.status === 200 && statedAfter.interstate === statedBefore.interstate, 'when the states decide it, the form cannot overrule them');
+    const issuedTry = await call(A, 'PATCH', `/sales-invoices/${inv.id}`, { interstate: true });
+    ok(issuedTry.status === 409 || issuedTry.status === 404, `an issued or cancelled invoice still refuses it (${issuedTry.status})`);
+    await call(A, 'DELETE', `/sales-invoices/${stated.id}`);
     await call(A, 'DELETE', `/sales-invoices/${igInv.id}`);
 
     section('credit notes: found by id, same customer, capped, taxed like the original');

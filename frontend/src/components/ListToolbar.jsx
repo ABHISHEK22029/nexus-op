@@ -41,13 +41,30 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 export function useListQuery(endpoint, { pageSize = 25, initialFilters = {} } = {}) {
 /* ?q= in the address starts the list searched for it — a search result or
      a link can open a list already narrowed. */
-  const urlQ = () => { try { return new URLSearchParams(window.location.search).get('q') || ''; } catch { return ''; } };
+  const urlParam = (k) => { try { return new URLSearchParams(window.location.search).get(k) || ''; } catch { return ''; } };
+  const urlQ = () => urlParam('q');
   const [search, setSearch] = useState(urlQ);
   const [debounced, setDebounced] = useState(urlQ);
-  const [filters, setFilters] = useState(initialFilters);
+  /* ?view= opens a ready-made view ("Overdue") — from a dashboard tile or a
+     shared link. Not a baseline filter: Clear filters drops it. */
+  const [filters, setFilters] = useState(() => {
+    const v = urlParam('view');
+    return v ? { ...initialFilters, view: v } : initialFilters;
+  });
   const baseKeys = Object.keys(initialFilters);
   const [offset, setOffset] = useState(0);
-  const [state, setState] = useState({ rows: [], total: 0, summary: null, loading: true, error: null });
+  const [state, setState] = useState({ rows: [], total: 0, summary: null, views: null, loading: true, error: null });
+
+  /* The address follows the view, so a refresh or a copied link keeps it. */
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      const want = filters.view || '';
+      if ((u.searchParams.get('view') || '') === want) return;
+      if (want) u.searchParams.set('view', want); else u.searchParams.delete('view');
+      window.history.replaceState(window.history.state, '', `${u.pathname}${u.search}${u.hash}`);
+    } catch { /* no history API */ }
+  }, [filters.view]);
   const reqId = useRef(0);
 
   // Debounce typing; a request per keystroke is a request per keystroke.
@@ -84,10 +101,12 @@ export function useListQuery(endpoint, { pageSize = 25, initialFilters = {} } = 
          them. Pages must use these rather than summing `rows`, which after
          pagination is only the current page. */
       const summary = Array.isArray(data) ? null : (data.summary ?? null);
-      setState({ rows, total, summary, loading: false, error: null });
+      /* how many are in each ready-made view, when the endpoint has views */
+      const views = Array.isArray(data) ? null : (data.views ?? null);
+      setState({ rows, total, summary, views, loading: false, error: null });
     } catch (e) {
       if (id !== reqId.current) return;
-      setState({ rows: [], total: 0, summary: null, loading: false, error: e.message });
+      setState(s => ({ rows: [], total: 0, summary: null, views: s.views, loading: false, error: e.message }));
     }
   }, [endpoint, pageSize, offset, debounced, JSON.stringify(filters)]);
 
@@ -141,6 +160,8 @@ export function useListQuery(endpoint, { pageSize = 25, initialFilters = {} } = 
       setSelected(new Set());
     },
     isFiltered,
+    /* the page's own standing filters (the active project), not the user's */
+    baseFilters: Object.fromEntries(baseKeys.map(k => [k, true])),
     offset, setOffset, pageSize,
     reload: load,
     selection,
@@ -290,6 +311,20 @@ export function EmptyState({ q, icon: Icon, noun = 'records', hint }) {
     </div>
   );
 
+  /* A ready-made view with nothing in it is usually good news — nothing
+     overdue, nothing waiting — not a search that failed. */
+  const onlyView = q.filters.view && !q.search.trim()
+    && !Object.entries(q.filters).some(([k, v]) => v && k !== 'view' && !(k in (q.baseFilters || {})));
+  if (onlyView) return (
+    <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }} data-view-empty>
+      {Icon && <Icon size={34} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />}
+      <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Nothing here right now</div>
+      <button onClick={() => q.setFilters(f => ({ ...f, view: '' }))} className="btn-secondary" style={{ marginTop: 10 }}>
+        Show all {noun}
+      </button>
+    </div>
+  );
+
   if (q.isFiltered) return (
     <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
       {Icon && <Icon size={34} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />}
@@ -412,6 +447,42 @@ export function BulkBar({ q, actions = [], noun = 'records' }) {
       <button onClick={q.selection.clear} className="btn-secondary" style={{ fontSize: '0.78rem', padding: '4px 11px' }}>
         Clear
       </button>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   QuickViews — the questions a list is opened to answer, one click each.
+
+   From the agent portal's Queue / Mine / Today: the same list, already cut
+   the way the work is done ("Ship date passed", "To receive"). The
+   endpoint defines each view and counts it over everything the company may
+   see, so the number on a tab doesn't jump while you type a search. A count
+   that needs attention (late, overdue) turns red when it isn't zero.
+
+   views: [{ key, label, hint?, tone?: 'late' | 'soon' }]
+   ══════════════════════════════════════════════════════════ */
+export function QuickViews({ q, views = [], allLabel = 'All' }) {
+  const counts = q.views || {};
+  const active = q.filters.view || '';
+  const pick = (key) => q.setFilters(f => ({ ...f, view: key }));
+  return (
+    <div className="qv" role="tablist" aria-label="Views">
+      <button type="button" role="tab" aria-selected={!active} data-view=""
+        className={`qv-tab${!active ? ' is-active' : ''}`} onClick={() => pick('')}>
+        {allLabel}
+      </button>
+      {views.map(v => {
+        const n = counts[v.key];
+        const on = active === v.key;
+        return (
+          <button key={v.key} type="button" role="tab" aria-selected={on} data-view={v.key} title={v.hint}
+            className={`qv-tab${on ? ' is-active' : ''}`} onClick={() => pick(on ? '' : v.key)}>
+            {v.label}
+            {n != null && <span className={`qv-count${v.tone && n > 0 ? ` qv-${v.tone}` : ''}`}>{n}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

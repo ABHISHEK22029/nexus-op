@@ -85,10 +85,23 @@ export default function Tutorial() {
   /* In the first sale a ticked step moves on by itself after a moment:
      six small steps, and no Next to press between them. */
   const upNext = step?.isDone && CORE.has(step.chapter) && t?.next && CORE.has(t.next.chapter) ? t.next : null;
+  /* Unless the person has already moved on to something of their own: a
+     second customer half-typed, or the recipe of the product just saved.
+     Moving the screen then threw what they were typing away. In that case
+     the card simply shows the next step, with its button, and waits. */
   useEffect(() => {
     if (!upNext) return undefined;
-    const id = setTimeout(() => go(upNext), 1800);
-    return () => clearTimeout(id);
+    let typed = false;
+    const mine = (el) => !el?.closest?.('.tut-panel, .tut-card, [class^="tut-"]');
+    const onInput = (e) => { if (mine(e.target)) typed = true; };
+    document.addEventListener('input', onInput, true);
+    const id = setTimeout(() => {
+      const a = document.activeElement;
+      const inField = a && mine(a) && a.matches?.('input, textarea, select, [contenteditable="true"]');
+      const boxOpen = !!document.querySelector('[aria-modal="true"], [role="dialog"]:not(.tut-panel)');
+      if (!typed && !inField && !boxOpen) go(upNext);
+    }, 1800);
+    return () => { clearTimeout(id); document.removeEventListener('input', onInput, true); };
   }, [upNext?.key, upNext?.href]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   /* The panel behaves like one: Escape closes it, and opening it puts the

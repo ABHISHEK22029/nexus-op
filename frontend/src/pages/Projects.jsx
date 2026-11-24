@@ -20,9 +20,11 @@ import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const Projects = () => {
+  const { confirm } = useConfirm();
   const { fetchProjects, setActiveProject } = useProject();
   const toast = useToast();
   const { can } = usePermissions();
@@ -54,7 +56,7 @@ const Projects = () => {
   };
 
   const handleDelete = async (p) => {
-    if (!window.confirm('Delete this project?')) return;
+    if (!(await confirm({ title: p?.name ? `Delete the project “${p.name}”?` : 'Delete this project?', message: "This can't be undone.", confirmLabel: 'Delete project', tone: 'danger' }))) return;
     try {
       await axios.delete(`${API}/projects/${p.id}`);
       q.reload();

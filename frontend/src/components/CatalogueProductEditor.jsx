@@ -31,12 +31,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, Trash2, Image as ImageIcon, Eye, EyeOff, Package, Loader } from 'lucide-react';
 import CatalogueThumb from './CatalogueThumb';
 import { fmtINR } from '../lib/format';
+import { useDiscardGuard } from './useDiscardGuard';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 /* Paise always as two digits (lib/format). */
 const rupee = (n) => fmtINR(n);
 
 export default function CatalogueProductEditor({ product, api, toast, onClose, onSaved }) {
+  /* A click on the dimmed area closes only if it starts there too, and asks
+     first once something is typed (components/useDiscardGuard). */
+  const guard = useDiscardGuard(onClose);
   const [form, setForm] = useState({
     headline: '', catalogue_category: '', use_case: '',
     moq: '', lead_time_note: '', catalogue_slug: '',
@@ -145,11 +149,11 @@ export default function CatalogueProductEditor({ product, api, toast, onClose, o
   };
 
   return (
-    <div role="dialog" aria-label={`Edit ${product.name}`} onClick={onClose} style={{
+    <div role="dialog" aria-label={`Edit ${product.name}`} {...guard.backdropProps} style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 80,
       display: 'flex', justifyContent: 'flex-end',
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div {...guard.panelProps} style={{
         width: 'min(560px, 100%)', height: '100%', overflowY: 'auto',
         background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column',
       }}>

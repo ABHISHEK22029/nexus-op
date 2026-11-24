@@ -331,13 +331,18 @@ function checkPages(label, pages, { rows, closing, minPages = 1 }) {
     console.log('\n  ── the invoice list');
     await page.goto(`${UI}/sales-invoices`, { waitUntil: 'networkidle2' });
     await page.waitForFunction(() => document.querySelectorAll('table tbody tr').length > 0, { timeout: 15000 });
+    /* Columns by their heading, not their position: the list has a tick-box
+       column for bulk actions (24 Nov) and a due-date badge under the number. */
     const listed = await page.evaluate((num) => {
-      const row = [...document.querySelectorAll('table tbody tr')].find(r => r.cells[0]?.innerText.trim() === num);
-      return row ? [...row.cells].map(c => c.innerText.trim()) : null;
+      const heads = [...document.querySelectorAll('table thead th')].map(th => th.innerText.trim().toLowerCase());
+      const row = [...document.querySelectorAll('table tbody tr')].find(r => [...r.cells].some(c => c.innerText.trim().split('\n')[0].trim() === num));
+      if (!row) return null;
+      const at = (h) => row.cells[heads.indexOf(h)]?.innerText.trim();
+      return [at('total'), at('received'), at('balance')];
     }, paidRow.invoice_number);
     const n = (s) => Number(String(s || '').replace(/[^\d.-]/g, ''));
-    ok(listed && n(listed[2]) === paidRow.net_amount && n(listed[3]) === paidRow.amount_paid && n(listed[4]) === due,
-      `the list shows the same total, received and balance as the invoice (${listed ? listed.slice(2, 5).join(' · ') : 'row missing'})`);
+    ok(listed && n(listed[0]) === paidRow.net_amount && n(listed[1]) === paidRow.amount_paid && n(listed[2]) === due,
+      `the list shows the same total, received and balance as the invoice (${listed ? listed.join(' · ') : 'row missing'})`);
 
     /* ── Reverse charge follows the box ────────────────────────────── */
     console.log('\n  ── reverse charge');

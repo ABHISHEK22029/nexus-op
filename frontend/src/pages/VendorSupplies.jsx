@@ -14,10 +14,12 @@ import { Link2, Plus, Trash2, Star, Search, Package, Info } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { fmtINR } from '../lib/format';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 3 }));
 
 export default function VendorSupplies({ embedded = false }) {
+  const { confirm } = useConfirm();
   const toast = useToast();
   const [mode, setMode] = useState('material');   // 'material' | 'vendor'
   const [materials, setMaterials] = useState([]);
@@ -79,7 +81,7 @@ export default function VendorSupplies({ embedded = false }) {
   };
 
   const unlink = async (id) => {
-    if (!window.confirm('Remove this supply link?')) return;
+    if (!(await confirm({ title: 'Remove this supply link?', message: 'The vendor and the item both stay; only the link between them goes.', confirmLabel: 'Remove link', tone: 'danger' }))) return;
     try {
       await fetch(`${API}/vendor-items/${id}`, { method: 'DELETE' });
       toast?.success?.('Link removed'); loadLinks();

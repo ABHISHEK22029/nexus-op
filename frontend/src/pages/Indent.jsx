@@ -19,9 +19,11 @@ import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
 
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const Indent = () => {
+  const { confirm } = useConfirm();
   const { activeProject, workOrders } = useProject();
   const toast = useToast();
   const { can } = usePermissions();
@@ -122,7 +124,7 @@ const Indent = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this indent?')) return;
+    if (!(await confirm({ title: 'Delete this indent?', message: "This can't be undone.", confirmLabel: 'Delete indent', tone: 'danger' }))) return;
     try {
       await fetch(`${API}/indent/${id}`, {
         method: 'DELETE'

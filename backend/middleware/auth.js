@@ -109,6 +109,19 @@ async function authenticate(req, res, next) {
      of a 12-hour session. Read with the account check, once a minute. */
   if (account?.role) req.user.role = account.role;
   if (account?.org != null) req.user.orgId = account.org;
+  /* A session in use renews itself. Past half its life, the answer carries
+     a fresh token (X-Session-Token) that the app keeps. Without this a
+     person working all day was signed out at the twelfth hour, mid-form;
+     a session left alone still ends 12 hours after it was last used.
+     Only when the account check above actually ran: a password change or
+     a switch-off still ends it, and nothing is renewed blind. */
+  if (account && payload.iat && payload.exp && Date.now() / 1000 > payload.iat + (payload.exp - payload.iat) / 2) {
+    try {
+      res.set('X-Session-Token', signToken({
+        id: payload.sub, org_id: req.user.orgId, email: payload.email, role: req.user.role, name: payload.name,
+      }));
+    } catch (e) { console.error('[auth] could not renew session:', e.message); }
+  }
   return next();
 }
 

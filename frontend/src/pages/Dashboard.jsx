@@ -289,8 +289,8 @@ const Dashboard = () => {
       <Group title="Money" note={sales ? `${sales.fyLabel}, April to March` : undefined}>
         <KpiCard title="Billed this year" value={fmtCrore(sales?.billed)} exact={exactINR(sales?.billed)} icon={Receipt} accent="#3B82F6" link="/sales-invoices" sub="Invoices issued" />
         <KpiCard title="Received this year" value={fmtCrore(sales?.received)} exact={exactINR(sales?.received)} icon={TrendingUp} accent="#16A34A" link="/sales-invoices" sub="Payments in" />
-        <KpiCard title="Outstanding" value={fmtCrore(sales?.outstanding)} exact={exactINR(sales?.outstanding)} icon={IndianRupee} accent="#D97706" link="/sales-invoices" sub="Owed by customers today" />
-        <KpiCard title="Overdue" value={fmtCrore(sales?.overdueAmount)} exact={exactINR(sales?.overdueAmount)} icon={Clock} accent="#DC2626" link="/sales-invoices"
+        <KpiCard title="Outstanding" value={fmtCrore(sales?.outstanding)} exact={exactINR(sales?.outstanding)} icon={IndianRupee} accent="#D97706" link="/sales-invoices?view=unpaid" sub="Owed by customers today" />
+        <KpiCard title="Overdue" value={fmtCrore(sales?.overdueAmount)} exact={exactINR(sales?.overdueAmount)} icon={Clock} accent="#DC2626" link="/sales-invoices?view=overdue"
           alert={Number(sales?.overdueCount) > 0}
           sub={sales ? (Number(sales.overdueCount) > 0 ? `${sales.overdueCount} invoice${sales.overdueCount === 1 ? '' : 's'} past due` : 'Nothing past due') : undefined} />
       </Group>

@@ -30,11 +30,15 @@ export default function GrnBillDoc() {
 
   /* Draft or Approved by hand; Paid follows the payments. The answer is
      read: the page used to show the new status whatever the server said. */
-  const setStatus = async (status) => {
+  const setStatus = async (status, undoing = false) => {
+    const before = bill?.status;
     const r = await fetch(`${API}/grn-bills/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { toast.error(d.error || d.detail || 'Could not change the status'); return; }
     setBill(b => ({ ...b, status }));
+    const no = bill?.bill_number || 'The bill';
+    if (undoing) toast.success(`${no} is back to ${status}`);
+    else if (before && before !== status && before !== 'Paid') toast.undo(`${no} marked ${status}`, () => setStatus(before, true));
   };
   /* A payment made in error, taken back with a reason on the record. */
   const reversePayment = async (p) => {

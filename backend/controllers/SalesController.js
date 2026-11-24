@@ -14,7 +14,20 @@ const { isInterstate } = require('../shared/gstStates');
 const { amountInWords } = require('../shared/amountInWords');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant } = require('../shared/roles');
-const { runList } = require('../shared/listQuery');
+const { runList, TODAY_IST } = require('../shared/listQuery');
+
+/* Ready-made views on Orders (?view=). The ship-by views leave out what is
+   already delivered or closed. "To bill" is an order whose dispatched
+   challans are worth more than its invoices so far (both before tax), so a
+   part-billed order still shows. */
+const ORDER_VIEWS = {
+  due_week: `status NOT IN ('Delivered','Closed') AND expected_shipment_date BETWEEN ${TODAY_IST} AND ${TODAY_IST} + 7`,
+  late: `status NOT IN ('Delivered','Closed') AND expected_shipment_date < ${TODAY_IST}`,
+  to_bill: `COALESCE((SELECT SUM(dci.amount) FROM delivery_challan_items dci JOIN delivery_challans dc ON dc.id = dci.delivery_challan_id
+                      WHERE dc.customer_order_id = co.id AND dc.status IN ('Dispatched','Delivered')), 0)
+           > COALESCE((SELECT SUM(sii.amount) FROM sales_invoice_items sii JOIN sales_invoices si ON si.id = sii.sales_invoice_id
+                      WHERE si.customer_order_id = co.id AND si.status <> 'Cancelled'), 0) + 0.5`,
+};
 const { assertRefs, skuIdsOf } = require('../shared/ownedRefs');
 const { posForOrder } = require('../shared/poOrders');
 const { prepareLines } = require('../shared/lineChecks');
@@ -41,6 +54,7 @@ exports.getOrders = async (req, res) => {
       query: req.query,
       searchColumns: ["order_number", "customer_name", "customer_po_ref", "status", "notes"],
       filterColumns: ["status", "customer_id"],
+      views: ORDER_VIEWS,
       allowedSort: ["id", "order_number", "order_date", "status", "order_value"],
       defaultSort: 'id', defaultDir: 'DESC',
       where, params,

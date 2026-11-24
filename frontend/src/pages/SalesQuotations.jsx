@@ -190,7 +190,13 @@ export default function SalesQuotations() {
     navigate(`/customer-orders?open=${d.orderId}`);
   };
 
-  const setStatus = async (id, status) => {
+  const setStatus = async (id, status, undoing = false) => {
+    const before = q.rows.find(r => r.id === id);
+    /* The customer answered online; changing the status by hand clears that
+       answer (the activity log keeps it). That can't be undone, so it asks. */
+    const answered = Boolean(before?.responded_at);
+    if (answered && !undoing && before.status !== status && status !== 'Converted'
+      && !(await confirm({ title: `Change ${before.quote_number} to ${status}?`, message: `${before.response_name || 'The customer'} answered it online (${before.status}). Changing it by hand clears that answer, so the link can be answered again. The activity log keeps what they said.`, confirmLabel: `Set to ${status}` }))) return;
     const token = getToken();
     const res = await fetch(`${API}/sales-quotations/${id}/status`, {
       method: 'PATCH',
@@ -201,6 +207,10 @@ export default function SalesQuotations() {
       const b = await res.json().catch(() => ({}));
       return toast.error(b.detail || b.error || 'Could not update the status');
     }
+    if (undoing) toast.success(`${before?.quote_number || 'The quotation'} is back to ${status}`);
+    else if (before && before.status !== status && !answered) {
+      toast.undo(`${before.quote_number} marked ${status}`, () => setStatus(id, before.status, true));
+    } else if (before && before.status !== status) toast.success(`${before.quote_number} set to ${status}`);
     q.reload();
   };
 

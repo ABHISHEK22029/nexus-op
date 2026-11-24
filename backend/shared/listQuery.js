@@ -37,11 +37,13 @@ const q = (col) => `"${String(col).replace(/"/g, '')}"`;
  * @param {string[]} o.where           extra WHERE fragments (already $n-safe)
  * @param {any[]}    o.params          params matching those fragments
  * @param {string}   o.select          SELECT list (default '*')
+ * @param {object}   o.views           ready-made views, { key: SQL condition }; ?view=key
+ *                                     applies one. Fixed by the caller, never from input.
  */
 function buildListQuery({
   table, query = {}, searchColumns = [], filterColumns = [],
   allowedSort = [], defaultSort = 'id', defaultDir = 'ASC',
-  where = [], params = [], select = '*',
+  where = [], params = [], select = '*', views = null,
 }) {
   const clauses = [...where];
   const values = [...params];
@@ -73,6 +75,13 @@ function buildListQuery({
     }
   }
 
+  // ── a ready-made view ("Overdue", "To receive"): a named condition the
+  //    endpoint wrote itself. Only a key that exists picks one; anything else
+  //    is ignored, so a stale link shows the whole list rather than an error.
+  const view = views && typeof query.view === 'string' && Object.prototype.hasOwnProperty.call(views, query.view)
+    ? query.view : null;
+  if (view) clauses.push(`(${views[view]})`);
+
   const whereSql = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
 
   // ── sort (whitelisted column only) ──
@@ -91,6 +100,7 @@ function buildListQuery({
 
   return {
     wantsPage,
+    view,
     limit,
     offset,
     whereSql,
@@ -140,7 +150,24 @@ async function runList(db, opts) {
     );
     out.summary = s[0] || {};
   }
+
+  /* How many are in each view, over everything this company may see —
+     not narrowed by the search or the other filters, so the numbers on the
+     view tabs stay put while you type. */
+  if (opts.views && Object.keys(opts.views).length) {
+    const base = (opts.where || []).length ? ` WHERE ${opts.where.join(' AND ')}` : '';
+    const counts = Object.entries(opts.views)
+      .map(([k, cond]) => `COUNT(*) FILTER (WHERE ${cond})::int AS "${k.replace(/"/g, '')}"`).join(', ');
+    const { rows: v } = await db.query(`SELECT ${counts} FROM ${opts.table}${base}`, opts.params || []);
+    out.views = v[0] || {};
+    out.view = built.view;
+  }
   return out;
 }
 
-module.exports = { buildListQuery, runList, MAX_LIMIT, HARD_CAP };
+/* Today's date in India, for views like "ship date passed". The database
+   runs on UTC; between midnight and 5:30 am IST its CURRENT_DATE is still
+   yesterday, and an order due today would read as due tomorrow. */
+const TODAY_IST = `(now() AT TIME ZONE 'Asia/Kolkata')::date`;
+
+module.exports = { buildListQuery, runList, MAX_LIMIT, HARD_CAP, TODAY_IST };

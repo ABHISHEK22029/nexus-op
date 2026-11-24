@@ -14,12 +14,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 
+import { useConfirm } from '../context/ConfirmContext';
 const KINDS = [
   ['vendor', 'What we buy', 'Used on vendors — e.g. Board, Hardware, Laminate'],
   ['customer', 'What we sell', 'Used on customers — e.g. Fire doors, Handrails'],
 ];
 
 export default function CategoryAdmin({ api, toast }) {
+  const { confirm } = useConfirm();
   const [kind, setKind] = useState('vendor');
   const [rows, setRows] = useState([]);
   const [adding, setAdding] = useState('');
@@ -43,10 +45,10 @@ export default function CategoryAdmin({ api, toast }) {
 
   const remove = async (row) => {
     const inUse = Number(row.vendor_count || 0) + Number(row.customer_count || 0);
-    const msg = inUse > 0
-      ? `"${row.name}" is used by ${inUse} record(s). It will be hidden from new entries but stays readable on those. Continue?`
-      : `Delete "${row.name}"?`;
-    if (!window.confirm(msg)) return;
+    const ok = inUse > 0
+      ? await confirm({ title: `Hide “${row.name}”?`, message: `${inUse} record${inUse === 1 ? ' uses' : 's use'} it, so it can't be deleted. It is hidden from new entries and stays readable on those.`, confirmLabel: 'Hide category' })
+      : await confirm({ title: `Delete “${row.name}”?`, message: "Nothing uses it. This can't be undone.", confirmLabel: 'Delete category', tone: 'danger' });
+    if (!ok) return;
     try {
       const r = await api(`/supply-categories/${row.id}`, { method: 'DELETE' });
       toast.success(r.deactivated ? 'Hidden from new entries' : 'Deleted');

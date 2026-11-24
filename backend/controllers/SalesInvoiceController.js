@@ -8,7 +8,19 @@ const { profileFor } = require('../shared/companyProfile');
 const { allocate, peek, noteUsed, taken } = require('../shared/docSeries');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
-const { runList } = require('../shared/listQuery');
+const { runList, TODAY_IST } = require('../shared/listQuery');
+
+/* Ready-made views on Invoices (?view=). Owed means anything not cancelled
+   with money still due, net of payments and credit notes — the same rule as
+   the dashboard's Outstanding and Overdue tiles, so a tile and the list it
+   opens agree. Drafts count: nothing moves an invoice out of Draft but the
+   status menu, so most invoices that went to a customer are still drafts. */
+const OWED = `status <> 'Cancelled' AND net_amount - COALESCE(amount_paid,0) - credited > 0.5`;
+const INVOICE_VIEWS = {
+  unpaid: OWED,
+  overdue: `${OWED} AND due_date < ${TODAY_IST}`,
+  drafts: `status = 'Draft'`,
+};
 const { notify } = require('../notify');
 const { toStateCode, toStateName, isInterstate } = require('../shared/gstStates');
 const { syncOrderDelivery } = require('../shared/orderProgress');
@@ -402,6 +414,7 @@ exports.list = async (req, res) => {
       query: req.query,
       searchColumns: ["invoice_number","customer_name","status","place_of_supply"],
       filterColumns: ["status","customer_id"],
+      views: INVOICE_VIEWS,
       allowedSort: ["id","invoice_number","invoice_date","due_date","net_amount","status"],
       defaultSort: 'id', defaultDir: 'DESC',
       where, params,
@@ -592,12 +605,18 @@ exports.update = async (req, res) => {
 
     const draft = inv.status === 'Draft';
     const allowed = draft ? INVOICE_DRAFT_FIELDS : INVOICE_ISSUED_FIELDS;
-    const offered = Object.keys(req.body || {}).filter(k => k !== 'items' && k !== 'confirmAboveOrder');
+    /* interstate is not a column a draft sets: it is the IGST / CGST choice
+       made on the form, read below only when the states can't decide. The
+       edit form sends it (since 24 Nov), and refusing it here made every
+      'Save changes' on a draft fail with 'This invoice has been issued'. */
+    const offered = Object.keys(req.body || {}).filter(k => k !== 'items' && k !== 'confirmAboveOrder' && !(draft && k === 'interstate'));
     const refused = offered.filter(k => !allowed.includes(k));
     if (refused.length) {
       await client.query('ROLLBACK');
       return res.status(409).json({
-        error: `This invoice has been issued, so ${refused.join(', ')} can no longer be changed. `
+        error: draft
+          ? `${refused.join(', ')} can't be changed on an invoice.`
+          : `This invoice has been issued, so ${refused.join(', ')} can no longer be changed. `
              + `Raise a credit or debit note to correct an issued invoice.`,
         editable: allowed,
       });

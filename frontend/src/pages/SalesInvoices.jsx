@@ -11,30 +11,35 @@
 import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import UrgencyBadge, { invoiceUrgency } from '../components/UrgencyBadge';
-import { ReceiptIndianRupee, Trash2, Plus } from 'lucide-react';
+import { ReceiptIndianRupee, Trash2, Plus, Send } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
-import { useListQuery, ListToolbar, Pagination, EmptyState } from '../components/ListToolbar';
+import { useListQuery, ListToolbar, Pagination, EmptyState, QuickViews, BulkBar, SelectAllCell, SelectCell } from '../components/ListToolbar';
+import { useBulkAction } from '../components/useBulkAction';
 import PickOrderModal from '../components/PickOrderModal';
 
 import { getToken } from '../lib/apiAuth';
 import FitNumber from '../components/FitNumber';
 import { fmtCompactINR, fmtINR } from '../lib/format';
+import { useConfirm } from '../context/ConfirmContext';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 /* Paise always as two digits (lib/format). */
 const rup = n => fmtINR(n);
 const statusColor = (s) => s === 'Paid' ? '#10b981' : s === 'Partially Paid' ? 'var(--brand-amber)' : s === 'Sent' ? '#3b82f6' : 'var(--text-muted)';
 
 export default function SalesInvoices() {
+  const { confirm } = useConfirm();
   const navigate = useNavigate();
   const toast = useToast();
   const { can } = usePermissions();
   const q = useListQuery('sales-invoices', { pageSize: 25 });
+  const canBulk = can('sales-invoices', 'write');
+  const bulk = useBulkAction(q, 'sales-invoices');
   const [picking, setPicking] = React.useState(false);
 
   const del = async (e, id) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this invoice?')) return;
+    if (!(await confirm({ title: 'Delete this invoice?', message: 'Only a draft can be deleted. A sent invoice is cancelled instead, so its number stays accounted for.', confirmLabel: 'Delete invoice', tone: 'danger' }))) return;
     const token = getToken();
     const res = await fetch(`${API}/sales-invoices/${id}`, {
       method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -90,6 +95,11 @@ export default function SalesInvoices() {
         <Kpi card={card} label="Outstanding" value={fmtCompactINR(s.outstanding)} exact={fmtINR(s.outstanding)} tone={Number(s.outstanding) > 0 ? '#ef4444' : '#10b981'} />
       </div>
 
+      <QuickViews q={q} views={[
+          { key: 'unpaid', label: 'Unpaid', hint: 'Sent and still owed, after payments and credit notes' },
+          { key: 'overdue', label: 'Overdue', hint: 'Past its due date with money still owed', tone: 'late' },
+          { key: 'drafts', label: 'Not sent yet', hint: 'Drafts' },
+        ]} />
       <ListToolbar
         q={q}
         placeholder="Search invoice no., customer, place of supply…"
@@ -106,6 +116,16 @@ export default function SalesInvoices() {
         }]}
       />
 
+      {canBulk && <BulkBar q={q} noun="invoices" actions={[{
+        label: 'Mark as sent', icon: <Send size={13} />,
+        onClick: (ids) => bulk(ids, {
+          action: 'mark_sent', verb: 'marked sent', noun: ['invoice', 'invoices'],
+          title: (n) => `Mark ${n} invoice${n === 1 ? '' : 's'} as sent?`,
+          message: 'Use this once they have gone to the customer. A sent invoice can still go back to draft until money comes in.',
+          confirmLabel: (n) => `Mark ${n} sent`,
+        }),
+      }]} />}
+
       <div style={{ ...card, overflow: 'hidden' }}>
         {q.rows.length === 0 ? (
           <EmptyState q={q} icon={ReceiptIndianRupee} noun="invoices"
@@ -114,6 +134,7 @@ export default function SalesInvoices() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
+                {canBulk && <SelectAllCell q={q} />}
                 {['Invoice', 'Customer', 'Total', 'Received', 'Balance', 'Status', ''].map(h =>
                   /* Amounts line up on the right, headings with them. */
                   <th key={h} style={{ padding: '11px 14px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', textAlign: ['Total', 'Received', 'Balance'].includes(h) ? 'right' : 'left' }}>{h}</th>)}
@@ -128,6 +149,7 @@ export default function SalesInvoices() {
                         onClick={() => navigate(`/sales-invoices/${r.id}`)}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      {canBulk && <SelectCell q={q} id={r.id} />}
                       <td style={{ padding: '12px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                         {r.invoice_number}
                         {/* How late the money is, beside the number and apart from the status. */}

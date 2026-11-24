@@ -34,9 +34,10 @@ export function orderUrgency(o) {
   return null;
 }
 
-/** An invoice's due date, while money is still owed on it. */
+/** An invoice's due date, while money is still owed on it. Drafts count, as
+    on the dashboard: most invoices that went out are still drafts. */
 export function invoiceUrgency(inv) {
-  if (!inv || ['Paid', 'Cancelled', 'Draft'].includes(inv.status)) return null;
+  if (!inv || ['Paid', 'Cancelled'].includes(inv.status)) return null;
   const owed = (Number(inv.net_amount) || 0) - (Number(inv.amount_paid) || 0) - (Number(inv.credited) || 0);
   if (owed <= 0.5) return null;
   const d = daysUntil(inv.due_date);

@@ -17,6 +17,7 @@ import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Save, Link as LinkIcon, Copy } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { getToken } from '../lib/apiAuth';
+import { useDiscardGuard } from './useDiscardGuard';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -34,11 +35,14 @@ export default function AddPersonModal({ roles = [], onClose, onSaved }) {
   const [emailed, setEmailed] = useState(false);    // the server emailed it to them
   const [copied, setCopied] = useState(false);
 
+  /* Esc, or a click on the dimmed area, asks before throwing away what
+     was typed (components/useDiscardGuard). */
+  const guard = useDiscardGuard(onClose);
   useEffect(() => {
-    const esc = (e) => { if (e.key === 'Escape') onClose(); };
+    const esc = (e) => { if (e.key === 'Escape') guard.tryClose(); };
     document.addEventListener('keydown', esc);
     return () => document.removeEventListener('keydown', esc);
-  }, [onClose]);
+  }, [guard.tryClose]);
 
   /* Default to the least access, not the most. Somebody being added in a
      hurry should not silently arrive as an Administrator. */
@@ -125,14 +129,14 @@ export default function AddPersonModal({ roles = [], onClose, onSaved }) {
 
   return (
     <div
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+      {...guard.backdropProps}
       style={{
         position: 'fixed', inset: 0, zIndex: 400, display: 'flex',
         alignItems: 'center', justifyContent: 'center', padding: 20,
         background: 'rgba(0,0,0,0.45)',
       }}
     >
-      <div style={{
+      <div {...guard.panelProps} style={{
         width: '100%', maxWidth: 470,
         background: 'var(--bg-surface)', border: '1px solid var(--border-default)',
         borderRadius: 14, boxShadow: 'var(--shadow-lg, 0 20px 50px rgba(0,0,0,.3))',

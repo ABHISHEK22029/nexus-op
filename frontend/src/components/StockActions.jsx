@@ -26,6 +26,7 @@ import { X, Plus, Save, Scale, History, ArrowUp, ArrowDown, AlertTriangle } from
 import { useToast } from '../context/ToastContext';
 import { getToken } from '../lib/apiAuth';
 import UnitSelect from './UnitSelect';
+import { useDiscardGuard } from './useDiscardGuard';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -36,22 +37,25 @@ const authHeaders = () => {
 
 /* ── shared chrome ─────────────────────────────────────────── */
 export function Shell({ title, subtitle, icon, onClose, children, footer, width = 520 }) {
+  /* Esc, or a click on the dimmed area, asks before throwing away what
+     was typed (components/useDiscardGuard). */
+  const guard = useDiscardGuard(onClose);
   useEffect(() => {
-    const esc = (e) => { if (e.key === 'Escape') onClose(); };
+    const esc = (e) => { if (e.key === 'Escape') guard.tryClose(); };
     document.addEventListener('keydown', esc);
     return () => document.removeEventListener('keydown', esc);
-  }, [onClose]);
+  }, [guard.tryClose]);
 
   return (
     <div
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+      {...guard.backdropProps}
       style={{
         position: 'fixed', inset: 0, zIndex: 400, display: 'flex',
         alignItems: 'center', justifyContent: 'center', padding: 20,
         background: 'rgba(0,0,0,0.45)',
       }}
     >
-      <div style={{
+      <div {...guard.panelProps} style={{
         width: '100%', maxWidth: width, maxHeight: '88vh', display: 'flex', flexDirection: 'column',
         background: 'var(--bg-surface)', border: '1px solid var(--border-default)',
         borderRadius: 14, boxShadow: 'var(--shadow-lg, 0 20px 50px rgba(0,0,0,.3))',

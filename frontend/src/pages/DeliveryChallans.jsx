@@ -10,7 +10,7 @@
    the number has to travel with the goods — those are the trucks that get
    stopped. The count is computed server-side over the whole filtered set.
    ══════════════════════════════════════════════════════════ */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Truck, Plus, Trash2, X, Eye } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -42,6 +42,8 @@ export default function DeliveryChallans() {
   const [showForm, setShowForm] = useState(false);
   const [head, setHead] = useState({ customerId: '', customerOrderId: '', challanDate: today(), dispatchThrough: '', vehicleNo: '', lrNo: '', placeOfSupply: '' });
   const [lines, setLines] = useState([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
+  const linesNow = useRef(lines);      // the lines as they are when an order's arrive, not as they were when it was asked for
+  linesNow.current = lines;
   const [skus, setSkus] = useState([]);
   const [saving, setSaving] = useState(false);
   /* ?order=ID — "Create challan" pressed on an order. */
@@ -77,7 +79,16 @@ export default function DeliveryChallans() {
       setHead(h => ({ ...h, customerOrderId: orderId, customerId: d.customerId ? String(d.customerId) : '', placeOfSupply: d.placeOfSupply || '' }));
       /* skuId rides along unseen: dispatch takes stock by product, not by
          however the line is spelt. Only what is still to go is filled in. */
-      if (d.items?.length) setLines(d.items.map(it => ({ description: it.description, hsn: it.hsn || '', quantity: it.quantity, uom: it.uom || 'nos', rate: it.rate || '', skuId: it.skuId || null })));
+      /* Lines typed by hand are not replaced without asking. Picking the
+         order to link it, after typing the items, used to wipe them. */
+      const typed = linesNow.current.filter(l => String(l.description || '').trim()).length;
+      const order = orders.find(o => String(o.id) === String(orderId));
+      const use = !d.items?.length ? false : !typed || await confirm({
+        title: "Use the order's lines?",
+        message: `This replaces the ${typed} line${typed === 1 ? '' : 's'} you typed with the ${d.items.length} still to go on ${order?.order_number || 'the order'}.`,
+        confirmLabel: "Use the order's lines", cancelLabel: 'Keep my lines',
+      });
+      if (use) setLines(d.items.map(it => ({ description: it.description, hsn: it.hsn || '', quantity: it.quantity, uom: it.uom || 'nos', rate: it.rate || '', skuId: it.skuId || null })));
       else if (d.nothingLeft) toast.info ? toast.info(d.message) : toast.warning(d.message);
     } catch { /* ignore */ }
   };

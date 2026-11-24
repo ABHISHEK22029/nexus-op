@@ -22,6 +22,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Mail, Paperclip, ExternalLink } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useDiscardGuard } from './useDiscardGuard';
 
 const rup = n => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 const onDate = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : null);
@@ -49,6 +50,9 @@ export default function EmailDocumentModal({
   fileName,               // what the download is called, e.g. "Quotation QT-0007 - Customer.pdf"
   onClose,
 }) {
+  /* A click on the dimmed area closes only if it starts there too, and asks
+     first once something is typed (components/useDiscardGuard). */
+  const guard = useDiscardGuard(onClose, { message: "The email isn't sent yet." });
   const toast = useToast();
   const k = KINDS[kind] || KINDS.invoice;
   /* Same nullability trap as `to`: these arrive as null from a document
@@ -129,14 +133,14 @@ export default function EmailDocumentModal({
 
   return (
     <div
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+      {...guard.backdropProps}
       style={{
         position: 'fixed', inset: 0, zIndex: 400, display: 'flex',
         alignItems: 'center', justifyContent: 'center', padding: 20,
         background: 'rgba(0,0,0,0.45)',
       }}
     >
-      <div style={{
+      <div {...guard.panelProps} style={{
         width: '100%', maxWidth: 620, maxHeight: '88vh', display: 'flex', flexDirection: 'column',
         background: 'var(--bg-surface)', border: '1px solid var(--border-default)',
         borderRadius: 14, boxShadow: 'var(--shadow-lg, 0 20px 50px rgba(0,0,0,.3))',
