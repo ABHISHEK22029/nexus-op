@@ -7,6 +7,7 @@ import { amountInWords } from '../lib/amountInWords';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
 import { docFileName, printAs } from '../lib/documentPdf';
+import { stateCode } from '../lib/gstStates';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -67,7 +68,10 @@ const POInvoice = () => {
   }
 
   const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
-  const subtotal = round2(items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0));
+  /* Each line in paise, and the subtotal from those: 1,234.567 printed with
+     three decimals, and the lines didn't add up to the subtotal. */
+  const lineAmount = (item) => round2(Number(item.quantity) * Number(item.unitPrice));
+  const subtotal = round2(items.reduce((acc, item) => acc + lineAmount(item), 0));
 
   // GST rate comes from the PO (whatever the user entered) — never hardcoded.
   const gstRate = Number(po.gst_rate ?? po.gstRate ?? 18);
@@ -75,8 +79,12 @@ const POInvoice = () => {
   // Intra vs inter-state: derived from vendor GSTIN vs company state — the SAME
   // rule the GRN bill uses, so the two documents classify GST identically.
   const companyState = String(company.stateCode || (company.gstin || '').substring(0, 2) || '');
-  const vendorState = String(po.vendorGstin || '').substring(0, 2);
-  const isIntraState = !!vendorState && !!companyState && vendorState === companyState;
+  /* The vendor's state from their GSTIN, else from their address record.
+     With neither, the same state is assumed (most suppliers are local) and
+     the screen says so — it used to fall to IGST. */
+  const vendorState = String(po.vendorGstin || '').substring(0, 2) || stateCode(po.vendorState) || '';
+  const isIntraState = !vendorState || !companyState || vendorState === companyState;
+  const stateGuessed = !vendorState || !companyState;
 
   const gstTotal = round2(subtotal * gstRate / 100);
   const sgst = isIntraState ? round2(gstTotal / 2) : 0;
@@ -95,6 +103,10 @@ const POInvoice = () => {
   };
 
   const poDate = new Date(po.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  /* Only the terms someone set; the whole grid goes when there are none. */
+  const termCells = [['Price', po.priceBasis], ['P&F, Insurance', po.pnfInsurance], ['Loading & Unloading', po.loadingScope], ['Warranty / Terms', po.warranty]]
+    .filter(([, v]) => String(v || '').trim());
+  const vendorLines = [po.vendorAddress, [po.vendorCity, po.vendorState].filter(Boolean).join(', ')].filter(Boolean);
 
   return (
     /* The padding the app's own pages have (16px on a phone, 28px wider):
@@ -122,6 +134,14 @@ const POInvoice = () => {
         </div>
       </div>
 
+      {/* Screen only: what the tax on this PO rests on, when it is a guess. */}
+      {(stateGuessed || !po.vendorGstin) && (
+        <div className="print:hidden" data-po-tax-note style={{ fontSize: '0.8rem', color: '#b45309', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
+          {!po.vendorGstin && <>This vendor has no GSTIN on file. If they are unregistered they cannot charge GST: the order would be worth {subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} without it. </>}
+          {stateGuessed && <>The vendor's state isn't known, so CGST + SGST is assumed. Add their GSTIN or state to the vendor record to be sure.</>}
+        </div>
+      )}
+
       {/* Invoice Document Wrapper */}
       <div className="doc-scroll">
       <div ref={invoiceRef} className="invoice-mock print:m-0 print:rounded-none print:shadow-none">
@@ -131,14 +151,14 @@ const POInvoice = () => {
           <div>
             <div className="inv-company-name">{company.name}</div>
             <div className="inv-company-detail">
-              {company.address}<br/>
-              GSTIN: <strong>{company.gstin}</strong> | PAN: {company.pan}<br/>
-              Ph: {company.phone}
-            </div>
-            <div className="mt-3 text-xs">
-              <span className="text-gray-500 uppercase tracking-wider font-bold text-[10px]">Project Scope</span><br/>
-              <strong style={{ color: '#111', fontSize: '13px' }}>{po.projectName}</strong><br/>
-              <span className="text-gray-600">Client: {po.clientName}</span>
+              {company.address}{company.address && <br/>}
+              {/* Only what is on file: "GSTIN: | PAN:" and "Ph:" printed empty. */}
+              {company.gstin && <>GSTIN: <strong>{company.gstin}</strong></>}
+              {company.stateCode && <>{company.gstin ? ' · ' : ''}State Code: <strong>{company.stateCode}</strong></>}
+              {company.pan && <>{company.gstin || company.stateCode ? ' · ' : ''}PAN: {company.pan}</>}
+              {(company.gstin || company.stateCode || company.pan) && <br/>}
+              {company.cin && <>CIN: <strong>{company.cin}</strong><br/></>}
+              {company.phone && <>Ph: {company.phone}</>}{company.email && <>{company.phone ? ' · ' : ''}{company.email}</>}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -146,7 +166,7 @@ const POInvoice = () => {
             <div className="inv-meta-row">P.O. #: <strong>{po.poNumber || `PO-${po.id}`}</strong></div>
             <div className="inv-meta-row">Date: <strong>{poDate}</strong></div>
             {po.quoteRef && <div className="inv-meta-row">Quote Ref: <strong>{po.quoteRef}</strong></div>}
-            <div className="inv-meta-row">Status: <strong>{po.status}</strong></div>
+            <div className="inv-meta-row print:hidden">Status: <strong>{po.status}</strong></div>
           </div>
         </div>
 
@@ -156,18 +176,22 @@ const POInvoice = () => {
             <div className="inv-party-title">Vendor</div>
             <div className="inv-party-name">{po.vendorName}</div>
             <div className="inv-party-detail">
-              {po.vendorAddress || 'Address not provided'}<br/>
-              Contact: {po.contactName} {po.contactPhone ? `(${po.contactPhone})` : ''}<br/>
-              GST: <strong>{po.vendorGstin || 'Unregistered'}</strong>
+              {vendorLines.length ? vendorLines.map((l, i) => <React.Fragment key={i}>{l}<br/></React.Fragment>)
+                : <><em className="print:hidden" style={{ color: '#dc2626' }}>Address not on file</em><br className="print:hidden"/></>}
+              {(po.contactName || po.contactPhone) && <>Contact: {po.contactName}{po.contactPhone ? ` (${po.contactPhone})` : ''}<br/></>}
+              GSTIN: <strong>{po.vendorGstin || 'Unregistered'}</strong>
             </div>
           </div>
           <div className="inv-party">
-            <div className="inv-party-title">Ship To (Project Site)</div>
-            <div className="inv-party-name">{po.projectName}</div>
+            {/* Where the goods go. It printed "Site Address / Store (As per
+                Project Specs)" — placeholder words, not an address. A PO for a
+                project goes to that project; anything else to our own works. */}
+            <div className="inv-party-title">{po.projectName ? 'Ship To (Project)' : 'Ship To'}</div>
+            <div className="inv-party-name">{po.projectName || company.name}</div>
             <div className="inv-party-detail">
-              Client: <strong>{po.clientName}</strong><br/>
-              Site Address / Store<br/>
-              (As per Project Specs)
+              {po.projectName
+                ? <>{po.clientName && <>Client: <strong>{po.clientName}</strong><br/></>}Deliver to the project site, as instructed</>
+                : <>{company.address}{company.gstin && <><br/>GSTIN: <strong>{company.gstin}</strong></>}</>}
             </div>
           </div>
           <div className="inv-party">
@@ -175,7 +199,7 @@ const POInvoice = () => {
             <div className="inv-party-name">{company.name}</div>
             <div className="inv-party-detail">
               {company.address}<br/>
-              GST: <strong>{company.gstin}</strong>
+              {company.gstin && <>GSTIN: <strong>{company.gstin}</strong></>}
             </div>
           </div>
         </div>
@@ -204,7 +228,7 @@ const POInvoice = () => {
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{item.quantity}</td>
                   <td style={{textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)'}}>{Number(item.unitPrice).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
                   <td style={{textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)', fontWeight: 600}}>
-                    {(item.quantity * item.unitPrice).toLocaleString('en-IN', {minimumFractionDigits:2})}
+                    {lineAmount(item).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                   </td>
                 </tr>
               ))}
@@ -219,7 +243,8 @@ const POInvoice = () => {
         <div className="inv-totals-section">
           <div className="inv-notes">
             <strong>Other Comments or Special Instructions</strong>
-            Payment Terms:<br/>{po.paymentTerms || 'Net 30 Days'}<br/><br/>
+            {/* Only when set: "Net 30 Days" printed for every PO without terms. */}
+            {po.paymentTerms && <>Payment Terms:<br/>{po.paymentTerms}<br/><br/></>}
             Note: This is the <span style={{ fontWeight: 700 }}>ordered value</span>. The final payable is confirmed on the GRN bill after material is received (actual quantity + freight/charges).
           </div>
           
@@ -265,25 +290,17 @@ const POInvoice = () => {
           Amount in Words: {amountInWords(total)}
         </div>
 
-        {/* Terms Grid */}
-        <div className="inv-terms-grid">
-          <div className="inv-term-cell">
-            <div className="inv-term-header">Price</div>
-            <div className="inv-term-value">{po.priceBasis}</div>
+        {/* Terms Grid — only the terms that were set */}
+        {termCells.length > 0 && (
+          <div className="inv-terms-grid" style={{ gridTemplateColumns: `repeat(${termCells.length}, 1fr)` }}>
+            {termCells.map(([h, v]) => (
+              <div className="inv-term-cell" key={h}>
+                <div className="inv-term-header">{h}</div>
+                <div className="inv-term-value">{v}</div>
+              </div>
+            ))}
           </div>
-          <div className="inv-term-cell">
-            <div className="inv-term-header">P&F, Insurance</div>
-            <div className="inv-term-value">{po.pnfInsurance}</div>
-          </div>
-          <div className="inv-term-cell">
-            <div className="inv-term-header">Loading & Unloading</div>
-            <div className="inv-term-value">{po.loadingScope}</div>
-          </div>
-          <div className="inv-term-cell">
-            <div className="inv-term-header">Warranty / Terms</div>
-            <div className="inv-term-value">{po.warranty}</div>
-          </div>
-        </div>
+        )}
 
         {/* Signature */}
         <div className="inv-sig">

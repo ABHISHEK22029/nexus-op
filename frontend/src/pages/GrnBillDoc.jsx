@@ -6,6 +6,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import { usePermissions } from '../context/PermissionContext';
 import Attachments from '../components/Attachments';
 import { docFileName, printAs } from '../lib/documentPdf';
+import { amountInWords } from '../lib/amountInWords';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -64,6 +65,11 @@ export default function GrnBillDoc() {
   );
   if (!bill) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading bill…</div>;
   const co = bill.company || {};
+  /* What has been paid, on the bill itself: it showed on screen only. */
+  const paid = Math.round((bill.payments || []).reduce((t, p) => t + Number(p.amount || 0), 0) * 100) / 100;
+  const balance = Math.max(0, Math.round((Number(bill.net_amount || 0) - paid) * 100) / 100);
+  const vend = bill.vendor || {};
+  const vendLines = [vend.address, [vend.city, vend.state].filter(Boolean).join(', ')].filter(Boolean);
   const date = bill.bill_date ? new Date(bill.bill_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
   return (
@@ -110,10 +116,14 @@ export default function GrnBillDoc() {
       <div ref={ref} className="invoice-mock">
         <div className="inv-header">
           <div>
-            <div className="inv-company-name">{co.name || co.tradeName || "Your organisation"}</div>
+            <div className="inv-company-name">{co.name || co.tradeName || '—'}</div>
             <div className="inv-company-detail">
               {co.address ? <>{co.address}<br /></> : <span className="print:hidden" style={{ color: '#dc2626', fontStyle: 'italic' }}>Add your address in Company profile<br /></span>}
-              {co.gstin && <>GSTIN: <strong>{co.gstin}</strong><br /></>}
+              {co.gstin && <>GSTIN: <strong>{co.gstin}</strong></>}
+              {co.stateCode && <>{co.gstin ? ' · ' : ''}State Code: <strong>{co.stateCode}</strong></>}
+              {co.pan && <>{co.gstin || co.stateCode ? ' · ' : ''}PAN: <strong>{co.pan}</strong></>}
+              {(co.gstin || co.stateCode || co.pan) && <br />}
+              {co.cin && <>CIN: <strong>{co.cin}</strong><br /></>}
               {co.phone && <>Ph: {co.phone}</>}
             </div>
           </div>
@@ -121,8 +131,12 @@ export default function GrnBillDoc() {
             <div className="inv-po-title">Purchase Bill</div>
             <div className="inv-meta-row">Bill #: <strong>{bill.bill_number}</strong></div>
             <div className="inv-meta-row">Date: <strong>{date}</strong></div>
-            {bill.vendor_bill_ref && <div className="inv-meta-row">Vendor Ref: <strong>{bill.vendor_bill_ref}</strong></div>}
-            <div className="inv-meta-row">Status: <strong>{bill.status}</strong></div>
+            {/* The supplier's own invoice number is what input tax credit is
+                claimed against (it must match their GSTR-1). */}
+            {bill.vendor_bill_ref
+              ? <div className="inv-meta-row">Vendor's Invoice No.: <strong>{bill.vendor_bill_ref}</strong></div>
+              : <div className="inv-meta-row print:hidden" data-bill-ref-missing style={{ color: '#dc2626' }}>Vendor's invoice no.: <em>not recorded — needed to claim the GST credit</em></div>}
+            <div className="inv-meta-row print:hidden">Status: <strong>{bill.status}</strong></div>
           </div>
         </div>
 
@@ -130,7 +144,10 @@ export default function GrnBillDoc() {
           <div className="inv-party">
             <div className="inv-party-title">Vendor</div>
             <div className="inv-party-name">{bill.vendor?.name || '—'}</div>
-            <div className="inv-party-detail">GST: <strong>{bill.vendor?.gstin || 'Unregistered'}</strong></div>
+            <div className="inv-party-detail">
+              {vendLines.map((l, i) => <React.Fragment key={i}>{l}<br /></React.Fragment>)}
+              GSTIN: <strong>{vend.gstin || 'Unregistered'}</strong>
+            </div>
           </div>
           <div className="inv-party">
             <div className="inv-party-title">Against</div>
@@ -145,7 +162,7 @@ export default function GrnBillDoc() {
         <div className="inv-items-table">
           <table className="doc-items">
             <thead><tr>
-              <th style={{ width: '6%' }}>#</th><th style={{ width: '42%' }}>DESCRIPTION</th><th>HSN</th><th>UOM</th><th style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>QTY</th><th style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>RATE</th><th style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>AMOUNT</th>
+              <th style={{ width: '6%' }}>#</th><th style={{ width: '42%' }}>DESCRIPTION</th><th>HSN/SAC</th><th>UOM</th><th style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>QTY</th><th style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>RATE</th><th style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>AMOUNT</th>
             </tr></thead>
             <tbody>
               {bill.items.map((it, i) => (
@@ -182,21 +199,26 @@ export default function GrnBillDoc() {
                   </>}
               {bill.round_off ? <tr><td className="tl">ROUND OFF</td><td className="tv">{rup(bill.round_off)}</td></tr> : null}
               <tr className="tf"><td className="tl" style={{ color: '#000' }}>NET PAYABLE</td><td className="tv" style={{ color: '#000' }}>{rup(bill.net_amount)}</td></tr>
+              {paid > 0 && <>
+                <tr><td className="tl">AMOUNT PAID</td><td className="tv">-{rup(paid)}</td></tr>
+                <tr className="tf"><td className="tl" style={{ color: '#000' }}>BALANCE</td><td className="tv" style={{ color: '#000' }}>{rup(balance)}</td></tr>
+              </>}
             </tbody>
           </table>
         </div>
 
-        <div className="inv-amount-words">Amount in Words: {bill.amount_in_words || '—'}</div>
+        {/* Spelled from the total on the page; the stored text could be empty or stale. */}
+        <div className="inv-amount-words">Amount in Words: {amountInWords(bill.net_amount)}</div>
 
         <div className="inv-sig">
           <div>
             <div className="inv-sig-line"></div>
             <div className="inv-sig-label">Authorized Signatory</div>
-            <div className="inv-sig-company mt-2">{co.name || co.tradeName || "Your organisation"}</div>
+            <div className="inv-sig-company mt-2">{co.name || co.tradeName || '—'}</div>
           </div>
         </div>
         <div className="inv-footer">
-          <div className="inv-footer-left">Generated by Maks Ops Platform</div>
+          <div className="inv-footer-left">{co.invoice_footer_note || 'This is a computer-generated document.'}</div>
           <div className="inv-footer-right">{bill.bill_number} &nbsp;|&nbsp; {date}</div>
         </div>
         </div>

@@ -557,7 +557,9 @@ const until = async (fn, ms = 15000) => {
       `stored as ${dn.note_number}, a ${dn.note_type} note to the vendor`);
     ok(r2(dn.sub_total) === 451.15 && r2(dn.gst_total) === 81.21 && r2(dn.total) === 532.36 && !dn.interstate && r2(Number(dn.cgst) + Number(dn.sgst)) === 81.21 && Number(dn.igst) === 0,
       `₹${dn.sub_total} + GST ₹${dn.gst_total} (CGST ${dn.cgst} + SGST ${dn.sgst}) = ₹${dn.total}`);
-    ok(dn.ref_number === 'GB-0001' && dn.reason === '1 base plate damaged' && dn.note_date === istDay(), `against ${dn.ref_number}, “${dn.reason}”, dated ${dn.note_date}`);
+    /* Against the vendor's own invoice number (24 Nov): GB-0001 is ours, and
+       means nothing in the vendor's books. The note still links to our bill. */
+    ok(dn.ref_number === 'SSS/INV/2026/0457' && dn.reason === '1 base plate damaged' && dn.note_date === istDay(), `against ${dn.ref_number}, “${dn.reason}”, dated ${dn.note_date}`);
     ok(r2(notes.summary?.debit_total) === 532.36, `the Debit notes tile counts it (₹${notes.summary?.debit_total})`);
     ok(Number(notes.summary?.unreferenced) === 0,
       `naming the bill it is against clears “Missing invoice ref” (still counts ${notes.summary?.unreferenced}: the form has no field for the original's date, and ref_date stays ${dn.ref_date})`);

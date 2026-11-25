@@ -117,10 +117,13 @@ const hairline = {
 
 function letterhead(m, logo) {
   const co = m.company || {};
-  const reg = [co.gstin && ['GSTIN: ', co.gstin], co.pan && ['PAN: ', co.pan]].filter(Boolean);
+  /* The supplier's state code is a Rule 46 particular, and a private limited
+     company prints its CIN (Companies Act s.12(3)(c)). */
+  const reg = [co.gstin && ['GSTIN: ', co.gstin], co.stateCode && ['State Code: ', co.stateCode], co.pan && ['PAN: ', co.pan]].filter(Boolean);
   const detail = [
     co.address && { text: soft(co.address) },
     reg.length && { text: reg.flatMap(([l, v], i) => [i ? ' · ' : '', l, { text: v, bold: true }]) },
+    co.cin && { text: ['CIN: ', { text: co.cin, bold: true }] },
     co.udyam_msme_no && { text: ['Udyam/MSME: ', { text: co.udyam_msme_no, bold: true }] },
     (co.phone || co.email) && { text: [co.phone ? `Ph: ${co.phone}` : '', co.phone && co.email ? ' · ' : '', co.email || ''].join('') },
   ].filter(Boolean);
@@ -132,9 +135,11 @@ function letterhead(m, logo) {
       {
         width: 'auto',
         stack: [
-          { text: m.title, fontSize: 13, bold: true, characterSpacing: 1.2, alignment: 'right', margin: [0, 0, 0, 4] },
+          { text: m.title, fontSize: 13, bold: true, characterSpacing: 1.2, alignment: 'right', margin: [0, 0, 0, m.subtitle ? 1 : 4] },
+          /* "ORIGINAL FOR RECIPIENT", or why a draft is not yet a tax invoice. */
+          m.subtitle ? { text: m.subtitle, fontSize: 7, bold: true, characterSpacing: 0.8, alignment: 'right', color: m.subtitleTone === 'warn' ? '#b91c1c' : SOFT, margin: [0, 0, 0, 4] } : null,
           ...(m.meta || []).filter(Boolean).map(([l, v]) => ({ text: [`${l}: `, { text: String(v ?? '—'), bold: true }], fontSize: 8, alignment: 'right', margin: [0, 0, 0, 1.5] })),
-        ],
+        ].filter(Boolean),
       },
     ],
     columnGap: 8,
@@ -269,9 +274,10 @@ function closing(m) {
         layout: { hLineWidth: () => 0.6, vLineWidth: () => 0.6, hLineColor: () => '#9ca3af', vLineColor: () => '#9ca3af', hLineStyle: () => ({ dash: { length: 3 } }), vLineStyle: () => ({ dash: { length: 3 } }), paddingLeft: () => 8, paddingRight: () => 8, paddingTop: () => 5, paddingBottom: () => 5 },
         margin: [0, 8, 0, 0],
       } : null,
+      m.declaration ? { text: [{ text: 'Declaration: ', bold: true }, m.declaration], fontSize: 7.5, color: SOFT, margin: [0, 8, 0, 0] } : null,
       {
         columns: [
-          m.receiver ? { width: 170, stack: [{ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 160, y2: 0, lineWidth: 0.6 }], margin: [0, 26, 0, 3] }, { text: m.receiver, fontSize: 7.5, color: SOFT }] } : { width: '*', text: '' },
+          m.receiver ?{ width: 170, stack: [{ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 160, y2: 0, lineWidth: 0.6 }], margin: [0, 26, 0, 3] }, { text: m.receiver, fontSize: 7.5, color: SOFT }] } : { width: '*', text: '' },
           { width: '*', text: '' },
           { width: 170, stack: [
             { canvas: [{ type: 'line', x1: 10, y1: 0, x2: 160, y2: 0, lineWidth: 0.6 }], margin: [0, 26, 0, 3] },

@@ -124,14 +124,19 @@ export default function SalesQuotationDoc() {
     key: r.key, label: labelOf(r, q), strong: !!r.strong,
     value: (r.sign ? r.sign + ' ' : '') + money(q[r.key]),
   }));
-  const notice = ['This is a quotation, not a tax invoice.', 'No GST is payable and no input tax credit arises on this document. '
-    + 'Prices hold until the validity date shown above and are subject to material rates at the time of order confirmation.'];
+  /* The notice points at the validity date only when there is one. */
+  const holdText = q.valid_until
+    ? 'Prices hold until the validity date shown above and are subject to material rates at the time of order confirmation.'
+    : 'Prices are subject to material rates at the time of order confirmation.';
+  const notice = ['This is a quotation, not a tax invoice.', `No GST is payable and no input tax credit arises on this document. ${holdText}`];
+  /* Payment terms were stored on the quotation and never printed. */
+  const payTerms = Number(q.payment_terms_days) > 0 ? `${Number(q.payment_terms_days)} days from invoice` : null;
 
   /* What the PDF says — the same values as the sheet below. */
   const pdfModel = () => ({
     fileName, title: 'QUOTATION', number: q.quote_number, company: co,
     /* No status: "Draft" or "Sent" is the seller's bookkeeping, not something to print on the customer's copy. */
-    meta: [['No.', q.quote_number], ['Date', fmtDate(q.quote_date)], ['Valid until', q.valid_until ? fmtDate(q.valid_until) : 'not set']],
+    meta: [['No.', q.quote_number], ['Date', fmtDate(q.quote_date)], q.valid_until && ['Valid until', fmtDate(q.valid_until)]],
     parties: [
       { title: 'Quotation For', name: cust.name, lines: [cust.billing_address, cust.state], gstin: cust.gstin || '' },
       (cust.shipping_address || cust.shipping_state)
@@ -140,7 +145,7 @@ export default function SalesQuotationDoc() {
     columns: LAYOUT.columns.map(c => ({ key: c.key, label: c.label, align: c.align, strong: c.strong, muted: ['hsn', 'uom'].includes(c.key) })),
     rows: (q.items || []).map((it, i) => LAYOUT.columns.map(c => cellText(c, it, i))),
     totals, words: `In words: ${words}`,
-    lines: [delivery && ['Delivery', delivery]],
+    lines: [delivery && ['Delivery', delivery], payTerms && ['Payment', payTerms]],
     bank: (co.bank_name && co.bank_account_no && co.bank_ifsc) ? {
       title: 'Bank Details (on acceptance)',
       rows: [co.bank_account_name && ['Account Name', co.bank_account_name], ['Bank', co.bank_name], ['Account No.', co.bank_account_no],
@@ -209,7 +214,7 @@ export default function SalesQuotationDoc() {
               canEdit={isDraft} onSave={patch} format={fmtDate}
               title="The date is fixed once the quotation has been sent" />],
             ['Valid until', <InlineEdit key="v" value={q.valid_until?.slice(0, 10)} field="valid_until" type="date"
-              canEdit={!isConverted} onSave={patch} format={fmtDate} placeholder="not set" />],
+              canEdit={!isConverted} onSave={patch} format={fmtDate} placeholder="not set" />, undefined, { screenOnly: !q.valid_until }],
             q.status && ['Status', q.status, undefined, { screenOnly: true }],   // on screen for the seller; not on the customer's copy
           ]}
         />
@@ -234,7 +239,7 @@ export default function SalesQuotationDoc() {
         </div>
 
         {!expired && daysLeft != null && daysLeft <= 7 && (
-          <div style={{ fontSize: '0.78rem', color: '#b45309', marginBottom: 10, fontWeight: 600 }}>
+          <div className="print:hidden" style={{ fontSize: '0.78rem', color: '#b45309', marginBottom: 10, fontWeight: 600 }}>
             Valid for {daysLeft} more day{daysLeft === 1 ? '' : 's'}.
           </div>
         )}
@@ -316,6 +321,11 @@ export default function SalesQuotationDoc() {
             <b>Delivery:</b> {delivery}
           </div>
         )}
+        {payTerms && (
+          <div className="doc-wrap" style={{ marginTop: 4, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+            <b>Payment:</b> {payTerms}
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginTop: 18 }}>
           <TermsBox terms={terms} />
@@ -326,8 +336,7 @@ export default function SalesQuotationDoc() {
 
         <NotATaxInvoice>
           <strong>This is a quotation, not a tax invoice.</strong> No GST is payable and no input tax
-          credit arises on this document. Prices hold until the validity date shown above and are
-          subject to material rates at the time of order confirmation.
+          credit arises on this document. {holdText}
         </NotATaxInvoice>
 
         <SignatureBlock company={co} />

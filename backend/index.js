@@ -745,6 +745,7 @@ app.get('/po/:id', async (req, res) => {
     const { rows } = await db.query(
       `SELECT po.*, 
               v.name as "vendorName", v.address as "vendorAddress", v.gstin as "vendorGstin", v."contactName", v."contactPhone", v."contactEmail",
+              v.state as "vendorState", v.city as "vendorCity",
               p.name as "projectName", p."clientName" as "clientName"
        FROM purchase_orders po
        /* The PO's own company's vendor and project: a PO raised against
@@ -842,8 +843,12 @@ app.post('/po', async (req, res) => {
            receipt and the older screens read; several lines keep theirs. */
         projectId || null, vendorId, workOrderId || null, itemName, quantity,
         unitPrice || (Array.isArray(items) && items.length === 1 ? Number(items[0].unitPrice) || null : null),
-        poNumber, quoteRef || null, paymentTerms || null, priceBasis || 'Ex Works',
-        pnfInsurance || 'Vendor Scope', loadingScope || 'Buyer Scope', warranty || '12 months',
+        /* Only terms someone chose. "Ex Works / Vendor Scope / Buyer Scope /
+           12 months" were filled in here for every PO raised without them
+           (from a shortfall, a vendor quote) and printed as if agreed. The
+           PO form still offers its own defaults, where they can be seen. */
+        poNumber, quoteRef || null, paymentTerms || null, priceBasis || null,
+        pnfInsurance || null, loadingScope || null, warranty || null,
         amountInWords || null, indentId || null, (gstRate === undefined || gstRate === '' ? 18 : Number(gstRate)),
         poOwner
       ]

@@ -20,12 +20,17 @@ import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
 import InlineEdit from '../components/InlineEdit';
 import {
-  CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate,
+  CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate, CopyPicker, COPIES,
 } from '../components/DocumentKit';
+import { stateCode } from '../lib/gstStates';
 import { docFileName, printAs } from '../lib/documentPdf';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const EWAY_THRESHOLD = 50000;
+/* Rule 138 counts the consignment's value WITH tax. A challan carries no tax
+   rate, so 18% is assumed: the warning comes slightly early for goods taxed
+   lower, never late. It used to compare the value before tax. */
+const EWAY_TAX = 0.18;
 
 export default function DeliveryChallanDoc() {
   const { id } = useParams();
@@ -33,6 +38,8 @@ export default function DeliveryChallanDoc() {
   const [dc, setDc] = useState(null);
   const [emailing, setEmailing] = useState(false);
   const [err, setErr] = useState(false);
+  /* Rule 55: in triplicate — consignee, transporter, consignor. */
+  const [copy, setCopy] = useState(COPIES.challan[0]);
 
   /* The e-way bill number, recorded on the challan itself — the warning
      above always asked for it, and there was nowhere to put it. */
@@ -66,7 +73,9 @@ export default function DeliveryChallanDoc() {
   const shipAddr = dc.ship_to_address || cust.shipping_address || cust.billing_address;
   const shipState = dc.ship_to_state || cust.shipping_state || cust.state;
 
-  const needsEway = value > EWAY_THRESHOLD;
+  const needsEway = value * (1 + EWAY_TAX) > EWAY_THRESHOLD;
+  const posName = dc.place_of_supply || shipState;
+  const posCode = stateCode(posName);
   const ewayMissing = needsEway && !dc.eway_bill_no;
 
   const th = { padding: '9px 10px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-default)' };
@@ -92,7 +101,7 @@ export default function DeliveryChallanDoc() {
             <AlertTriangle size={16} /> E-way bill required — and not recorded
           </div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 4 }}>
-            This consignment is {rup(value)}, above the {rup(EWAY_THRESHOLD)} threshold in Rule 138.
+            This consignment is {rup(value)} before tax (about {rup(value * (1 + EWAY_TAX))} with GST), above the {rup(EWAY_THRESHOLD)} threshold in Rule 138.
             Generate the e-way bill on the government portal and record the number here before the vehicle leaves.
           </div>
         </div>
@@ -103,14 +112,17 @@ export default function DeliveryChallanDoc() {
         <CompanyHeader
           company={co}
           title="DELIVERY CHALLAN"
+          subtitle={copy}
           meta={[
             ['No.', dc.challan_number],
             ['Date', fmtDate(dc.challan_date)],
             dc.order && ['Order', dc.order.order_number],
             dc.order?.customer_po_ref && ['Your PO', dc.order.customer_po_ref],
-            dc.status && ['Status', dc.status],
+            dc.status && ['Status', dc.status, null, { screenOnly: true }],
           ].filter(Boolean)}
-        />
+        >
+          <CopyPicker kind="challan" value={copy} onChange={setCopy} />
+        </CompanyHeader>
         {/* On screen only: where this challan came from and what billed it. */}
         {(dc.order || (dc.invoices || []).length > 0) && (
           <div className="print:hidden" data-challan-links style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: '0.8rem', margin: '-6px 0 14px', color: 'var(--text-secondary)' }}>
@@ -131,6 +143,9 @@ export default function DeliveryChallanDoc() {
             name={shipName}
             address={shipAddr}
             state={shipState}
+            /* Rule 55: the consignee's GSTIN. The ship-to is the buyer's own
+               site unless a different one was recorded. */
+            gstin={dc.ship_to_gstin ?? cust.gstin ?? ''}
             required
           />
           <Party
@@ -146,7 +161,7 @@ export default function DeliveryChallanDoc() {
           <Meta box={metaBox} label="Dispatch through" value={dc.dispatch_through || dc.transporter_name} />
           <Meta box={metaBox} label="Vehicle No." value={dc.vehicle_no} mono />
           <Meta box={metaBox} label="LR / Docket" value={dc.lr_no} />
-          <Meta box={metaBox} label="Place of supply" value={dc.place_of_supply || shipState} />
+          <Meta box={metaBox} label="Place of supply" value={posName ? `${posName}${posCode ? ` (${posCode})` : ''}` : null} />
           <Meta box={metaBox} label="E-way Bill No." mono warn={ewayMissing}
             value={<>
               <span className="print:hidden"><InlineEdit value={dc.eway_bill_no} field="eway_bill_no" canEdit onSave={saveEway}
@@ -163,7 +178,7 @@ export default function DeliveryChallanDoc() {
             <thead><tr>
               <th style={{ ...th, textAlign: 'left' }}>#</th>
               <th style={{ ...th, textAlign: 'left' }}>Description</th>
-              <th style={{ ...th, textAlign: 'left' }}>HSN</th>
+              <th style={{ ...th, textAlign: 'left' }}>HSN/SAC</th>
               <th style={{ ...th, textAlign: 'center' }}>UOM</th>
               <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Qty</th>
               <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Value</th>
@@ -190,7 +205,7 @@ export default function DeliveryChallanDoc() {
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Total value of goods</div>
             <div style={{ fontSize: '1.3rem', fontWeight: 800, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>₹{rup(value)}</div>
-            {needsEway && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>above ₹50,000 — e-way bill applies</div>}
+            {needsEway && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>above ₹50,000 with GST — e-way bill applies</div>}
           </div>
         </div>
 

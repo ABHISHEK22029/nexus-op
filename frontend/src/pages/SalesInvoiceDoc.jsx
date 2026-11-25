@@ -11,6 +11,7 @@ import Attachments from '../components/Attachments';
 import { amountInWords } from '../lib/amountInWords';
 import { docFileName, downloadDocumentPdf, printAs } from '../lib/documentPdf';
 import { PAYMENT_MODES, DEFAULT_PAYMENT_MODE } from '../lib/paymentModes';
+import { CopyPicker, COPIES, DECLARATION, Declaration } from '../components/DocumentKit';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -30,6 +31,8 @@ export default function SalesInvoiceDoc() {
   const [emailing, setEmailing] = useState(false);
   const [making, setMaking] = useState(false);
   const [paying, setPaying] = useState(false);
+  /* Which of the three copies is being printed (Rule 46: triplicate). */
+  const [copy, setCopy] = useState(COPIES.invoice[0]);
   /* A wrong or deleted id, or one this role can't open, showed "Loading
      invoice…" for good, with no way back. */
   const [missing, setMissing] = useState('');
@@ -180,14 +183,24 @@ export default function SalesInvoiceDoc() {
      balance due appear once money has come in; an unpaid invoice reads
      exactly as before. */
   const half = Number(inv.gst_rate) / 2;
+  /* Rule 46: the taxable value — after any discount — is a particular of
+     the invoice. With no discount it is the sub-total, so it is labelled so. */
+  const taxable = Math.round((Number(inv.sub_total || 0) - Number(inv.discount || 0)) * 100) / 100;
+  const gstTotal = Math.round((Number(inv.cgst || 0) + Number(inv.sgst || 0) + Number(inv.igst || 0)) * 100) / 100;
+  /* Reverse charge: the GST is shown, but the recipient pays it to the
+     government, so it comes off what they pay us. (Invoices raised before
+     this was fixed keep the total they were issued with.) */
+  const rcm = !!inv.reverse_charge && Math.abs(Number(inv.net_amount) - (taxable + Number(inv.round_off || 0))) < 0.01;
   const totalRows = [
-    { label: 'SUB-TOTAL', value: rup(inv.sub_total) },
+    Number(inv.discount) ? { label: 'SUB-TOTAL', value: rup(inv.sub_total) } : null,
     Number(inv.discount) ? { label: 'DISCOUNT', value: `-${rup(inv.discount)}` } : null,
+    { label: 'TAXABLE VALUE', value: rup(taxable) },
     /* Rule 46(i): the RATE of tax is a particular of the invoice, not just
        the amount. */
     ...(inv.interstate
       ? [{ label: `IGST @ ${inv.gst_rate}%`, value: rup(inv.igst) }]
       : [{ label: `CGST @ ${half}%`, value: rup(inv.cgst) }, { label: `SGST @ ${half}%`, value: rup(inv.sgst) }]),
+    rcm ? { label: 'LESS: GST ON REVERSE CHARGE', value: `-${rup(gstTotal)}` } : null,
     Number(inv.round_off) ? { label: 'ROUND OFF', value: rup(inv.round_off) } : null,
     { label: 'INVOICE TOTAL', value: rup(inv.net_amount), strong: true },
     ...(paid > 0 ? [
@@ -209,12 +222,21 @@ export default function SalesInvoiceDoc() {
     !inv.place_of_supply && 'Place of supply',
     !billTo.address && "Customer's billing address",
     !hasBank && 'Your bank details (Company Profile) — the customer cannot pay without them',
+    (() => { const n = inv.items.map((it, i) => (String(it.hsn || '').trim() ? null : i + 1)).filter(Boolean); return n.length ? `HSN/SAC code on line${n.length > 1 ? 's' : ''} ${n.join(', ')}` : null; })(),
   ].filter(Boolean);
+
+  /* A draft is not a tax invoice yet, and says so on paper: printed as a
+     real one, it could be sent before it was issued. An issued invoice
+     carries which of its three copies this is. Status is the seller's
+     business and stays on screen. */
+  const docTitle = isDraft ? 'Draft Invoice' : 'Tax Invoice';
+  const subtitle = isDraft ? 'DRAFT — NOT A VALID TAX INVOICE UNTIL ISSUED' : isCancelled ? 'CANCELLED' : copy;
+  const subtitleTone = isDraft || isCancelled ? 'warn' : undefined;
 
   /* What the PDF says — the same values as the page above it. */
   const pdfModel = () => ({
-    fileName, title: 'TAX INVOICE', number: inv.invoice_number, framed: true, company: co,
-    meta: [['Invoice #', inv.invoice_number], ['Date', date], dueDate && ['Due', dueDate], ['Status', inv.status]],
+    fileName, title: docTitle.toUpperCase(), subtitle, subtitleTone, number: inv.invoice_number, framed: true, company: co,
+    meta: [['Invoice #', inv.invoice_number], ['Date', date], dueDate && ['Due', dueDate]],
     parties: [
       { title: 'Bill To', name: billTo.name, lines: [billTo.address, billTo.state], gstin: billTo.gstin || '' },
       { title: 'Ship To', note: differentShipTo ? '' : '(same as billing)', name: shipTo.name, lines: [shipTo.address, shipTo.state], gstin: shipTo.gstin || undefined },
@@ -227,7 +249,7 @@ export default function SalesInvoiceDoc() {
       inv.order?.customer_po_ref && ['Your PO', inv.order.customer_po_ref],
     ],
     columns: [
-      { key: 'index', label: '#' }, { key: 'description', label: 'Description' }, { key: 'hsn', label: 'HSN' },
+      { key: 'index', label: '#' }, { key: 'description', label: 'Description' }, { key: 'hsn', label: 'HSN/SAC' },
       { key: 'uom', label: 'UOM', align: 'center' }, { key: 'quantity', label: 'Qty', align: 'right' },
       { key: 'rate', label: 'Rate', align: 'right' }, { key: 'amount', label: 'Amount', align: 'right', strong: true },
     ],
@@ -235,7 +257,7 @@ export default function SalesInvoiceDoc() {
     rows: inv.items.map((it, i) => [String(i + 1), it.description, it.hsn || '-', it.uom || '', String(it.quantity ?? ''), rup(it.rate), rup(it.amount)]),
     notes: inv.notes, totals: totalRows, words: `Amount in Words: ${words}`,
     bank: bankRows.length ? { title: 'Bank Details for Payment', rows: bankRows } : null,
-    terms: terms ? { text: terms } : null, irn: inv.irn,
+    terms: terms ? { text: terms } : null, irn: inv.irn, declaration: isDraft ? null : DECLARATION,
     footerLeft: co.invoice_footer_note || 'This is a computer-generated invoice.',
     footerRight: `${inv.invoice_number}  |  ${date}`,
   });
@@ -386,15 +408,19 @@ export default function SalesInvoiceDoc() {
               <div className="inv-company-name">{co.name || '—'}</div>
               <div className="inv-company-detail">
                 {co.address}{co.address && <br />}
-                {co.gstin && <>GSTIN: <strong>{co.gstin}</strong>{co.pan ? ' · ' : <br />}</>}
+                {co.gstin && <>GSTIN: <strong>{co.gstin}</strong>{co.stateCode || co.pan ? ' · ' : <br />}</>}
+                {co.stateCode && <>State Code: <strong>{co.stateCode}</strong>{co.pan ? ' · ' : <br />}</>}
                 {co.pan && <>PAN: <strong>{co.pan}</strong><br /></>}
+                {co.cin && <>CIN: <strong>{co.cin}</strong><br /></>}
                 {co.udyam_msme_no && <>Udyam/MSME: <strong>{co.udyam_msme_no}</strong><br /></>}
                 {co.phone && <>Ph: {co.phone}</>}{co.email && <> · {co.email}</>}
               </div>
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div className="inv-po-title">Tax Invoice</div>
+            <div className="inv-po-title">{docTitle}</div>
+            <div className="doc-copy-label" data-doc-subtitle style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.06em', color: subtitleTone ? '#b91c1c' : '#4b5563', margin: '1px 0 4px' }}>{subtitle}</div>
+            {!isDraft && !isCancelled && <CopyPicker kind="invoice" value={copy} onChange={setCopy} />}
             {/* Editable while the invoice is a Draft. Once issued the number
                 and date are particulars of a tax document under Rule 46 —
                 the padlock says so rather than letting someone type into a
@@ -410,10 +436,10 @@ export default function SalesInvoiceDoc() {
             {/* The due date can move after issue — payment terms get agreed
                 late — so it stays editable whatever the status, short of
                 cancelled. */}
-            <div className="inv-meta-row">Due: <span style={{ color: overdue ? '#dc2626' : undefined }}><InlineEdit
+            <div className={`inv-meta-row${inv.due_date ? '' : ' print:hidden'}`}>Due: <span style={{ color: overdue ? '#dc2626' : undefined }}><InlineEdit
               value={inv.due_date?.slice(0, 10)} field="due_date" type="date" canEdit={!isCancelled} onSave={patch}
               format={(d) => (d ? `${fmt(d)}${overdue ? ' (overdue)' : ''}` : null)} placeholder="not set" /></span></div>
-            <div className="inv-meta-row">Status: <strong>{inv.status}</strong></div>
+            <div className="inv-meta-row print:hidden">Status: <strong>{inv.status}</strong></div>
           </div>
         </div>
 
@@ -426,7 +452,7 @@ export default function SalesInvoiceDoc() {
             <div className="inv-party-detail doc-wrap">
               {/* The line break comes either way: without it the warning ran into the
                   state ("Address missingTelangana"). */}
-              {billTo.address || <em style={{ color: '#dc2626' }}>Address missing</em>}<br />
+              {billTo.address || <em className="print:hidden" style={{ color: '#dc2626' }}>Address missing</em>}{billTo.address && <br />}
               {billTo.state && <>{billTo.state}<br /></>}
               GSTIN: <strong>{billTo.gstin || 'Unregistered'}</strong>
             </div>
@@ -445,7 +471,7 @@ export default function SalesInvoiceDoc() {
 
         {/* Rule 46 fields that must appear on the face of the invoice */}
         <div className="inv-facts" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, padding: '8px 22px', fontSize: '0.78rem', borderBottom: '1px solid #e5e7eb' }}>
-          <span>Place of Supply: <strong>{inv.place_of_supply || <em style={{ color: '#dc2626' }}>not set</em>}</strong>{inv.place_of_supply_code ? ` (${inv.place_of_supply_code})` : ''}</span>
+          <span>Place of Supply: <strong>{inv.place_of_supply || <em className="print:hidden" style={{ color: '#dc2626' }}>not set</em>}</strong>{inv.place_of_supply_code ? ` (${inv.place_of_supply_code})` : ''}</span>
           <span>Reverse Charge: <strong>{inv.reverse_charge ? 'Yes' : 'No'}</strong></span>
           <span className={inv.eway_bill_no ? undefined : 'print:hidden'}>E-Way Bill: <InlineEdit
             value={inv.eway_bill_no} field="eway_bill_no" canEdit onSave={patch} placeholder="add" /></span>
@@ -455,7 +481,7 @@ export default function SalesInvoiceDoc() {
 
         <div className="inv-items-table">
           <table className="doc-items">
-            <thead><tr><th style={{ width: '6%' }}>#</th><th style={{ width: '42%' }}>DESCRIPTION</th><th>HSN</th><th>UOM</th><th style={num}>QTY</th><th style={num}>RATE</th><th style={num}>AMOUNT</th></tr></thead>
+            <thead><tr><th style={{ width: '6%' }}>#</th><th style={{ width: '42%' }}>DESCRIPTION</th><th>HSN/SAC</th><th>UOM</th><th style={num}>QTY</th><th style={num}>RATE</th><th style={num}>AMOUNT</th></tr></thead>
             <tbody>
               {inv.items.map((it, i) => (
                 <tr key={it.id}>
@@ -493,7 +519,7 @@ export default function SalesInvoiceDoc() {
             minmax(0, …): a long word in the terms widened its column until
             the bank box was squeezed to a sliver. */}
         <div className="inv-bank-terms" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', gap: 16, margin: '14px 22px 0' }}>
-          <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px' }}>
+          <div className={hasBank ? undefined : 'print:hidden'} style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 6 }}>Bank Details for Payment</div>
             {hasBank ? (
               <table style={{ fontSize: '0.78rem', borderCollapse: 'collapse' }}>
@@ -529,6 +555,7 @@ export default function SalesInvoiceDoc() {
           </div>
         </div>
 
+        {!isDraft && <Declaration />}
         <div className="inv-sig">
           <div>
             <div className="inv-sig-line"></div>

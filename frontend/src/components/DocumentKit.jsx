@@ -19,8 +19,35 @@ export const fmtDate = (d) => d
   ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
   : '—';
 
-/* ── Company header: who we are, and the registrations a buyer needs ── */
-export function CompanyHeader({ company = {}, title, meta = [] }) {
+/* ── Which copy this is. Rule 46/55: an invoice is made out in triplicate
+      (recipient, transporter, supplier) and a challan likewise (consignee,
+      transporter, consignor). Chosen on screen before printing. ── */
+export const COPIES = {
+  invoice: ['ORIGINAL FOR RECIPIENT', 'DUPLICATE FOR TRANSPORTER', 'TRIPLICATE FOR SUPPLIER'],
+  challan: ['ORIGINAL FOR CONSIGNEE', 'DUPLICATE FOR TRANSPORTER', 'TRIPLICATE FOR CONSIGNOR'],
+};
+export function CopyPicker({ kind = 'invoice', value, onChange }) {
+  return (
+    <label className="print:hidden" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: '#6b7280', marginTop: 2 }}>
+      Copy
+      <select value={value} onChange={e => onChange(e.target.value)} data-copy-picker aria-label="Which copy to print"
+        style={{ fontSize: '0.72rem', padding: '2px 4px', border: '1px solid #d1d5db', borderRadius: 5, background: '#fff', color: '#111' }}>
+        {COPIES[kind].map(c => <option key={c} value={c}>{c.charAt(0) + c.slice(1).toLowerCase()}</option>)}
+      </select>
+    </label>
+  );
+}
+
+/* The particulars-are-true declaration a tax invoice closes with. */
+export const DECLARATION = 'We declare that this invoice shows the actual price of the goods and services described and that all particulars are true and correct.';
+export function Declaration({ text = DECLARATION }) {
+  return <div className="doc-declaration" style={{ margin: '12px 22px 0', fontSize: '0.72rem', color: '#4b5563' }}><strong>Declaration:</strong> {text}</div>;
+}
+
+/* ── Company header: who we are, and the registrations a buyer needs ──
+   subtitle: the copy ("ORIGINAL FOR RECIPIENT"), or why a draft is not yet
+   the real document. tone 'warn' prints it in red. */
+export function CompanyHeader({ company = {}, title, meta = [], subtitle, subtitleTone, children }) {
   const co = company;
   return (
     <div className="inv-header">
@@ -32,8 +59,12 @@ export function CompanyHeader({ company = {}, title, meta = [] }) {
           <div className="inv-company-name">{co.name || '—'}</div>
           <div className="inv-company-detail">
             {co.address}{co.address && <br />}
-            {co.gstin && <>GSTIN: <strong>{co.gstin}</strong>{co.pan ? ' · ' : <br />}</>}
+            {co.gstin && <>GSTIN: <strong>{co.gstin}</strong>{co.stateCode || co.pan ? ' · ' : <br />}</>}
+            {/* The supplier's state code is a Rule 46 particular. */}
+            {co.stateCode && <>State Code: <strong>{co.stateCode}</strong>{co.pan ? ' · ' : <br />}</>}
             {co.pan && <>PAN: <strong>{co.pan}</strong><br /></>}
+            {/* A private limited company prints its CIN (Companies Act s.12). */}
+            {co.cin && <>CIN: <strong>{co.cin}</strong><br /></>}
             {/* Udyam is worth printing: it entitles the supplier to the
                 MSMED Act 45-day payment rule. */}
             {co.udyam_msme_no && <>Udyam/MSME: <strong>{co.udyam_msme_no}</strong><br /></>}
@@ -43,6 +74,8 @@ export function CompanyHeader({ company = {}, title, meta = [] }) {
       </div>
       <div style={{ textAlign: 'right' }}>
         <div className="inv-po-title">{title}</div>
+        {subtitle && <div className="doc-copy-label" data-doc-subtitle style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.06em', color: subtitleTone === 'warn' ? '#b91c1c' : '#4b5563', margin: '1px 0 4px' }}>{subtitle}</div>}
+        {children}
         {/* A fourth element { screenOnly: true } keeps a row off the printed
             copy — for what is the seller's business, not the customer's. */}
         {meta.filter(Boolean).map(([label, value, tone, opts]) => (
@@ -64,7 +97,8 @@ export function Party({ title, name, address, gstin, state, note, required }) {
       </div>
       <div className="inv-party-name">{name || '—'}</div>
       <div className="inv-party-detail doc-wrap">
-        {address || (required ? <em style={{ color: '#dc2626' }}>Address missing</em> : '—')}
+        {/* The warning is for the screen; paper shows nothing rather than it. */}
+        {address || (required ? <em className="print:hidden" style={{ color: '#dc2626' }}>Address missing</em> : '—')}
         {address && <br />}
         {state && <>{state}<br /></>}
         {gstin !== undefined && <>GSTIN: <strong>{gstin || 'Unregistered'}</strong></>}
@@ -77,7 +111,7 @@ export function Party({ title, name, address, gstin, state, note, required }) {
 export function TaxMetaStrip({ placeOfSupply, placeOfSupplyCode, reverseCharge, extras = [] }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, padding: '8px 2px 12px', fontSize: '0.78rem', borderBottom: '1px solid #e5e7eb', marginBottom: 12 }}>
-      <span>Place of Supply: <strong>{placeOfSupply || <em style={{ color: '#dc2626' }}>not set</em>}</strong>{placeOfSupplyCode ? ` (${placeOfSupplyCode})` : ''}</span>
+      <span>Place of Supply: <strong>{placeOfSupply || <em className="print:hidden" style={{ color: '#dc2626' }}>not set</em>}</strong>{placeOfSupplyCode ? ` (${placeOfSupplyCode})` : ''}</span>
       <span>Reverse Charge: <strong>{reverseCharge ? 'Yes' : 'No'}</strong></span>
       {extras.filter(Boolean).map(([l, v]) => <span key={l}>{l}: <strong>{v}</strong></span>)}
     </div>
@@ -87,8 +121,10 @@ export function TaxMetaStrip({ placeOfSupply, placeOfSupplyCode, reverseCharge, 
 /* ── Bank details: without these the customer cannot pay ── */
 export function BankBox({ company = {}, title = 'Bank Details for Payment' }) {
   const has = company.bank_name && company.bank_account_no && company.bank_ifsc;
+  /* With nothing to show, the box stays off paper: "Not configured — add
+     them in Company Profile" is a note to us, not to the customer. */
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px' }}>
+    <div className={has ? undefined : 'print:hidden'} style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px' }}>
       <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 6 }}>{title}</div>
       {has ? (
         <table style={{ fontSize: '0.78rem', borderCollapse: 'collapse' }}>

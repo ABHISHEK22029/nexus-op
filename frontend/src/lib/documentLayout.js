@@ -38,7 +38,7 @@ const money = { align: 'right', numeric: true };
 const ITEM_COLUMNS = [
   { key: 'index', label: '#', width: 4, align: 'left' },
   { key: 'description', label: 'Description', width: 40, align: 'left' },
-  { key: 'hsn', label: 'HSN', width: 10, align: 'left' },
+  { key: 'hsn', label: 'HSN/SAC', width: 10, align: 'left' },
   { key: 'uom', label: 'UOM', width: 8, align: 'center' },
   { key: 'quantity', label: 'Qty', width: 10, ...money, decimals: 3, trimZeros: true },
   { key: 'rate', label: 'Rate', width: 13, ...money },

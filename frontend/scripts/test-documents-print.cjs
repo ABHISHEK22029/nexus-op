@@ -285,7 +285,8 @@ function checkPages(label, pages, { rows, closing, minPages = 1 }) {
     ok(!/Delivery:/.test(await page.evaluate(() => document.body.innerText)), 'no “Delivery:” line when none was promised');
 
     /* ── Invoices ───────────────────────────────────────────────────── */
-    const ICLOSE = ['SUB-TOTAL', 'Amount in Words', 'IFSC', 'Authorized Signatory', 'Bank Details for Payment'];
+    /* With no discount the first total reads TAXABLE VALUE (Rule 46), not SUB-TOTAL (24 Nov). */
+    const ICLOSE = ['TAXABLE VALUE', 'Amount in Words', 'IFSC', 'Authorized Signatory', 'Bank Details for Payment'];
     for (const inv of invs) {
       const paid = inv === paidInv;
       console.log(`\n  ── tax invoice, ${inv.n} lines${paid ? ', part paid' : ''}`);

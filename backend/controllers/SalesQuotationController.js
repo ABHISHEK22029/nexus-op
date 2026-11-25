@@ -180,7 +180,9 @@ exports.getById = async (req, res) => {
     const customer = q.customer_id ? (await db.query(
       'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [q.customer_id, q.owner_id])).rows[0] : null;
     let company = null;
-    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
+    /* The document's own company — an Administrator viewing another
+       company's document saw their own letterhead and bank on it. */
+    try { company = await profileFor(db, q.owner_id ?? req.user?.orgId); } catch { /* optional */ }
     /* delivery_days / delivery_note are the promise as saved (SELECT *);
        this is what the products' lead times would suggest, for comparison. */
     const delivery_suggestion = suggestDeliveryDays(

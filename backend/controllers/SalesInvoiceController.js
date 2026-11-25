@@ -40,7 +40,10 @@ const { amountInWords } = require('../shared/amountInWords');
    description, an impossible quantity or rate, a discount larger than the
    sub-total or a round-off over ₹1 is refused with a 400 that says which.
    `strictUnits` for lines a person has just sent. */
-function compute(items, { discount = 0, gstRate = 18, interstate = false, roundOff = 0 }, { strictUnits = false } = {}) {
+/* reverseCharge: the tax is shown on the invoice but paid to the government
+   by the recipient (section 9(3)/(4)), so it is not part of what the
+   customer pays us. It used to be added to the total all the same. */
+function compute(items, { discount = 0, gstRate = 18, interstate = false, roundOff = 0, reverseCharge = false }, { strictUnits = false } = {}) {
   const lines = prepareLines(items, { strictUnits }).map(it => ({ ...it, amount: r2(it.quantity * it.rate) }));
   const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
   checkAdjustments(subTotal, { discount, roundOff });
@@ -49,7 +52,7 @@ function compute(items, { discount = 0, gstRate = 18, interstate = false, roundO
   const cgst = interstate ? 0 : r2(gstTotal / 2);
   const sgst = interstate ? 0 : r2(gstTotal - cgst);
   const igst = interstate ? gstTotal : 0;
-  const net = r2(taxable + gstTotal + Number(roundOff || 0));
+  const net = r2(taxable + (reverseCharge ? 0 : gstTotal) + Number(roundOff || 0));
   return { lines, subTotal, taxable, gstTotal, cgst, sgst, igst, net };
 }
 
@@ -290,7 +293,7 @@ exports.create = async (req, res) => {
     /* On the transaction's client, not the pool — see resolveTax. */
     const tax = await resolveTax(client, req.user?.orgId, customerId, placeOfSupply);
     const isInter = interstate === undefined || interstate === null ? tax.interstate : !!interstate;
-    const t = compute(items, { discount, gstRate, interstate: isInter, roundOff }, { strictUnits: true });
+    const t = compute(items, { discount, gstRate, interstate: isInter, roundOff, reverseCharge: !!reverseCharge }, { strictUnits: true });
     /* An order is billed once: at most what is left on each line. */
     if (customerOrderId) {
       t.lines = await checkOrderBilling(client, { orderId: customerOrderId, lines: t.lines });
@@ -455,7 +458,9 @@ exports.getById = async (req, res) => {
         [inv.customer_order_id, inv.owner_id])).rows[0] || null
       : null;
     let company = null;
-    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
+    /* The document's own company — an Administrator viewing another
+       company's document saw their own letterhead and bank on it. */
+    try { company = await profileFor(db, inv.owner_id ?? req.user?.orgId); } catch { /* optional */ }
     /* An order billed more than it was ordered — invoices from before the
        check, raised twice. Said on the invoice, with the others it shares
        the order with, so the owner can cancel the extra one. */
@@ -652,7 +657,7 @@ exports.update = async (req, res) => {
     for (const k of allowed) if (k in req.body) set[k] = req.body[k];
 
     if (draft && (req.body.items || 'discount' in set || 'gst_rate' in set
-                  || 'round_off' in set || 'customer_id' in set || 'place_of_supply' in set)) {
+                  || 'round_off' in set || 'customer_id' in set || 'place_of_supply' in set || 'reverse_charge' in set)) {
       const items = req.body.items
         || (await client.query('SELECT * FROM sales_invoice_items WHERE sales_invoice_id = $1 ORDER BY sort_order', [inv.id])).rows;
       const tax = await resolveTax(client, inv.owner_id, set.customer_id ?? inv.customer_id,
@@ -669,6 +674,7 @@ exports.update = async (req, res) => {
         gstRate: set.gst_rate ?? inv.gst_rate,
         interstate: inter,
         roundOff: set.round_off ?? inv.round_off,
+        reverseCharge: !!(set.reverse_charge ?? inv.reverse_charge),
       }, { strictUnits: !!req.body.items });
       Object.assign(set, {
         sub_total: t.subTotal, interstate: inter, cgst: t.cgst, sgst: t.sgst,

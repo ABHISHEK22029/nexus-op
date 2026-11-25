@@ -238,7 +238,9 @@ exports.getById = async (req, res) => {
       'SELECT * FROM vendors WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [bill.vendor_id, bill.owner_id])).rows[0] : null;
     const payments = (await db.query('SELECT * FROM vendor_payments WHERE grn_bill_id = $1 ORDER BY id', [req.params.id])).rows;
     let company = null;
-    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
+    /* The document's own company — an Administrator viewing another
+       company's document saw their own letterhead and bank on it. */
+    try { company = await profileFor(db, bill.owner_id ?? req.user?.orgId); } catch { /* optional */ }
     /* The PO by its number, for the printed bill ("PO #5355" was the row id). */
     const poNumber = bill.po_id ? (await db.query(
       'SELECT "poNumber" FROM purchase_orders WHERE id = $1 AND owner_id IS NOT DISTINCT FROM $2', [bill.po_id, bill.owner_id])).rows[0]?.poNumber : null;

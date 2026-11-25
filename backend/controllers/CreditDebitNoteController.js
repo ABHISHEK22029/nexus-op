@@ -90,7 +90,9 @@ exports.getById = async (req, res) => {
       party = (await db.query(`SELECT * FROM ${tbl} WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)`, [n.party_id, n.owner_id])).rows[0];
     }
     let company = null;
-    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
+    /* The document's own company — an Administrator viewing another
+       company's document saw their own letterhead and bank on it. */
+    try { company = await profileFor(db, n.owner_id ?? req.user?.orgId); } catch { /* optional */ }
     res.json({ ...n, items, party, company });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
@@ -138,7 +140,7 @@ exports.create = async (req, res) => {
               WHERE owner_id IS NOT DISTINCT FROM $1 AND ${byId ? 'id = $2' : 'LOWER(invoice_number) = LOWER($2)'}
               ORDER BY id DESC LIMIT 1`, [own, byId || refNo])).rows[0]
         : (await client.query(
-            `SELECT id, bill_number AS number, bill_date AS d, vendor_id AS party_id, net_amount, gst_rate, interstate, NULL AS status
+            `SELECT id, bill_number AS number, vendor_bill_ref AS vref, bill_date AS d, vendor_id AS party_id, net_amount, gst_rate, interstate, NULL AS status
                FROM grn_bills
               WHERE owner_id IS NOT DISTINCT FROM $1 AND ${byId ? 'id = $2' : '(LOWER(bill_number) = LOWER($2) OR LOWER(vendor_bill_ref) = LOWER($2))'}
               ORDER BY id DESC LIMIT 1`, [own, byId || refNo])).rows[0];
@@ -152,7 +154,9 @@ exports.create = async (req, res) => {
       }
       if (original) {
         ref = { type: ref.type || (partyType === 'customer' ? 'sales_invoice' : 'grn_bill'), id: original.id, date: ref.date || original.d };
-        refNo = original.number || refNo;
+        /* A note to a vendor names THEIR invoice — the number their books and
+           GSTR-1 know — not our internal bill number (GB-…). */
+        refNo = (partyType !== 'customer' && original.vref) || original.number || refNo;
       }
     }
     /* Taxed the way the original was: a note reverses that supply, so its

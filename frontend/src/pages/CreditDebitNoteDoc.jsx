@@ -18,6 +18,7 @@ import Attachments from '../components/Attachments';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, ComplianceWarning, fmtDate,
 } from '../components/DocumentKit';
+import { amountInWords } from '../lib/amountInWords';
 import { docFileName, printAs } from '../lib/documentPdf';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -71,7 +72,7 @@ export default function CreditDebitNoteDoc() {
           meta={[
             ['No.', n.note_number],
             ['Date', fmtDate(n.note_date)],
-            n.status && ['Status', n.status],
+            n.status && ['Status', n.status, null, { screenOnly: true }],
           ]}
         />
 
@@ -109,7 +110,7 @@ export default function CreditDebitNoteDoc() {
           <div style={{ fontSize: '0.85rem' }}>
             <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', marginBottom: 4 }}>Reason</div>
             <div style={{ color: 'var(--text-secondary)' }}>
-              {n.reason || <em style={{ color: '#dc2626' }}>No reason recorded — a note without a stated reason invites a query.</em>}
+              {n.reason || <><em className="print:hidden" style={{ color: '#dc2626' }}>No reason recorded — a note without a stated reason invites a query.</em><span className="print-only">—</span></>}
             </div>
           </div>
         </div>
@@ -119,7 +120,7 @@ export default function CreditDebitNoteDoc() {
             <thead><tr>
               <th style={{ ...th, textAlign: 'left' }}>#</th>
               <th style={{ ...th, textAlign: 'left' }}>Description</th>
-              <th style={{ ...th, textAlign: 'left' }}>HSN</th>
+              <th style={{ ...th, textAlign: 'left' }}>HSN/SAC</th>
               <th style={{ ...th, textAlign: 'center' }}>UOM</th>
               <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Qty</th>
               <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Rate</th>
@@ -146,15 +147,20 @@ export default function CreditDebitNoteDoc() {
         <div className="doc-closing">
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
           <div style={{ minWidth: 300 }}>
-            {totRow('Sub-total', rupee(n.sub_total))}
+            {totRow('Taxable value', rupee(n.sub_total))}
             {n.interstate ? totRow(`IGST (${n.gst_rate}%)`, rupee(n.igst)) : (<>{totRow(`CGST (${n.gst_rate / 2}%)`, rupee(n.cgst))}{totRow(`SGST (${n.gst_rate / 2}%)`, rupee(n.sgst))}</>)}
             <div style={{ borderTop: '1px solid var(--border-default)', marginTop: 6, paddingTop: 6 }}>{totRow('Total', rupee(n.total), true)}</div>
           </div>
         </div>
-        {n.amount_in_words && <div style={{ marginTop: 14, fontSize: '0.82rem', color: 'var(--text-secondary)' }}><b>In words:</b> {n.amount_in_words}</div>}
+        {/* Spelled from the total on the page; the stored text could be empty. */}
+        <div style={{ marginTop: 14, fontSize: '0.82rem', color: 'var(--text-secondary)' }}><b>In words:</b> {amountInWords(n.total)}</div>
 
         <div style={{ border: '1px dashed #9ca3af', borderRadius: 6, padding: '7px 11px', margin: '14px 0', fontSize: '0.75rem', color: '#4b5563', background: '#f9fafb' }}>
-          {n.note_type === 'credit'
+          {/* Section 34 notes are the supplier's. A note we send a VENDOR is
+              our side of the adjustment; their own note governs the tax. */}
+          {n.party_type === 'vendor'
+            ? <>Issued to the supplier for the adjustment shown against their invoice referenced above. The supplier's corresponding note under Section 34 governs the tax.</>
+            : n.note_type === 'credit'
             ? <>Issued under Section 34(1). The tax liability on the original invoice is reduced to the extent shown, provided the recipient has reversed the corresponding input tax credit.</>
             : <>Issued under Section 34(3). This note increases the taxable value and tax charged on the original invoice referenced above.</>}
         </div>

@@ -38,7 +38,8 @@ exports.list = async (req, res) => {
       summary: `COUNT(*)::int AS count,
                 COALESCE(SUM(total_value),0)::numeric AS value,
                 COUNT(*) FILTER (WHERE status = 'Dispatched')::int AS in_transit,
-                COUNT(*) FILTER (WHERE total_value > 50000
+                /* With tax, as Rule 138 counts it (18% assumed: a challan has no rate). */
+                COUNT(*) FILTER (WHERE total_value * 1.18 > 50000
                                    AND (eway_bill_no IS NULL OR eway_bill_no = ''))::int AS eway_missing`,
     });
     res.json(result);
@@ -73,7 +74,9 @@ exports.prefill = async (req, res) => {
       .map(({ l, left }) => ({
         description: l.description, hsn: l.hsn || byId.get(l.id)?.sku_hsn || '', uom: l.uom || 'nos',
         quantity: left, ordered: l.ordered, alreadySent: l.dispatched,
-        rate: Number(byId.get(l.id)?.target_price ?? byId.get(l.id)?.rate) || 0, skuId: l.skuId,
+        /* The agreed rate first. target_price is "a target, not an agreed
+           rate" (migration 035), and valued the goods at the wrong price. */
+        rate: (Number(byId.get(l.id)?.rate) > 0 ? Number(byId.get(l.id).rate) : Number(byId.get(l.id)?.target_price)) || 0, skuId: l.skuId,
       }));
     const customer = co.customer_id ? (await db.query(
       'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [co.customer_id, co.owner_id])).rows[0] : null;
@@ -96,7 +99,9 @@ exports.getById = async (req, res) => {
     const customer = dc.customer_id ? (await db.query(
       'SELECT * FROM customers WHERE id = $1 AND (owner_id = $2 OR owner_id IS NULL)', [dc.customer_id, dc.owner_id])).rows[0] : null;
     let company = null;
-    try { company = await profileFor(db, req.user?.orgId); } catch { /* optional */ }
+    /* The document's own company — an Administrator viewing another
+       company's document saw their own letterhead and bank on it. */
+    try { company = await profileFor(db, dc.owner_id ?? req.user?.orgId); } catch { /* optional */ }
     /* The order it ships and the invoices billing that order, so the
        challan can say "against your PO …" and link both ways. */
     const order = dc.customer_order_id ? (await db.query(
