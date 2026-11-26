@@ -124,7 +124,9 @@ async function cleanup() {
       await page.emulateMediaType('screen');
       await page.setViewport({ width: 1440, height: 1000 });
       await page.goto(`${UI}${url}`, { waitUntil: 'networkidle2' });
-      await sleep(1500);
+      /* the document itself, not a fixed wait: it can take a moment to arrive */
+      await page.waitForSelector('.invoice-mock tbody tr, .doc-sheet tbody tr', { timeout: 30000 }).catch(() => {});
+      await sleep(800);
       const rows = await page.evaluate(() => document.querySelectorAll('table tbody tr').length);
       ok(rows > 0, `it is on screen (${rows} table rows)`);
 
@@ -173,7 +175,11 @@ async function cleanup() {
       const bytes = fs.readFileSync(out);
       const pages = (bytes.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
       ok(pages >= 1 && pages <= maxPages, `${pages} page${pages === 1 ? '' : 's'} (at most ${maxPages})`);
-      ok(bytes.length < 400 * 1024, `real text, not a bitmap (${(bytes.length / 1024).toFixed(0)} KB)`);
+      /* Real text, not a picture of the page: a document printed as a
+         bitmap is nothing but page-sized images. Counted directly — the
+         file size alone (it was "under 400 KB") moved with the fonts. */
+      const images = (bytes.toString('latin1').match(/\/Subtype\s*\/Image/g) || []).length;
+      ok(images === 0 && bytes.length < 1024 * 1024, `real text, not a bitmap (${images} images, ${(bytes.length / 1024).toFixed(0)} KB)`);
       try { fs.unlinkSync(out); } catch { /* ignore */ }
     }
     ok(errs.length === 0, `no JavaScript errors${errs.length ? ': ' + errs[0].slice(0, 80) : ''}`);

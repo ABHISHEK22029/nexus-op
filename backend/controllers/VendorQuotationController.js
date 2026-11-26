@@ -22,7 +22,7 @@ const { allocatePoNumber } = require('../shared/docNumber');
 const { writePoLines, poLinesProblem, notifyApproval } = require('../shared/poLines');
 const { notify } = require('../notify');
 const { runList } = require('../shared/listQuery');
-const { readTerms, matchMaterial } = require('../shared/quoteTerms');
+const { readTerms, readHeader, matchMaterial, normName } = require('../shared/quoteTerms');
 const { linkPoToOrders, orderFromRef } = require('../shared/poOrders');
 
 const ownerOf = (req) => req.user?.orgId ?? req.user?.id ?? null;
@@ -71,6 +71,19 @@ exports.upload = async (req, res) => {
     return res.status(400).json({ error: parsed.note });
   }
 
+  /* Who sent it, its number and its date, read from the letterhead when the
+     form did not say. A vendor already on the books is linked by the GSTIN
+     printed on the letterhead, else by its exact name; otherwise the name
+     as printed is kept, to be linked in the review. */
+  const head = readHeader(parsed.text);
+  if (!vendorId && !vendorName && (head.vendor_gstin || head.vendor_name)) {
+    const mine = (await db.query('SELECT id, name, gstin FROM vendors WHERE owner_id = $1', [owner])).rows;
+    const byGstin = head.vendor_gstin && mine.find(v => String(v.gstin || '').toUpperCase() === head.vendor_gstin);
+    const byName = !byGstin && head.vendor_name && mine.find(v => normName(v.name) && normName(v.name) === normName(head.vendor_name));
+    const hit = byGstin || byName;
+    if (hit) { vendorId = hit.id; vendorName = hit.name; } else vendorName = head.vendor_name || null;
+  }
+
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -99,7 +112,7 @@ exports.upload = async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
       [owner, vendorId, vendorName, req.body.rfqRef || null,
        att.id, req.file.originalname, req.file.mimetype, parsed.kind,
-       req.body.quoteRef || null, req.body.quoteDate || null,
+       req.body.quoteRef || head.quote_ref || null, req.body.quoteDate || head.quote_date || null,
        t.subtotal ?? summed ?? null, t.tax ?? null, t.grand ?? null,
        parsed.status, parsed.note, (parsed.text || '').slice(0, 200000),
        terms.lead_time_days, terms.payment_terms, terms.freight]);

@@ -17,8 +17,9 @@ export default {
   },
   truth: [
     ['pages/CustomerOrders.jsx', 'Customer PO Ref'],
-    ['pages/CustomerOrders.jsx', 'Raise Quotation'],
-    ['pages/CustomerOrders.jsx', 'Create Invoice'],
+    /* The order's own panel (components/OrderPanel) since 24 Nov. */
+    ['components/OrderPanel.jsx', 'Get vendor quotes'],
+    ['components/OrderPanel.jsx', 'Create invoice'],
     ['components/OrderReadiness.jsx', 'See what to order'],
     ['components/OrderReadiness.jsx', 'blocked by'],
   ],

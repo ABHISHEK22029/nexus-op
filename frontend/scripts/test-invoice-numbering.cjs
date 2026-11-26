@@ -133,7 +133,9 @@ async function cleanup() {
     ok(shown.hsn === '7326', 'HSN is on the line, editable');
     await page.evaluate(() => [...document.querySelectorAll('button')].find(b => /^Create invoice/.test(b.textContent)).click());
     await page.waitForFunction(() => /\/sales-invoices\/\d+$/.test(location.pathname), { timeout: 15000 });
-    await sleep(1200);
+    /* the invoice itself, not a fixed wait: the page can take a moment to arrive */
+    await page.waitForSelector('.invoice-mock', { timeout: 30000 });
+    await sleep(600);
     const doc1 = await page.evaluate(() => document.body.innerText);
     const inv1Id = Number((await page.url()).match(/(\d+)$/)[1]);
     ok(doc1.includes(`KBS/${fy}/148`), 'the invoice is raised as KBS/…/148');
@@ -170,10 +172,11 @@ async function cleanup() {
     await page.click('input[aria-label="Line 2 rate"]', { clickCount: 3 });
     await page.keyboard.type('900');
     await page.evaluate(() => [...document.querySelectorAll('button')].find(b => /Save changes/.test(b.textContent)).click());
-    await page.waitForFunction(() => /\/sales-invoices\/\d+$/.test(location.pathname), { timeout: 15000 });
-    await sleep(1200);
+    /* Edited on the invoice itself (since 26 Nov): saved when the bar closes. */
+    await page.waitForFunction(() => /\/sales-invoices\/\d+$/.test(location.pathname) && !document.querySelector('[data-de-bar]'), { timeout: 15000 });
+    await sleep(800);
     const doc2 = await page.evaluate(() => document.body.innerText);
-    ok(doc2.includes(`KBS/${fy}/300`), 'the number was changed from the edit screen');
+    ok(doc2.includes(`KBS/${fy}/300`), 'the number was changed, on the invoice itself');
     ok(/CGST/.test(doc2) && /SGST/.test(doc2) && !/IGST @/.test(doc2), 'moving the place of supply to Telangana switched IGST to CGST + SGST');
     ok(/900\.00/.test(doc2), 'and a line rate was changed');
     const nextAfterEdit = (await api('GET', '/sales-invoices/next-number')).body.number;
@@ -192,8 +195,11 @@ async function cleanup() {
     ok(refuse.status === 409, 'the server still refuses to renumber an issued invoice directly');
     page.on('dialog', d => d.accept());
     await page.evaluate(() => [...document.querySelectorAll('button')].find(b => /Reopen as draft/.test(b.textContent)).click());
-    await page.waitForFunction(() => /\/edit$/.test(location.pathname), { timeout: 15000 });
-    ok(true, 'reopening goes straight to the edit screen');
+    /* Reopened, it is edited right there, on its own page. */
+    await page.waitForSelector('[data-de-bar]', { timeout: 15000 });
+    ok(/\/sales-invoices\/\d+$/.test(await page.evaluate(() => location.pathname)), 'reopening opens it for editing, right there on the invoice');
+    await page.evaluate(() => document.querySelector('[data-de-cancel]')?.click());
+    await sleep(300);
     await api('PATCH', `/sales-invoices/${inv1Id}/status`, { status: 'Sent' });
     await api('POST', `/sales-invoices/${inv1Id}/payment`, { amount: 1000, mode: 'Bank' });
     await page.goto(`${UI}/sales-invoices/${inv1Id}`, { waitUntil: 'networkidle2' });
@@ -205,8 +211,8 @@ async function cleanup() {
 
     console.log('\n  ── an invoice with no order');
     await page.goto(`${UI}/sales-invoices/new?customer=${cust.id}`, { waitUntil: 'networkidle2' });
-    await page.waitForSelector('input[aria-label="Line 1 description"]', { timeout: 15000 });
-    await page.type('input[aria-label="Line 1 description"]', 'Laser cutting — job work');
+    await page.waitForSelector('[aria-label="Line 1 description"]', { timeout: 15000 });
+    await page.type('[aria-label="Line 1 description"]', 'Laser cutting — job work');
     await page.type('input[aria-label="Line 1 HSN"]', '998898');
     await page.type('input[aria-label="Line 1 quantity"]', '1');
     await page.type('input[aria-label="Line 1 rate"]', '15000');

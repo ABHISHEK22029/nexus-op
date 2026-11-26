@@ -14,7 +14,7 @@ export default {
     { key: 'ready', at: 15500, path: '/material-requirements',
       voice: 'A checklist says what is still missing, and what it costs you, until it is done.' },
   ],
-  sr: 'Setting up the workspace: the business name and size, then the company profile with GSTIN, state code, PAN and bank details, then the setup checklist showing what is still missing — a bill of materials and vendors for the materials — each with Fix this.',
+  sr: 'Setting up the workspace: the business name and size, then the company profile with GSTIN, state code, PAN and bank details, then the setup checklist showing what is still missing — a bill of materials and vendors for the materials — each with the button that fixes it: Add bills of materials, Link vendors.',
   seo: {
     body: 'A new organisation is ready in a minute: the business name, its GSTIN, PAN and bank details for documents, and the invoice defaults. Until the essentials are in place, a checklist names what is missing and what it costs — no letterhead, no payment details, no material plan.',
   },
@@ -24,6 +24,7 @@ export default {
     ['pages/FirstRun.jsx', 'How many people work there?'],
     ['pages/CompanyProfile.jsx', 'Tax & registration'],
     ['pages/CompanyProfile.jsx', 'Bank details'],
-    ['components/SetupReadiness.jsx', 'Fix this'],
+    ['components/SetupReadiness.jsx', 'Add bills of materials'],
+    ['components/SetupReadiness.jsx', 'Link vendors'],
   ],
 };

@@ -7,8 +7,8 @@ import {
 import { ScreenHead, Tiles } from '../../shell/screen';
 import { rupee } from '../../shell/format';
 
-/* 07 — CustomerOrders.jsx (the order, its lines with Make / Raise
-   Quotation, Create Invoice) and OrderReadiness.jsx ("Can build X of Y —
+/* 07 — the order panel (components/OrderPanel.jsx: its lines with Make /
+   Get vendor quotes, Create invoice) and OrderReadiness.jsx ("Can build X of Y —
    blocked by …", Details, See what to order). 57 is what orderReadiness
    computes: 143 kg on hand ÷ 2.5 kg a bracket, rounded down. */
 export const Icon = ClipboardCheck;
@@ -33,7 +33,7 @@ export default function Scene({ t }) {
           <div className="fm-tr is-head fm-tr-o"><span>Description</span><span>Qty</span><span>Unit rate ₹</span><span>Total ₹</span><span /></div>
           <div className="fm-tr fm-tr-o">
             <span><b>{PRODUCT.name}</b></span><span>{QTY} {PRODUCT.unit}</span><span>{rupee(RATE)}</span><span>{rupee(SUB)}</span>
-            <span className="fm-sh-actions"><span className="fl-btn"><Hammer size={13} /> Make</span><span className="fl-btn"><FileText size={13} /> Raise Quotation</span></span>
+            <span className="fm-sh-actions"><span className="fl-btn"><Hammer size={13} /> Make</span><span className="fl-btn"><FileText size={13} /> Get vendor quotes</span></span>
           </div>
         </div>
         {ready && (
@@ -56,7 +56,7 @@ export default function Scene({ t }) {
             </span>
           </div>
         )}
-        <div className="fm-order-foot"><span className="fl-btn"><Files size={13} /> Create Invoice</span></div>
+        <div className="fm-order-foot"><span className="fl-btn"><Files size={13} /> Create invoice</span></div>
       </div>
     </div>
   );

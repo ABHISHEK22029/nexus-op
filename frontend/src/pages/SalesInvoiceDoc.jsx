@@ -1,17 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import CompanyLogo from '../components/CompanyLogo';
-import InlineEdit from '../components/InlineEdit';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail, Pencil, Undo2, Ban, FileMinus } from 'lucide-react';
+import { ArrowLeft, Printer, Download, Plus, IndianRupee, AlertTriangle, Mail, Pencil, Undo2, Ban, FileMinus, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { usePermissions } from '../context/PermissionContext';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
+import UnitSelect from '../components/UnitSelect';
 import { amountInWords } from '../lib/amountInWords';
 import { docFileName, downloadDocumentPdf, printAs } from '../lib/documentPdf';
 import { PAYMENT_MODES, DEFAULT_PAYMENT_MODE } from '../lib/paymentModes';
-import { CopyPicker, COPIES, DECLARATION, Declaration } from '../components/DocumentKit';
+import { CopyPicker, COPIES, DECLARATION, Declaration, ItemText } from '../components/DocumentKit';
+import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
+import { docTotals, GST_RATES, invoiceNumberProblem } from '../lib/docTotals';
+import { lineProblems, adjustmentProblems } from '../lib/lineChecks';
+import { GST_STATES, stateCode, stateName } from '../lib/gstStates';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -19,12 +23,83 @@ const rup = n => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits:
    width — ₹14,25,41,68,500.00 wrapped onto two lines reads as two numbers. */
 const num = { textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
 
+/* Bill-to and ship-to: the snapshots taken when the invoice was raised,
+   falling back to the live customer record for invoices made before those
+   were captured. One definition, for the sheet and for the editor. */
+function partiesOf(inv) {
+  const billTo = {
+    name: inv.bill_to_name || inv.customer?.name,
+    address: inv.bill_to_address || inv.customer?.billing_address,
+    gstin: inv.bill_to_gstin || inv.customer?.gstin,
+    state: inv.bill_to_state || inv.customer?.state,
+  };
+  const shipTo = {
+    name: inv.ship_to_name || billTo.name,
+    address: inv.ship_to_address || inv.customer?.shipping_address || billTo.address,
+    gstin: inv.ship_to_gstin || billTo.gstin,
+    state: inv.ship_to_state || inv.customer?.shipping_state || billTo.state,
+  };
+  return { billTo, shipTo };
+}
+
+/* Editing on the page (components/DocEdit). What an issued invoice still
+   lets you change — the server's INVOICE_ISSUED_FIELDS; a draft, all of it. */
+const ISSUED_KEYS = ['due_date', 'eway_bill_no', 'notes', 'terms'];
+/* A change to any of these works the totals out again. */
+const RECOMPUTE = ['discount', 'gst_rate', 'round_off', 'place_of_supply_code', 'reverse_charge', 'customer_id'];
+const str = (v) => (v == null ? '' : String(v));
+const numStr = (v) => (v == null || v === '' ? '' : String(Number(v)));
+const blankLine = () => ({ description: '', hsn: '', uom: 'nos', quantity: '', rate: '', customerOrderItemId: null });
+
+/** The invoice as the editor starts it: what the sheet shows, as text. */
+function invoiceValues(inv) {
+  const { billTo, shipTo } = partiesOf(inv);
+  return {
+    invoice_number: str(inv.invoice_number),
+    invoice_date: str(inv.invoice_date).slice(0, 10),
+    due_date: str(inv.due_date).slice(0, 10),
+    eway_bill_no: str(inv.eway_bill_no),
+    notes: str(inv.notes),
+    terms: str(inv.terms || inv.company?.invoice_terms),
+    customer_id: inv.customer_id ?? null,
+    bill_to_name: str(billTo.name), bill_to_address: str(billTo.address), bill_to_gstin: str(billTo.gstin), bill_to_state: str(billTo.state),
+    ship_to_name: str(shipTo.name), ship_to_address: str(shipTo.address), ship_to_gstin: str(shipTo.gstin), ship_to_state: str(shipTo.state),
+    place_of_supply_code: str(inv.place_of_supply_code || stateCode(inv.place_of_supply)),
+    reverse_charge: !!inv.reverse_charge,
+    gst_rate: numStr(inv.gst_rate ?? 18),
+    discount: Number(inv.discount) ? numStr(inv.discount) : '',
+    round_off: Number(inv.round_off) ? numStr(inv.round_off) : '',
+    /* customerOrderItemId ties a line to its order line: it is what "billed
+       against ordered" counts, so a saved edit must carry it back. */
+    items: (inv.items || []).map(it => ({
+      description: str(it.description), hsn: str(it.hsn), uom: str(it.uom || 'nos'),
+      quantity: numStr(it.quantity), rate: numStr(it.rate), customerOrderItemId: it.customer_order_item_id ?? null,
+    })),
+  };
+}
+
+/** A value as the server takes it. */
+function outValue(k, v) {
+  if (['discount', 'round_off', 'gst_rate'].includes(k)) return Number(v) || 0;
+  if (k === 'reverse_charge') return !!v;
+  if (k === 'customer_id') return v ? Number(v) : null;
+  const s = String(v ?? '').trim();
+  if (['bill_to_gstin', 'ship_to_gstin'].includes(k)) return s ? s.toUpperCase() : null;
+  return s === '' ? null : s;
+}
+
 export default function SalesInvoiceDoc() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
   const { can } = usePermissions();
   const { confirm, prompt } = useConfirm();
+  const ed = useDocEdit();
+  /* The customers a draft can be moved to — fetched when a draft is opened
+     for editing, not before. */
+  const [customers, setCustomers] = useState(null);
+  /* "Reopen as draft": once the reload shows it as a draft, edit it here. */
+  const [editWhenDraft, setEditWhenDraft] = useState(false);
   const [inv, setInv] = useState(null);
   const [pay, setPay] = useState({ amount: '', mode: DEFAULT_PAYMENT_MODE, reference: '', paidDate: '' });
   const ref = useRef(null);
@@ -41,6 +116,24 @@ export default function SalesInvoiceDoc() {
     .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) { setMissing(r.status === 403 ? 'Your role can\'t open invoices.' : (d.error || 'This invoice was not found. It may have been deleted.')); return null; } setMissing(''); return d; })
     .then(d => { if (d) setInv(d); });
   useEffect(() => { load(); }, [id]);
+
+  /* Open the sheet for editing — at the piece that was clicked, if one was.
+     A cancelled invoice, or a role that may not change invoices, has
+     nothing to open. */
+  const canWrite = can('sales-invoices', 'write');
+  const begin = (field) => {
+    if (!inv || inv.status === 'Cancelled' || !canWrite) return;
+    if (inv.status === 'Draft' && customers == null && !inv.customer_order_id) {
+      fetch(`${API}/customers`).then(r => (r.ok ? r.json() : [])).then(d => {
+        const list = Array.isArray(d) ? d : (d.items || d.rows || []);
+        setCustomers([...list].sort((a, b) => String(a.name).localeCompare(String(b.name))));
+      }).catch(() => setCustomers([]));
+    }
+    ed.start(invoiceValues(inv), field);
+  };
+  useEffect(() => {
+    if (editWhenDraft && inv?.status === 'Draft') { setEditWhenDraft(false); begin(); }
+  }, [editWhenDraft, inv]);
 
   /* The server decides what may be set; a refusal is said, not swallowed —
      the menu used to look as if it had worked and then snap back. */
@@ -77,23 +170,6 @@ export default function SalesInvoiceDoc() {
     load();
   };
 
-  /* Save one field from the document itself. The server decides what is
-     still editable once an invoice is issued, and its answer replaces the
-     local row — a changed discount moves every total below it. */
-  const patch = async (field, value) => {
-    try {
-      const res = await fetch(`${API}/sales-invoices/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value === '' ? null : value }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) { toast.error(d.error || 'Could not save'); return { ok: false, error: d.error }; }
-      setInv(prev => ({ ...prev, ...d }));
-      toast.success('Saved');
-      return { ok: true };
-    } catch (e) { return { ok: false, error: e.message }; }
-  };
-
   const isDraft = inv?.status === 'Draft';
   /* An issued invoice with nothing received against it can still be taken
      back to draft and corrected — the status menu always allowed it, but
@@ -107,11 +183,13 @@ export default function SalesInvoiceDoc() {
      payments, so once money is in the status is shown, not offered; a
      cancelled invoice stays cancelled. */
   const statusChoices = !inv || isCancelled || hasPayments ? [] : ['Draft', 'Sent', 'Cancelled'];
+  /* Reopened, it is edited right here on its own page, like any draft. */
   const reopen = async () => {
     if (!(await confirm({ title: `Reopen ${inv.invoice_number} as a draft?`, message: 'If it has already gone to the customer, send them the corrected copy once you have changed it.', confirmLabel: 'Reopen' }))) return;
     const r = await fetch(`${API}/sales-invoices/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Draft' }) });
     if (!r.ok) { const d = await r.json().catch(() => ({})); toast.error(d.error || 'Could not reopen it'); return; }
-    navigate(`/sales-invoices/${id}/edit`);
+    await load();
+    setEditWhenDraft(true);
   };
 
   /* One click, one payment: Add had no busy state, so a double click
@@ -156,28 +234,107 @@ export default function SalesInvoiceDoc() {
   const dueDate = fmt(inv.due_date);
   const overdue = inv.due_date && due > 0 && new Date(inv.due_date) < new Date();
 
-  /* Snapshots taken when the invoice was issued; fall back to the live
-     customer record for invoices created before we captured them. */
-  const billTo = {
-    name: inv.bill_to_name || inv.customer?.name,
-    address: inv.bill_to_address || inv.customer?.billing_address,
-    gstin: inv.bill_to_gstin || inv.customer?.gstin,
-    state: inv.bill_to_state || inv.customer?.state,
-  };
-  const shipTo = {
-    name: inv.ship_to_name || billTo.name,
-    address: inv.ship_to_address || inv.customer?.shipping_address || billTo.address,
-    gstin: inv.ship_to_gstin || billTo.gstin,
-    state: inv.ship_to_state || inv.customer?.shipping_state || billTo.state,
-  };
+  const { billTo, shipTo } = partiesOf(inv);
   const differentShipTo = (shipTo.address || '') !== (billTo.address || '');
   const hasBank = co.bank_name && co.bank_account_no && co.bank_ifsc;
   const fileName = docFileName('Tax Invoice', inv.invoice_number, billTo.name);
   const terms = inv.terms || co.invoice_terms;
+
+  /* ── Editing on the page ─────────────────────────────────────────── */
+  const d = ed.editing ? ed.draft : null;
+  const editAll = !!d && isDraft;
+  /* Which pieces are fields now, and which light up to be clicked. */
+  const editable = (k) => !!d && (isDraft || ISSUED_KEYS.includes(k));
+  const spotOn = (k) => !ed.editing && canWrite && !isCancelled && (isDraft || ISSUED_KEYS.includes(k));
+  /* IGST or CGST+SGST follows the place of supply against our own state;
+     when either is unknown, the invoice keeps the split it has. */
+  const supplierCode = co.stateCode || stateCode(co.gstin);
+  const liveInter = editAll
+    ? (supplierCode && d.place_of_supply_code ? supplierCode !== d.place_of_supply_code : !!inv.interstate)
+    : !!inv.interstate;
+  const lt = editAll ? docTotals(d.items, { discount: d.discount, gstRate: d.gst_rate, interstate: liveInter, roundOff: d.round_off, reverseCharge: d.reverse_charge }) : null;
+  const lp = editAll ? lineProblems(d.items) : null;
+  const adj = editAll ? adjustmentProblems({ discount: d.discount, mode: 'amt', roundOff: d.round_off, sub: lt.subTotal }) : [];
+  const zeroQty = editAll ? new Set(d.items.map((it, i) => (lp.kept.includes(it) && !(Number(it.quantity) > 0) ? i : -1)).filter(i => i >= 0)) : new Set();
+  const gstBad = editAll && (d.gst_rate === '' || !(Number(d.gst_rate) >= 0 && Number(d.gst_rate) <= 100));
+  const dateFor = d ? (editAll ? d.invoice_date : str(inv.invoice_date).slice(0, 10)) : '';
+  const dueBad = !!d && !!d.due_date && !!dateFor && d.due_date < dateFor;
+  /* What would stop the save, in the order the sheet reads. */
+  const problems = !d ? [] : [
+    editAll && invoiceNumberProblem(d.invoice_number),
+    editAll && !d.invoice_date && 'The invoice date cannot be blank.',
+    dueBad && 'The due date is before the invoice date.',
+    editAll && !d.bill_to_name.trim() && 'The bill-to name cannot be blank.',
+    ...(lp ? lp.list : []),
+    editAll && lp.kept.length === 0 && 'Add at least one line item.',
+    editAll && zeroQty.size > 0 && `Every line needs a quantity above zero (line ${[...zeroQty].map(i => i + 1).join(', ')}).`,
+    editAll && lp.kept.some(it => Number(it.rate) < 0) && 'A rate cannot be negative.',
+    ...adj,
+    gstBad && 'Set a GST rate between 0 and 100.',
+  ].filter(Boolean);
+  const shout = (bad) => ed.tried && !!bad;
+
+  const save = async (confirmAbove = false) => {
+    if (!d || ed.saving) return;
+    if (problems.length) { ed.setTried(true); return; }
+    const body = {};
+    for (const k of ed.changed(isDraft ? undefined : ISSUED_KEYS)) if (k !== 'items') body[k] = outValue(k, d[k]);
+    if ('place_of_supply_code' in body) body.place_of_supply = body.place_of_supply_code ? stateName(body.place_of_supply_code) : null;
+    const itemsChanged = isDraft && ed.changed(['items']).length > 0;
+    if (itemsChanged) {
+      body.items = lp.kept.map(it => ({
+        description: it.description.trim(), hsn: String(it.hsn || '').trim() || null, uom: it.uom || 'nos',
+        quantity: Number(it.quantity) || 0, rate: Number(it.rate) || 0, customerOrderItemId: it.customerOrderItemId ?? null,
+      }));
+    }
+    /* The IGST / CGST choice stands when the states can't decide it. */
+    if (isDraft && (itemsChanged || RECOMPUTE.some(k => k in body))) body.interstate = liveInter;
+    if (!Object.keys(body).length) { ed.stop(); toast.info('Nothing was changed'); return; }
+    if (confirmAbove) body.confirmAboveOrder = true;
+    ed.setSaving(true);
+    try {
+      const res = await fetch(`${API}/sales-invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const r = await res.json().catch(() => ({}));
+      /* Billing past the order's value (freight, an extra) is asked, not refused. */
+      if (res.status === 409 && r.needsConfirm) {
+        ed.setSaving(false);
+        if (await confirm({ title: r.error, message: 'Bill it anyway?', confirmLabel: 'Bill it anyway' })) return save(true);
+        return;
+      }
+      if (!res.ok) { ed.setError(r.error || 'Could not save the invoice'); ed.setSaving(false); return; }
+      /* The page shows what the server stored — and so do the print and the PDF. */
+      await load();
+      ed.stop();
+      toast.success(`${r.invoice_number || inv.invoice_number} saved — the print and PDF show the change`);
+    } catch (e) {
+      ed.setError(`Could not save: ${e.message}`);
+      ed.setSaving(false);
+    }
+  };
+  const cancelEdit = async () => { if (await confirmDiscard(ed, confirm)) ed.stop(); };
+
+  /* A draft moved to another customer takes that customer's addresses,
+     GSTIN and place of supply, as the invoice form does. */
+  const pickCustomer = (cid) => {
+    const c = (customers || []).find(x => String(x.id) === String(cid));
+    if (!c) return;
+    ed.merge({
+      customer_id: c.id,
+      bill_to_name: str(c.name), bill_to_address: str(c.billing_address), bill_to_gstin: str(c.gstin), bill_to_state: str(c.state),
+      ship_to_name: str(c.name), ship_to_address: str(c.shipping_address || c.billing_address), ship_to_gstin: str(c.gstin), ship_to_state: str(c.shipping_state || c.state),
+      place_of_supply_code: stateCode(c.shipping_state) || stateCode(c.state) || stateCode(c.gstin) || d.place_of_supply_code,
+    });
+  };
+  const scope = isDraft
+    ? 'A draft: change anything on it — the number, dates, customer, addresses, place of supply, lines, discount, GST and notes. Totals update as you type.'
+    : 'Issued: the due date, e-way bill, notes and terms can still change. To change lines, amounts or the customer, '
+      + (canReopen ? 'reopen it as a draft first (nothing has been received yet).' : 'raise a credit or debit note — that is how GST corrects an issued invoice.');
+
   /* Spelled from the total on the page, not the text stored when the
      invoice was raised: invoices raised before the 8 Oct fix still carry
-     "Rupees undefined Hundred…" in that column. */
-  const words = amountInWords(inv.net_amount);
+     "Rupees undefined Hundred…" in that column. While a draft is being
+     edited, from the total as it now stands. */
+  const words = amountInWords(lt ? lt.net : inv.net_amount);
 
   /* The totals block, once, for the page and the PDF. Amount received and
      balance due appear once money has come in; an unpaid invoice reads
@@ -275,9 +432,17 @@ export default function SalesInvoiceDoc() {
       {/* Toolbar */}
       <div className="print:hidden" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         <button onClick={() => navigate('/sales-invoices')} className="inv-act-btn"><ArrowLeft size={15} /> All Invoices</button>
+        {/* While the sheet is being edited, its bar below has Save and
+            Cancel, and printing waits: what prints is what was saved. */}
+        {!ed.editing && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', whiteSpace: 'nowrap' }}>
-          {isDraft && (
-            <button onClick={() => navigate(`/sales-invoices/${id}/edit`)} className="inv-act-btn primary"><Pencil size={15} /> Edit invoice</button>
+          {/* Edit, here on the invoice itself. A draft: all of it. Issued:
+              its notes, terms, due date and e-way bill. */}
+          {!isCancelled && canWrite && (
+            <button onClick={() => begin()} data-doc-edit className={`inv-act-btn${isDraft ? ' primary' : ''}`}
+              title={isDraft ? 'Change anything on this draft, right here on the invoice' : 'Change the due date, e-way bill, notes or terms'}>
+              <Pencil size={15} /> Edit invoice
+            </button>
           )}
           {canReopen && (
             <button onClick={reopen} className="inv-act-btn" title="Take it back to draft to change the number, date, lines or anything else">
@@ -297,6 +462,8 @@ export default function SalesInvoiceDoc() {
               {inv.status}
             </span>
           )}
+          {/* Which of the three copies prints — chosen here, off the paper. */}
+          {!isDraft && !isCancelled && <CopyPicker kind="invoice" value={copy} onChange={setCopy} />}
           <button onClick={() => pdf().catch(() => {})} disabled={making} className="inv-act-btn" title={`Saves ${fileName}.pdf`}><Download size={15} /> {making ? 'Making PDF…' : 'Download PDF'}</button>
           {/* Sending it was the missing step: an invoice could be produced
               and printed, and there was no way to get it to the customer
@@ -309,7 +476,12 @@ export default function SalesInvoiceDoc() {
           )}
           <button onClick={() => printAs(fileName)} className="inv-act-btn primary"><Printer size={15} /> Print</button>
         </div>
+        )}
       </div>
+
+      {ed.editing && (
+        <EditBar ed={ed} what={inv.invoice_number} scope={scope} problems={problems} onSave={() => save()} onCancel={cancelEdit} />
+      )}
 
       {/* The order behind this invoice is billed more than it was ordered —
           invoices raised twice before the check existed. */}
@@ -348,8 +520,8 @@ export default function SalesInvoiceDoc() {
         </div>
       </div>
 
-      {/* Record payment */}
-      {due > 0 && (
+      {/* Record payment — not while the invoice itself is being edited. */}
+      {due > 0 && !ed.editing && (
         <div className="print:hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 14, marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)', flexBasis: '100%' }}><IndianRupee size={16} style={{ color: 'var(--brand-amber)' }} /> Record payment</div>
           {/* Explicit widths: the global form styles make a bare select or
@@ -400,7 +572,7 @@ export default function SalesInvoiceDoc() {
 
       {/* Document. On a phone it scrolls sideways in its own box (print.css). */}
       <div className="doc-scroll">
-      <div ref={ref} className="invoice-mock">
+      <div ref={ref} className="invoice-mock" data-editing={ed.editing ? 'true' : undefined} onClick={onSheetClick(ed, begin)}>
         <div className="inv-header">
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
             <CompanyLogo fallbackUrl={co.logo_url || null} height={44} />
@@ -420,26 +592,24 @@ export default function SalesInvoiceDoc() {
           <div style={{ textAlign: 'right' }}>
             <div className="inv-po-title">{docTitle}</div>
             <div className="doc-copy-label" data-doc-subtitle style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.06em', color: subtitleTone ? '#b91c1c' : '#4b5563', margin: '1px 0 4px' }}>{subtitle}</div>
-            {!isDraft && !isCancelled && <CopyPicker kind="invoice" value={copy} onChange={setCopy} />}
-            {/* Editable while the invoice is a Draft. Once issued the number
-                and date are particulars of a tax document under Rule 46 —
-                the padlock says so rather than letting someone type into a
-                field the server will refuse. */}
-            <div className="inv-meta-row">Invoice #: <InlineEdit
-              value={inv.invoice_number} field="invoice_number" canEdit={isDraft} onSave={patch}
-              title={isCancelled ? 'Cancelled — it keeps its number' : canReopen ? 'Issued — use “Reopen as draft” above to change the number'
-                : 'Money has been received against this invoice — correct it with a credit or debit note'} /></div>
-            <div className="inv-meta-row">Date: <InlineEdit
-              value={inv.invoice_date?.slice(0, 10)} field="invoice_date" type="date"
-              canEdit={isDraft} onSave={patch} format={fmt}
-              title={isCancelled ? 'Cancelled — it keeps its date' : canReopen ? 'Issued — use “Reopen as draft” above to change the date' : 'An invoice with payments against it keeps its date'} /></div>
-            {/* The due date can move after issue — payment terms get agreed
-                late — so it stays editable whatever the status, short of
-                cancelled. */}
-            <div className={`inv-meta-row${inv.due_date ? '' : ' print:hidden'}`}>Due: <span style={{ color: overdue ? '#dc2626' : undefined }}><InlineEdit
-              value={inv.due_date?.slice(0, 10)} field="due_date" type="date" canEdit={!isCancelled} onSave={patch}
-              format={(d) => (d ? `${fmt(d)}${overdue ? ' (overdue)' : ''}` : null)} placeholder="not set" /></span></div>
-            <div className="inv-meta-row print:hidden">Status: <strong>{inv.status}</strong></div>
+            {/* The number and date change while the invoice is a draft; once
+                issued they are particulars of a tax document (Rule 46). The
+                due date can move after issue — payment terms get agreed
+                late — so it stays editable short of cancelled. */}
+            <div className="inv-meta-row">Invoice #: {editable('invoice_number')
+              ? <Field name="invoice_number" label="Invoice number" value={d.invoice_number} onChange={v => ed.set('invoice_number', v)}
+                  invalid={shout(invoiceNumberProblem(d.invoice_number))} maxLength={24} style={{ width: 150, fontWeight: 700 }} />
+              : <Spot field="invoice_number" on={spotOn('invoice_number')}><strong>{inv.invoice_number}</strong></Spot>}</div>
+            <div className="inv-meta-row">Date: {editable('invoice_date')
+              ? <Field type="date" name="invoice_date" label="Invoice date" value={d.invoice_date} onChange={v => ed.set('invoice_date', v)}
+                  invalid={shout(!d.invoice_date)} style={{ fontWeight: 700 }} />
+              : <Spot field="invoice_date" on={spotOn('invoice_date')}><strong>{date}</strong></Spot>}</div>
+            <div className={`inv-meta-row${inv.due_date || ed.editing ? '' : ' print:hidden'}`}>Due: {editable('due_date')
+              ? <Field type="date" name="due_date" label="Due date" value={d.due_date} onChange={v => ed.set('due_date', v)}
+                  invalid={shout(dueBad)} style={{ fontWeight: 700 }} />
+              : <Spot field="due_date" on={spotOn('due_date')}><strong style={{ color: overdue ? '#dc2626' : undefined }}>
+                  {dueDate ? `${dueDate}${overdue ? ' (overdue)' : ''}` : <span className="print:hidden" style={{ color: '#6b7280', fontWeight: 400 }}>not set</span>}
+                </strong></Spot>}</div>
           </div>
         </div>
 
@@ -448,33 +618,98 @@ export default function SalesInvoiceDoc() {
         <div className="inv-parties" style={{ gridTemplateColumns: '1fr 1fr' }}>
           <div className="inv-party">
             <div className="inv-party-title">Bill To</div>
-            <div className="inv-party-name">{billTo.name || '—'}</div>
-            <div className="inv-party-detail doc-wrap">
-              {/* The line break comes either way: without it the warning ran into the
-                  state ("Address missingTelangana"). */}
-              {billTo.address || <em className="print:hidden" style={{ color: '#dc2626' }}>Address missing</em>}{billTo.address && <br />}
-              {billTo.state && <>{billTo.state}<br /></>}
-              GSTIN: <strong>{billTo.gstin || 'Unregistered'}</strong>
-            </div>
+            {editable('bill_to_name') ? (
+              <div className="de-stack">
+                {/* Another of this company's customers; an invoice raised from
+                    an order stays with that order's customer. */}
+                {customers && customers.length > 0 && !inv.customer_order_id && (
+                  <Field as="select" name="customer_id" label="Customer" value={d.customer_id ?? ''} onChange={pickCustomer} className="de-screen">
+                    {!customers.some(c => String(c.id) === String(d.customer_id)) && <option value={d.customer_id ?? ''}>{d.bill_to_name || 'This customer'}</option>}
+                    {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </Field>
+                )}
+                <Field name="bill_to_name" label="Bill To name" placeholder="Name" value={d.bill_to_name} onChange={v => ed.set('bill_to_name', v)}
+                  invalid={shout(!d.bill_to_name.trim())} style={{ fontWeight: 700 }} />
+                <Field as="textarea" name="bill_to_address" label="Bill To address" placeholder="Billing address" minRows={2} value={d.bill_to_address} onChange={v => ed.set('bill_to_address', v)} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                  <Field name="bill_to_state" label="Bill To state" placeholder="State" value={d.bill_to_state} onChange={v => ed.set('bill_to_state', v)} />
+                  <Field name="bill_to_gstin" label="Bill To GSTIN" placeholder="GSTIN (blank: unregistered)" mono maxLength={15}
+                    value={d.bill_to_gstin} onChange={v => ed.set('bill_to_gstin', v.toUpperCase())} />
+                </div>
+              </div>
+            ) : (
+              <Spot field="bill_to_name" on={spotOn('bill_to_name')} block>
+                <div className="inv-party-name">{billTo.name || '—'}</div>
+                <div className="inv-party-detail doc-wrap">
+                  {/* The line break comes either way: without it the warning ran into the
+                      state ("Address missingTelangana"). */}
+                  {billTo.address || <em className="print:hidden" style={{ color: '#dc2626' }}>Address missing</em>}{billTo.address && <br />}
+                  {billTo.state && <>{billTo.state}<br /></>}
+                  GSTIN: <strong>{billTo.gstin || 'Unregistered'}</strong>
+                </div>
+              </Spot>
+            )}
           </div>
           <div className="inv-party">
-            <div className="inv-party-title">Ship To {!differentShipTo && <span style={{ fontWeight: 400, textTransform: 'none' }}>(same as billing)</span>}</div>
-            <div className="inv-party-name">{shipTo.name || '—'}</div>
-            <div className="inv-party-detail doc-wrap">
-              {shipTo.address && <>{shipTo.address}<br /></>}
-              {!shipTo.address && !shipTo.state && '—'}
-              {shipTo.state && <>{shipTo.state}<br /></>}
-              {shipTo.gstin && <>GSTIN: <strong>{shipTo.gstin}</strong></>}
-            </div>
+            <div className="inv-party-title">Ship To {!d && !differentShipTo && <span style={{ fontWeight: 400, textTransform: 'none' }}>(same as billing)</span>}</div>
+            {editable('ship_to_name') ? (
+              <div className="de-stack">
+                <Field name="ship_to_name" label="Ship To name" placeholder="Name" value={d.ship_to_name} onChange={v => ed.set('ship_to_name', v)} style={{ fontWeight: 700 }} />
+                <Field as="textarea" name="ship_to_address" label="Ship To address" placeholder="Where the goods go" minRows={2} value={d.ship_to_address} onChange={v => ed.set('ship_to_address', v)} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                  <Field name="ship_to_state" label="Ship To state" placeholder="State" value={d.ship_to_state} onChange={v => ed.set('ship_to_state', v)} />
+                  <Field name="ship_to_gstin" label="Ship To GSTIN" placeholder="GSTIN" mono maxLength={15}
+                    value={d.ship_to_gstin} onChange={v => ed.set('ship_to_gstin', v.toUpperCase())} />
+                </div>
+              </div>
+            ) : (
+              <Spot field="ship_to_name" on={spotOn('ship_to_name')} block>
+                <div className="inv-party-name">{shipTo.name || '—'}</div>
+                <div className="inv-party-detail doc-wrap">
+                  {shipTo.address && <>{shipTo.address}<br /></>}
+                  {!shipTo.address && !shipTo.state && '—'}
+                  {shipTo.state && <>{shipTo.state}<br /></>}
+                  {shipTo.gstin && <>GSTIN: <strong>{shipTo.gstin}</strong></>}
+                </div>
+              </Spot>
+            )}
           </div>
         </div>
 
         {/* Rule 46 fields that must appear on the face of the invoice */}
         <div className="inv-facts" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, padding: '8px 22px', fontSize: '0.78rem', borderBottom: '1px solid #e5e7eb' }}>
-          <span>Place of Supply: <strong>{inv.place_of_supply || <em className="print:hidden" style={{ color: '#dc2626' }}>not set</em>}</strong>{inv.place_of_supply_code ? ` (${inv.place_of_supply_code})` : ''}</span>
-          <span>Reverse Charge: <strong>{inv.reverse_charge ? 'Yes' : 'No'}</strong></span>
-          <span className={inv.eway_bill_no ? undefined : 'print:hidden'}>E-Way Bill: <InlineEdit
-            value={inv.eway_bill_no} field="eway_bill_no" canEdit onSave={patch} placeholder="add" /></span>
+          {editable('place_of_supply_code') ? (
+            <span className="de-inline">Place of Supply:
+              <Field as="select" name="place_of_supply_code" label="Place of supply" value={d.place_of_supply_code} onChange={v => ed.set('place_of_supply_code', v)} style={{ width: 'auto', fontWeight: 700 }}>
+                <option value="">— not set —</option>
+                {GST_STATES.map(([c, n]) => <option key={c} value={c}>{n} ({c})</option>)}
+              </Field>
+              <span className="de-hint">{liveInter ? 'IGST' : 'CGST + SGST'}</span>
+            </span>
+          ) : (
+            <Spot field="place_of_supply_code" on={spotOn('place_of_supply_code')}>
+              Place of Supply: <strong>{inv.place_of_supply || <em className="print:hidden" style={{ color: '#dc2626' }}>not set</em>}</strong>{inv.place_of_supply_code ? ` (${inv.place_of_supply_code})` : ''}
+            </Spot>
+          )}
+          {editable('reverse_charge') ? (
+            <span className="de-inline">Reverse Charge:
+              <Field as="select" name="reverse_charge" label="Reverse charge" value={d.reverse_charge ? 'yes' : 'no'} onChange={v => ed.set('reverse_charge', v === 'yes')} style={{ width: 'auto', fontWeight: 700 }}>
+                <option value="no">No</option><option value="yes">Yes</option>
+              </Field>
+            </span>
+          ) : (
+            <Spot field="reverse_charge" on={spotOn('reverse_charge')}>Reverse Charge: <strong>{inv.reverse_charge ? 'Yes' : 'No'}</strong></Spot>
+          )}
+          {editable('eway_bill_no') ? (
+            <span className="de-inline">E-Way Bill:
+              <Field name="eway_bill_no" label="E-way bill number" placeholder="12-digit number" mono maxLength={20} value={d.eway_bill_no}
+                onChange={v => ed.set('eway_bill_no', v)} style={{ width: 150, fontWeight: 700 }} />
+            </span>
+          ) : (
+            <span className={inv.eway_bill_no ? undefined : 'print:hidden'}>
+              <Spot field="eway_bill_no" on={spotOn('eway_bill_no')}>E-Way Bill: <strong>{inv.eway_bill_no || <span style={{ color: '#6b7280', fontWeight: 400 }}>{spotOn('eway_bill_no') ? 'add' : '—'}</span>}</strong></Spot>
+            </span>
+          )}
           {inv.customer_order_id && <span>Order Ref: <strong><Link to={`/customer-orders?open=${inv.customer_order_id}`} data-invoice-order-link style={{ color: 'inherit' }}>{inv.order?.order_number || `#${inv.customer_order_id}`}</Link></strong></span>}
           {inv.order?.customer_po_ref && <span>Your PO: <strong>{inv.order.customer_po_ref}</strong></span>}
         </div>
@@ -482,35 +717,114 @@ export default function SalesInvoiceDoc() {
         <div className="inv-items-table">
           <table className="doc-items">
             <thead><tr><th style={{ width: '6%' }}>#</th><th style={{ width: '42%' }}>DESCRIPTION</th><th>HSN/SAC</th><th>UOM</th><th style={num}>QTY</th><th style={num}>RATE</th><th style={num}>AMOUNT</th></tr></thead>
-            <tbody>
-              {inv.items.map((it, i) => (
-                <tr key={it.id}>
-                  <td style={{ textAlign: 'center' }}>{i + 1}</td>
-                  <td className="doc-wrap" style={{ fontWeight: 600 }}>{it.description}</td>
-                  <td>{it.hsn || '-'}</td><td>{it.uom}</td><td style={num}>{it.quantity}</td>
-                  <td style={{ ...num, fontFamily: 'var(--font-mono)' }}>{rup(it.rate)}</td>
-                  <td style={{ ...num, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{rup(it.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
+            {editAll ? (
+              <tbody>
+                {d.items.map((it, i) => {
+                  const bad = lp.rows.has(i) || zeroQty.has(i);
+                  return (
+                    <tr key={i} className={shout(bad) ? 'de-row-bad' : undefined}>
+                      <td style={{ textAlign: 'center' }}>{i + 1}</td>
+                      <td><Field as="textarea" name={`line-${i}-description`} label={`Line ${i + 1} description`} placeholder="Item or service"
+                        value={it.description} onChange={v => ed.setItem(i, { description: v })} invalid={shout(lp.rows.has(i))} style={{ fontWeight: 600 }} /></td>
+                      <td><Field name={`line-${i}-hsn`} label={`Line ${i + 1} HSN`} inputMode="numeric" maxLength={8} mono
+                        value={it.hsn} onChange={v => ed.setItem(i, { hsn: v.replace(/[^\d]/g, '') })} style={{ width: 76 }} /></td>
+                      <td><UnitSelect className="de-in" value={it.uom} onChange={v => ed.setItem(i, { uom: v })} ariaLabel={`Line ${i + 1} unit`} style={{ width: 82 }} /></td>
+                      <td style={num}><Field type="number" min="0" step="any" inputMode="decimal" name={`line-${i}-quantity`} label={`Line ${i + 1} quantity`}
+                        value={it.quantity} onChange={v => ed.setItem(i, { quantity: v })} invalid={shout(zeroQty.has(i))} align="right" style={{ width: 70 }} /></td>
+                      <td style={num}><Field type="number" min="0" step="any" inputMode="decimal" name={`line-${i}-rate`} label={`Line ${i + 1} rate`}
+                        value={it.rate} onChange={v => ed.setItem(i, { rate: v })} align="right" mono style={{ width: 96 }} /></td>
+                      <td style={{ ...num, fontWeight: 600 }}>
+                        {rup(lt.amounts[i])}
+                        <button type="button" className="de-remove" onClick={() => ed.removeItem(i)} aria-label={`Remove line ${i + 1}`} title="Remove this line"><Trash2 size={13} /></button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            ) : (
+              <tbody>
+                {inv.items.map((it, i) => (
+                  /* A click on a line opens the editor at that line. */
+                  <tr key={it.id} {...(spotOn('items') ? { 'data-de-field': `line-${i}-description`, className: 'de-spot', title: 'Click to edit' } : {})}>
+                    <td style={{ textAlign: 'center' }}>{i + 1}</td>
+                    <td className="doc-wrap"><ItemText text={it.description} /></td>
+                    <td>{it.hsn || '-'}</td><td>{it.uom}</td><td style={num}>{it.quantity}</td>
+                    <td style={num}>{rup(it.rate)}</td>
+                    <td style={{ ...num, fontWeight: 600 }}>{rup(it.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            )}
           </table>
+          {editAll && (
+            <div style={{ padding: '0 22px' }}>
+              <button type="button" className="de-add-line" onClick={() => ed.addItem(blankLine())} data-de-add-line><Plus size={14} /> Add line</button>
+            </div>
+          )}
         </div>
 
         {/* Totals to footer: one block, never split across sheets and never
             starting one alone (print.css, .doc-closing). */}
         <div className="doc-closing">
         <div className="inv-totals-section">
-          <div className="inv-notes doc-wrap">{inv.notes && <><strong>Notes</strong>{inv.notes}</>}</div>
-          <table className="inv-totals-table">
-            <tbody>
-              {totalRows.map(r => (
-                <tr key={r.label} className={r.strong ? 'tf' : undefined}>
-                  <td className="tl" style={r.strong ? { color: '#000' } : undefined}>{r.label}</td>
-                  <td className="tv" style={r.strong ? { color: '#000' } : undefined}>{r.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {editable('notes') ? (
+            <div className="inv-notes" style={{ width: '48%' }}>
+              <strong>Notes</strong>
+              <Field as="textarea" name="notes" label="Notes" minRows={3} placeholder="Printed on the invoice, under the lines"
+                value={d.notes} onChange={v => ed.set('notes', v)} />
+            </div>
+          ) : (
+            <div className="inv-notes doc-wrap">
+              <Spot field="notes" on={spotOn('notes')} block>
+                {inv.notes ? <><strong>Notes</strong>{inv.notes}</> : (spotOn('notes') && <span className="print:hidden" style={{ color: '#6b7280' }}>+ Add notes</span>)}
+              </Spot>
+            </div>
+          )}
+          {editAll ? (
+            /* The figures as they will be once saved: every row a draft can
+               change is a field, and the rest follow as you type. */
+            <table className="inv-totals-table" data-de-totals>
+              <tbody>
+                <tr><td className="tl">SUB-TOTAL</td><td className="tv">{rup(lt.subTotal)}</td></tr>
+                <tr><td className="tl">DISCOUNT</td><td className="tv">
+                  <Field type="number" min="0" step="any" inputMode="decimal" name="discount" label="Discount" placeholder="0.00" align="right"
+                    value={d.discount} onChange={v => ed.set('discount', v)} invalid={shout(adj.discount)} style={{ width: 104 }} /></td></tr>
+                <tr><td className="tl">TAXABLE VALUE</td><td className="tv">{rup(lt.taxable)}</td></tr>
+                <tr className="print:hidden"><td className="tl">GST RATE %</td><td className="tv">
+                  <Field type="number" min="0" max="100" step="any" inputMode="decimal" name="gst_rate" label="GST rate" list="de-gst-rates" align="right"
+                    value={d.gst_rate} onChange={v => ed.set('gst_rate', v)} invalid={shout(gstBad)} style={{ width: 70 }} />
+                  <datalist id="de-gst-rates">{GST_RATES.map(r => <option key={r} value={r} />)}</datalist></td></tr>
+                {liveInter
+                  ? <tr><td className="tl">IGST @ {Number(d.gst_rate) || 0}%</td><td className="tv">{rup(lt.igst)}</td></tr>
+                  : <>
+                      <tr><td className="tl">CGST @ {(Number(d.gst_rate) || 0) / 2}%</td><td className="tv">{rup(lt.cgst)}</td></tr>
+                      <tr><td className="tl">SGST @ {(Number(d.gst_rate) || 0) / 2}%</td><td className="tv">{rup(lt.sgst)}</td></tr>
+                    </>}
+                {d.reverse_charge && <tr><td className="tl">LESS: GST ON REVERSE CHARGE</td><td className="tv">-{rup(lt.gstTotal)}</td></tr>}
+                <tr><td className="tl">ROUND OFF</td><td className="tv">
+                  <Field type="number" min="-1" max="1" step="0.01" inputMode="decimal" name="round_off" label="Round off" placeholder="0.00" align="right"
+                    value={d.round_off} onChange={v => ed.set('round_off', v)} invalid={shout(adj.roundOff)} style={{ width: 80 }} /></td></tr>
+                <tr className="tf"><td className="tl" style={{ color: '#000' }}>INVOICE TOTAL</td><td className="tv" style={{ color: '#000' }} data-de-total>{rup(lt.net)}</td></tr>
+                {paid > 0 && <>
+                  <tr><td className="tl">AMOUNT RECEIVED</td><td className="tv">-{rup(paid)}</td></tr>
+                  <tr className="tf"><td className="tl" style={{ color: '#000' }}>BALANCE DUE</td><td className="tv" style={{ color: '#000' }}>{rup(Math.max(0, lt.net - paid))}</td></tr>
+                </>}
+              </tbody>
+            </table>
+          ) : (
+            <Spot field="discount" on={spotOn('discount')} block>
+              <table className="inv-totals-table">
+                <tbody>
+                  {totalRows.map(r => (
+                    <tr key={r.label} className={r.strong ? 'tf' : undefined}>
+                      <td className="tl" style={r.strong ? { color: '#000' } : undefined}>{r.label}</td>
+                      <td className="tv" style={r.strong ? { color: '#000' } : undefined}>{r.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Spot>
+          )}
         </div>
 
         <div className="inv-amount-words">Amount in Words: {words}</div>
@@ -546,11 +860,21 @@ export default function SalesInvoiceDoc() {
                 <div style={{ fontSize: '0.62rem', wordBreak: 'break-all' }}>{inv.irn}</div>
               </div>
             )}
-            {terms && (
+            {editable('terms') ? (
               <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px' }}>
                 <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 4 }}>Terms &amp; Conditions</div>
-                <div className="doc-wrap" style={{ fontSize: '0.72rem', color: '#374151', whiteSpace: 'pre-wrap' }}>{terms}</div>
+                <Field as="textarea" name="terms" label="Terms" minRows={3} value={d.terms} onChange={v => ed.set('terms', v)}
+                  placeholder={co.invoice_terms ? 'Left empty, your standard terms from Company Profile print' : 'Payment terms, delivery, warranty…'} style={{ fontSize: '0.72rem' }} />
               </div>
+            ) : terms ? (
+              <Spot field="terms" on={spotOn('terms')} block>
+                <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 4 }}>Terms &amp; Conditions</div>
+                  <div className="doc-wrap" style={{ fontSize: '0.72rem', color: '#374151', whiteSpace: 'pre-wrap' }}>{terms}</div>
+                </div>
+              </Spot>
+            ) : spotOn('terms') && (
+              <Spot field="terms" on block><span className="print:hidden" style={{ fontSize: '0.78rem', color: '#6b7280' }}>+ Add terms &amp; conditions</span></Spot>
             )}
           </div>
         </div>

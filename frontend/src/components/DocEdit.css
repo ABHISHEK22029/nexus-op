@@ -1,0 +1,115 @@
+/* Editing a document on its own page (DocEdit.jsx). Prefix de-.
+   Fields take the document's own font, size and colour, so the sheet keeps
+   its layout; a dashed amber edge says what can be typed into. */
+
+.de-in {
+  font: inherit; color: inherit; letter-spacing: inherit;
+  background: rgba(245, 158, 11, 0.07);
+  border: 1px dashed rgba(180, 83, 9, 0.6);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin: 0;
+  width: 100%; min-width: 0; max-width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color .12s, box-shadow .12s, background .12s;
+}
+.de-in:hover { border-color: #d97706; }
+.de-in:focus { border-style: solid; border-color: #d97706; box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.2); background: rgba(245, 158, 11, 0.12); }
+.de-in[aria-invalid="true"] { border: 1px solid #dc2626 !important; background: rgba(220, 38, 38, 0.07) !important; }
+.de-in.is-right { text-align: right; font-variant-numeric: tabular-nums; }
+.de-in.is-center { text-align: center; }
+.de-in.is-mono { font-family: var(--font-mono); }
+textarea.de-in { resize: vertical; line-height: 1.45; display: block; }
+select.de-in { padding-right: 18px; cursor: pointer; }
+input[type="date"].de-in { width: auto; min-width: 9.5em; }
+/* Number fields without the spinner, which crowds a narrow cell */
+input[type="number"].de-in { -moz-appearance: textfield; }
+input[type="number"].de-in::-webkit-inner-spin-button,
+input[type="number"].de-in::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* The invoice sheet is white paper whatever the theme, and forces black on
+   everything inside it; these keep the edit marks visible there. */
+.invoice-mock .de-in { color: #000; }
+.invoice-mock .de-in[aria-invalid="true"] { color: #000; }
+.invoice-mock .de-hint, .invoice-mock .de-hint * { color: #92400e !important; }
+.invoice-mock .de-err, .invoice-mock .de-err * { color: #b91c1c !important; }
+
+/* Click-to-edit: a piece of the sheet lights up under the pointer. */
+.de-spot { cursor: text; border-radius: 3px; transition: background .12s, box-shadow .12s; }
+@media (hover: hover) {
+  .de-spot:hover { background: rgba(245, 158, 11, 0.13); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.13); }
+}
+
+/* Line items while editing */
+.de-line-actions { white-space: nowrap; }
+.de-remove {
+  border: 0; background: transparent; cursor: pointer; padding: 2px 4px; margin-left: 4px;
+  color: #9ca3af; line-height: 0; border-radius: 4px; vertical-align: middle;
+}
+.de-remove:hover { color: #dc2626; background: rgba(220, 38, 38, 0.08); }
+.invoice-mock .de-remove, .invoice-mock .de-remove * { color: #9ca3af; }
+.invoice-mock .de-remove:hover, .invoice-mock .de-remove:hover * { color: #dc2626; }
+.de-add-line {
+  display: inline-flex; align-items: center; gap: 6px; margin: 8px 0 4px;
+  border: 1px dashed rgba(180, 83, 9, 0.6); background: rgba(245, 158, 11, 0.06);
+  color: #b45309; font: inherit; font-size: 0.8rem; font-weight: 700;
+  border-radius: 6px; padding: 6px 12px; cursor: pointer;
+}
+.de-add-line:hover { background: rgba(245, 158, 11, 0.14); }
+.invoice-mock .de-add-line, .invoice-mock .de-add-line * { color: #b45309; }
+.de-row-bad td { background: rgba(220, 38, 38, 0.05); }
+
+.de-hint { font-size: 0.72rem; color: #b45309; font-weight: 600; }
+.de-err { font-size: 0.72rem; color: #dc2626; font-weight: 600; }
+.de-inline { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.de-stack { display: grid; gap: 4px; }
+
+/* The bar above the sheet */
+.de-bar {
+  position: sticky; top: 8px; z-index: 30;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+  background: var(--bg-surface); color: var(--text-primary);
+  border: 1px solid #d97706; border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.de-bar-text { min-width: 0; flex: 1 1 320px; }
+.de-bar-title { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 0.92rem; color: var(--text-primary); }
+.de-bar-title svg { color: #d97706; }
+.de-bar-scope { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; line-height: 1.45; }
+.de-bar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.de-bar-state { font-size: 0.76rem; color: var(--text-muted); font-weight: 600; }
+.de-bar-state.is-dirty { color: #b45309; }
+.de-bar-error {
+  flex-basis: 100%; display: flex; align-items: flex-start; gap: 7px;
+  font-size: 0.82rem; color: #dc2626; font-weight: 600;
+  background: rgba(220, 38, 38, 0.07); border-radius: 8px; padding: 7px 10px;
+}
+.de-bar-error svg { flex: none; margin-top: 2px; }
+.de-btn {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 8px 14px; border-radius: 8px; font: inherit; font-size: 0.82rem; font-weight: 700;
+  border: 1px solid var(--border-default); background: var(--bg-elevated); color: var(--text-primary); cursor: pointer;
+}
+.de-btn:hover { border-color: var(--text-muted); }
+.de-btn.is-primary { background: #ea580c; border-color: #ea580c; color: #fff; }
+.de-btn.is-primary:hover { background: #c2410c; border-color: #c2410c; }
+.de-btn:disabled { opacity: 0.6; cursor: default; }
+.de-btn:focus-visible, .de-add-line:focus-visible, .de-remove:focus-visible { outline: 2px solid #d97706; outline-offset: 2px; }
+
+@media (max-width: 640px) {
+  .de-bar { top: 4px; padding: 10px 12px; }
+  .de-bar-actions { width: 100%; }
+  .de-bar-actions .de-btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* On paper a field is plain text, and none of the editing furniture shows. */
+@media print {
+  .de-in {
+    border: 0 !important; background: transparent !important; padding: 0 !important;
+    box-shadow: none !important; -webkit-appearance: none; appearance: none; resize: none;
+  }
+  .de-bar, .de-add-line, .de-remove, .de-hint, .de-err, .de-screen { display: none !important; }
+  .de-spot { background: none !important; box-shadow: none !important; }
+}

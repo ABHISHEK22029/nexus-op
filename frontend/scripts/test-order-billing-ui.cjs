@@ -69,7 +69,7 @@ const call = async (token, method, url, body) => {
     await page.goto(`${UI}/customer-orders/${order.id}/invoice`, { waitUntil: 'networkidle2' });
     ok(await waitText(new RegExp(`already billed on ${first.invoiceNumber}`)), `it says part of the order is already billed on ${first.invoiceNumber}`);
     const lines = await page.evaluate(() => [1, 2].map(n => ({
-      d: document.querySelector(`input[aria-label="Line ${n} description"]`)?.value,
+      d: document.querySelector(`[aria-label="Line ${n} description"]`)?.value,
       q: document.querySelector(`input[aria-label="Line ${n} quantity"]`)?.value,
     })).filter(l => l.d != null));
     ok(lines.length === 1 && /Bracket/.test(lines[0].d) && Number(lines[0].q) === 40, `and opens with only what is left: ${lines.map(l => `${l.q} × ${l.d}`).join(', ')}`);
@@ -85,7 +85,7 @@ const call = async (token, method, url, body) => {
     await page.click('input[aria-label="Line 1 quantity"]', { clickCount: 3 });
     await page.type('input[aria-label="Line 1 quantity"]', '40');
     await page.evaluate(() => [...document.querySelectorAll('button')].find(b => /Add line/.test(b.textContent))?.click());
-    await page.type('input[aria-label="Line 2 description"]', 'Freight to site');
+    await page.type('[aria-label="Line 2 description"]', 'Freight to site');
     await page.type('input[aria-label="Line 2 quantity"]', '1');
     await page.type('input[aria-label="Line 2 rate"]', '1500');
     answer = false; dialogs = [];
@@ -101,7 +101,7 @@ const call = async (token, method, url, body) => {
     ok(await waitFor(() => !!document.querySelector('[data-fully-invoiced]')), 'it shows “fully invoiced”');
     const full = await page.evaluate(() => ({
       text: document.querySelector('[data-fully-invoiced]')?.innerText || '',
-      form: !!document.querySelector('input[aria-label="Line 1 description"]'),
+      form: !!document.querySelector('[aria-label="Line 1 description"]'),
     }));
     ok(new RegExp(`Open ${first.invoiceNumber}`).test(full.text) && (full.text.match(/Open /g) || []).length === 2 && !full.form,
       'with a button for each of its two invoices, and no form to bill it again');

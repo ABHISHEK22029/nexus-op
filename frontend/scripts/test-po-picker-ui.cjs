@@ -76,7 +76,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       const tr = document.querySelector(`select[aria-label="Line ${i} item"]`)?.closest('tr');
       if (!tr) return null;
       const v = [...tr.querySelectorAll('input, select')].map(e => e.value);
-      return { desc: tr.querySelector(`input[aria-label="Line ${i} description"]`)?.value, unit: tr.querySelector(`select[aria-label="Line ${i} unit"]`)?.value, all: v };
+      return { desc: tr.querySelector(`[aria-label="Line ${i} description"]`)?.value, unit: tr.querySelector(`select[aria-label="Line ${i} unit"]`)?.value, all: v };
     }, n);
 
     /* ── 1 ── */
@@ -110,11 +110,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     /* ── 2 ── a typed line alongside */
     console.log('\n  ── 2. a line typed by hand still works');
     await click('button', /Add (Line|Item)/i);
-    await waitFor(() => !!document.querySelector('input[aria-label="Line 3 description"]'));
-    const typed = await page.$('input[aria-label="Line 3 description"]');
+    await waitFor(() => !!document.querySelector('[aria-label="Line 3 description"]'));
+    const typed = await page.$('[aria-label="Line 3 description"]');
     await typed.type('Fasteners M12 (not stocked)');
     const fillNum = async (n, col, v) => page.evaluate((i, c, val) => {
-      const tr = document.querySelector(`input[aria-label="Line ${i} description"]`).closest('tr');
+      const tr = document.querySelector(`[aria-label="Line ${i} description"]`).closest('tr');
       const nums = [...tr.querySelectorAll('input[type="number"]')];
       const el = nums[c];
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, String(val));

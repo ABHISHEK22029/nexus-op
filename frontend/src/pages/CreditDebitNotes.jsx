@@ -275,14 +275,18 @@ export default function CreditDebitNotes() {
               </thead>
               <tbody>
                 {q.rows.map(n => (
-                  <tr key={n.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }} onClick={() => navigate(`/credit-debit-notes/${n.id}`)}>{n.note_number}</td>
+                  /* The whole row opens the note, as the invoice list does. */
+                  <tr key={n.id} data-note-row style={{ borderTop: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+                      onClick={() => navigate(`/credit-debit-notes/${n.id}`)}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-elevated)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>{n.note_number}</td>
                     <td style={{ padding: '11px 14px' }}><span style={typeBadge(n.note_type)}>{n.note_type}</span></td>
                     <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{n.party_name || '—'}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{n.ref_number || '—'}</td>
                     <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupee(n.total)}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-muted)', fontSize: '0.82rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.reason || '—'}</td>
-                    <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
                       <button onClick={() => navigate(`/credit-debit-notes/${n.id}`)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 6 }}><Eye size={15} /></button>
                       {/* Hidden when the API would refuse it anyway. */}
                       {canDelete && (

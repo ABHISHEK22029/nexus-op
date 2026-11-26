@@ -164,7 +164,7 @@ async function cleanup() {
     ok(/State Code:\s*36/.test(p) && /CIN:\s*U28100TG2020PTC123456/.test(p), "the supplier's state code and CIN are in the letterhead");
     ok(/Declaration:/.test(p), 'the declaration is there');
     ok(!/Status:/.test(p), 'no "Status" on paper');
-    ok(/Status:/.test(await screenText()), '(it stays on screen)');
+    ok(await page.evaluate(() => !!document.querySelector('[aria-label="Invoice status"], [data-doc-status]')), '(it stays on screen, in the toolbar)');
     ok(/HSN\/SAC code on line 2/.test(await screenText()), 'the screen warns that line 2 has no HSN/SAC code');
     await page.select('[data-copy-picker]', 'DUPLICATE FOR TRANSPORTER');
     ok(/DUPLICATE FOR TRANSPORTER/.test(await printed()), 'choosing the transporter copy prints "DUPLICATE FOR TRANSPORTER"');

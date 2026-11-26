@@ -302,8 +302,11 @@ export default function SalesQuotations() {
                 )}
               </div>
               <div style={{ flex: 2 }}><label style={lbl}>Description *</label>
-                <input style={{ ...input, borderColor: rowProblems.rows.has(i) ? '#dc2626' : undefined }} value={l.description} onChange={e => setLine(i, { description: e.target.value })}
-                  aria-label={`Line ${i + 1} description`} aria-invalid={rowProblems.rows.has(i)} autoComplete="off" placeholder="Item or service" />
+                {/* Several lines: the item, then its specifications under it,
+                    printed one per line as on the company's own quotations. */}
+                <textarea rows={Math.min(8, Math.max(1, String(l.description || '').split('\n').length))}
+                  style={{ ...input, resize: 'vertical', lineHeight: 1.4, borderColor: rowProblems.rows.has(i) ? '#dc2626' : undefined }} value={l.description} onChange={e => setLine(i, { description: e.target.value })}
+                  aria-label={`Line ${i + 1} description`} aria-invalid={rowProblems.rows.has(i)} autoComplete="off" placeholder="Item or service — specifications on the lines below" />
                 {!l.skuId && <SaveAsProduct description={l.description} unit={l.uom} price={l.rate} hsn={l.hsn}
                   onSaved={p => { setSkus(list => [...list, p]); setLine(i, { skuId: String(p.id) }); }} />}
               </div>
@@ -352,7 +355,7 @@ export default function SalesQuotations() {
               <div style={{ fontSize: '1.05rem', marginTop: 2 }}>Net: <b style={{ color: 'var(--brand-amber)' }}>{money(net)}</b></div>
             </div>
           </div>
-          <div style={{ marginTop: 12 }}><label style={lbl}>Terms / notes</label><input style={input} value={head.terms} onChange={e => setHead({ ...head, terms: e.target.value })} placeholder="Payment terms, validity…" /></div>
+          <div style={{ marginTop: 12 }}><label style={lbl}>Terms / notes</label><textarea rows={Math.min(8, Math.max(2, String(head.terms || '').split('\n').length))} style={{ ...input, resize: 'vertical', lineHeight: 1.4 }} value={head.terms} onChange={e => setHead({ ...head, terms: e.target.value })} aria-label="Terms" placeholder={'1. Payment terms: 30 days from delivery\n2. Delivery: 15 days from PO'} /></div>
 
           {/* The delivery promise. Days after the order rather than a date,
               because nobody knows yet on what day the customer will say yes;
@@ -423,19 +426,23 @@ export default function SalesQuotations() {
               </thead>
               <tbody>
                 {q.rows.map(qt => (
-                  <tr key={qt.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => navigate(`/sales-quotations/${qt.id}`)}>{qt.quote_number}</td>
+                  /* The whole row opens the quotation, as the invoice list does. */
+                  <tr key={qt.id} data-quote-row style={{ borderTop: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+                      onClick={() => navigate(`/sales-quotations/${qt.id}`)}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-elevated)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{qt.quote_number}</td>
                     <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{qt.customer_name || '—'}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{qt.valid_until ? new Date(`${String(qt.valid_until).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
                     <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{rupee(qt.net_amount)}</td>
-                    <td style={{ padding: '11px 14px' }}>
+                    <td style={{ padding: '11px 14px' }} onClick={e => e.stopPropagation()}>
                       {qt.status === 'Converted'
                         ? <span style={{ fontSize: '0.72rem', fontWeight: 700, color: STATUS_COLOR.Converted, background: STATUS_COLOR.Converted + '1f', padding: '3px 9px', borderRadius: 999 }}>Converted</span>
                         : <StatusSelect value={qt.status} onChange={v => setStatus(qt.id, v)} label={`Status of ${qt.quote_number}`}
                             color={STATUS_COLOR[qt.status]} options={STATUSES.filter(st => st !== 'Converted')} />}
                       <OnlineAnswer qt={qt} />
                     </td>
-                    <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
                       <button onClick={() => navigate(`/sales-quotations/${qt.id}`)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 4 }}><Eye size={15} /></button>
                       {/* Open offers only: an answered or converted quotation
                           has nothing left to ask the customer. */}

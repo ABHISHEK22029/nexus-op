@@ -23,6 +23,9 @@ const UNGATED = new Set([
   'attachments', 'kb', 'ai', 'uploads', 'metal-prices',
   // Setup readiness: every role benefits from knowing why a screen is empty.
   'setup',
+  // Search everywhere: spans every kind of record and checks each kind's
+  // read permission itself (controllers/SearchController).
+  'search',
 ]);
 
 /* Deliberately absent from RESOURCES, which makes them Administrator-only

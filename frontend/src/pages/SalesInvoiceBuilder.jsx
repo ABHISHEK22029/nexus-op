@@ -437,7 +437,9 @@ export default function SalesInvoiceBuilder() {
                 {items.map((it, i) => (
                   <tr key={i} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                     <td style={{ padding: '5px 4px' }}>
-                      <input style={{ ...S.input, borderColor: rowProblems.rows.has(i) ? '#dc2626' : undefined }} value={it.description} onChange={e => setItem(i, { description: e.target.value })}
+                      {/* Several lines: the item, then any specifications under it. */}
+                      <textarea rows={Math.min(8, Math.max(1, String(it.description || '').split('\n').length))}
+                        style={{ ...S.input, resize: 'vertical', lineHeight: 1.4, borderColor: rowProblems.rows.has(i) ? '#dc2626' : undefined }} value={it.description} onChange={e => setItem(i, { description: e.target.value })}
                         placeholder="Item or service" aria-label={`Line ${i + 1} description`} aria-invalid={rowProblems.rows.has(i)} autoComplete="off" />
                       {rowProblems.rows.has(i) && <div role="alert" style={{ fontSize: '0.7rem', color: '#dc2626', marginTop: 3 }}>Describe this item, or remove the line</div>}
                     </td>

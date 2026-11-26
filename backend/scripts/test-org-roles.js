@@ -113,6 +113,19 @@ const signUp = async (label) => {
     (inv.ok ? '' : ` — ${inv.body.error || ''}`));
   if (inv.body?.user?.id) made.push(inv.body.user.id);
 
+  /* A role string that is no longer defined ("legacy") is listed for its own
+     company only. The list counted every organisation's users, so any Owner
+     saw other companies' role names (fixed 25 Nov). */
+  if (inv.body?.user?.id) {
+    const LEGACY = `OldClerk${stamp.slice(-4)}`;
+    await db.query('UPDATE users SET role = $1 WHERE id = $2', [LEGACY, inv.body.user.id]);
+    const legA = (await call('/admin/roles', {}, a.token)).body?.legacyRolesInUse || [];
+    const legB = (await call('/admin/roles', {}, b.token)).body?.legacyRolesInUse || [];
+    ok(legA.some(l => l.role === LEGACY) && !legB.some(l => l.role === LEGACY),
+      `a legacy role is listed for its own company (${legA.length}), not the other one (${legB.length})`);
+    await db.query('UPDATE users SET role = $1 WHERE id = $2', [ROLE, inv.body.user.id]);
+  }
+
   if (inv.ok) {
     const acc = await call('/auth/accept-invite', {
       method: 'POST', body: JSON.stringify({ token: inv.body.invite.token, password: 'keeperpass123' }),

@@ -292,7 +292,7 @@ function layoutProblems() {
       const rate = document.querySelector('input[aria-label="Line 1 unit rate"]');
       return {
         unitIsSelect: unit?.tagName === 'SELECT', unit: unit?.value, units: unit ? [...unit.options].map(o => o.value) : [],
-        desc: document.querySelector('input[aria-label="Line 1 description"]')?.value, rate: rate?.value,
+        desc: document.querySelector('[aria-label="Line 1 description"]')?.value, rate: rate?.value,
         qty: { inputMode: qty?.inputMode, auto: qty?.autocomplete, min: qty?.min, type: qty?.type },
         rateAttrs: { inputMode: rate?.inputMode, auto: rate?.autocomplete, min: rate?.min },
       };

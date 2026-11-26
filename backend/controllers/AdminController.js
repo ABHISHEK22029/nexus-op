@@ -155,10 +155,15 @@ exports.listRoles = async (req, res) => {
        matters: those users are being judged by the LEGACY mapping, not by a
        role anyone chose for them, and an admin should be able to see that
        and fix it rather than discover it through a support ticket. */
+    /* This company's users only, like the counts above. It used to count
+       every organisation's users, so any Owner saw other companies' role
+       names and how many people held them. */
     const legacy = await db.query(
       `SELECT role, COUNT(*)::int n FROM users
        WHERE role IS NOT NULL AND role NOT IN (SELECT role FROM role_definitions)
-       GROUP BY role`
+         ${callerOrg == null ? '' : 'AND org_id = $1'}
+       GROUP BY role`,
+      callerOrg == null ? [] : [callerOrg]
     );
 
     res.json({

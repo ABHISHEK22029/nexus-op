@@ -4,7 +4,8 @@
    a quoted line is linked to. Pure functions — no server, no database.
      node scripts/test-quote-terms.js
    ═════════════════════════════════════════════════ */
-const { readTerms, matchMaterial } = require('../shared/quoteTerms');
+const { readTerms, readHeader, matchMaterial } = require('../shared/quoteTerms');
+const { num, parseGrid } = require('../shared/quoteParser');
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log(`   ${c ? '✅' : '❌'} ${m}`); };
@@ -44,6 +45,39 @@ eq(matchMaterial('SS304 sheet 6 mm', mats), 2, 'the 6 mm line is the 6 mm sheet,
 eq(matchMaterial('MS Angle 75 × 75 × 6', mats), 3, '× is x');
 eq(matchMaterial('SS304 sheet', mats), null, 'no size: two sheets fit, so neither is picked');
 eq(matchMaterial('Hex bolt M16 x 65', mats), null, 'a line that is none of them stays unlinked');
+
+/* 26 Nov: an uploaded quotation came back "Not named" with no number,
+   though both are at the top of every one. Shaped like the two real ones
+   that showed it (a Maks Ops print, and an Excel-made template); the
+   names and numbers here are made up. */
+console.log('\n  ── who sent it, its number and date');
+const printed = 'Sample Fab Works Private Limited\n6-148/1, Bowrampet, Hyderabad 500043\nGSTIN: 36ABCDE1234F1Z9 · State Code: 36\nQUOTATION\nNo.: FY26-27/003.01\nDate: 05 Oct 2026\nValid until: 10 Oct 2026\nQUOTATION FOR\nBuyer Power Private Limited\nGSTIN: 36AAACB1234C1Z5';
+const h1 = readHeader(printed);
+eq(h1.vendor_name, 'Sample Fab Works Private Limited', 'the letterhead names the vendor');
+eq(h1.quote_ref, 'FY26-27/003.01', 'a bare "No.:" at the top is the quote number');
+eq(h1.quote_date, '2026-10-05', '"Date: 05 Oct 2026"');
+eq(h1.vendor_gstin, '36ABCDE1234F1Z9', 'the letterhead GSTIN, not the buyer\'s printed later');
+const sheet = readHeader('Sample Fab Works Pvt Ltd \tQuotation\nGST: 36ABCDE1234F1Z9\nQuote No: FY26-27/003.01\nDate: \t05/10/2026\nValidity: \t10/10/2026');
+eq([sheet.vendor_name, sheet.quote_ref, sheet.quote_date], ['Sample Fab Works Pvt Ltd', 'FY26-27/003.01', '2026-10-05'], 'the template: name before a tab, "Quote No:", day-first date');
+eq(readHeader('ABC Steels Pvt Ltd\nQuotation No. QT/24-25/118 Date: 12-03-2025').quote_date, '2025-03-12', 'a date in the middle of a line');
+eq(readHeader('Deccan Metals\nValid until: 20/03/2026\nDate : Mar 9, 2026').quote_date, '2026-03-09', 'never the "valid until" date');
+eq(readHeader('X Industries\nValidity Date: 01/04/2026').quote_date, null, 'a validity date alone is not the quote date');
+eq(readHeader('QUOTATION\nSri Balaji Traders\nRef No: SBT-221').vendor_name, 'Sri Balaji Traders', 'a heading above the name is skipped');
+eq(readHeader('Price list\nItem 1 200').quote_ref, null, 'nothing printed, nothing guessed');
+
+console.log('\n  ── figures in an Excel-made PDF');
+eq(num('( 4,910.00 ) ('), 4910, 'stray template brackets around a price are noise');
+eq(num('662,850.00 )'), 662850, 'and so is an unpaired one');
+eq(num('(1,234)'), -1234, 'a figure wrapped in brackets is still a negative');
+const g = parseGrid([
+  ['Description', 'HSN Code', 'Unit', 'Quantity', 'Unit Price(Rs)', 'Total Price(Rs)'],
+  ['Stand for SCB', '7308', 'SET', '135', '( 4,910.00 ) (', '662,850.00 )'],
+  ['( - ) Thank you for', '', 'your business! Basic', '', '(', '662,850.00 )'],
+  ['', '', 'GST', '', '(', '119,313.00 )'],
+  ['', '', 'Total Value', '', '', '782,163.00'],
+], { base: 'medium' });
+eq(g.lines.map(l => [l.description, l.hsn, l.quantity, l.rate, l.amount]), [['Stand for SCB', '7308', 135, 4910, 662850]], 'the one item is read — the "Basic" row is not a second one');
+eq([g.totals.subtotal, g.totals.tax, g.totals.grand], [662850, 119313, 782163], '"Basic" is the sub-total, then GST and the total value');
 
 console.log(`\n   ${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

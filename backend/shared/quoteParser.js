@@ -60,11 +60,17 @@ const UOM_WORDS = new Set(['nos', 'no', "no's", 'kg', 'kgs', 'kilo', 'mt', 'mts'
 const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const lower = (s) => norm(s).toLowerCase();
 
-/** "1,23,456.78" / "₹ 1234" / "Rs. 1,234" / "(1234)" → number, or null when it is not one. */
+/** "1,23,456.78" / "₹ 1234" / "Rs. 1,234" / "(1234)" → number, or null when it is not one.
+    A figure wrapped in brackets is a negative (the accounting convention);
+    brackets that do not pair around it are noise and are dropped. A
+    quotation made from an Excel template carried hidden "( )" placeholders
+    beside every price — "( 4,910.00 ) (", "662,850.00 )" — and its whole
+    item table read as empty. */
 function num(v) {
   if (v === null || v === undefined) return null;
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  let s = String(v).replace(/(rs\.?|inr|₹|\$)/gi, '').replace(/[,\s]/g, '').replace(/^\((.*)\)$/, '-$1');
+  let s = String(v).replace(/(rs\.?|inr|₹|\$)/gi, '').replace(/[,\s]/g, '');
+  s = /^\([^()]*\)$/.test(s) ? `-${s.slice(1, -1)}` : s.replace(/[()]/g, '');
   if (!s || !/^-?\d*\.?\d+$/.test(s)) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
@@ -83,7 +89,7 @@ const close = (a, b, tol = 0.01) => a != null && b != null && Math.abs(a - b) <=
    searched for one, from the last keyword backwards. Only ever applied to
    cells OUTSIDE the description column: an item called "Total station"
    stays an item. */
-const LABEL_WORD = /(sub\s*-?\s*total|grand\s*total|net\s*amount|taxable|tax\s*(rate|due|amount)?|[csi]gst|gst|vat|discount|round\s*-?\s*off|final\s*amount|total)\b/gi;
+const LABEL_WORD = /(sub\s*-?\s*total|grand\s*total|net\s*amount|taxable|tax\s*(rate|due|amount)?|[csi]gst|gst|vat|discount|round\s*-?\s*off|final\s*amount|total|basic)\b/gi;
 function labelKind(text, taxSeen) {
   const k = summaryKind(text, taxSeen);
   if (k) return k;
@@ -106,7 +112,9 @@ function summaryKind(text, taxSeen) {
      the last: the document's own total comes at the end. */
   if (/^totals?\s*(c\s*\/\s*[ofd]|b\s*\/\s*[fd]|carried|brought)|^(c\/[ofd]|b\/[fd])\b/.test(t)) return 'ignore';
   if (/^(grand\s*total|net\s*(amount|payable|total|value)|total\s*(amount\s*)?payable|amount\s*payable|invoice\s*(total|value)|total\s*(amount|value)\s*(incl|with|including)|total\s*incl|amount\s*(with|incl|including)\s*(gst|tax)|total\s*(with|incl)\s*(gst|tax)|final\s*amount|total\s*quot(e|ation)|quot(e|ation)\s*total|gross\s*total|estimated\s*cost|total\s*cost)/.test(t)) return 'grand';
-  if (/^(sub\s*-?\s*total|taxable\s*(value|amount|amt)|total\s*(before|excl|excluding|without)\s*(tax|gst)|basic\s*(value|amount|total)|total\s*taxable|amount\s*before\s*tax)/.test(t)) return 'subtotal';
+  /* "Basic" alone is how many Indian quotations head the pre-tax total
+     ("Basic 6,62,850 · GST 1,19,313 · Total Value 7,82,163"). */
+  if (/^(sub\s*-?\s*total|taxable\s*(value|amount|amt)|total\s*(before|excl|excluding|without)\s*(tax|gst)|basic\s*(value|amount|total)|total\s*taxable|amount\s*before\s*tax)/.test(t) || /^basic\s*(price|cost)?\s*:?$/.test(t)) return 'subtotal';
   if (/^taxable\b/.test(t)) return 'ignore';     // "Taxable 345": the taxable PART, not an item
   if (/^(i|c|s|u)?gst\b|^tax\b|^vat\b|^sales\s*tax|^tax\s*(amount|due)|^total\s*(tax|gst)|^gst\s*amount|^(i|c|s)gst\s*@/.test(t)) return 'tax';
   if (/^discount\b|^disc\.?\b|^trade\s*discount|^less\s*discount|^special\s*discount|^client\s*discount|discount$/.test(t)) return 'discount';
@@ -956,7 +964,11 @@ async function parseQuotation(buffer, mime = '', filename = '') {
       note: `The file could not be read (${e.message}).` };
   }
 
-  for (const l of out.lines) l.match_key = matchKey(l.description, l.hsn);
+  for (const l of out.lines) {
+    /* "—" or "-" in an HSN column means none was given; it is not a code. */
+    if (l.hsn != null && !/\d/.test(String(l.hsn))) l.hsn = null;
+    l.match_key = matchKey(l.description, l.hsn);
+  }
 
   /* Check the lines against what the document says they come to. Compare
      like with like: the lines are before tax, so they are checked against

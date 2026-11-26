@@ -38,6 +38,29 @@ export function CopyPicker({ kind = 'invoice', value, onChange }) {
   );
 }
 
+/* An item's description as a fabricator's own quotation sets it: the
+   item's name, then each specification on its own line under it ("Column -
+   2mm C Perling", "Canopy Rafter - 50 x 50 x 5 Angle" …). The lines used to
+   run together into one paragraph, because the line breaks typed were
+   dropped on the page. */
+export function ItemText({ text }) {
+  const [first, ...rest] = String(text ?? '').replace(/\r/g, '').split('\n');
+  const more = rest.join('\n').trim();
+  return (
+    <>
+      <div className="doc-item-name">{first || '—'}</div>
+      {more && <div className="doc-item-more">{more}</div>}
+    </>
+  );
+}
+
+/* Where a document has got to (Draft, Sent, Issued …): the seller's
+   business, so it sits in the toolbar, never on the sheet. */
+export function StatusPill({ status }) {
+  if (!status) return null;
+  return <span className="doc-status-pill" data-doc-status>{status}</span>;
+}
+
 /* The particulars-are-true declaration a tax invoice closes with. */
 export const DECLARATION = 'We declare that this invoice shows the actual price of the goods and services described and that all particulars are true and correct.';
 export function Declaration({ text = DECLARATION }) {

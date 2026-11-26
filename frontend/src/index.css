@@ -428,6 +428,40 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
 .inv-party-title { font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #000; letter-spacing: .1em; background: #f1f1f1; border-bottom: 1px solid #000; padding: 5px 8px; margin: -12px -16px 8px; }
 .inv-party-name { font-size: 12px; font-weight: 700; margin-bottom: 3px; }
 .inv-party-detail { font-size: 11px; color: #333; line-height: 1.5; }
+
+/* ── The quotation, challan and credit/debit note sheets (.doc-sheet) ──
+   They borrow the invoice's letterhead and party blocks, which were drawn
+   for the invoice's framed paper: inside .doc-sheet the letterhead sat
+   22px further in than everything under it, and the party blocks were
+   half-boxed (a rule on top, one divider, open sides). Here they line up
+   and close, like the PDF. */
+.doc-sheet .inv-header { padding: 0 0 14px; }
+.doc-parties { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #000; margin: 0 0 16px; }
+.doc-parties > .inv-party { border-right: 1px solid #000; }
+.doc-parties > .inv-party:last-child { border-right: none; }
+/* Dispatch particulars: one ruled strip, not a row of app cards. */
+.doc-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 1px; background: #c8c8c8; border: 1px solid #000; margin: 0 0 16px; }
+.doc-facts > div { background: var(--bg-surface, #fff); padding: 7px 10px; min-width: 0; }
+.doc-facts .doc-fact-l { font-size: 0.64rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted, #6b7280); }
+.doc-facts .doc-fact-v { font-size: 0.82rem; font-weight: 700; color: var(--text-primary, #111); overflow-wrap: anywhere; margin-top: 1px; }
+.doc-facts > div.doc-warn { box-shadow: inset 0 0 0 2px #dc2626; }
+.doc-facts > div.doc-warn .doc-fact-v { color: #dc2626; }
+/* An item's description: its name, then any specification lines under it. */
+.doc-item-name { font-weight: 600; }
+.doc-item-more { white-space: pre-line; font-weight: 400; font-size: 0.92em; opacity: 0.85; margin-top: 2px; line-height: 1.45; }
+/* Context for the person on screen (the order, the invoice), above the sheet. */
+.doc-context { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 12px; }
+.doc-context a { color: var(--brand-amber); font-weight: 700; }
+.doc-status-pill { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; font-size: 0.76rem; font-weight: 700; border: 1px solid var(--border-default); background: var(--bg-elevated); color: var(--text-secondary); white-space: nowrap; }
+@media print {
+  .doc-facts { background: #999 !important; }
+  .doc-facts > div { background: #fff !important; padding: 4pt 6pt !important; }
+  .doc-facts > div.doc-warn { box-shadow: none !important; }
+  .doc-facts > div.doc-warn .doc-fact-v { color: #000 !important; }
+  .doc-facts .doc-fact-l { font-size: 6pt !important; }
+  .doc-facts .doc-fact-v { font-size: 8pt !important; }
+  .doc-item-more { opacity: 1 !important; }
+}
 .inv-items-table { margin: 0; }
 .inv-items-table table { width: 100%; border-collapse: collapse; }
 .inv-items-table th { background: #f1f1f1; color: #000; font-size: 10px; font-weight: 800; padding: 9px 10px; text-align: left; letter-spacing: .05em; text-transform: uppercase; border-right: 1px solid #000; border-bottom: 2px solid #000; }
@@ -439,7 +473,7 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
 .inv-totals-table { width: 240px; border: 1px solid #000; }
 .inv-totals-table td { padding: 6px 10px; font-size: 11.5px; border-bottom: 1px solid #ddd; }
 .inv-totals-table .tl { text-align: right; font-weight: 700; color: #000; background: #f7f7f7; }
-.inv-totals-table .tv { text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+.inv-totals-table .tv { text-align: right; font-variant-numeric: tabular-nums; font-size: 11.5px; white-space: nowrap; }
 .inv-totals-table .tf td { background: #ededed; color: #000; font-weight: 800; font-size: 13px; border-top: 2px solid #000; border-bottom: none; }
 .inv-amount-words { margin: 12px 22px; background: #f7f7f7; border: 1px solid #000; border-left: 3px solid #000; padding: 9px 13px; font-size: 11px; font-style: italic; color: #000; }
 .inv-terms-grid { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #000; margin: 10px 22px 0; }

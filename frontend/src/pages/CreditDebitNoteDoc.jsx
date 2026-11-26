@@ -16,7 +16,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import Attachments from '../components/Attachments';
 import {
-  CompanyHeader, Party, SignatureBlock, DocFooter, ComplianceWarning, fmtDate,
+  CompanyHeader, Party, SignatureBlock, DocFooter, ComplianceWarning, fmtDate, ItemText, StatusPill,
 } from '../components/DocumentKit';
 import { amountInWords } from '../lib/amountInWords';
 import { docFileName, printAs } from '../lib/documentPdf';
@@ -51,14 +51,17 @@ export default function CreditDebitNoteDoc() {
   const td = { padding: '9px 10px', fontSize: '0.85rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)' };
   const totRow = (l, v, bold) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: bold ? '1rem' : '0.85rem', fontWeight: bold ? 800 : 500, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-      <span>{l}</span><span style={{ fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', marginLeft: 16 }}>{v}</span>
+      <span>{l}</span><span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', marginLeft: 16 }}>{v}</span>
     </div>
   );
 
   return (
     <div style={{ maxWidth: 820, margin: '0 auto' }}>
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <button onClick={() => navigate('/credit-debit-notes')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All Notes</button>
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={() => navigate('/credit-debit-notes')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All Notes</button>
+          <StatusPill status={n.status} />
+        </div>
         <button onClick={() => printAs(docFileName(n.note_type === 'credit' ? 'Credit Note' : 'Debit Note', n.note_number, (n.party || {}).name))} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
       </div>
 
@@ -72,18 +75,17 @@ export default function CreditDebitNoteDoc() {
           meta={[
             ['No.', n.note_number],
             ['Date', fmtDate(n.note_date)],
-            n.status && ['Status', n.status, null, { screenOnly: true }],
           ]}
         />
 
         {/* The reference block. Without both the number AND the date this
             note cannot be reported against the right tax period. */}
-        <div style={{ border: '1px solid var(--border-default)', borderRadius: 8, padding: '10px 13px', marginBottom: 16, background: 'rgba(0,0,0,0.015)' }}>
+        <div data-note-ref style={{ border: '1px solid #000', padding: '9px 13px', margin: '16px 0', fontSize: '0.85rem' }}>
           <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', marginBottom: 5 }}>
             Issued against original document
           </div>
           <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap', fontSize: '0.85rem' }}>
-            <span>Number: <strong style={{ fontFamily: 'var(--font-mono)' }}>
+            <span>Number: <strong>
               {/* Red is for the person preparing it; on paper it is a blank. */}
               {n.ref_number
                 ? (n.ref_id && /invoice|bill/.test(String(n.ref_type || ''))
@@ -98,7 +100,8 @@ export default function CreditDebitNoteDoc() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 14 }}>
+        {/* The party and the reason, in one closed box — as on the other documents. */}
+        <div className="doc-parties">
           <Party
             title={n.party_type === 'vendor' ? 'Vendor' : 'Customer'}
             name={party.name}
@@ -107,9 +110,9 @@ export default function CreditDebitNoteDoc() {
             gstin={party.gstin}
             required
           />
-          <div style={{ fontSize: '0.85rem' }}>
-            <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', marginBottom: 4 }}>Reason</div>
-            <div style={{ color: 'var(--text-secondary)' }}>
+          <div className="inv-party">
+            <div className="inv-party-title">Reason</div>
+            <div className="inv-party-detail doc-wrap" style={{ fontSize: '0.85rem' }}>
               {n.reason || <><em className="print:hidden" style={{ color: '#dc2626' }}>No reason recorded — a note without a stated reason invites a query.</em><span className="print-only">—</span></>}
             </div>
           </div>
@@ -130,12 +133,12 @@ export default function CreditDebitNoteDoc() {
               {(n.items || []).map((it, i) => (
                 <tr key={it.id}>
                   <td style={td}>{i + 1}</td>
-                  <td className="doc-wrap" style={{ ...td, fontWeight: 600 }}>{it.description}</td>
-                  <td style={{ ...td, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{it.hsn || '—'}</td>
-                  <td style={{ ...td, textAlign: 'center', color: 'var(--text-muted)' }}>{it.uom || '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{it.quantity}</td>
-                  <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{rupee(it.rate)}</td>
-                  <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{rupee(it.amount)}</td>
+                  <td className="doc-wrap" style={{ ...td, verticalAlign: 'top' }}><ItemText text={it.description} /></td>
+                  <td style={{ ...td, color: 'var(--text-secondary)' }}>{it.hsn || '—'}</td>
+                  <td style={{ ...td, textAlign: 'center', color: 'var(--text-secondary)' }}>{it.uom || '—'}</td>
+                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{Number(it.quantity)}</td>
+                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{rupee(it.rate)}</td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{rupee(it.amount)}</td>
                 </tr>
               ))}
             </tbody>

@@ -139,15 +139,17 @@ async function cleanup() {
 
     section('A new invoice: changing the customer');
     await go('/sales-invoices/new');
+    /* the customer list arrives a moment after the form: pick once it has */
+    await page.waitForFunction((cid) => [...(document.querySelector('select[data-party-select="customer"]')?.options || [])].some(o => o.value === cid), { timeout: 30000 }, String(alpha.id));
     await page.select('select[data-party-select="customer"]', String(alpha.id));
-    await page.waitForSelector('input[placeholder="Item or service"]', { visible: true });
+    await page.waitForSelector('[placeholder="Item or service"]', { visible: true });
     await sleep(400);
-    await page.type('input[placeholder="Item or service"]', 'Gate frame, welded');
+    await page.type('[placeholder="Item or service"]', 'Gate frame, welded');
     const notes = await page.waitForSelector('input[placeholder="e.g. Against your PO 4471"]');
     await notes.type('Against PO 4471');
     await page.select('select[data-party-select="customer"]', String(beta.id));
     await sleep(1200);
-    ok(await val('input[placeholder="Item or service"]') === 'Gate frame, welded', 'the line typed stays when the customer changes');
+    ok(await val('[placeholder="Item or service"]') === 'Gate frame, welded', 'the line typed stays when the customer changes');
     ok(await val('input[placeholder="e.g. Against your PO 4471"]') === 'Against PO 4471', 'and so do the notes');
     ok(await page.evaluate((b) => [...document.querySelectorAll('input, textarea')].some(i => i.value === b), BETA), "the bill-to is now the new customer's");
 
@@ -230,19 +232,24 @@ async function cleanup() {
       ok(JSON.stringify(pa?.customers || []).includes('write') && !JSON.stringify(pb?.customers || []).includes('write'), 'A is saved with write; B is not saved yet');
     }
 
+    /* Edited on the invoice itself (components/DocEdit, since 26 Nov). */
     section('An invoice number edited in place');
     await go(`/sales-invoices/${inv1.id}`);
-    await page.click('button[aria-label="Edit invoice number"]');
+    await page.click('[data-doc-edit]');
     const taken = inv2.invoice_number || inv2.invoiceNumber;
-    const field = await page.waitForSelector('input[aria-label="invoice number"]', { visible: true });
+    const field = await page.waitForSelector('input[aria-label="Invoice number"]', { visible: true });
+    await sleep(200);
     await typeAt(field, taken);
-    await page.keyboard.press('Enter');
-    await sleep(1200);
-    ok(await val('input[aria-label="invoice number"]') === taken, `a number already used is refused, and what was typed stays (${taken})`);
-    ok(await page.evaluate(() => /already used/.test(document.body.innerText)), 'with the reason beside it');
+    await page.click('[data-de-save]');
+    await page.waitForFunction(() => /already used/.test(document.querySelector('[data-de-error]')?.textContent || ''), { timeout: 8000 }).catch(() => {});
+    ok(await val('input[aria-label="Invoice number"]') === taken, `a number already used is refused, and what was typed stays (${taken})`);
+    ok(await page.evaluate(() => /already used/.test(document.querySelector('[data-de-error]')?.textContent || '')), 'with the reason beside it');
     await page.keyboard.press('Escape');
-    await sleep(300);
-    ok(!(await page.$('input[aria-label="invoice number"]')), 'Esc puts the old number back');
+    await page.waitForSelector('[role="alertdialog"]', { timeout: 5000 }).catch(() => {});
+    await page.evaluate(() => [...document.querySelectorAll('[role="alertdialog"] button')].find(b => /Discard changes/.test(b.textContent))?.click());
+    await sleep(400);
+    ok(!(await page.$('input[aria-label="Invoice number"]')) && (await page.evaluate(() => document.querySelector('.invoice-mock')?.innerText || '')).includes(inv1.invoice_number || inv1.invoiceNumber),
+      'Esc asks, then puts the old number back');
 
     section('Clean run');
     ok(errs.length === 0, errs.length ? `page errors: ${errs.slice(0, 3).join(' | ')}` : 'no page errors');

@@ -183,7 +183,7 @@ const istDay = (offset = 0) => new Date(Date.now() + 5.5 * 3600e3 + offset * 864
     const custVal = await page.$$eval('select[aria-label="Customer"] option', (os, n) => os.find(o => o.textContent.includes(n))?.value, `Customer Name 1 ${stamp}`);
     await page.select('select[aria-label="Customer"]', custVal);
     await settle();
-    await page.type('input[aria-label="Line 1 description"]', 'Description');
+    await page.type('[aria-label="Line 1 description"]', 'Description');
     await page.type('input[aria-label="Line 1 quantity"]', '10');
     await page.type('input[aria-label="Line 1 rate"]', '100');
     await page.type('input[aria-label="Discount"]', '125290999998');

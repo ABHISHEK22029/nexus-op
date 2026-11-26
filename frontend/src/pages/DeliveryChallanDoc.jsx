@@ -20,7 +20,7 @@ import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
 import InlineEdit from '../components/InlineEdit';
 import {
-  CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate, CopyPicker, COPIES,
+  CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate, CopyPicker, COPIES, ItemText, StatusPill,
 } from '../components/DocumentKit';
 import { stateCode } from '../lib/gstStates';
 import { docFileName, printAs } from '../lib/documentPdf';
@@ -79,20 +79,39 @@ export default function DeliveryChallanDoc() {
   const ewayMissing = needsEway && !dc.eway_bill_no;
 
   const th = { padding: '9px 10px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-default)' };
-  const td = { padding: '9px 10px', fontSize: '0.85rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)' };
-  const metaBox = { border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem' };
+  const td = { padding: '9px 10px', fontSize: '0.85rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)', verticalAlign: 'top' };
+  const fig = { textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, gap: 8, flexWrap: 'wrap' }}>
-        <button onClick={() => navigate('/delivery-challans')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All Challans</button>
-        <div style={{ display: 'flex', gap: 8 }}>
+      {/* The toolbar carries what is for the person on screen — where the
+          challan has got to, and which of its three copies to print — so
+          none of it sits on the paper. */}
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button onClick={() => navigate('/delivery-challans')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All Challans</button>
+          <StatusPill status={dc.status} />
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <CopyPicker kind="challan" value={copy} onChange={setCopy} />
           {/* The challan travels with the goods; the customer usually wants
               it ahead of the lorry. */}
           <button onClick={() => setEmailing(true)} className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Mail size={15} /> Email</button>
           <button onClick={() => printAs(docFileName('Delivery Challan', dc.challan_number, shipName))} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
         </div>
       </div>
+
+      {/* On screen only: where this challan came from and what billed it. */}
+      {(dc.order || (dc.invoices || []).length > 0) && (
+        <div className="doc-context no-print" data-challan-links>
+          {dc.order && <span>Order <Link to={`/customer-orders?open=${dc.order.id}`}>{dc.order.order_number}</Link></span>}
+          {(dc.invoices || []).length > 0 && (
+            <span>Invoiced on {dc.invoices.map((i, k) => (
+              <React.Fragment key={i.id}>{k > 0 && ', '}<Link to={`/sales-invoices/${i.id}`}>{i.invoice_number}</Link>{i.status === 'Cancelled' ? ' (cancelled)' : ''}</React.Fragment>
+            ))}</span>
+          )}
+        </div>
+      )}
 
       {/* Screen-only. The driver finds out at the checkpost otherwise. */}
       {ewayMissing && (
@@ -118,24 +137,10 @@ export default function DeliveryChallanDoc() {
             ['Date', fmtDate(dc.challan_date)],
             dc.order && ['Order', dc.order.order_number],
             dc.order?.customer_po_ref && ['Your PO', dc.order.customer_po_ref],
-            dc.status && ['Status', dc.status, null, { screenOnly: true }],
           ].filter(Boolean)}
-        >
-          <CopyPicker kind="challan" value={copy} onChange={setCopy} />
-        </CompanyHeader>
-        {/* On screen only: where this challan came from and what billed it. */}
-        {(dc.order || (dc.invoices || []).length > 0) && (
-          <div className="print:hidden" data-challan-links style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: '0.8rem', margin: '-6px 0 14px', color: 'var(--text-secondary)' }}>
-            {dc.order && <span>Order <Link to={`/customer-orders?open=${dc.order.id}`} style={{ color: 'var(--brand-amber)', fontWeight: 700 }}>{dc.order.order_number}</Link></span>}
-            {(dc.invoices || []).length > 0 && (
-              <span>Invoiced on {dc.invoices.map((i, k) => (
-                <React.Fragment key={i.id}>{k > 0 && ', '}<Link to={`/sales-invoices/${i.id}`} style={{ color: 'var(--brand-amber)', fontWeight: 700 }}>{i.invoice_number}</Link>{i.status === 'Cancelled' ? ' (cancelled)' : ''}</React.Fragment>
-              ))}</span>
-            )}
-          </div>
-        )}
+        />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <div className="doc-parties" style={{ marginTop: 16 }}>
           {/* Ship-to first: on this document it is the operative address. */}
           <Party
             title="Ship To"
@@ -157,20 +162,21 @@ export default function DeliveryChallanDoc() {
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 16 }}>
-          <Meta box={metaBox} label="Dispatch through" value={dc.dispatch_through || dc.transporter_name} />
-          <Meta box={metaBox} label="Vehicle No." value={dc.vehicle_no} mono />
-          <Meta box={metaBox} label="LR / Docket" value={dc.lr_no} />
-          <Meta box={metaBox} label="Place of supply" value={posName ? `${posName}${posCode ? ` (${posCode})` : ''}` : null} />
-          <Meta box={metaBox} label="E-way Bill No." mono warn={ewayMissing}
+        {/* The transport particulars, in one ruled strip. */}
+        <div className="doc-facts" data-challan-facts>
+          <Meta label="Dispatch through" value={dc.dispatch_through || dc.transporter_name} />
+          <Meta label="Vehicle No." value={dc.vehicle_no} />
+          <Meta label="LR / Docket" value={dc.lr_no} />
+          <Meta label="Place of supply" value={posName ? `${posName}${posCode ? ` (${posCode})` : ''}` : null} />
+          <Meta label="E-way Bill No." warn={ewayMissing}
             value={<>
               <span className="print:hidden"><InlineEdit value={dc.eway_bill_no} field="eway_bill_no" canEdit onSave={saveEway}
                 placeholder={ewayMissing ? 'required — add' : 'add'} /></span>
               <span className="print-only">{dc.eway_bill_no || '—'}</span>
             </>} />
-          {dc.eway_bill_date && <Meta box={metaBox} label="E-way Bill Date" value={fmtDate(dc.eway_bill_date)} />}
-          {dc.driver_name && <Meta box={metaBox} label="Driver" value={`${dc.driver_name}${dc.driver_phone ? ' · ' + dc.driver_phone : ''}`} />}
-          {dc.transporter_gstin && <Meta box={metaBox} label="Transporter GSTIN" value={dc.transporter_gstin} mono />}
+          {dc.eway_bill_date && <Meta label="E-way Bill Date" value={fmtDate(dc.eway_bill_date)} />}
+          {dc.driver_name && <Meta label="Driver" value={`${dc.driver_name}${dc.driver_phone ? ' · ' + dc.driver_phone : ''}`} />}
+          {dc.transporter_gstin && <Meta label="Transporter GSTIN" value={dc.transporter_gstin} />}
         </div>
 
         <div>
@@ -187,11 +193,11 @@ export default function DeliveryChallanDoc() {
               {(dc.items || []).map((it, i) => (
                 <tr key={it.id}>
                   <td style={td}>{i + 1}</td>
-                  <td className="doc-wrap" style={{ ...td, fontWeight: 600 }}>{it.description}</td>
-                  <td style={{ ...td, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{it.hsn || '—'}</td>
-                  <td style={{ ...td, textAlign: 'center', color: 'var(--text-muted)' }}>{it.uom || '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{it.quantity}</td>
-                  <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>₹{rup(it.amount)}</td>
+                  <td className="doc-wrap" style={td}><ItemText text={it.description} /></td>
+                  <td style={{ ...td, color: 'var(--text-secondary)' }}>{it.hsn || '—'}</td>
+                  <td style={{ ...td, textAlign: 'center', color: 'var(--text-secondary)' }}>{it.uom || '—'}</td>
+                  <td style={{ ...td, ...fig }}>{Number(it.quantity)}</td>
+                  <td style={{ ...td, ...fig, fontWeight: 600 }}>₹{rup(it.amount)}</td>
                 </tr>
               ))}
             </tbody>
@@ -201,11 +207,14 @@ export default function DeliveryChallanDoc() {
         {/* Total to footer: kept whole, and never on a sheet by itself
             (print.css, .doc-closing). */}
         <div className="doc-closing">
+        {/* The total in a ruled box, like the totals on the other documents. */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Total value of goods</div>
-            <div style={{ fontSize: '1.3rem', fontWeight: 800, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>₹{rup(value)}</div>
-            {needsEway && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>above ₹50,000 with GST — e-way bill applies</div>}
+          <div style={{ minWidth: 300 }}>
+            <div data-challan-total style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 16, border: '1px solid #000', padding: '8px 12px', fontWeight: 800, fontSize: '0.95rem' }}>
+              <span style={{ fontSize: '0.74rem', letterSpacing: '.04em', textTransform: 'uppercase' }}>Total value of goods</span>
+              <span style={fig}>₹{rup(value)}</span>
+            </div>
+            {needsEway && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'right', marginTop: 4 }}>Above ₹50,000 with GST — an e-way bill applies.</div>}
           </div>
         </div>
 
@@ -246,10 +255,10 @@ export default function DeliveryChallanDoc() {
    customer: on screen the box goes red and says "required"; on paper it is
    an ordinary empty field, because a red "required" printed on a document
    that has already left the yard helps nobody. */
-const Meta = ({ box, label, value, mono, warn }) => (
-  <div className={warn ? 'doc-warn' : undefined} style={{ ...box, ...(warn ? { borderColor: '#dc2626' } : null) }}>
-    <div style={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>{label}</div>
-    <div style={{ fontWeight: 600, fontFamily: mono ? 'var(--font-mono)' : undefined, color: warn ? '#dc2626' : undefined }}>
+const Meta = ({ label, value, warn }) => (
+  <div className={warn ? 'doc-warn' : undefined}>
+    <div className="doc-fact-l">{label}</div>
+    <div className="doc-fact-v">
       {value || (warn ? <><span className="print:hidden">required</span><span className="print-only">—</span></> : '—')}
     </div>
   </div>

@@ -421,7 +421,7 @@ const until = async (fn, ms = 15000) => {
       { skuId: skuBP.id, description: bpName, quantity: 50, unit: 'nos', rate: 452.35, hsn: '7308' },
     ] });
     await go(`/customer-orders/${order.id}/invoice`);
-    await waitFor(() => !!document.querySelector('input[aria-label="Line 2 description"]'));
+    await waitFor(() => !!document.querySelector('[aria-label="Line 2 description"]'));
     await settle(800);
     await page.evaluate(() => [...document.querySelectorAll('button.btn-primary')].find(b => /Create invoice/.test(b.textContent))?.click());
     ok(await waitFor(() => /\/sales-invoices\/\d+$/.test(location.pathname), 20000), 'Create invoice on the order saves it and opens the invoice');

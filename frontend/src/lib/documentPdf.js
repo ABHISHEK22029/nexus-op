@@ -189,6 +189,20 @@ function itemTable(m, rows, { widths, lastRowId } = {}) {
   const head = cols.map((c) => ({ text: c.label.toUpperCase(), bold: true, fontSize: 7, characterSpacing: 0.4, alignment: c.align || 'left', fillColor: BAND, noWrap: c.align === 'right' }));
   const body = rows.map((r, ri) => r.map((v, ci) => {
     const c = cols[ci];
+    /* A description with specification lines under its name: the name as
+       the column sets it, the lines under it in plain type, as on screen. */
+    const lines = c.key === 'description' ? String(v ?? '').replace(/\r/g, '').split('\n') : null;
+    if (lines && lines.length > 1 && lines.slice(1).join('').trim()) {
+      const cell = {
+        stack: [
+          { text: soft(lines[0]), bold: true },
+          { text: soft(lines.slice(1).join('\n').trim()), fontSize: 7.5, color: SOFT, margin: [0, 1, 0, 0] },
+        ],
+        fontSize: 8.5, alignment: 'left', color: INK,
+      };
+      if (ci === 0 && ri === rows.length - 1 && lastRowId) cell.id = lastRowId;
+      return cell;
+    }
     const cell = {
       text: c.align === 'right' ? String(v ?? '') : soft(v),
       fontSize: 8.5, alignment: c.align || 'left',

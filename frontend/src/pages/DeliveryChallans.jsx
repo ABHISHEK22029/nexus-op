@@ -269,16 +269,22 @@ export default function DeliveryChallans() {
               </thead>
               <tbody>
                 {q.rows.map(dc => (
-                  <tr key={dc.id} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }} onClick={() => navigate(`/delivery-challans/${dc.id}`)}>{dc.challan_number}</td>
+                  /* The whole row opens the challan, as the invoice list does:
+                     only the number and the eye icon did, and a click on the
+                     customer or the value did nothing at all. */
+                  <tr key={dc.id} data-challan-row style={{ borderTop: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+                      onClick={() => navigate(`/delivery-challans/${dc.id}`)}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-elevated)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>{dc.challan_number}</td>
                     <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>{dc.customer_name || '—'}</td>
                     <td style={{ padding: '11px 14px', color: 'var(--text-secondary)', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>{dc.vehicle_no || '—'}</td>
                     <td style={{ padding: '11px 14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupee(dc.total_value)}</td>
-                    <td style={{ padding: '11px 14px' }}>
+                    <td style={{ padding: '11px 14px' }} onClick={e => e.stopPropagation()}>
                       <StatusSelect value={dc.status} onChange={v => setStatus(dc.id, v)} label={`Status of ${dc.challan_number}`}
                         color={STATUS_COLOR[dc.status]} options={STATUSES} />
                     </td>
-                    <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '11px 14px', textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
                       <button onClick={() => navigate(`/delivery-challans/${dc.id}`)} title="View" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, marginRight: 6 }}><Eye size={15} /></button>
                       {/* Hidden when the API would refuse it anyway. */}
                       {canDelete && (

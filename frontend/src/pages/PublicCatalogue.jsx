@@ -183,7 +183,11 @@ export default function PublicCatalogue() {
         position: 'sticky', top: 0, zIndex: 30, background: 'rgba(255,255,255,0.9)',
         backdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid #eceff2',
       }}>
-        <Wrap style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 22px' }}>
+        {/* On a phone, Share and WhatsApp are icons (their names are in the
+            title and aria-label) and no button gives way: the name used to be
+            squeezed to "3 pr…" and the Enquiry button ran off the screen. */}
+        <style>{'@media (max-width: 560px) { .pc-lbl { display: none !important; } .pc-hbtn { padding: 9px 10px !important; } .pc-bar { gap: 9px !important; padding: 10px 14px !important; } }'}</style>
+        <Wrap className="pc-bar" style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 22px' }}>
           {co.logo
             ? <img src={co.logo} alt="" style={{ height: 34, width: 'auto' }} />
             : <Monogram name={co.name} accent={accent} />}
@@ -206,19 +210,19 @@ export default function PublicCatalogue() {
 
           {cat.whatsapp && (
             <a href={`https://wa.me/${String(cat.whatsapp).replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
-              title="Message us on WhatsApp"
+              title="Message us on WhatsApp" aria-label="Message us on WhatsApp" className="pc-hbtn"
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px',
+                display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px', flexShrink: 0,
                 border: '1px solid #e2e6ea', borderRadius: 10, color: '#0f1319',
                 textDecoration: 'none', fontSize: '0.81rem', fontWeight: 700, background: '#fff',
               }}>
               <MessageCircle size={15} style={{ color: '#25D366' }} />
-              <span style={{ display: 'inline' }}>WhatsApp</span>
+              <span className="pc-lbl">WhatsApp</span>
             </a>
           )}
 
           <button onClick={() => setShowBasket(true)} style={{
-            position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8,
+            position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
             padding: '10px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
             fontWeight: 800, fontSize: '0.82rem',
             background: basket.length ? accent : '#0f1319', color: '#fff',
@@ -430,8 +434,8 @@ const Shell = ({ children }) => (
     WebkitFontSmoothing: 'antialiased',
   }}>{children}</div>
 );
-const Wrap = ({ children, style }) => (
-  <div style={{ maxWidth: 1140, margin: '0 auto', ...style }}>{children}</div>
+const Wrap = ({ children, style, className }) => (
+  <div className={className} style={{ maxWidth: 1140, margin: '0 auto', ...style }}>{children}</div>
 );
 const Center = ({ children }) => (
   <p style={{ color: '#6b7280', textAlign: 'center', padding: '70px 20px' }}>{children}</p>
@@ -477,14 +481,14 @@ function ShareButton({ accent, title }) {
     } catch { /* clipboard blocked — nothing useful to say */ }
   };
   return (
-    <button onClick={share} title="Share this catalogue" aria-label="Share this catalogue"
+    <button onClick={share} title="Share this catalogue" aria-label="Share this catalogue" className="pc-hbtn"
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px',
+        display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 13px', flexShrink: 0,
         border: `1px solid ${copied ? accent : '#e2e6ea'}`, borderRadius: 10,
         background: '#fff', color: copied ? accent : '#0f1319',
         cursor: 'pointer', fontSize: '0.81rem', fontWeight: 700, transition: 'all 160ms',
       }}>
-      {copied ? <><Check size={15} /> Copied</> : <><Share2 size={15} /> Share</>}
+      {copied ? <><Check size={15} /> <span className="pc-lbl">Copied</span></> : <><Share2 size={15} /> <span className="pc-lbl">Share</span></>}
     </button>
   );
 }

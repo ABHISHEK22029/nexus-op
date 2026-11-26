@@ -79,8 +79,8 @@ function Profile({ t }) {
 const CHECKS = [
   ['Your business name', 'set', true],
   ['Company GSTIN and bank details', 'complete', true],
-  ['Products with a bill of materials', '0 of 6', false, 'Without a BOM the system cannot work out what a product needs, so an order for it produces no material demand at all.'],
-  ['Materials with at least one vendor', '2 of 9', false, 'A shortfall with no vendor cannot become a purchase order — it is reported as skipped and stays short.'],
+  ['Products with a bill of materials', '0 of 6', false, 'Without a BOM the system cannot work out what a product needs, so an order for it produces no material demand at all.', 'Add bills of materials'],
+  ['Materials with at least one vendor', '2 of 9', false, 'A shortfall with no vendor cannot become a purchase order — it is reported as skipped and stays short.', 'Link vendors'],
 ];
 
 function Ready({ t }) {
@@ -95,7 +95,7 @@ function Ready({ t }) {
           {fixed ? <Check size={17} /> : <AlertTriangle size={17} />}
           <b>{fixed ? 'Everything the engine needs is in place.' : '2 things are missing before the system can tell you what to buy and build.'}</b>
         </div>
-        {CHECKS.map(([label, have, done, cost], i) => {
+        {CHECKS.map(([label, have, done, cost, fix], i) => {
           const ok = done || fixed;
           return (
             <Show key={label} on={at >= 300 + i * 450} className={`fm-ready-row${ok ? ' is-ok' : ''}`}>
@@ -104,7 +104,8 @@ function Ready({ t }) {
                 <b>{label}</b>
                 <small>{ok ? (done ? have : 'done') : `${have} — ${cost}`}</small>
               </span>
-              {!ok && <span className="fl-btn fm-fix">Fix this</span>}
+              {/* The button the app shows for that check (components/SetupReadiness). */}
+              {!ok && <span className="fl-btn fm-fix">{fix}</span>}
             </Show>
           );
         })}
