@@ -216,42 +216,118 @@ exports.create = async (req, res) => {
 // DELETE /credit-debit-notes/:id
 /* PATCH /credit-debit-notes/:id — change a note on its own page.
  *
- * A note is issued the moment it is made (Rule 53), so its lines, amounts
- * and tax stay as they are: a note in error is corrected with another
- * note, as an invoice is. What can still be put right is what explains it:
- * the reason, the notes, and the original document's date (the page flags
- * a missing one in red — without it the note cannot be reported against
- * the right period). The original's number too, when it was typed in by
- * hand rather than linked to a document here. */
+ * A note is made "Issued" and goes to the party once it is marked "Sent".
+ *
+ *   Issued  (not yet sent)  everything can be put right on the page: the
+ *                           lines, the date, the reason, the notes, the
+ *                           original's date (and number when typed by
+ *                           hand), and the GST rate of a note not linked to
+ *                           an invoice — a linked one is taxed as the
+ *                           invoice was. The totals are worked out here; a
+ *                           credit note still gives back at most what is
+ *                           left on its invoice. { status: 'Sent' } marks it
+ *                           sent.
+ *   Sent                    the amounts are fixed (a note the party holds is
+ *                           corrected with another note); the reason, notes
+ *                           and the original's date can still be put right.
+ *
+ * There used to be no way to fix a typo in a line at all: a note was fixed
+ * the moment it was made. */
 const NOTE_FIELDS = ['reason', 'notes', 'ref_date', 'ref_number'];
+const NOTE_OPEN_FIELDS = [...NOTE_FIELDS, 'note_date', 'gst_rate', 'status'];
 
 exports.update = async (req, res) => {
   const b = req.body || {};
+  const client = await db.getClient();
+  const fail = async (code, error, extra = {}) => { await client.query('ROLLBACK').catch(() => {}); return res.status(code).json({ error, ...extra }); };
   try {
+    await client.query('BEGIN');
     const s = scopedById(req, req.params.id);
-    const note = (await db.query(`SELECT * FROM credit_debit_notes WHERE ${s.where}`, s.params)).rows[0];
-    if (!note) return res.status(404).json({ error: 'Note not found' });
-    const refused = Object.keys(b).filter(k => !NOTE_FIELDS.includes(k) || (k === 'ref_number' && note.ref_id));
-    if (refused.length) {
-      return res.status(409).json({
-        error: refused.includes('ref_number') && note.ref_id
-          ? 'This note is linked to its original document, so that number comes from the document.'
-          : `A note is issued when it is made, so ${refused.join(', ')} can't be changed. Raise another note to correct the amounts.`,
-        editable: NOTE_FIELDS.filter(k => k !== 'ref_number' || !note.ref_id),
-      });
+    const note = (await client.query(`SELECT * FROM credit_debit_notes WHERE ${s.where} FOR UPDATE`, s.params)).rows[0];
+    if (!note) return fail(404, 'Note not found');
+    const sent = note.status === 'Sent';
+    const allowed = (sent ? NOTE_FIELDS : NOTE_OPEN_FIELDS).filter(k => !(k === 'ref_number' && note.ref_id) && !(k === 'gst_rate' && note.ref_id));
+    const refused = Object.keys(b).filter(k => k !== 'items' && !allowed.includes(k));
+    if (refused.length || (sent && b.items)) {
+      const why = refused.includes('ref_number') && note.ref_id ? 'This note is linked to its original document, so that number comes from the document.'
+        : refused.includes('gst_rate') && note.ref_id ? 'This note is taxed as its invoice was, so its GST rate comes from the invoice.'
+          : `This note has been sent, so ${[...refused, ...(b.items ? ['its lines'] : [])].join(', ')} can't be changed. Raise another note to correct the amounts.`;
+      return fail(409, why, { editable: allowed });
     }
+    if ('status' in b && b.status !== 'Sent') return fail(400, 'A note can only be marked Sent.');
+
     const set = {};
-    for (const k of NOTE_FIELDS) if (k in b) set[k] = k === 'ref_date' ? (b[k] || null) : (String(b[k] ?? '').trim().slice(0, k === 'notes' ? 2000 : 500) || null);
-    if (set.ref_date && note.note_date && String(set.ref_date).slice(0, 10) > String(note.note_date instanceof Date ? note.note_date.toISOString() : note.note_date).slice(0, 10)) {
-      return res.status(400).json({ error: 'The original document cannot be dated after this note.' });
+    for (const k of allowed) {
+      if (!(k in b)) continue;
+      set[k] = ['ref_date', 'note_date'].includes(k) ? (b[k] || null)
+        : k === 'gst_rate' ? Number(b[k])
+          : k === 'status' ? 'Sent'
+            : (String(b[k] ?? '').trim().slice(0, k === 'notes' ? 2000 : 500) || null);
+    }
+    if ('note_date' in set && !set.note_date) return fail(400, 'The note date cannot be blank.');
+    if ('gst_rate' in set && !(set.gst_rate >= 0 && set.gst_rate <= 100)) return fail(400, 'The GST rate must be between 0 and 100.');
+    const noteDate = String(set.note_date || note.note_date || '').slice(0, 10);
+    const refDate = String(('ref_date' in set ? set.ref_date : note.ref_date) || '').slice(0, 10);
+    if (refDate && noteDate && refDate > noteDate) return fail(400, 'The original document cannot be dated after this note.');
+
+    /* The amounts, worked out again from the lines (as create() does). */
+    if (!sent && (b.items || 'gst_rate' in set)) {
+      const items = b.items || (await client.query('SELECT * FROM credit_debit_note_items WHERE note_id = $1 ORDER BY sort_order', [note.id])).rows;
+      if (!items.length) return fail(400, 'Add at least one line');
+      for (const [n, it] of items.entries()) {
+        if (!String(it?.description || '').trim()) return fail(400, `Line ${n + 1} needs a description.`);
+        const q = Number(it.quantity), r = Number(it.rate);
+        if (!Number.isFinite(q) || q <= 0) return fail(400, `Line ${n + 1}: the quantity must be more than zero.`);
+        if (!Number.isFinite(r) || r < 0) return fail(400, `Line ${n + 1}: the rate must be a number, 0 or more.`);
+      }
+      const rate = 'gst_rate' in set ? set.gst_rate : Number(note.gst_rate) || 0;
+      const lines = items.map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
+      const subTotal = r2(lines.reduce((t, l) => t + l.amount, 0));
+      const gstTotal = r2(subTotal * rate / 100);
+      const total = r2(subTotal + gstTotal);
+      /* At most what is left on the invoice (or bill), this note's own
+         earlier amount set aside. */
+      if (note.ref_id && note.note_type === (note.party_type === 'customer' ? 'credit' : 'debit')) {
+        const original = (await client.query(note.party_type === 'customer'
+          ? 'SELECT invoice_number AS number, net_amount FROM sales_invoices WHERE id = $1'
+          : 'SELECT bill_number AS number, net_amount FROM grn_bills WHERE id = $1', [note.ref_id])).rows[0];
+        if (original) {
+          const before = Number((await client.query(
+            `SELECT COALESCE(SUM(total), 0) AS t FROM credit_debit_notes
+              WHERE owner_id IS NOT DISTINCT FROM $1 AND ref_id = $2 AND party_type = $3 AND note_type = $4 AND id <> $5`,
+            [note.owner_id, note.ref_id, note.party_type, note.note_type, note.id])).rows[0].t) || 0;
+          const room = r2((Number(original.net_amount) || 0) - before);
+          if (total > room + 0.5) {
+            return fail(409, `This note would be ₹${total.toLocaleString('en-IN')}, more than is left on ${original.number}: `
+              + `₹${(Number(original.net_amount) || 0).toLocaleString('en-IN')}${before ? `, less ₹${before.toLocaleString('en-IN')} on other notes` : ''}, leaves ₹${Math.max(0, room).toLocaleString('en-IN')}.`);
+          }
+        }
+      }
+      const cgst = note.interstate ? 0 : r2(gstTotal / 2);
+      const sgst = note.interstate ? 0 : r2(gstTotal - cgst);
+      Object.assign(set, { sub_total: subTotal, cgst, sgst, igst: note.interstate ? gstTotal : 0, gst_total: gstTotal, total, amount_in_words: amountInWords(total) });
+      if (b.items) {
+        await client.query('DELETE FROM credit_debit_note_items WHERE note_id = $1', [note.id]);
+        let so = 0;
+        for (const l of lines) {
+          await client.query(
+            `INSERT INTO credit_debit_note_items (note_id, description, hsn, uom, quantity, rate, amount, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [note.id, String(l.description).trim(), l.hsn || null, l.uom || 'nos', Number(l.quantity) || 0, Number(l.rate) || 0, l.amount || 0, so++]);
+        }
+      }
     }
     const cols = Object.keys(set);
-    if (!cols.length) return res.status(400).json({ error: 'Nothing to update' });
-    const { rows } = await db.query(
+    if (!cols.length) return fail(400, 'Nothing to update');
+    const { rows } = await client.query(
       `UPDATE credit_debit_notes SET ${cols.map((c, i) => `"${c}" = $${i + 1}`).join(', ')} WHERE id = $${cols.length + 1} RETURNING *`,
       [...cols.map(c => set[c]), note.id]);
+    await client.query('COMMIT');
     res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 };
 
 exports.remove = async (req, res) => {

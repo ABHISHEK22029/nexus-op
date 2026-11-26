@@ -14,7 +14,7 @@ import { DOCUMENT_LAYOUTS, visibleTotals, labelOf, colWidth, deliveryPromise } f
 import { docFileName, downloadDocumentPdf, printAs } from '../lib/documentPdf';
 import { amountInWords } from '../lib/amountInWords';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, ArrowRightLeft, Clock , Mail, Download, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Printer, ArrowRightLeft, Clock , Mail, Download, Pencil, Plus, Trash2, Undo2 } from 'lucide-react';
 import { usePermissions } from '../context/PermissionContext';
 import UnitSelect from '../components/UnitSelect';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
@@ -101,6 +101,20 @@ export default function SalesQuotationDoc() {
       }).catch(() => setCustomers([]));
     }
     ed.start(quoteValues(q), field);
+  };
+
+  /* Reopen as draft: the whole document is editable again, and editing
+     starts as soon as the reload shows it as a draft. */
+  const [editWhenDraft, setEditWhenDraft] = useState(false);
+  useEffect(() => {
+    if (editWhenDraft && q && q.status === 'Draft') { setEditWhenDraft(false); begin(); }
+  }, [editWhenDraft, q]);
+  const reopen = async () => {
+    if (!(await confirm({ title: `Reopen ${q.quote_number} as a draft?`, message: 'Its lines and prices can be changed again. If the customer already has it, send them the revised one.', confirmLabel: 'Reopen' }))) return;
+    const r = await fetch(`${API}/sales-quotations/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Draft' }) });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); toast.error(e.error || 'Could not reopen it'); return; }
+    await load();
+    setEditWhenDraft(true);
   };
 
   const isDraft = q?.status === 'Draft';
@@ -285,6 +299,11 @@ export default function SalesQuotationDoc() {
             <button onClick={() => begin()} data-doc-edit className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
               title={isDraft ? 'Change anything on this draft, right here on the quotation' : 'Change how long it holds, the notes or the terms'}>
               <Pencil size={15} /> Edit quotation
+            </button>
+          )}
+{!isDraft && !isConverted && canWrite && (
+            <button onClick={reopen} data-doc-reopen className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Back to draft, to change the lines, prices or anything else">
+              <Undo2 size={15} /> Reopen as draft
             </button>
           )}
           {/* A quotation that cannot be sent is a quotation nobody reads. */}

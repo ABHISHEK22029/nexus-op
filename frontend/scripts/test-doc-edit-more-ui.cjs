@@ -73,6 +73,8 @@ async function cleanup() {
     const inv = await api('POST', '/sales-invoices', { customerId: cust.id, gstRate: 18, items: [{ description: 'MS bracket', quantity: 40, rate: 450 }] });
     await api('PATCH', `/sales-invoices/${inv.id}/status`, { status: 'Sent' });
     const noteLinked = await api('POST', '/credit-debit-notes', { noteType: 'credit', partyType: 'customer', partyId: cust.id, refId: inv.id, gstRate: 18, reason: 'Short supply', items: [{ description: 'MS bracket', quantity: 2, rate: 450 }] });
+    const qSent = await api('POST', '/sales-quotations', { customerId: cust.id, items: [{ description: 'Canopy frame', quantity: 4, rate: 2500 }] });
+    await api('PATCH', `/sales-quotations/${qSent.id}/status`, { status: 'Sent' });
     const noteManual = await api('POST', '/credit-debit-notes', { noteType: 'credit', partyType: 'customer', partyId: cust.id, refNumber: 'OLD/22', gstRate: 18, reason: 'Rate difference', items: [{ description: 'Rate difference', quantity: 1, rate: 500 }] });
     const made = { dcDraft, dcGone, poOpen, poDone, billDraft, billDone, inv, noteLinked, noteManual };
     const missing = Object.entries(made).filter(([, x]) => !x.id).map(([k, x]) => `${k} (${x.status}: ${x.error || ''})`);
@@ -96,7 +98,8 @@ async function cleanup() {
     await page.evaluate((t, u) => { localStorage.setItem('nexus_token', t); localStorage.setItem('nexus_user', JSON.stringify(u)); localStorage.setItem('tutorial_seen', '1'); localStorage.setItem('nexus-theme', 'light'); localStorage.setItem('maks_app_dialogs', '1'); }, reg.token, reg.user);
 
     const go = async (u) => { await page.goto(`${UI}${u}`, { waitUntil: 'networkidle2' }); await page.waitForSelector('.doc-sheet, .invoice-mock', { timeout: 30000 }); await sleep(500); };
-    const open = async () => { await page.click('[data-doc-edit]'); await page.waitForSelector('[data-de-bar]', { timeout: 8000 }); await sleep(250); };
+    /* clicked directly: a "saved" toast can sit over the toolbar for a few seconds */
+    const open = async () => { await page.$eval('[data-doc-edit]', b => b.click()); await page.waitForSelector('[data-de-bar]', { timeout: 8000 }); await sleep(250); };
     const typeIn = async (sel, text) => { await page.click(sel, { clickCount: 3 }); await page.keyboard.press('Backspace'); if (text !== '') await page.keyboard.type(String(text)); };
     const setDate = (sel, v) => page.evaluate((s, val) => { const i = document.querySelector(s); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, val); i.dispatchEvent(new Event('input', { bubbles: true })); }, sel, v);
     const save = async () => { await page.click('[data-de-save]'); await page.waitForFunction(() => !document.querySelector('[data-de-bar]'), { timeout: 15000 }).catch(() => {}); await sleep(600); };
@@ -194,8 +197,8 @@ async function cleanup() {
     section('Credit notes');
     await go(`/credit-debit-notes/${noteLinked.id}`);
     await open();
-    const nl = { on: await has(['Reason', 'Notes', 'Original document date']), off: await has(['Original document number', 'Line 1 rate']) };
-    ok(nl.on.length === 3 && nl.off.length === 0, 'a note linked to its invoice: the reason, notes and the original\'s date — its number comes from the invoice');
+    const nl = { on: await has(['Reason', 'Notes', 'Original document date', 'Line 1 rate']), off: await has(['Original document number', 'GST rate']) };
+    ok(nl.on.length === 4 && nl.off.length === 0, 'a note linked to its invoice, not yet sent: reason, notes, the original\'s date and its lines — its number and GST rate come from the invoice');
     await typeIn('[aria-label="Reason"]', '2 sets short-supplied on 24 Nov');
     await setDate('[aria-label="Original document date"]', today);
     await save();
@@ -207,6 +210,60 @@ async function cleanup() {
     await typeIn('[aria-label="Original document number"]', 'KBS/25-26/022');
     await save();
     ok((await api('GET', `/credit-debit-notes/${noteManual.id}`)).ref_number === 'KBS/25-26/022', 'and it is stored');
+
+    /* ── 26 Nov, later: "Reopen as draft", and a note's lines until it is sent ── */
+    const reopenAndEdit = async (url, qtyLabel, qty) => {
+      await go(url);
+      const has = !!(await page.$('[data-doc-reopen]'));
+      if (!has) return { has };
+      await page.click('[data-doc-reopen]');
+      await page.waitForSelector('[role="alertdialog"]', { timeout: 8000 });
+      await page.evaluate(() => [...document.querySelectorAll('[role="alertdialog"] button')].find(b => /^\s*Reopen\s*$/.test(b.textContent))?.click());
+      const editing = await page.waitForSelector(`[aria-label="${qtyLabel}"]`, { timeout: 15000 }).then(() => true).catch(() => false);
+      if (!editing) return { has, editing };
+      await sleep(250);
+      await typeIn(`[aria-label="${qtyLabel}"]`, qty);
+      await save();
+      return { has, editing };
+    };
+    section('Reopen as draft — a sent quotation');
+    let ro = await reopenAndEdit(`/sales-quotations/${qSent.id}`, 'Line 1 quantity', '6');
+    const qAfter = await api('GET', `/sales-quotations/${qSent.id}`);
+    ok(ro.has && ro.editing, 'a sent quotation offers "Reopen as draft", and it opens straight into editing every line');
+    ok(qAfter.status === 'Draft' && Number(qAfter.items?.[0]?.quantity) === 6 && Number(qAfter.sub_total) === 15000, `the line is changed and stored (qty ${qAfter.items?.[0]?.quantity}, ${qAfter.status})`);
+
+    section('Reopen as draft — a dispatched challan');
+    const stockBefore = (await api('GET', `/delivery-challans/${dcGone.id}`)).stock_applied;
+    ro = await reopenAndEdit(`/delivery-challans/${dcGone.id}`, 'Line 1 quantity', '8');
+    const dcAfter = await api('GET', `/delivery-challans/${dcGone.id}`);
+    ok(stockBefore && ro.has && ro.editing, 'a dispatched challan offers it too, and opens straight into editing');
+    ok(dcAfter.status === 'Draft' && !dcAfter.stock_applied && Number(dcAfter.items?.[0]?.quantity) === 8, 'its goods are back in stock and its line is changed');
+
+    section('Reopen as draft — an approved vendor bill');
+    ro = await reopenAndEdit(`/grn-bills/${billDone.id}`, 'Line 1 quantity', '55');
+    const bAfter = await api('GET', `/grn-bills/${billDone.id}`);
+    ok(ro.has && ro.editing, 'an approved bill offers it, and opens straight into editing');
+    ok(bAfter.status === 'Draft' && Number(bAfter.items?.[0]?.quantity) === 55, `its line is changed (qty ${bAfter.items?.[0]?.quantity})`);
+
+    section('A credit note before and after it is sent');
+    await go(`/credit-debit-notes/${noteManual.id}`);
+    await open();
+    ok((await has(['Line 1 quantity', 'Line 1 rate', 'Note date', 'GST rate'])).length === 4, 'not yet sent: its lines, date and GST rate are fields');
+    await typeIn('[aria-label="Line 1 rate"]', '650');
+    await save();
+    const nAfter = await api('GET', `/credit-debit-notes/${noteManual.id}`);
+    ok(Number(nAfter.items?.[0]?.rate) === 650 && Math.abs(Number(nAfter.total) - 767) < 0.01, `the line and the total are worked out again (₹${nAfter.total})`);
+    const tooMuch = await api('PATCH', `/credit-debit-notes/${noteLinked.id}`, { items: [{ description: 'MS bracket', quantity: 999, rate: 450 }] });
+    ok(tooMuch.status === 409 && /more than is left/.test(tooMuch.error || ''), 'a credit note still cannot give back more than is left on its invoice');
+    await page.$eval('[data-note-mark-sent]', b => b.click());
+    await page.waitForSelector('[role="alertdialog"]', { timeout: 8000 });
+    await page.evaluate(() => [...document.querySelectorAll('[role="alertdialog"] button')].find(b => /Mark as sent/.test(b.textContent))?.click());
+    await sleep(1200);
+    ok((await api('GET', `/credit-debit-notes/${noteManual.id}`)).status === 'Sent', '"Mark as sent" marks it sent');
+    await open();
+    ok((await has(['Line 1 rate', 'Note date'])).length === 0 && (await has(['Reason'])).length === 1, 'once sent, its amounts are fixed; the reason can still be put right');
+    await page.click('[data-de-cancel]');
+    ok((await api('PATCH', `/credit-debit-notes/${noteManual.id}`, { items: [{ description: 'x', quantity: 1, rate: 1 }] })).status === 409, 'and the server refuses new lines on a sent note');
 
     ok(errs.length === 0, `no page errors${errs.length ? `: ${errs.slice(0, 2).join(' | ')}` : ''}`);
   } catch (e) {

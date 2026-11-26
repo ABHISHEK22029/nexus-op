@@ -76,6 +76,20 @@ export default function GrnBillDoc() {
   const canWrite = can('grn-bills', 'write');
   const begin = (field) => { if (bill && canWrite) ed.start(billValues(bill), field); };
 
+  /* Reopen as draft: the whole document is editable again, and editing
+     starts as soon as the reload shows it as a draft. */
+  const [editWhenDraft, setEditWhenDraft] = useState(false);
+  useEffect(() => {
+    if (editWhenDraft && bill && bill.status === 'Draft') { setEditWhenDraft(false); begin(); }
+  }, [editWhenDraft, bill]);
+  const reopen = async () => {
+    if (!(await confirm({ title: `Reopen ${bill.bill_number} as a draft?`, message: 'Its lines and amounts can be changed again. Payments already made stay recorded.', confirmLabel: 'Reopen' }))) return;
+    const r = await fetch(`${API}/grn-bills/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Draft' }) });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); toast.error(e.error || 'Could not reopen it'); return; }
+    await load();
+    setEditWhenDraft(true);
+  };
+
   /* Draft or Approved by hand; Paid follows the payments. The answer is
      read: the page used to show the new status whatever the server said. */
   const setStatus = async (status, undoing = false) => {
@@ -190,6 +204,11 @@ export default function GrnBillDoc() {
           {canWrite && (
             <button onClick={() => begin()} data-doc-edit className="inv-act-btn" title={isDraft ? 'Change anything on this draft bill, right here' : 'Change the vendor’s invoice number, due date or notes'}>
               <Pencil size={15} /> Edit bill
+            </button>
+          )}
+{bill.status === 'Approved' && canWrite && (
+            <button onClick={reopen} data-doc-reopen className="inv-act-btn" title="Back to draft, to change the lines, prices or anything else">
+              <Undo2 size={15} /> Reopen as draft
             </button>
           )}
           {canWrite ? (

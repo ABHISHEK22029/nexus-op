@@ -13,7 +13,10 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Printer, Pencil } from 'lucide-react';
+import { ArrowLeft, Printer, Pencil, Plus, Trash2, Send } from 'lucide-react';
+import UnitSelect from '../components/UnitSelect';
+import { lineProblems } from '../lib/lineChecks';
+import { GST_RATES } from '../lib/docTotals';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { usePermissions } from '../context/PermissionContext';
@@ -28,11 +31,20 @@ import { docFileName, printAs } from '../lib/documentPdf';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/* Edited on its own page (components/DocEdit). A note is issued when it is
-   made, so its lines and amounts stay; what explains it can be put right —
-   the server's NOTE_FIELDS (controllers/CreditDebitNoteController). */
+/* Edited on its own page (components/DocEdit). Until it is marked sent, all
+   of it — lines, date, reason, notes, the original's date (and number when
+   typed by hand), and the GST rate of a note not linked to an invoice. Once
+   sent, only what explains it: the party holds the amounts, and another
+   note corrects them (controllers/CreditDebitNoteController). */
 const str = (v) => (v == null ? '' : String(v));
-const noteValues = (n) => ({ reason: str(n.reason), notes: str(n.notes), ref_date: str(n.ref_date).slice(0, 10), ref_number: str(n.ref_number) });
+const numStr = (v) => (v == null || v === '' ? '' : String(Number(v)));
+const r2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
+const blankLine = () => ({ description: '', hsn: '', uom: 'nos', quantity: '', rate: '' });
+const noteValues = (n) => ({
+  reason: str(n.reason), notes: str(n.notes), ref_date: str(n.ref_date).slice(0, 10), ref_number: str(n.ref_number),
+  note_date: str(n.note_date).slice(0, 10), gst_rate: numStr(n.gst_rate ?? 18),
+  items: (n.items || []).map(it => ({ description: str(it.description), hsn: str(it.hsn), uom: str(it.uom || 'nos'), quantity: numStr(it.quantity), rate: numStr(it.rate) })),
+});
 
 export default function CreditDebitNoteDoc() {
   const { id } = useParams();
@@ -56,17 +68,45 @@ export default function CreditDebitNoteDoc() {
   const title = n.note_type === 'credit' ? 'CREDIT NOTE' : 'DEBIT NOTE';
 
   /* ── Editing on the page ── */
+  const sent = n.status === 'Sent';
   const d = ed.editing ? ed.draft : null;
-  const keys = n.ref_id ? ['reason', 'notes', 'ref_date'] : ['reason', 'notes', 'ref_date', 'ref_number'];
+  const keys = [
+    'reason', 'notes', 'ref_date',
+    ...(n.ref_id ? [] : ['ref_number']),
+    ...(sent ? [] : ['note_date', 'items', ...(n.ref_id ? [] : ['gst_rate'])]),
+  ];
   const editable = (k) => !!d && keys.includes(k);
   const spotOn = (k) => !ed.editing && canWrite && keys.includes(k);
-  const refLate = !!d && !!d.ref_date && !!n.note_date && d.ref_date > str(n.note_date).slice(0, 10);
-  const problems = !d ? [] : [refLate && 'The original document cannot be dated after this note.'].filter(Boolean);
+  const editLines = editable('items');
+  const lp = editLines ? lineProblems(d.items) : null;
+  const zeroQty = editLines ? new Set(d.items.map((it, i) => (lp.kept.includes(it) && !(Number(it.quantity) > 0) ? i : -1)).filter(i => i >= 0)) : new Set();
+  const rateNow = d ? Number(d.gst_rate) || 0 : Number(n.gst_rate) || 0;
+  const amounts = editLines ? d.items.map(it => r2((Number(it.quantity) || 0) * (Number(it.rate) || 0))) : null;
+  const liveSub = editLines ? r2(amounts.reduce((t, a) => t + a, 0)) : null;
+  const liveGst = editLines ? r2(liveSub * rateNow / 100) : null;
+  const liveCgst = editLines && !n.interstate ? r2(liveGst / 2) : 0;
+  const noteDay = d && d.note_date ? d.note_date : str(n.note_date).slice(0, 10);
+  const refLate = !!d && !!d.ref_date && !!noteDay && d.ref_date > noteDay;
+  const gstBad = editable('gst_rate') && (d.gst_rate === '' || !(Number(d.gst_rate) >= 0 && Number(d.gst_rate) <= 100));
+  const problems = !d ? [] : [
+    refLate && 'The original document cannot be dated after this note.',
+    editable('note_date') && !d.note_date && 'The note date cannot be blank.',
+    ...(lp ? lp.list : []),
+    editLines && lp.kept.length === 0 && 'Add at least one line.',
+    editLines && zeroQty.size > 0 && `Every line needs a quantity above zero (line ${[...zeroQty].map(i => i + 1).join(', ')}).`,
+    gstBad && 'Set a GST rate between 0 and 100.',
+  ].filter(Boolean);
   const save = async () => {
     if (!d || ed.saving) return;
     if (problems.length) { ed.setTried(true); return; }
     const body = {};
-    for (const k of ed.changed(keys)) body[k] = String(d[k] ?? '').trim() || null;
+    for (const k of ed.changed(keys)) {
+      if (k === 'items') continue;
+      body[k] = k === 'gst_rate' ? (Number(d[k]) || 0) : (String(d[k] ?? '').trim() || null);
+    }
+    if (editLines && ed.changed(['items']).length) {
+      body.items = lp.kept.map(it => ({ description: it.description.trim(), hsn: String(it.hsn || '').trim() || null, uom: it.uom || 'nos', quantity: Number(it.quantity) || 0, rate: Number(it.rate) || 0 }));
+    }
     if (!Object.keys(body).length) { ed.stop(); toast.info('Nothing was changed'); return; }
     ed.setSaving(true);
     try {
@@ -79,7 +119,18 @@ export default function CreditDebitNoteDoc() {
     } catch (e) { ed.setError(`Could not save: ${e.message}`); ed.setSaving(false); }
   };
   const cancelEdit = async () => { if (await confirmDiscard(ed, confirm)) ed.stop(); };
-  const scope = 'Issued: the reason, the notes and the original document’s date' + (n.ref_id ? '' : ' and number') + ' can still change. To change the amounts, raise another note.';
+  const scope = sent
+    ? 'Sent to the party: the reason, the notes and the original document’s date' + (n.ref_id ? '' : ' and number') + ' can still change. To change the amounts, raise another note.'
+    : 'Not sent yet: the lines, date, reason and notes can all change' + (n.ref_id ? ' (it is taxed as its invoice was)' : '') + '. Mark it sent once it goes to the party — then its amounts are fixed.';
+  /* Sent: the amounts are fixed from here (the party holds the note). */
+  const markSent = async () => {
+    if (!(await confirm({ title: `Mark ${n.note_number} as sent?`, message: 'Once sent, its lines and amounts are fixed — a change after that is another note.', confirmLabel: 'Mark as sent' }))) return;
+    const res = await fetch(`${API}/credit-debit-notes/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Sent' }) });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) { toast.error(r.error || 'Could not mark it sent'); return; }
+    toast.success(`${n.note_number} marked sent`);
+    load();
+  };
 
   /* The reference to the original invoice is what makes this note lawful,
      so its absence is a compliance gap, not a cosmetic one. */
@@ -108,8 +159,14 @@ export default function CreditDebitNoteDoc() {
         {!ed.editing && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {canWrite && (
-              <button onClick={() => begin()} data-doc-edit className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Change the reason, the notes or the original document's date">
+              <button onClick={() => begin()} data-doc-edit className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                title={sent ? "Change the reason, the notes or the original document's date" : 'Change anything on this note, right here — it has not been sent'}>
                 <Pencil size={15} /> Edit note
+              </button>
+            )}
+            {canWrite && !sent && (
+              <button onClick={markSent} data-note-mark-sent className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Once it goes to the party, its amounts are fixed">
+                <Send size={15} /> Mark as sent
               </button>
             )}
             <button onClick={() => printAs(docFileName(n.note_type === 'credit' ? 'Credit Note' : 'Debit Note', n.note_number, (n.party || {}).name))} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
@@ -128,7 +185,9 @@ export default function CreditDebitNoteDoc() {
           title={title}
           meta={[
             ['No.', n.note_number],
-            ['Date', fmtDate(n.note_date)],
+            ['Date', editable('note_date')
+              ? <Field key="d" type="date" name="note_date" label="Note date" value={d.note_date} onChange={v => ed.set('note_date', v)} invalid={ed.tried && !d.note_date} style={{ fontWeight: 700 }} />
+              : <Spot key="d" field="note_date" on={spotOn('note_date')}>{fmtDate(n.note_date)}</Spot>],
           ]}
         />
 
@@ -187,9 +246,27 @@ export default function CreditDebitNoteDoc() {
               <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Rate</th>
               <th style={{ ...th, textAlign: 'right', whiteSpace: 'nowrap' }}>Amount</th>
             </tr></thead>
+            {editLines ? (
+              <tbody>
+                {d.items.map((it, i) => (
+                  <tr key={i} className={ed.tried && (lp.rows.has(i) || zeroQty.has(i)) ? 'de-row-bad' : undefined}>
+                    <td style={td}>{i + 1}</td>
+                    <td style={{ ...td, verticalAlign: 'top' }}><Field as="textarea" name={`line-${i}-description`} label={`Line ${i + 1} description`} placeholder="What is being credited" value={it.description} onChange={v => ed.setItem(i, { description: v })} invalid={ed.tried && lp.rows.has(i)} /></td>
+                    <td style={td}><Field name={`line-${i}-hsn`} label={`Line ${i + 1} HSN`} inputMode="numeric" maxLength={8} value={it.hsn} onChange={v => ed.setItem(i, { hsn: v.replace(/[^\d]/g, '') })} style={{ width: 72 }} /></td>
+                    <td style={td}><UnitSelect className="de-in" value={it.uom} onChange={v => ed.setItem(i, { uom: v })} ariaLabel={`Line ${i + 1} unit`} style={{ width: 80 }} /></td>
+                    <td style={{ ...td, textAlign: 'right' }}><Field type="number" min="0" step="any" inputMode="decimal" name={`line-${i}-quantity`} label={`Line ${i + 1} quantity`} align="right" value={it.quantity} onChange={v => ed.setItem(i, { quantity: v })} invalid={ed.tried && zeroQty.has(i)} style={{ width: 70 }} /></td>
+                    <td style={{ ...td, textAlign: 'right' }}><Field type="number" min="0" step="any" inputMode="decimal" name={`line-${i}-rate`} label={`Line ${i + 1} rate`} align="right" value={it.rate} onChange={v => ed.setItem(i, { rate: v })} style={{ width: 92 }} /></td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                      {rupee(amounts[i])}
+                      <button type="button" className="de-remove" onClick={() => ed.removeItem(i)} aria-label={`Remove line ${i + 1}`} title="Remove this line"><Trash2 size={13} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            ) : (
             <tbody>
               {(n.items || []).map((it, i) => (
-                <tr key={it.id}>
+                <tr key={it.id} {...(spotOn('items') ? { 'data-de-field': `line-${i}-description`, className: 'de-spot', title: 'Click to edit' } : {})}>
                   <td style={td}>{i + 1}</td>
                   <td className="doc-wrap" style={{ ...td, verticalAlign: 'top' }}><ItemText text={it.description} /></td>
                   <td style={{ ...td, color: 'var(--text-secondary)' }}>{it.hsn || '—'}</td>
@@ -200,7 +277,9 @@ export default function CreditDebitNoteDoc() {
                 </tr>
               ))}
             </tbody>
+            )}
           </table>
+          {editLines && <button type="button" className="de-add-line" onClick={() => ed.addItem(blankLine())} data-de-add-line><Plus size={14} /> Add line</button>}
         </div>
 
         {/* Totals to footer: kept whole, and never on a sheet by itself
@@ -208,13 +287,20 @@ export default function CreditDebitNoteDoc() {
         <div className="doc-closing">
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
           <div style={{ minWidth: 300 }}>
-            {totRow('Taxable value', rupee(n.sub_total))}
-            {n.interstate ? totRow(`IGST (${n.gst_rate}%)`, rupee(n.igst)) : (<>{totRow(`CGST (${n.gst_rate / 2}%)`, rupee(n.cgst))}{totRow(`SGST (${n.gst_rate / 2}%)`, rupee(n.sgst))}</>)}
-            <div style={{ borderTop: '1px solid var(--border-default)', marginTop: 6, paddingTop: 6 }}>{totRow('Total', rupee(n.total), true)}</div>
+            {editLines ? <>
+              {totRow('Taxable value', rupee(liveSub))}
+              {editable('gst_rate') && <div className="de-screen">{totRow('GST rate %', <><Field type="number" min="0" max="100" step="any" inputMode="decimal" name="gst_rate" label="GST rate" list="de-note-gst" align="right" value={d.gst_rate} onChange={v => ed.set('gst_rate', v)} invalid={ed.tried && gstBad} style={{ width: 70 }} /><datalist id="de-note-gst">{GST_RATES.map(r => <option key={r} value={r} />)}</datalist></>)}</div>}
+              {n.interstate ? totRow(`IGST (${rateNow}%)`, rupee(liveGst)) : (<>{totRow(`CGST (${rateNow / 2}%)`, rupee(liveCgst))}{totRow(`SGST (${rateNow / 2}%)`, rupee(r2(liveGst - liveCgst)))}</>)}
+              <div style={{ borderTop: '1px solid var(--border-default)', marginTop: 6, paddingTop: 6 }} data-de-total>{totRow('Total', rupee(r2(liveSub + liveGst)), true)}</div>
+            </> : <>
+              {totRow('Taxable value', rupee(n.sub_total))}
+              {n.interstate ? totRow(`IGST (${n.gst_rate}%)`, rupee(n.igst)) : (<>{totRow(`CGST (${n.gst_rate / 2}%)`, rupee(n.cgst))}{totRow(`SGST (${n.gst_rate / 2}%)`, rupee(n.sgst))}</>)}
+              <div style={{ borderTop: '1px solid var(--border-default)', marginTop: 6, paddingTop: 6 }}>{totRow('Total', rupee(n.total), true)}</div>
+            </>}
           </div>
         </div>
         {/* Spelled from the total on the page; the stored text could be empty. */}
-        <div style={{ marginTop: 14, fontSize: '0.82rem', color: 'var(--text-secondary)' }}><b>In words:</b> {amountInWords(n.total)}</div>
+        <div style={{ marginTop: 14, fontSize: '0.82rem', color: 'var(--text-secondary)' }}><b>In words:</b> {amountInWords(editLines ? r2(liveSub + liveGst) : n.total)}</div>
         {editable('notes') ? (
           <div style={{ marginTop: 10, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
             <b>Notes:</b>

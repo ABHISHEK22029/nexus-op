@@ -19,7 +19,7 @@
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Printer, AlertTriangle, Mail, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Printer, AlertTriangle, Mail, Pencil, Plus, Trash2, Undo2 } from 'lucide-react';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
 import InlineEdit from '../components/InlineEdit';
@@ -96,6 +96,20 @@ export default function DeliveryChallanDoc() {
 
   const canWrite = can('delivery-challans', 'write');
   const begin = (field) => { if (dc && canWrite) ed.start(challanValues(dc), field); };
+
+  /* Reopen as draft: the whole document is editable again, and editing
+     starts as soon as the reload shows it as a draft. */
+  const [editWhenDraft, setEditWhenDraft] = useState(false);
+  useEffect(() => {
+    if (editWhenDraft && dc && dc.status === 'Draft' && !dc.stock_applied) { setEditWhenDraft(false); begin(); }
+  }, [editWhenDraft, dc]);
+  const reopen = async () => {
+    if (!(await confirm({ title: `Reopen ${dc.challan_number} as a draft?`, message: 'Its goods go back into stock until it is dispatched again, and its lines can be changed.', confirmLabel: 'Reopen' }))) return;
+    const r = await fetch(`${API}/delivery-challans/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Draft' }) });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); toast.error(e.error || 'Could not reopen it'); return; }
+    await load();
+    setEditWhenDraft(true);
+  };
 
   if (err) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Challan not found. <button onClick={() => navigate('/delivery-challans')} className="btn-secondary" style={{ marginLeft: 8 }}>Back</button></div>;
   if (!dc) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading…</div>;
@@ -187,6 +201,11 @@ export default function DeliveryChallanDoc() {
             <button onClick={() => begin()} data-doc-edit className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
               title={isDraft ? 'Change anything on this draft challan, right here' : 'Change the transport details, e-way bill or notes'}>
               <Pencil size={15} /> Edit challan
+            </button>
+          )}
+{dc.status !== 'Draft' && canWrite && (
+            <button onClick={reopen} data-doc-reopen className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Back to draft, to change the lines, prices or anything else">
+              <Undo2 size={15} /> Reopen as draft
             </button>
           )}
           <CopyPicker kind="challan" value={copy} onChange={setCopy} />
