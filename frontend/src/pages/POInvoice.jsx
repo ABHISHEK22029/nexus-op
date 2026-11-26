@@ -1,21 +1,55 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, Mail } from 'lucide-react';
+import { ArrowLeft, Printer, Download, Mail, Pencil, Plus, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
+import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../context/ConfirmContext';
+import { usePermissions } from '../context/PermissionContext';
 import { amountInWords } from '../lib/amountInWords';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
+import UnitSelect from '../components/UnitSelect';
+import { ItemText } from '../components/DocumentKit';
+import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
+import { GST_RATES } from '../lib/docTotals';
+import { lineProblems } from '../lib/lineChecks';
 import { docFileName, printAs } from '../lib/documentPdf';
 import { stateCode } from '../lib/gstStates';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const num = { textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
+const fmtMoney = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/* Editing on the page (components/DocEdit). Before sign-off ("Pending"):
+   the lines, the GST rate, the vendor's quote reference and the terms.
+   After: the quote reference and the terms only — words, not money; the
+   amounts are what was signed off (PATCH /po/:id, POST /po/:id/items). */
+const TERM_KEYS = ['quoteRef', 'paymentTerms', 'priceBasis', 'pnfInsurance', 'loadingScope', 'warranty'];
+const TERM_LABELS = { priceBasis: 'Price', pnfInsurance: 'P&F, Insurance', loadingScope: 'Loading & Unloading', warranty: 'Warranty / Terms' };
+const str = (v) => (v == null ? '' : String(v));
+const numStr = (v) => (v == null || v === '' ? '' : String(Number(v)));
+const blankLine = () => ({ description: '', uom: 'nos', hsn: '', quantity: '', unitPrice: '', rawMaterialId: null, skuId: null });
+
+function poValues(po, items) {
+  return {
+    ...Object.fromEntries(TERM_KEYS.map(k => [k, str(po[k])])),
+    gstRate: numStr(po.gst_rate ?? 18),
+    /* the material or product a line is, carried back when it is saved */
+    items: items.map(it => ({ description: str(it.description), uom: str(it.uom || 'nos'), hsn: str(it.hsn), quantity: numStr(it.quantity), unitPrice: numStr(it.unitPrice), rawMaterialId: it.raw_material_id ?? null, skuId: it.sku_id ?? null })),
+  };
+}
 
 const POInvoice = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { activeProject } = useProject();
-  
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const { can } = usePermissions();
+  const ed = useDocEdit();
+
   const [po, setPo] = useState(null);
   const [items, setItems] = useState([]);
   const [company, setCompany] = useState(null);
@@ -23,36 +57,36 @@ const POInvoice = () => {
   const invoiceRef = useRef(null);
   const [emailing, setEmailing] = useState(false);
 
-  useEffect(() => {
-    const fetchInvoiceData = async () => {
-      try {
-        const [poRes, itemsRes] = await Promise.all([
-          axios.get(`${API}/po/${id}`),
-          axios.get(`${API}/po/${id}/items`),
-        ]);
-        const p = poRes.data;
-        setPo(p);
-        /* A PO raised from a material shortfall or a customer order has its
-           item on the order itself and no separate lines — and printed an
-           empty table with a total of 0.00. Show the order's own line. */
-        setItems(itemsRes.data?.length ? itemsRes.data : (p.itemName ? [{
-          sno: 1, description: p.itemName, uom: p.uom || "No's", hsn: p.hsn || '',
-          quantity: Number(p.quantity) || 0, unitPrice: Number(p.unitPrice) || 0,
-        }] : []));
-        /* The letterhead comes with the PO now; /company-profile is only a
-           fallback, and one that Sales and Procurement may not read. */
-        let comp = p.company;
-        if (!comp) comp = await axios.get(`${API}/company-profile`).then(r => r.data).catch(() => ({}));
-        setCompany(comp || {});
-      } catch (err) {
-        console.error("Failed to load invoice", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchInvoiceData();
-  }, [id]);
+  const fetchInvoiceData = async () => {
+    try {
+      const [poRes, itemsRes] = await Promise.all([
+        axios.get(`${API}/po/${id}`),
+        axios.get(`${API}/po/${id}/items`),
+      ]);
+      const p = poRes.data;
+      setPo(p);
+      /* A PO raised from a material shortfall or a customer order has its
+         item on the order itself and no separate lines — and printed an
+         empty table with a total of 0.00. Show the order's own line. */
+      setItems(itemsRes.data?.length ? itemsRes.data : (p.itemName ? [{
+        sno: 1, description: p.itemName, uom: p.uom || "No's", hsn: p.hsn || '',
+        quantity: Number(p.quantity) || 0, unitPrice: Number(p.unitPrice) || 0,
+      }] : []));
+      /* The letterhead comes with the PO now; /company-profile is only a
+         fallback, and one that Sales and Procurement may not read. */
+      let comp = p.company;
+      if (!comp) comp = await axios.get(`${API}/company-profile`).then(r => r.data).catch(() => ({}));
+      setCompany(comp || {});
+    } catch (err) {
+      console.error("Failed to load invoice", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { fetchInvoiceData(); /* eslint-disable-next-line */ }, [id]);
+
+  const canWrite = can('po', 'write');
+  const begin = (field) => { if (po && canWrite) ed.start(poValues(po, items), field); };
 
   if (loading) {
     return <div className="flex justify-center items-center h-64 text-gray-500">Loading document...</div>;
@@ -67,14 +101,23 @@ const POInvoice = () => {
     );
   }
 
-  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  /* ── Editing on the page ── */
+  const pending = po.status === 'Pending';
+  const d = ed.editing ? ed.draft : null;
+  const editAll = !!d && pending;
+  const editable = (k) => !!d && (pending || TERM_KEYS.includes(k));
+  const spotOn = (k) => !ed.editing && canWrite && (pending || TERM_KEYS.includes(k));
+  const shownItems = editAll ? d.items : items;
+  const lp = editAll ? lineProblems(d.items.map(it => ({ ...it, rate: it.unitPrice }))) : null;
+  const zeroQty = editAll ? new Set(d.items.map((it, i) => (String(it.description).trim() && !(Number(it.quantity) > 0) ? i : -1)).filter(i => i >= 0)) : new Set();
+
   /* Each line in paise, and the subtotal from those: 1,234.567 printed with
      three decimals, and the lines didn't add up to the subtotal. */
   const lineAmount = (item) => round2(Number(item.quantity) * Number(item.unitPrice));
-  const subtotal = round2(items.reduce((acc, item) => acc + lineAmount(item), 0));
+  const subtotal = round2(shownItems.reduce((acc, item) => acc + lineAmount(item), 0));
 
   // GST rate comes from the PO (whatever the user entered) — never hardcoded.
-  const gstRate = Number(po.gst_rate ?? po.gstRate ?? 18);
+  const gstRate = editAll ? (Number(d.gstRate) || 0) : Number(po.gst_rate ?? po.gstRate ?? 18);
 
   // Intra vs inter-state: derived from vendor GSTIN vs company state — the SAME
   // rule the GRN bill uses, so the two documents classify GST identically.
@@ -94,6 +137,49 @@ const POInvoice = () => {
   const total = round2(subtotal + tax);
   const halfRate = round2(gstRate / 2);
 
+  const gstBad = editAll && (d.gstRate === '' || !(Number(d.gstRate) >= 0 && Number(d.gstRate) <= 100));
+  const problems = !d ? [] : [
+    ...(lp ? lp.list : []),
+    editAll && lp.kept.length === 0 && 'Add at least one line item.',
+    editAll && zeroQty.size > 0 && `Every line needs a quantity above zero (line ${[...zeroQty].map(i => i + 1).join(', ')}).`,
+    editAll && d.items.some(it => String(it.description).trim() && Number(it.unitPrice) < 0) && 'A unit price cannot be negative.',
+    gstBad && 'Set a GST rate between 0 and 100.',
+  ].filter(Boolean);
+  const shout = (bad) => ed.tried && !!bad;
+
+  /* Lines first (the step more likely to be refused), then the PO's own
+     particulars; then the page reloads what the server holds. */
+  const save = async () => {
+    if (!d || ed.saving) return;
+    if (problems.length) { ed.setTried(true); return; }
+    const head = {};
+    for (const k of ed.changed(pending ? [...TERM_KEYS, 'gstRate'] : TERM_KEYS)) head[k] = k === 'gstRate' ? (Number(d[k]) || 0) : (String(d[k] ?? '').trim() || null);
+    const linesChanged = pending && ed.changed(['items']).length > 0;
+    if (!linesChanged && !Object.keys(head).length) { ed.stop(); toast.info('Nothing was changed'); return; }
+    ed.setSaving(true);
+    try {
+      let gate = null;
+      if (linesChanged) {
+        const lines = d.items.filter(it => String(it.description).trim() || Number(it.quantity) || Number(it.unitPrice))
+          .map((it, i) => ({ sno: i + 1, description: it.description.trim(), uom: it.uom || 'nos', hsn: String(it.hsn || '').trim() || null, quantity: Number(it.quantity) || 0, unitPrice: Number(it.unitPrice) || 0, rawMaterialId: it.rawMaterialId, skuId: it.skuId }));
+        const r = await axios.post(`${API}/po/${id}/items`, lines);
+        gate = r.data;
+      }
+      if (Object.keys(head).length) await axios.patch(`${API}/po/${id}`, head);
+      await fetchInvoiceData();
+      ed.stop();
+      toast.success(`${po.poNumber || `PO-${po.id}`} saved — the print shows the change`);
+      if (gate?.approvalStatus === 'Pending Approval') toast.warning('Its value is over your sign-off limit, so it waits for approval again.');
+    } catch (e) {
+      ed.setError(e.response?.data?.error || `Could not save: ${e.message}`);
+      ed.setSaving(false);
+    }
+  };
+  const cancelEdit = async () => { if (await confirmDiscard(ed, confirm)) ed.stop(); };
+  const scope = pending
+    ? 'Before sign-off: the lines, GST rate, the vendor’s quote reference and the terms can all change. Totals update as you type.'
+    : `${po.status}: the quote reference and the terms can still change. The amounts are what was signed off — raise a new PO to order more.`;
+
   /* Print-to-PDF, named for what it is: "Purchase Order PO-0012 - Vendor". */
   const fileName = docFileName('Purchase Order', po.poNumber || `PO-${po.id}`, po.vendorName);
   const handleDownloadPdf = () => { printAs(fileName); };
@@ -103,9 +189,10 @@ const POInvoice = () => {
   };
 
   const poDate = new Date(po.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  /* Only the terms someone set; the whole grid goes when there are none. */
-  const termCells = [['Price', po.priceBasis], ['P&F, Insurance', po.pnfInsurance], ['Loading & Unloading', po.loadingScope], ['Warranty / Terms', po.warranty]]
-    .filter(([, v]) => String(v || '').trim());
+  /* Only the terms someone set; the whole grid goes when there are none.
+     While editing, all four, to be filled in. */
+  const termCells = Object.keys(TERM_LABELS).map(k => [k, TERM_LABELS[k], po[k]])
+    .filter(([k, , v]) => editable(k) || String(v || '').trim());
   const vendorLines = [po.vendorAddress, [po.vendorCity, po.vendorState].filter(Boolean).join(', ')].filter(Boolean);
 
   return (
@@ -119,7 +206,14 @@ const POInvoice = () => {
         <button onClick={() => navigate('/purchase-orders')} className="inv-act-btn">
           <ArrowLeft size={16} /> Back to POs
         </button>
+        {!ed.editing && (
         <div className="flex flex-wrap items-center gap-3">
+          <span className="doc-status-pill" data-doc-status>{po.status}</span>
+          {canWrite && (
+            <button onClick={() => begin()} data-doc-edit className="inv-act-btn" title={pending ? 'Change the lines, GST and terms, right here on the PO' : 'Change the quote reference or the terms'}>
+              <Pencil size={16} /> Edit PO
+            </button>
+          )}
           {/* This button had no onClick at all — it rendered, it looked
               like the others, and clicking it did nothing. */}
           <button onClick={() => setEmailing(true)} className="inv-act-btn">
@@ -132,7 +226,10 @@ const POInvoice = () => {
             <Printer size={16} /> Print
           </button>
         </div>
+        )}
       </div>
+
+      {ed.editing && <EditBar ed={ed} what={po.poNumber || `PO-${po.id}`} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />}
 
       {/* Screen only: what the tax on this PO rests on, when it is a guess. */}
       {(stateGuessed || !po.vendorGstin) && (
@@ -144,8 +241,8 @@ const POInvoice = () => {
 
       {/* Invoice Document Wrapper */}
       <div className="doc-scroll">
-      <div ref={invoiceRef} className="invoice-mock print:m-0 print:rounded-none print:shadow-none">
-        
+      <div ref={invoiceRef} className="invoice-mock print:m-0 print:rounded-none print:shadow-none" data-editing={ed.editing ? 'true' : undefined} onClick={onSheetClick(ed, begin)}>
+
         {/* Header */}
         <div className="inv-header">
           <div>
@@ -165,8 +262,11 @@ const POInvoice = () => {
             <div className="inv-po-title">Purchase Order</div>
             <div className="inv-meta-row">P.O. #: <strong>{po.poNumber || `PO-${po.id}`}</strong></div>
             <div className="inv-meta-row">Date: <strong>{poDate}</strong></div>
-            {po.quoteRef && <div className="inv-meta-row">Quote Ref: <strong>{po.quoteRef}</strong></div>}
-            <div className="inv-meta-row print:hidden">Status: <strong>{po.status}</strong></div>
+            {editable('quoteRef')
+              ? <div className="inv-meta-row">Quote Ref: <Field name="quoteRef" label="Vendor quote reference" value={d.quoteRef} onChange={v => ed.set('quoteRef', v)} maxLength={120} style={{ width: 150, fontWeight: 700 }} /></div>
+              : po.quoteRef
+                ? <div className="inv-meta-row"><Spot field="quoteRef" on={spotOn('quoteRef')}>Quote Ref: <strong>{po.quoteRef}</strong></Spot></div>
+                : spotOn('quoteRef') && <div className="inv-meta-row print:hidden"><Spot field="quoteRef" on>Quote Ref: <span style={{ color: '#6b7280' }}>add</span></Spot></div>}
           </div>
         </div>
 
@@ -218,22 +318,40 @@ const POInvoice = () => {
                 <th style={{width: '13%', textAlign: 'right'}}>TOTAL</th>
               </tr>
             </thead>
-            <tbody>
-              {items.map((item, idx) => (
-                <tr key={item.id || idx}>
-                  <td style={{textAlign: 'center'}}>{item.sno}</td>
-                  <td className="doc-wrap" style={{fontWeight: 600}}>{item.description}</td>
-                  <td>{item.uom}</td>
-                  <td>{item.hsn || '-'}</td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{item.quantity}</td>
-                  <td style={{textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)'}}>{Number(item.unitPrice).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-                  <td style={{textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)', fontWeight: 600}}>
-                    {lineAmount(item).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+            {editAll ? (
+              <tbody>
+                {d.items.map((it, i) => (
+                  <tr key={i} className={shout(lp.rows.has(i) || zeroQty.has(i)) ? 'de-row-bad' : undefined}>
+                    <td style={{ textAlign: 'center' }}>{i + 1}</td>
+                    <td><Field as="textarea" name={`line-${i}-description`} label={`Line ${i + 1} description`} placeholder="What is being bought" value={it.description} onChange={v => ed.setItem(i, { description: v })} invalid={shout(lp.rows.has(i))} style={{ fontWeight: 600 }} /></td>
+                    <td><UnitSelect className="de-in" value={it.uom} onChange={v => ed.setItem(i, { uom: v })} ariaLabel={`Line ${i + 1} unit`} style={{ width: 80 }} /></td>
+                    <td><Field name={`line-${i}-hsn`} label={`Line ${i + 1} HSN`} inputMode="numeric" maxLength={8} value={it.hsn} onChange={v => ed.setItem(i, { hsn: v.replace(/[^\d]/g, '') })} style={{ width: 72 }} /></td>
+                    <td style={num}><Field type="number" min="0" step="any" inputMode="decimal" name={`line-${i}-quantity`} label={`Line ${i + 1} quantity`} align="right" value={it.quantity} onChange={v => ed.setItem(i, { quantity: v })} invalid={shout(zeroQty.has(i))} style={{ width: 70 }} /></td>
+                    <td style={num}><Field type="number" min="0" step="any" inputMode="decimal" name={`line-${i}-rate`} label={`Line ${i + 1} unit price`} align="right" value={it.unitPrice} onChange={v => ed.setItem(i, { unitPrice: v })} style={{ width: 92 }} /></td>
+                    <td style={{ ...num, fontWeight: 600 }}>
+                      {fmtMoney(lineAmount(it))}
+                      <button type="button" className="de-remove" onClick={() => ed.removeItem(i)} aria-label={`Remove line ${i + 1}`} title="Remove this line"><Trash2 size={13} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            ) : (
+              <tbody>
+                {items.map((item, idx) => (
+                  <tr key={item.id || idx} {...(spotOn('items') ? { 'data-de-field': `line-${idx}-description`, className: 'de-spot', title: 'Click to edit' } : {})}>
+                    <td style={{textAlign: 'center'}}>{item.sno}</td>
+                    <td className="doc-wrap"><ItemText text={item.description} /></td>
+                    <td>{item.uom}</td>
+                    <td>{item.hsn || '-'}</td>
+                    <td style={num}>{Number(item.quantity)}</td>
+                    <td style={num}>{fmtMoney(item.unitPrice)}</td>
+                    <td style={{ ...num, fontWeight: 600 }}>{fmtMoney(lineAmount(item))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            )}
           </table>
+          {editAll && <div style={{ padding: '0 22px' }}><button type="button" className="de-add-line" onClick={() => ed.addItem(blankLine())} data-de-add-line><Plus size={14} /> Add line</button></div>}
         </div>
 
         {/* Totals to footer: kept whole, and never on a sheet by itself
@@ -241,19 +359,28 @@ const POInvoice = () => {
         <div className="doc-closing">
         {/* Totals Section */}
         <div className="inv-totals-section">
-          <div className="inv-notes">
+          <div className="inv-notes" style={editable('paymentTerms') ? { width: '48%' } : undefined}>
             <strong>Other Comments or Special Instructions</strong>
             {/* Only when set: "Net 30 Days" printed for every PO without terms. */}
-            {po.paymentTerms && <>Payment Terms:<br/>{po.paymentTerms}<br/><br/></>}
+            {editable('paymentTerms')
+              ? <div style={{ margin: '2px 0 8px' }}>Payment Terms:<Field name="paymentTerms" label="Payment terms" placeholder="e.g. 30 days from delivery" value={d.paymentTerms} onChange={v => ed.set('paymentTerms', v)} maxLength={200} /></div>
+              : po.paymentTerms
+                ? <Spot field="paymentTerms" on={spotOn('paymentTerms')} block>Payment Terms:<br/>{po.paymentTerms}<br/><br/></Spot>
+                : spotOn('paymentTerms') && <Spot field="paymentTerms" on block><span className="print:hidden" style={{ color: '#6b7280' }}>+ Add payment terms<br/><br/></span></Spot>}
             Note: This is the <span style={{ fontWeight: 700 }}>ordered value</span>. The final payable is confirmed on the GRN bill after material is received (actual quantity + freight/charges).
           </div>
-          
-          <table className="inv-totals-table">
+
+          <table className="inv-totals-table" data-de-totals={editAll ? true : undefined}>
             <tbody>
               <tr>
                 <td className="tl">SUBTOTAL</td>
                 <td className="tv">{subtotal.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
               </tr>
+              {editAll && (
+                <tr className="print:hidden"><td className="tl">GST RATE %</td><td className="tv">
+                  <Field type="number" min="0" max="100" step="any" inputMode="decimal" name="gstRate" label="GST rate" list="de-po-gst" align="right" value={d.gstRate} onChange={v => ed.set('gstRate', v)} invalid={shout(gstBad)} style={{ width: 70 }} />
+                  <datalist id="de-po-gst">{GST_RATES.map(r => <option key={r} value={r} />)}</datalist></td></tr>
+              )}
               {isIntraState ? (
                 <>
                   <tr>
@@ -277,7 +404,7 @@ const POInvoice = () => {
               </tr>
               <tr className="tf">
                 <td className="tl" style={{color: '#000'}}>PO VALUE (ORDERED)</td>
-                <td className="tv" style={{color: '#000'}}>{total.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td className="tv" style={{color: '#000'}} data-de-total={editAll ? true : undefined}>{total.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
               </tr>
             </tbody>
           </table>
@@ -290,13 +417,17 @@ const POInvoice = () => {
           Amount in Words: {amountInWords(total)}
         </div>
 
-        {/* Terms Grid — only the terms that were set */}
+        {/* Terms Grid — only the terms that were set (all four while editing) */}
         {termCells.length > 0 && (
           <div className="inv-terms-grid" style={{ gridTemplateColumns: `repeat(${termCells.length}, 1fr)` }}>
-            {termCells.map(([h, v]) => (
-              <div className="inv-term-cell" key={h}>
+            {termCells.map(([k, h, v]) => (
+              <div className="inv-term-cell" key={k}>
                 <div className="inv-term-header">{h}</div>
-                <div className="inv-term-value">{v}</div>
+                <div className="inv-term-value">
+                  {editable(k)
+                    ? <Field name={k} label={h} value={d[k]} onChange={x => ed.set(k, x)} maxLength={200} />
+                    : <Spot field={k} on={spotOn(k)}>{v}</Spot>}
+                </div>
               </div>
             ))}
           </div>

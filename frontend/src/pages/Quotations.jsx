@@ -212,7 +212,7 @@ export default function Quotations() {
                   {/* generate PO */}
                   {canWrite && qt.selected_quote_id && qt.status !== 'PO Raised' && (
                     <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Winner selected. Raise the Vendor PO {activeProject ? <>against <b>{activeProject.name}</b></> : <span style={{ color: 'var(--accent-red)' }}>(select an active project first)</span>}.</div>
+                      <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Winner selected. Raise the Vendor PO {activeProject ? <>against <b>{activeProject.name}</b></> : <>for stock (no project)</>}.</div>
                       <button onClick={() => genPO(qt.id)} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><FileCheck2 size={15} /> Generate Vendor PO</button>
                     </div>
                   )}

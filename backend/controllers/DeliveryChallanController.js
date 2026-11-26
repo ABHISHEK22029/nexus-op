@@ -5,7 +5,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { profileFor } = require('../shared/companyProfile');
-const { allocate } = require('../shared/docSeries');
+const { allocate, noteUsed } = require('../shared/docSeries');
 const stock = require('../shared/stock');
 const { isCrossTenant } = require('../shared/roles');
 const { scopedById, assertOwned } = require('../shared/ownerScope');
@@ -337,25 +337,105 @@ exports.remove = async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
-/* PATCH /delivery-challans/:id   Body: { eway_bill_no }
+/* PATCH /delivery-challans/:id — change a challan on its own page.
 
-   The challan has always warned "E-way bill required — and not recorded …
-   record the number here before the vehicle leaves", and there was nowhere
-   to record it: the column existed, nothing wrote to it. An e-way bill
+   It began as the e-way bill number alone: the challan always warned
+   "E-way bill required — and not recorded … record the number here before
+   the vehicle leaves", and there was nowhere to record it. An e-way bill
    number is twelve digits (Rule 138); spaces are dropped, and an empty
-   value clears it. Yours only. */
+   value clears it.
+
+   What can change follows where the challan has got to:
+     Draft                 everything — the number, date, transport,
+                           ship-to, place of supply, notes and the lines
+                           (no more than the order asked for, as when made)
+     Dispatched/Delivered  the goods have left stock under these lines, so
+                           only the transport details, e-way bill and notes;
+                           to change the lines, pull it back to Draft first
+   Yours only. */
+const DC_TRANSPORT = ['dispatch_through', 'transporter_name', 'transporter_gstin', 'vehicle_no', 'lr_no', 'driver_name', 'driver_phone', 'eway_bill_no', 'eway_bill_date', 'notes'];
+const DC_DRAFT = [...DC_TRANSPORT, 'challan_number', 'challan_date', 'place_of_supply', 'ship_to_name', 'ship_to_address', 'ship_to_state'];
+
 exports.updateDetails = async (req, res) => {
-  if (!('eway_bill_no' in (req.body || {}))) return res.status(400).json({ error: 'Nothing to update — send eway_bill_no' });
-  const raw = req.body.eway_bill_no;
-  const value = raw == null ? '' : String(raw).replace(/\s+/g, '');
-  if (value && !/^\d{12}$/.test(value)) {
-    return res.status(400).json({ error: 'An e-way bill number is 12 digits.' });
+  const b = req.body || {};
+  if (!Object.keys(b).length) return res.status(400).json({ error: 'Nothing to update' });
+  if ('eway_bill_no' in b) {
+    const value = b.eway_bill_no == null ? '' : String(b.eway_bill_no).replace(/\s+/g, '');
+    if (value && !/^\d{12}$/.test(value)) return res.status(400).json({ error: 'An e-way bill number is 12 digits.' });
+    b.eway_bill_no = value || null;
   }
+  if (b.transporter_gstin && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/.test(String(b.transporter_gstin).trim().toUpperCase())) {
+    return res.status(400).json({ error: 'The transporter GSTIN is not a valid GSTIN (15 characters, like 36ABCDE1234F1Z9).' });
+  }
+  const client = await db.getClient();
   try {
-    if (!await assertOwned(db, req, res, 'delivery_challans', req.params.id, { columns: 'id' })) return;
-    const { rows } = await db.query(
-      'UPDATE delivery_challans SET eway_bill_no = $1 WHERE id = $2 RETURNING id, eway_bill_no',
-      [value || null, req.params.id]);
+    await client.query('BEGIN');
+    const s = scopedById(req, req.params.id);
+    const dc = (await client.query(`SELECT * FROM delivery_challans WHERE ${s.where} FOR UPDATE`, s.params)).rows[0];
+    if (!dc) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Delivery challan not found' }); }
+    const draft = dc.status === 'Draft' && !dc.stock_applied;
+    const allowed = draft ? DC_DRAFT : DC_TRANSPORT;
+    const refused = Object.keys(b).filter(k => k !== 'items' && !allowed.includes(k));
+    if (refused.length || (!draft && b.items)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `This challan has been ${String(dc.status).toLowerCase()} and its goods have left stock, so ${[...refused, ...(!draft && b.items ? ['its lines'] : [])].join(', ')} can no longer be changed. Pull it back to Draft first.`,
+        editable: allowed,
+      });
+    }
+    const set = {};
+    for (const k of allowed) {
+      if (!(k in b)) continue;
+      const v = b[k];
+      set[k] = ['challan_date', 'eway_bill_date'].includes(k) ? (v || null)
+        : k === 'transporter_gstin' ? (String(v ?? '').trim().toUpperCase() || null)
+          : k === 'vehicle_no' ? (String(v ?? '').trim().toUpperCase().slice(0, 20) || null)
+            : (String(v ?? '').trim().slice(0, k === 'notes' || k === 'ship_to_address' ? 2000 : 120) || null);
+    }
+    if ('challan_date' in set && !set.challan_date) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The challan date cannot be blank — it travels with the goods (Rule 55).' }); }
+    if ('challan_number' in set) {
+      if (!set.challan_number) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The challan number cannot be blank.' }); }
+      if (set.challan_number !== dc.challan_number) {
+        const clash = await client.query('SELECT id FROM delivery_challans WHERE owner_id IS NOT DISTINCT FROM $1 AND challan_number = $2 AND id <> $3', [dc.owner_id, set.challan_number, dc.id]);
+        if (clash.rowCount) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Challan number ${set.challan_number} is already used.` }); }
+        /* a renamed number that fits the series moves the counter on */
+        await noteUsed(client, { ownerId: dc.owner_id, docType: 'delivery_challan', number: set.challan_number }).catch(() => {});
+      }
+    }
+    if (draft && b.items) {
+      if (!Array.isArray(b.items) || !b.items.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Add at least one item.' }); }
+      for (const [n, it] of b.items.entries()) {
+        if (!String(it.description || '').trim()) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Line ${n + 1}: say what is being sent.` }); }
+        const q = Number(it.quantity);
+        if (!Number.isFinite(q) || q <= 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Line ${n + 1}: the quantity must be more than zero.` }); }
+        if (it.rate != null && it.rate !== '' && (!Number.isFinite(Number(it.rate)) || Number(it.rate) < 0)) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Line ${n + 1}: the rate must be a number, 0 or more.` }); }
+      }
+      if (!await assertRefs(client, req, res, { skus: b.items.map(it => it.skuId).filter(Boolean) })) { await client.query('ROLLBACK'); return; }
+      if (dc.customer_order_id) {
+        const co = (await client.query('SELECT id, order_number, owner_id FROM customer_orders WHERE id = $1', [dc.customer_order_id])).rows[0];
+        const over = co && await overDispatch(client, { orderId: co.id, orderNumber: co.order_number, ownerId: co.owner_id, items: b.items, excludeChallanId: dc.id });
+        if (over) { await client.query('ROLLBACK'); return res.status(409).json({ error: over }); }
+      }
+      const lines = b.items.map(it => ({ ...it, amount: r2((Number(it.quantity) || 0) * (Number(it.rate) || 0)) }));
+      await client.query('DELETE FROM delivery_challan_items WHERE delivery_challan_id = $1', [dc.id]);
+      let so = 0;
+      for (const l of lines) {
+        await client.query(
+          `INSERT INTO delivery_challan_items (delivery_challan_id, description, hsn, uom, quantity, rate, amount, sort_order, sku_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [dc.id, String(l.description).trim(), l.hsn || null, l.uom || 'nos', Number(l.quantity) || 0, Number(l.rate) || 0, l.amount || 0, so++, l.skuId || l.sku_id || null]);
+      }
+      set.total_value = r2(lines.reduce((t, l) => t + l.amount, 0));
+    }
+    const cols = Object.keys(set);
+    if (!cols.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Nothing to update' }); }
+    const { rows } = await client.query(
+      `UPDATE delivery_challans SET ${cols.map((c, i) => `"${c}" = $${i + 1}`).join(', ')} WHERE id = $${cols.length + 1} RETURNING *`,
+      [...cols.map(c => set[c]), dc.id]);
+    await client.query('COMMIT');
     res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 };

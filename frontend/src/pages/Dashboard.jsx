@@ -75,7 +75,10 @@ const TYPE_CONFIG = {
    step up and down wherever one card had a note and the next did not.
    Layout and hover: styles/dashboard.css.
    ══════════════════════════════════════════════════════════ */
-const KpiCard = ({ title, value, exact, sub, icon: Icon, accent, link, alert = false }) => {
+/* `wide`: a figure for the whole company shown while a project is chosen
+   — it says so, instead of looking like the project's own and never
+   changing when the project does. */
+const KpiCard = ({ title, value, exact, sub, icon: Icon, accent, link, alert = false, wide = false }) => {
   const card = (
     <div className="dash-kpi" style={{ '--accent': accent }}>
       <div className="dash-kpi-top">
@@ -86,7 +89,14 @@ const KpiCard = ({ title, value, exact, sub, icon: Icon, accent, link, alert = f
         <FitNumber exact={exact}>{value || '—'}</FitNumber>
       </div>
       <div className={`dash-kpi-sub${alert ? ' is-alert' : ''}`}>{sub || '\u00A0'}</div>
-      {link && <div className="dash-kpi-foot">View details <ChevronRight size={12} /></div>}
+      {/* The tag sits in the foot: beside the label it squeezed the names
+          to "Billed…", "Recei…". */}
+      {(link || wide) && (
+        <div className="dash-kpi-foot">
+          {link && <>View details <ChevronRight size={12} /></>}
+          {wide && <span className="dash-kpi-scope" data-dash-wide title="For the whole company: this does not belong to a project">All projects</span>}
+        </div>
+      )}
     </div>
   );
   return link ? <Link to={link} className="dash-kpi-link">{card}</Link> : card;
@@ -222,6 +232,11 @@ const Dashboard = () => {
 
   /* Sales money, from the invoices (see /dashboard). */
   const sales = stats?.sales;
+  /* A project is chosen: purchase orders, vendor bills, contracts and the
+     charts are that project's; invoices, stock and vendors stay the whole
+     company's (none of them belongs to a project) and are marked so.
+     Switching projects used to look like it changed nothing at all. */
+  const wide = !!activeProject;
 
   /* Overall financial health */
   const utilizationPct = stats?.totalBilled && stats?.netPaid
@@ -268,6 +283,11 @@ const Dashboard = () => {
               }}>{activeProject?.status}</span>
             </p>
           )}
+          {activeProject && (
+            <p className="dash-sub dash-scope-note" data-dash-scope>
+              Purchase orders, vendor bills, contracts and activity are this project's. Sales, stock and vendors are for the whole company — invoices aren't raised against a project.
+            </p>
+          )}
         </div>
         <div className="dash-head-side">
           {lastRefresh && <span className="dash-refreshed">Updated {lastRefresh.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</span>}
@@ -286,11 +306,11 @@ const Dashboard = () => {
           First, because it is the first question. From the sales invoices;
           "Total Billed" used to read a contracting job's RA bills, so a
           fabricator saw ₹0 however much they had sold. */}
-      <Group title="Money" note={sales ? `${sales.fyLabel}, April to March` : undefined}>
-        <KpiCard title="Billed this year" value={fmtCrore(sales?.billed)} exact={exactINR(sales?.billed)} icon={Receipt} accent="#3B82F6" link="/sales-invoices" sub="Invoices issued" />
-        <KpiCard title="Received this year" value={fmtCrore(sales?.received)} exact={exactINR(sales?.received)} icon={TrendingUp} accent="#16A34A" link="/sales-invoices" sub="Payments in" />
-        <KpiCard title="Outstanding" value={fmtCrore(sales?.outstanding)} exact={exactINR(sales?.outstanding)} icon={IndianRupee} accent="#D97706" link="/sales-invoices?view=unpaid" sub="Owed by customers today" />
-        <KpiCard title="Overdue" value={fmtCrore(sales?.overdueAmount)} exact={exactINR(sales?.overdueAmount)} icon={Clock} accent="#DC2626" link="/sales-invoices?view=overdue"
+      <Group title="Money" note={sales ? `${sales.fyLabel}, April to March${wide ? ' · the whole company' : ''}` : undefined}>
+        <KpiCard wide={wide} title="Billed this year" value={fmtCrore(sales?.billed)} exact={exactINR(sales?.billed)} icon={Receipt} accent="#3B82F6" link="/sales-invoices" sub="Invoices issued" />
+        <KpiCard wide={wide} title="Received this year" value={fmtCrore(sales?.received)} exact={exactINR(sales?.received)} icon={TrendingUp} accent="#16A34A" link="/sales-invoices" sub="Payments in" />
+        <KpiCard wide={wide} title="Outstanding" value={fmtCrore(sales?.outstanding)} exact={exactINR(sales?.outstanding)} icon={IndianRupee} accent="#D97706" link="/sales-invoices?view=unpaid" sub="Owed by customers today" />
+        <KpiCard wide={wide} title="Overdue" value={fmtCrore(sales?.overdueAmount)} exact={exactINR(sales?.overdueAmount)} icon={Clock} accent="#DC2626" link="/sales-invoices?view=overdue"
           alert={Number(sales?.overdueCount) > 0}
           sub={sales ? (Number(sales.overdueCount) > 0 ? `${sales.overdueCount} invoice${sales.overdueCount === 1 ? '' : 's'} past due` : 'Nothing past due') : undefined} />
       </Group>
@@ -298,15 +318,15 @@ const Dashboard = () => {
       {/* ══ PURCHASING AND STOCK ═════════════════════════════
           "POs Delivered" had a card of its own; it is the purchase-order
           card's note now, which keeps the row at four. */}
-      <Group title="Purchasing and stock">
-        <KpiCard title="Active vendors" value={fmtNum(stats?.totalVendors)} exact={exactNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" sub="Who you buy from" />
+      <Group title="Purchasing and stock" note={wide ? 'Purchase orders and vendor bills: this project' : undefined}>
+        <KpiCard wide={wide} title="Active vendors" value={fmtNum(stats?.totalVendors)} exact={exactNum(stats?.totalVendors)} icon={Users} accent="#3B82F6" link="/vendors" sub="Who you buy from" />
         <KpiCard title="Purchase orders" value={fmtNum(stats?.totalPOs)} exact={exactNum(stats?.totalPOs)} icon={ShoppingCart} accent="#8B5CF6" link="/po"
           sub={known(stats?.totalPOs) ? (Number(stats.totalPOs) > 0 ? `${fmtNum(stats?.deliveredPOs ?? 0)} received in full` : 'None raised yet') : undefined} />
         {/* What is owed to vendors. It replaces "Units ordered", which added
             kilos to pieces to metres — a number with no unit. */}
         <KpiCard title="Owed to vendors" value={fmtCrore(stats?.payables?.outstanding)} exact={exactINR(stats?.payables?.outstanding)} icon={Wallet} accent="#0891B2" link="/payables"
-          sub={known(stats?.payables?.count) ? `${stats.payables.count} unpaid bill${stats.payables.count === 1 ? '' : 's'}` : undefined} />
-        <KpiCard title="Stock items" value={fmtNum(stats?.inventoryCount)} exact={exactNum(stats?.inventoryCount)} icon={Package} accent="#D97706" link="/inventory" sub="Items on Stock on hand" />
+          sub={known(stats?.payables?.count) ? `${stats.payables.count} unpaid bill${stats.payables.count === 1 ? '' : 's'}${wide ? ' on this project' : ''}` : undefined} />
+        <KpiCard wide={wide} title="Stock items" value={fmtNum(stats?.inventoryCount)} exact={exactNum(stats?.inventoryCount)} icon={Package} accent="#D97706" link="/inventory" sub="Items on Stock on hand" />
       </Group>
 
       {/* ══ CONTRACTS ═══════════════════════════════════════

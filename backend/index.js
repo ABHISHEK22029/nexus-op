@@ -1039,6 +1039,52 @@ app.get('/company-profile/logo/status', companyLogoController.status);
 app.delete('/company-profile/logo', allow('company-profile', 'write'), companyLogoController.remove);
 
 // PO State Transitions
+/* PATCH /po/:id — the PO's own particulars, changed on its page: the
+   vendor's quote reference, the terms, and (before it is approved) the GST
+   rate. Its lines go through POST /po/:id/items, which re-runs the
+   sign-off threshold and is closed once the PO is approved.
+
+     Pending    all of these
+     approved   the quote reference and the terms — words, not money; the
+                GST rate is fixed with the amounts that were signed off */
+const PO_TERMS = { quoteRef: '"quoteRef"', paymentTerms: '"paymentTerms"', priceBasis: '"priceBasis"', pnfInsurance: '"pnfInsurance"', loadingScope: '"loadingScope"', warranty: 'warranty' };
+app.patch('/po/:id', async (req, res) => {
+  const b = req.body || {};
+  try {
+    if (!(await ownsPo(req, req.params.id))) return res.status(404).json({ error: 'PO not found' });
+    const po = (await db.query('SELECT id, status FROM purchase_orders WHERE id = $1', [req.params.id])).rows[0];
+    if (!po) return res.status(404).json({ error: 'PO not found' });
+    const pending = po.status === 'Pending';
+    const allowed = pending ? [...Object.keys(PO_TERMS), 'gstRate'] : Object.keys(PO_TERMS);
+    const refused = Object.keys(b).filter(k => !allowed.includes(k));
+    if (refused.length) {
+      return res.status(409).json({
+        error: refused.includes('gstRate') && !pending
+          ? `This PO is already ${String(po.status).toLowerCase()} — its GST rate is fixed with the amounts that were signed off.`
+          : `${refused.join(', ')} can't be changed here.`,
+        editable: allowed,
+      });
+    }
+    const sets = [], vals = [];
+    for (const [k, col] of Object.entries(PO_TERMS)) {
+      if (!(k in b)) continue;
+      vals.push(String(b[k] ?? '').trim().slice(0, 200) || null);
+      sets.push(`${col} = $${vals.length}`);
+    }
+    if ('gstRate' in b) {
+      const g = Number(b.gstRate);
+      if (!Number.isFinite(g) || g < 0 || g > 100) return res.status(400).json({ error: 'The GST rate must be between 0 and 100.' });
+      vals.push(g); sets.push(`gst_rate = $${vals.length}`);
+    }
+    if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
+    vals.push(po.id);
+    const { rows } = await db.query(`UPDATE purchase_orders SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.patch('/po/:id/approve', async (req, res) => {
   try {
     /* Yours only. Approve, sign-off and dispatch read the PO by id alone, so
@@ -1194,6 +1240,7 @@ app.delete('/delivery-challans/:id', deliveryChallanController.remove);
 app.get('/credit-debit-notes', creditDebitNoteController.list);
 app.get('/credit-debit-notes/:id', creditDebitNoteController.getById);
 app.post('/credit-debit-notes', creditDebitNoteController.create);
+app.patch('/credit-debit-notes/:id', creditDebitNoteController.update);
 app.delete('/credit-debit-notes/:id', creditDebitNoteController.remove);
 
 // ── Ask AI + shared Knowledge Base ──
@@ -2007,6 +2054,7 @@ app.post('/grn-bills/:id/payment',     grnBillController.addPayment);
 app.delete('/grn-bills/:id/payments/:paymentId', grnBillController.reversePayment);
 app.get('/grn-bills/:id',              grnBillController.getById);
 app.patch('/grn-bills/:id/status',     grnBillController.setStatus);
+app.patch('/grn-bills/:id',            grnBillController.update);
 app.delete('/grn-bills/:id',           grnBillController.remove);
 
 /* ── Customer Sales Invoices + payments ── */
@@ -2375,6 +2423,9 @@ app.get('/dashboard', async (req, res) => {
        that came in this year. Outstanding and overdue are as of today. */
     const salesParams = [];
     const salesOwner = andOwner(req, salesParams);
+    /* the project's own vendor bills, when a project is chosen */
+    let payProject = '';
+    if (pid) { salesParams.push(pid); payProject = `AND "projectId" = $${salesParams.length}`; }
     const s = (await run(`
       WITH fy AS (
         SELECT make_date(EXTRACT(YEAR FROM d)::int - CASE WHEN EXTRACT(MONTH FROM d) < 4 THEN 1 ELSE 0 END, 4, 1) AS start,
@@ -2402,10 +2453,12 @@ app.get('/dashboard', async (req, res) => {
         (SELECT COALESCE(SUM(net_amount - paid), 0) FROM issued WHERE due_date < fy.today AND net_amount - paid > 0.005) AS overdue_amount,
         (SELECT COUNT(*) FROM bills WHERE TRUE ${salesOwner}) AS ra_bills,
         /* what the business owes its vendors today: unpaid vendor bills,
-           the same rows and arithmetic as Payables */
+           the same rows and arithmetic as Payables — for the chosen project
+           when there is one (a vendor bill records its project); switching
+           projects used to leave this figure, like every money tile, the same */
         (SELECT COALESCE(SUM(net_amount - COALESCE(amount_paid, 0)), 0) FROM grn_bills
-          WHERE net_amount > COALESCE(amount_paid, 0) ${salesOwner}) AS payable,
-        (SELECT COUNT(*) FROM grn_bills WHERE net_amount > COALESCE(amount_paid, 0) ${salesOwner}) AS payable_count
+          WHERE net_amount > COALESCE(amount_paid, 0) ${salesOwner} ${payProject}) AS payable,
+        (SELECT COUNT(*) FROM grn_bills WHERE net_amount > COALESCE(amount_paid, 0) ${salesOwner} ${payProject}) AS payable_count
       FROM fy`, salesParams)).rows[0];
     const fyFrom = Number(String(s.fy_start).slice(0, 4));
 
@@ -2420,6 +2473,12 @@ app.get('/dashboard', async (req, res) => {
         overdueAmount: Number(s.overdue_amount),
       },
       payables: { outstanding: Number(s.payable), count: parseInt(s.payable_count) },
+      /* What a chosen project narrows, and what stays the whole company's —
+         so the screen can say so instead of looking unchanged. Invoices,
+         stock and vendors belong to no project. */
+      scope: pid
+        ? { project: Number(pid), companyWide: ['sales', 'vendors', 'stock'] }
+        : { project: null, companyWide: [] },
       hasRaBills:      parseInt(s.ra_bills) > 0,
       totalVendors:    parseInt(t.vendors),
       totalPOs:        parseInt(t.pos),

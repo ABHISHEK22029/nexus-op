@@ -250,6 +250,104 @@ exports.getById = async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
+/* PATCH /grn-bills/:id — change a vendor bill on its own page.
+ *
+ * There was no way to: a wrong rate or the vendor's invoice number typed
+ * late meant deleting the bill and keying it again.
+ *
+ *   Draft     everything — the vendor's invoice number, dates, lines,
+ *             freight, other charges, discount, GST, round-off, notes.
+ *             The totals are worked out here from the lines, never taken
+ *             from the page.
+ *   Approved  only what does not change what is owed: the vendor's
+ *             invoice number, the due date and the notes.
+ *
+ * A revised total may never fall below what has already been paid. */
+const BILL_DRAFT_FIELDS = ['vendor_bill_ref', 'bill_date', 'due_date', 'notes', 'freight', 'other_charges', 'discount', 'gst_rate', 'interstate', 'round_off'];
+const BILL_APPROVED_FIELDS = ['vendor_bill_ref', 'due_date', 'notes'];
+const RECOMPUTE_BILL = ['freight', 'other_charges', 'discount', 'gst_rate', 'interstate', 'round_off'];
+
+exports.update = async (req, res) => {
+  const b = req.body || {};
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const s = scopedById(req, req.params.id);
+    const bill = (await client.query(`SELECT * FROM grn_bills WHERE ${s.where} FOR UPDATE`, s.params)).rows[0];
+    if (!bill) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bill not found' }); }
+    const draft = bill.status === 'Draft';
+    const allowed = draft ? BILL_DRAFT_FIELDS : BILL_APPROVED_FIELDS;
+    const refused = Object.keys(b).filter(k => k !== 'items' && !allowed.includes(k));
+    if (refused.length || (!draft && b.items)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `This bill is ${String(bill.status).toLowerCase()}, so ${[...refused, ...(!draft && b.items ? ['its lines'] : [])].join(', ')} can no longer be changed. Set it back to Draft first.`,
+        editable: allowed,
+      });
+    }
+    const set = {};
+    for (const k of allowed) if (k in b) set[k] = b[k];
+    for (const k of ['vendor_bill_ref', 'notes']) if (k in set) set[k] = String(set[k] ?? '').trim().slice(0, k === 'notes' ? 2000 : 60) || null;
+    for (const k of ['bill_date', 'due_date']) if (k in set) set[k] = set[k] || null;
+    if ('bill_date' in set && !set.bill_date) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The bill date cannot be blank.' }); }
+    for (const [k, label] of [['freight', 'Freight'], ['other_charges', 'Other charges'], ['discount', 'The discount']]) {
+      if (k in set && (!Number.isFinite(Number(set[k] || 0)) || Number(set[k] || 0) < 0)) { await client.query('ROLLBACK'); return res.status(400).json({ error: `${label} must be a number, 0 or more.` }); }
+    }
+    if ('gst_rate' in set && !(Number(set.gst_rate) >= 0 && Number(set.gst_rate) <= 100)) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The GST rate must be between 0 and 100.' }); }
+    if ('round_off' in set && Math.abs(Number(set.round_off) || 0) > 1) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Round off can be at most ₹1 either way.' }); }
+
+    if (draft && (b.items || RECOMPUTE_BILL.some(k => k in set))) {
+      const items = b.items || (await client.query('SELECT * FROM grn_bill_items WHERE grn_bill_id = $1 ORDER BY sort_order', [bill.id])).rows;
+      if (!items.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Add at least one line item.' }); }
+      for (const [n, it] of items.entries()) {
+        if (!String(it.description || '').trim()) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Line ${n + 1}: say what was bought.` }); }
+        const qn = Number(it.quantity), rt = Number(it.rate);
+        if (!Number.isFinite(qn) || qn <= 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Line ${n + 1}: the quantity must be more than zero.` }); }
+        if (!Number.isFinite(rt) || rt < 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Line ${n + 1}: the rate must be a number, 0 or more.` }); }
+      }
+      const opt = {
+        freight: set.freight ?? bill.freight, otherCharges: set.other_charges ?? bill.other_charges,
+        discount: set.discount ?? bill.discount, gstRate: set.gst_rate ?? bill.gst_rate,
+        interstate: 'interstate' in set ? !!set.interstate : !!bill.interstate, roundOff: set.round_off ?? bill.round_off,
+      };
+      const sub = items.reduce((t, it) => t + (Number(it.quantity) || 0) * (Number(it.rate) || 0), 0) + (Number(opt.freight) || 0) + (Number(opt.otherCharges) || 0);
+      if ((Number(opt.discount) || 0) > sub + 0.005) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The discount is more than the bill it comes off.' }); }
+      const t = compute(items, opt);
+      if (Number(bill.amount_paid || 0) > t.net + 0.005) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `₹${Number(bill.amount_paid).toFixed(2)} has already been paid on this bill, which is more than the revised total of ₹${t.net.toFixed(2)}.` });
+      }
+      Object.assign(set, {
+        interstate: opt.interstate, sub_total: t.subTotal, cgst: t.cgst, sgst: t.sgst, igst: t.igst,
+        gst_total: t.gstTotal, net_amount: t.net, amount_in_words: amountInWords(t.net),
+      });
+      if (b.items) {
+        await client.query('DELETE FROM grn_bill_items WHERE grn_bill_id = $1', [bill.id]);
+        let so = 0;
+        for (const l of t.lines) {
+          await client.query(
+            `INSERT INTO grn_bill_items (grn_bill_id, description, hsn, uom, quantity, rate, amount, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [bill.id, String(l.description).trim(), l.hsn || null, l.uom || 'nos', l.quantity || 0, l.rate || 0, l.amount || 0, so++]);
+        }
+      }
+      /* Paid or not follows the new total. */
+      const paid = Number(bill.amount_paid || 0);
+      set.payment_status = paid >= t.net && paid > 0 ? 'Paid' : paid > 0 ? 'Partially Paid' : 'Unpaid';
+    }
+    const cols = Object.keys(set);
+    if (!cols.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Nothing to update' }); }
+    const { rows } = await client.query(
+      `UPDATE grn_bills SET ${cols.map((c, i) => `"${c}" = $${i + 1}`).join(', ')} WHERE id = $${cols.length + 1} RETURNING *`,
+      [...cols.map(c => set[c]), bill.id]);
+    await client.query('COMMIT');
+    res.json(rows[0]);
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+};
+
 // PATCH /grn-bills/:id/status
 exports.setStatus = async (req, res) => {
   const { status } = req.body;

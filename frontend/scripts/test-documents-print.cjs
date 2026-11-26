@@ -88,12 +88,18 @@ function checkPages(label, pages, { rows, closing, minPages = 1 }) {
   }
   ok(split.length === 0, `${label}: no row is split across pages${split.length ? ` (rows ${split.join(', ')})` : ''}`);
 
+  /* Since 26 Nov the closing part is two groups: the totals and the amount
+     in words (closing[0..1]) stay on the page with the last rows; the rest —
+     bank, terms, signature — holds together on one page, that page or the
+     next. Holding all of it together left most of a page empty. */
   const where = closing.map(c => pageOf(c));
   const P = where[0][0];
-  const whole = where.every(w => w.length === 1 && w[0] === P);
-  ok(whole, `${label}: totals → signature on one page (${closing.map((c, i) => `${c}: p${where[i].map(x => x + 1).join('/') || '–'}`).join(', ')})`);
+  const headPart = where.slice(0, 2), restPart = where.slice(2);
+  const R = restPart.length ? restPart[0][0] : P;
+  const whole = headPart.every(w => w.length === 1 && w[0] === P) && restPart.every(w => w.length === 1 && w[0] === R) && (R === P || R === P + 1);
+  ok(whole, `${label}: totals and amount in words together; bank → signature together, on that page or the next (${closing.map((c, i) => `${c}: p${where[i].map(x => x + 1).join('/') || '–'}`).join(', ')})`);
   const carried = [rows, rows - 1].filter(i => i >= 1).every(i => pageOf(`Q${pad(i)}Z`)[0] === P);
-  ok(whole && carried, `${label}: the last ${Math.min(2, rows)} row(s) are on that page with it`);
+  ok(whole && carried, `${label}: the last ${Math.min(2, rows)} row(s) are on the page with the totals`);
 
   const headless = [];
   pages.forEach((p, i) => {

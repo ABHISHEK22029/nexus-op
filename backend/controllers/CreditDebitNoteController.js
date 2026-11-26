@@ -214,6 +214,46 @@ exports.create = async (req, res) => {
 };
 
 // DELETE /credit-debit-notes/:id
+/* PATCH /credit-debit-notes/:id — change a note on its own page.
+ *
+ * A note is issued the moment it is made (Rule 53), so its lines, amounts
+ * and tax stay as they are: a note in error is corrected with another
+ * note, as an invoice is. What can still be put right is what explains it:
+ * the reason, the notes, and the original document's date (the page flags
+ * a missing one in red — without it the note cannot be reported against
+ * the right period). The original's number too, when it was typed in by
+ * hand rather than linked to a document here. */
+const NOTE_FIELDS = ['reason', 'notes', 'ref_date', 'ref_number'];
+
+exports.update = async (req, res) => {
+  const b = req.body || {};
+  try {
+    const s = scopedById(req, req.params.id);
+    const note = (await db.query(`SELECT * FROM credit_debit_notes WHERE ${s.where}`, s.params)).rows[0];
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+    const refused = Object.keys(b).filter(k => !NOTE_FIELDS.includes(k) || (k === 'ref_number' && note.ref_id));
+    if (refused.length) {
+      return res.status(409).json({
+        error: refused.includes('ref_number') && note.ref_id
+          ? 'This note is linked to its original document, so that number comes from the document.'
+          : `A note is issued when it is made, so ${refused.join(', ')} can't be changed. Raise another note to correct the amounts.`,
+        editable: NOTE_FIELDS.filter(k => k !== 'ref_number' || !note.ref_id),
+      });
+    }
+    const set = {};
+    for (const k of NOTE_FIELDS) if (k in b) set[k] = k === 'ref_date' ? (b[k] || null) : (String(b[k] ?? '').trim().slice(0, k === 'notes' ? 2000 : 500) || null);
+    if (set.ref_date && note.note_date && String(set.ref_date).slice(0, 10) > String(note.note_date instanceof Date ? note.note_date.toISOString() : note.note_date).slice(0, 10)) {
+      return res.status(400).json({ error: 'The original document cannot be dated after this note.' });
+    }
+    const cols = Object.keys(set);
+    if (!cols.length) return res.status(400).json({ error: 'Nothing to update' });
+    const { rows } = await db.query(
+      `UPDATE credit_debit_notes SET ${cols.map((c, i) => `"${c}" = $${i + 1}`).join(', ')} WHERE id = $${cols.length + 1} RETURNING *`,
+      [...cols.map(c => set[c]), note.id]);
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
 exports.remove = async (req, res) => {
   try {
     if (!await assertOwned(db, req, res, 'credit_debit_notes', req.params.id, { columns: 'id' })) return;

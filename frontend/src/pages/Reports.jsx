@@ -78,6 +78,11 @@ export default function Reports() {
           <BarChart3 size={24} style={{ color: 'var(--brand-amber)' }} /> Reports &amp; Export
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>A live snapshot of the business, and one-click CSV/Excel export of every register.</p>
+        {activeProject && (
+          <p data-reports-scope style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 2 }}>
+            These cover the whole company, not only {activeProject.name}.
+          </p>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 14 }}>

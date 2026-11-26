@@ -103,7 +103,8 @@ async function cleanup() {
     await go(`/customer-orders?open=${order.id}`);
     await page.waitForSelector(`[data-focus-order="${order.id}"] [data-order-panel]`, { visible: true, timeout: 10000 });
     ok(true, 'an order opened by link shows on its own, with its panel');
-    const addBom = await page.$(`[data-focus-order="${order.id}"] [data-add-bom]`);
+    /* the readiness under the panel arrives a moment after the panel itself */
+    const addBom = await page.waitForSelector(`[data-focus-order="${order.id}"] [data-add-bom]`, { timeout: 15000 }).catch(() => null);
     ok(!!addBom, 'with no bill of materials, readiness offers "Add bill of materials for Bracket"');
     if (addBom) {
       await addBom.click();
@@ -189,7 +190,9 @@ async function cleanup() {
     await go('/payables');
     await click(`[data-payable-bill="${bill.id}"]`);
     await page.waitForFunction((id) => location.pathname === `/grn-bills/${id}`, { timeout: 8000 }, bill.id);
-    await sleep(800);
+    /* the bill itself, not a fixed wait: the page can take a moment to arrive */
+    await page.waitForSelector('[data-bill-links]', { timeout: 30000 }).catch(() => {});
+    await sleep(400);
     ok(!!(await page.$('[data-bill-links] a')), 'Payables opens the bill, and the bill links to its purchase order');
     ok(!/Kavuri Hills/.test(await text()), "the bill never prints another company's address");
 

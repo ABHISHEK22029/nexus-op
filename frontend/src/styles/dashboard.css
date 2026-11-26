@@ -221,3 +221,11 @@
   .dash-panel { padding: 14px; }
   .dash-curve { height: 340px; }
 }
+
+/* A whole-company figure shown while a project is chosen (Dashboard.jsx, `wide`). */
+.dash-kpi-scope {
+  margin-left: auto; flex: none; white-space: nowrap;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-muted); border: 1px solid var(--border-default); border-radius: 999px; padding: 1px 7px;
+}
+.dash-scope-note { margin-top: 4px; font-size: 0.8rem; color: var(--text-muted); max-width: 72ch; }

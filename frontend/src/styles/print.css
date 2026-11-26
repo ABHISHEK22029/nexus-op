@@ -229,11 +229,17 @@
    them — and the bank box on one sheet, the signature on the next. Every
    document page now wraps its closing part (totals → amount in words →
    bank, terms → signature → footer) in `.doc-closing`, and the rules
-   below keep it in one piece and never let it start a sheet alone: the
-   last item row may not be separated from the row before it, and the
-   closing block may not be separated from the last row, so when the block
-   does not fit, the last two rows move over with it. The browser repeats
-   the table header above them.
+   below never let it start a sheet alone: the last item row may not be
+   separated from the row before it, and the totals and the amount in words
+   may not be separated from the last row, so when they do not fit, the
+   last two rows move over with them. The browser repeats the table header
+   above them.
+
+   26 Nov: the whole block used to be held together, so a block that did
+   not fit took the last rows with it and left most of a sheet empty. Now
+   only the totals and the amount in words stay with the rows; the rest —
+   bank, terms, notice, declaration, signature, footer — holds together as
+   one group and may start the next sheet.
 
    Measured, not assumed: scripts/test-documents-print.cjs prints long
    documents and checks where each page breaks.
@@ -259,9 +265,15 @@
 
 @media print {
   .doc-closing {
-    break-inside: avoid !important; page-break-inside: avoid !important;
     break-before: avoid !important; page-break-before: avoid !important;
   }
+  /* the totals, kept whole and with the amount in words under them */
+  .doc-closing > :first-child { break-inside: avoid !important; page-break-inside: avoid !important; break-after: avoid !important; page-break-after: avoid !important; }
+  /* every part kept whole; from the fourth on, each stays with the one
+     before it, so the rest moves as one group: a sheet can break only
+     after the amount in words (or the line under it) */
+  .doc-closing > * { break-inside: avoid !important; page-break-inside: avoid !important; }
+  .doc-closing > :nth-child(n+4) { break-before: avoid !important; page-break-before: avoid !important; }
   .doc-items tbody tr:last-child,
   .inv-items-table tbody tr:last-child { break-before: avoid !important; page-break-before: avoid !important; }
 

@@ -223,7 +223,8 @@ async function cleanup() {
     ok(/Taxable value/.test(p) && /In words:/.test(p) && /Section 34\(1\)/.test(p) && !/Status:/.test(p), 'customer credit note: taxable value, words, Section 34(1), no status');
     await open(`/credit-debit-notes/${vnote.id || vnote.note?.id}`);
     p = await printed();
-    ok(/DST\/0451/.test(p) && /Issued to the supplier/.test(p) && !/Section 34\(3\)/.test(p), "vendor debit note: names the vendor's invoice, no Section 34 claim");
+    const vOk = /DST\/0451/.test(p) && /Issued to the supplier/.test(p) && !/Section 34\(3\)/.test(p);
+    ok(vOk, `vendor debit note: names the vendor's invoice, no Section 34 claim${vOk ? '' : ` — printed: "${(p.match(/Issued against[\s\S]{0,140}/) || [p.slice(0, 160)])[0].replace(/\s+/g, ' ')}"`}`);
 
     section('Purchase order');
     await open(`/po/${po.id}`);

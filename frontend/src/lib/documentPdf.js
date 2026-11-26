@@ -201,6 +201,8 @@ function itemTable(m, rows, { widths, lastRowId } = {}) {
         fontSize: 8.5, alignment: 'left', color: INK,
       };
       if (ci === 0 && ri === rows.length - 1 && lastRowId) cell.id = lastRowId;
+    if (ci === 0 && ri === rows.length - 2 && lastRowId) cell.id = 'prev-row';
+      if (ci === 0 && ri === rows.length - 2 && lastRowId) cell.id = 'prev-row';
       return cell;
     }
     const cell = {
@@ -263,9 +265,13 @@ function closing(m) {
   const irn = m.irn ? box('IRN', { text: soft(m.irn), fontSize: 6.5 }) : null;
   const right = [irn, terms].filter(Boolean);
 
-  return {
-    id: 'closing',
-    stack: [
+  /* Two parts. The first — the totals, the amount in words and the lines
+     under them — must sit on the page the item table ends on. The second —
+     bank, terms, notice, declaration, signature, footer — is kept whole but
+     may start the next page. Holding all of it together moved the last
+     rows over with it whenever it did not fit, and left most of a page
+     empty (a 25-line invoice ended page one at line 23). */
+  const head = [
       { columns: [{ width: '*', ...notes }, { width: 'auto', ...totals }], columnGap: 14, margin: [0, 8, 0, 0] },
       m.words ? {
         table: { widths: ['*'], body: [[{ text: m.words, italics: true, fontSize: 8, fillColor: '#f7f7f7' }]] },
@@ -273,6 +279,8 @@ function closing(m) {
         margin: [0, 8, 0, 0],
       } : null,
       ...((m.lines || []).filter(Boolean).map((l) => ({ text: [{ text: `${l[0]}: `, bold: true }, soft(l[1])], fontSize: 8, margin: [0, 6, 0, 0] }))),
+  ];
+  const rest = [
       (bank || right.length) ? {
         /* Same order as the page: the invoice puts the bank first, the
            quotation its terms. */
@@ -306,8 +314,15 @@ function closing(m) {
         layout: { hLineWidth: (i) => (i === 0 ? 1.2 : 0), vLineWidth: () => 0, hLineColor: () => INK, paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => 4, paddingBottom: () => 4, fillColor: () => BAND },
         margin: [0, 8, 0, 0],
       },
-    ].filter(Boolean),
-  };
+  ];
+  /* The totals are not marked unbreakable: the layout below finds where they
+     land by their id, and an unbreakable block reports no page — so totals
+     pushed to the next page went unnoticed and stood there alone. If they
+     split or move, the last rows are carried over to them. */
+  return [
+    { id: 'closing', stack: head.filter(Boolean) },
+    { id: 'closing-rest', stack: rest.filter(Boolean), unbreakable: true },
+  ];
 }
 
 function definition(m, logo, { carry = 0, widths } = {}) {
@@ -324,14 +339,15 @@ function definition(m, logo, { carry = 0, widths } = {}) {
     facts(m),
     ...(m.before || []),
   ].filter(Boolean);
+  const [totalsPart, restPart] = closing(m);
   if (!carry) {
-    content.push(itemTable(m, rows, { lastRowId: 'last-row' }), closing(m));
+    content.push(itemTable(m, rows, { lastRowId: 'last-row' }), totalsPart, restPart);
   } else {
     if (main.length) content.push(itemTable(m, main, { widths }));
-    /* The carried rows and everything after them start a fresh page
-       together. They come with their own header row, so the new page
-       reads as a continuation of the table above. */
-    content.push({ stack: [itemTable(m, tail, { widths }), closing(m)], pageBreak: 'before' });
+    /* The carried rows and the totals start a fresh page together. They
+       come with their own header row, so the new page reads as a
+       continuation of the table above. The rest follows them. */
+    content.push({ stack: [itemTable(m, tail, { widths }), totalsPart], pageBreak: 'before' }, restPart);
   }
   return {
     pageSize: 'A4',
@@ -356,10 +372,11 @@ const blobOf = (pdfMake, dd) => new Promise((resolve, reject) => {
 /**
  * Lay the document out and save it as `${model.fileName}.pdf`.
  *
- * Laid out once as it comes. If the closing block (totals → signature)
- * then does not sit on the page where the item table ends, it is laid out
- * again with the last rows moved over to start a page with it: the block
- * never splits and never stands on a page alone.
+ * Laid out once as it comes. If the totals (and the amount in words) then
+ * do not sit on the page where the item table ends, it is laid out again
+ * with the last rows moved over to start a page with them: the totals
+ * never stand on a page alone. Bank, terms and signature are kept whole
+ * and follow — on the same page when they fit, else from the next.
  */
 export async function downloadDocumentPdf(model) {
   const [pdfMake, logo] = await Promise.all([loadPdfMake(), logoDataUrl(model.company?.logo_url || null)]);
@@ -371,7 +388,10 @@ export async function downloadDocumentPdf(model) {
   const n = (model.rows || []).length;
   const lastPage = (seen['last-row'] || [])[0];
   const closingPages = seen.closing || [];
-  const apart = n > 0 && lastPage != null && closingPages.some((p) => p !== lastPage);
+  const prevPage = (seen['prev-row'] || [])[0];
+  /* the totals left behind by the last row, or the last row left on a page
+     by itself with them: either way the last rows move over together */
+  const apart = n > 0 && lastPage != null && (closingPages.some((p) => p !== lastPage) || (prevPage != null && prevPage !== lastPage));
   if (apart) {
     /* The widths the first layout settled on, so both halves agree. */
     const table = first.content.find((c) => c && c.table && c.table.headerRows === 1);
