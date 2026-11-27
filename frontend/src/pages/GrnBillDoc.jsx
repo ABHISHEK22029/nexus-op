@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, Undo2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Printer, Undo2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { usePermissions } from '../context/PermissionContext';
 import Attachments from '../components/Attachments';
 import UnitSelect from '../components/UnitSelect';
-import { ItemText, FillRows } from '../components/DocumentKit';
+import { ItemText, FillRows, usePdfDownload, PdfButton } from '../components/DocumentKit';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
 import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../components/DocHistory';
 import { GST_RATES } from '../lib/docTotals';
@@ -77,6 +77,7 @@ export default function GrnBillDoc() {
   const canWrite = can('grn-bills', 'write');
   /* Every change kept; an earlier version shown here, as it was. */
   const hist = useDocHistory({ path: 'grn-bills', id, reload: load, apply: (c) => setBill(cur => ({ ...cur, ...c })) });
+  const pdfDl = usePdfDownload();
   const begin = (field) => { if (bill && canWrite && !hist.viewing) ed.start(billValues(bill), field); };
 
   /* Reopen as draft: the whole document is editable again, and editing
@@ -119,7 +120,7 @@ export default function GrnBillDoc() {
   /* Browser print-to-PDF rather than html2canvas: the output stays real
      text, the print stylesheet controls page breaks, and the item table
      repeats its header. The filename comes from document.title. */
-  const pdf = () => printAs(docFileName('Purchase Bill', bill.bill_number, bill.vendor?.name));
+  const printIt = () => printAs(docFileName('Purchase Bill', bill.bill_number, bill.vendor?.name));
 
   if (missing) return (
     <div style={{ padding: 40, color: 'var(--text-muted)' }}>
@@ -189,6 +190,39 @@ export default function GrnBillDoc() {
     ? 'A draft: the vendor’s invoice number, dates, lines, freight, discount, GST and notes can all change. Totals update as you type.'
     : 'Approved: the vendor’s invoice number, the due date and the notes can still change. To change the amounts, set it back to Draft first.';
   const words = amountInWords(lt ? lt.net : bill.net_amount);
+  /* What the PDF says — the same values as the sheet below. */
+  const fileName = docFileName('Purchase Bill', bill.bill_number, vend.name);
+  const pdfModel = () => ({
+    fileName, title: 'PURCHASE BILL', number: bill.bill_number, framed: true, company: co,
+    meta: [['Bill #', bill.bill_number], ['Date', date], bill.due_date && ['Due', fmt(bill.due_date)], bill.vendor_bill_ref && ["Vendor's Invoice No.", bill.vendor_bill_ref]],
+    parties: [
+      { title: 'Vendor', name: vend.name, lines: vendLines, gstin: vend.gstin || '' },
+      { title: 'Against', text: `${bill.grn_number || (bill.grn_id ? `GRN-${String(bill.grn_id).padStart(5, '0')}` : '—')} · PO ${bill.po_id ? (bill.po_number || `#${bill.po_id}`) : '—'}` },
+    ],
+    columns: [
+      { key: 'index', label: '#' }, { key: 'description', label: 'Description' }, { key: 'hsn', label: 'HSN/SAC' },
+      { key: 'uom', label: 'UOM', align: 'center' }, { key: 'quantity', label: 'Qty', align: 'right' },
+      { key: 'rate', label: 'Rate', align: 'right' }, { key: 'amount', label: 'Amount', align: 'right', strong: true },
+    ],
+    boldDescription: true,
+    rows: bill.items.map((it, i) => [String(i + 1), it.description, it.hsn || '-', it.uom || '', String(Number(it.quantity)), rup(it.rate), rup(it.amount)]),
+    notes: bill.notes,
+    totals: [
+      { label: 'SUB-TOTAL', value: rup(bill.sub_total) },
+      Number(bill.freight) ? { label: 'FREIGHT', value: rup(bill.freight) } : null,
+      Number(bill.other_charges) ? { label: 'OTHER CHARGES', value: rup(bill.other_charges) } : null,
+      Number(bill.discount) ? { label: 'DISCOUNT', value: `-${rup(bill.discount)}` } : null,
+      ...(bill.interstate
+        ? [{ label: `IGST @ ${bill.gst_rate}%`, value: rup(bill.igst) }]
+        : [{ label: `CGST @ ${Number(bill.gst_rate) / 2}%`, value: rup(bill.cgst) }, { label: `SGST @ ${Number(bill.gst_rate) / 2}%`, value: rup(bill.sgst) }]),
+      Number(bill.round_off) ? { label: 'ROUND OFF', value: rup(bill.round_off) } : null,
+      { label: 'NET PAYABLE', value: rup(bill.net_amount), strong: true },
+      ...(paid > 0 ? [{ label: 'AMOUNT PAID', value: `-${rup(paid)}` }, { label: 'BALANCE', value: rup(balance), strong: true }] : []),
+    ],
+    words: `Amount in Words: ${words}`,
+    signCompany: co.name || co.tradeName || '—',
+    footerLeft: co.invoice_footer_note || '', footerRight: `${bill.bill_number}  |  ${date}`,
+  });
   const money = (k, label, bad) => (
     <tr><td className="tl">{label}</td><td className="tv">
       <Field type="number" min="0" step="any" inputMode="decimal" name={k} label={label.charAt(0) + label.slice(1).toLowerCase()} placeholder="0.00" align="right"
@@ -220,14 +254,17 @@ export default function GrnBillDoc() {
               {['Draft', 'Approved'].map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           ) : <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>{bill.status}</span>}
-          <button onClick={pdf} className="inv-act-btn"><Download size={15} /> PDF</button>
-          <button onClick={pdf} className="inv-act-btn primary"><Printer size={15} /> Print</button>
+          {/* "PDF" opened the print dialog; now it saves a real file. */}
+          <PdfButton pdf={pdfDl} model={pdfModel} fileName={fileName} className="inv-act-btn" />
+          <button onClick={printIt} className="inv-act-btn primary"><Printer size={15} /> Print</button>
         </div>
         )}
       </div>
 
       <HistoryPanel hist={hist} what={`Vendor bill ${bill.bill_number}`} />
-      <VersionBar hist={hist} onPrint={pdf} />
+      <VersionBar hist={hist} onPrint={printIt}>
+        <PdfButton pdf={pdfDl} model={pdfModel} label="PDF of this version" />
+      </VersionBar>
       {ed.editing && <EditBar ed={ed} what={bill.bill_number} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />}
 
       {(bill.payments || []).length > 0 && !ed.editing && (

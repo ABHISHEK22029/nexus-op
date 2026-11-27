@@ -26,7 +26,7 @@ import InlineEdit from '../components/InlineEdit';
 import UnitSelect from '../components/UnitSelect';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate, CopyPicker, COPIES, ItemText, StatusPill,
-  FillRows
+  FillRows, usePdfDownload, PdfButton
 } from '../components/DocumentKit';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
 import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../components/DocHistory';
@@ -99,6 +99,7 @@ export default function DeliveryChallanDoc() {
   const canWrite = can('delivery-challans', 'write');
   /* Every change kept; an earlier version shown here, as it was. */
   const hist = useDocHistory({ path: 'delivery-challans', id, reload: load, apply: (c) => setDc(cur => ({ ...cur, ...c })) });
+  const pdf = usePdfDownload();
   const begin = (field) => { if (dc && canWrite && !hist.viewing) ed.start(challanValues(dc), field); };
 
   /* Reopen as draft: the whole document is editable again, and editing
@@ -179,6 +180,40 @@ export default function DeliveryChallanDoc() {
   const posCode = stateCode(posName);
   const ewayMissing = needsEway && !dc.eway_bill_no;
 
+  /* What the PDF says — the same values as the sheet below. */
+  const fileName = docFileName('Delivery Challan', dc.challan_number, shipName);
+  const pdfModel = () => ({
+    fileName, title: 'DELIVERY CHALLAN', subtitle: copy, number: dc.challan_number, company: co,
+    meta: [['No.', dc.challan_number], ['Date', fmtDate(dc.challan_date)], dc.order && ['Order', dc.order.order_number], dc.order?.customer_po_ref && ['Your PO', dc.order.customer_po_ref]],
+    parties: [
+      { title: 'Ship To', note: '— where the goods go', name: shipName, lines: [shipAddr, shipState], gstin: dc.ship_to_gstin ?? cust.gstin ?? '' },
+      { title: 'Bill To', name: cust.name, lines: [cust.billing_address, cust.state], gstin: cust.gstin || '' },
+    ],
+    strip: { items: [
+      ['Dispatch through', dc.dispatch_through || dc.transporter_name],
+      ['Vehicle No.', dc.vehicle_no],
+      ['LR / Docket', dc.lr_no],
+      ['Place of supply', posName ? `${posName}${posCode ? ` (${posCode})` : ''}` : ''],
+      ['E-way Bill No.', dc.eway_bill_no],
+      dc.eway_bill_date && ['E-way Bill Date', fmtDate(dc.eway_bill_date)],
+      dc.driver_name && ['Driver', `${dc.driver_name}${dc.driver_phone ? ' · ' + dc.driver_phone : ''}`],
+      dc.transporter_gstin && ['Transporter GSTIN', dc.transporter_gstin],
+    ] },
+    columns: [
+      { key: 'index', label: '#' }, { key: 'description', label: 'Description' }, { key: 'hsn', label: 'HSN/SAC' },
+      { key: 'uom', label: 'UOM', align: 'center' }, { key: 'quantity', label: 'Qty', align: 'right' },
+      { key: 'amount', label: 'Value', align: 'right', strong: true },
+    ],
+    boldDescription: true,
+    rows: (dc.items || []).map((it, i) => [String(i + 1), it.description, it.hsn || '—', it.uom || '—', String(Number(it.quantity)), `₹${rup(it.amount)}`]),
+    notes: dc.notes, totals: [{ label: 'Total value of goods', value: `₹${rup(value)}`, strong: true }],
+    lines: needsEway ? [['E-way bill', 'Above ₹50,000 with GST — an e-way bill applies.']] : [],
+    notice: ['This is not a tax invoice.', 'It accompanies the goods for transport and delivery under Rule 55. The tax invoice for this consignment is raised separately and is the document that carries input tax credit.'],
+    receiver: 'Received the goods in good condition (name, sign & date)',
+    footerLeft: "Goods once dispatched are transported at the consignee's risk unless otherwise agreed.",
+    footerRight: dc.challan_number,
+  });
+
   const th = { padding: '9px 10px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-default)' };
   const td = { padding: '9px 10px', fontSize: '0.85rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)', verticalAlign: 'top' };
   const fig = { textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
@@ -217,13 +252,16 @@ export default function DeliveryChallanDoc() {
           {/* The challan travels with the goods; the customer usually wants
               it ahead of the lorry. */}
           <button onClick={() => setEmailing(true)} className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Mail size={15} /> Email</button>
-          <button onClick={() => printAs(docFileName('Delivery Challan', dc.challan_number, shipName))} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
+          <PdfButton pdf={pdf} model={pdfModel} fileName={fileName} />
+          <button onClick={() => printAs(fileName)} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
         </div>
         )}
       </div>
 
       <HistoryPanel hist={hist} what={`Delivery challan ${dc.challan_number}`} />
-      <VersionBar hist={hist} onPrint={() => printAs(docFileName('Delivery Challan', dc.challan_number, shipName))} />
+      <VersionBar hist={hist} onPrint={() => printAs(fileName)}>
+        <PdfButton pdf={pdf} model={pdfModel} label="PDF of this version" />
+      </VersionBar>
       {ed.editing && <EditBar ed={ed} what={dc.challan_number} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />}
 
       {/* On screen only: where this challan came from and what billed it. */}

@@ -29,20 +29,27 @@ export default function Reports() {
 
   const load = async () => {
     const g = (p) => fetch(`${API}${p}`).then(r => r.ok ? r.json() : []).catch(() => []);
-    const [sales, bills, expenses, quotations, orders] = await Promise.all([
+    /* The money from the server's totals ({ limit } asks for the paged
+       answer, which carries them): summed in the browser, receivables left
+       out credit notes, and every figure stopped at the newest 1,000 rows. */
+    const sum = (p) => fetch(`${API}${p}?limit=1`).then(r => r.ok ? r.json() : null).catch(() => null);
+    const [sales, bills, expenses, quotations, orders, sS, bS, eS] = await Promise.all([
       g('/sales-invoices'), g('/grn-bills'), g('/expenses'), g('/quotations'), g('/customer-orders'),
+      sum('/sales-invoices'), sum('/grn-bills'), sum('/expenses'),
     ]);
-    setD({ sales, bills, expenses, quotations, orders });
+    setD({ sales, bills, expenses, quotations, orders, totals: { sales: sS, bills: bS, expenses: eS } });
   };
   useEffect(() => { load(); }, []);
 
   /* A cancelled invoice is not a sale. Drafts stay in: nothing moves an
      invoice out of Draft except the status menu, so most real ones are. */
   const issued = d.sales.filter(r => r.status !== 'Cancelled');
-  const totalSales = issued.reduce((s, r) => s + (r.net_amount || 0), 0);
-  const receivable = issued.reduce((s, r) => s + Math.max(0, (r.net_amount || 0) - (r.amount_paid || 0)), 0);
-  const totalPurch = d.bills.reduce((s, r) => s + (r.net_amount || 0), 0);
-  const totalExp = d.expenses.reduce((s, r) => s + (r.amount || 0), 0);
+  const T = d.totals || {};
+  const pick = (x, k, fallback) => (x && x.summary && x.summary[k] != null ? Number(x.summary[k]) : fallback);
+  const totalSales = pick(T.sales, 'billed', issued.reduce((s, r) => s + (Number(r.net_amount) || 0), 0));
+  const receivable = pick(T.sales, 'outstanding', issued.reduce((s, r) => s + Math.max(0, (Number(r.net_amount) || 0) - (Number(r.amount_paid) || 0) - (Number(r.credited) || 0)), 0));
+  const totalPurch = pick(T.bills, 'billed', d.bills.reduce((s, r) => s + (Number(r.net_amount) || 0), 0));
+  const totalExp = pick(T.expenses, 'amount', d.expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0));
   const opMargin = totalSales - totalPurch - totalExp;
 
   const download = async (name, fetchPath, transform) => {

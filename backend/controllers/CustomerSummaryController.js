@@ -7,6 +7,7 @@
    computed from the transactions we already have.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { CREDITED_SQL } = require('../shared/invoiceSettle');
 const { isCrossTenant } = require('../shared/roles');
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -69,11 +70,11 @@ exports.summary = async (req, res) => {
                        COALESCE(SUM(COALESCE(amount_paid,0)),0) AS received,
                        COUNT(*)::int AS invoices,
                        COUNT(*) FILTER (WHERE due_date < (NOW() AT TIME ZONE 'Asia/Kolkata')::date
-                                          AND net_amount - COALESCE(amount_paid,0) > 0.005)::int AS overdue_count,
-                       COALESCE(SUM(net_amount - COALESCE(amount_paid,0))
+                                          AND net_amount - COALESCE(amount_paid,0) - credited > 0.005)::int AS overdue_count,
+                       COALESCE(SUM(net_amount - COALESCE(amount_paid,0) - credited)
                                 FILTER (WHERE due_date < (NOW() AT TIME ZONE 'Asia/Kolkata')::date
-                                          AND net_amount - COALESCE(amount_paid,0) > 0.005),0) AS overdue_amount
-                FROM sales_invoices
+                                          AND net_amount - COALESCE(amount_paid,0) - credited > 0.005),0) AS overdue_amount
+                FROM (SELECT si.*, ${CREDITED_SQL('si')} AS credited FROM sales_invoices si) AS sales_invoices
                 WHERE customer_id = $1 AND ${own()} AND status <> 'Cancelled'`, sc),
 
       /* Notes raised to this customer (party_type 'customer', party_id the

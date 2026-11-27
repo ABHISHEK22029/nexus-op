@@ -143,7 +143,7 @@ export default function SalesInvoices() {
                 {q.rows.map(r => {
                   /* To the paisa, exactly as the invoice page works it out, so
                      the balance here and the one printed on the invoice agree. */
-                  const due = r.status === 'Cancelled' ? 0 : Math.max(0, Math.round(((Number(r.net_amount) || 0) - (Number(r.amount_paid) || 0)) * 100) / 100);
+                  const due = r.status === 'Cancelled' ? 0 : Math.max(0, Math.round(((Number(r.net_amount) || 0) - (Number(r.amount_paid) || 0) - (Number(r.credited) || 0)) * 100) / 100);
                   return (
                     <tr key={r.id} style={{ borderTop: '1px solid var(--border-subtle)', cursor: 'pointer' }}
                         onClick={() => navigate(`/sales-invoices/${r.id}`)}

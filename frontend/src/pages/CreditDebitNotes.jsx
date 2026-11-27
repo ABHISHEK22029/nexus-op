@@ -78,7 +78,15 @@ export default function CreditDebitNotes() {
         refNumber: inv.invoice_number || '', refId: inv.id, refDate: String(inv.invoice_date || '').slice(0, 10),
         gstRate: String(inv.gst_rate ?? h.gstRate) }));
       if ((inv.items || []).length) {
-        setLines(inv.items.map(it => ({ description: it.description || '', hsn: it.hsn || '', quantity: it.quantity ?? '', uom: it.uom || 'nos', rate: it.rate ?? '' })));
+        /* At the price actually charged. Invoice lines keep the rate before
+           the invoice's discount, which sits on the invoice: copied as it was,
+           a note for 5 of 10 @ ₹100 less 10% credited ₹590, not ₹531, and
+           crediting all 10 was refused as more than the invoice. */
+        const sub = Number(inv.sub_total) || 0;
+        const off = Number(inv.discount) || 0;
+        const factor = sub > 0 && off > 0 ? (sub - off) / sub : 1;
+        const charged = (rate) => (rate === '' || rate == null ? '' : String(Math.round(Number(rate) * factor * 100) / 100));
+        setLines(inv.items.map(it => ({ description: it.description || '', hsn: it.hsn || '', quantity: it.quantity ?? '', uom: it.uom || 'nos', rate: charged(it.rate) })));
       }
       setParams({}, { replace: true });
     })();
@@ -93,7 +101,8 @@ export default function CreditDebitNotes() {
     fetch(url).then(r => (r.ok ? r.json() : [])).then(d => {
       const rows = Array.isArray(d) ? d : (d.items || []);
       setRefs(head.partyType === 'customer'
-        ? rows.filter(x => x.status !== 'Cancelled').map(x => ({ number: x.invoice_number, date: String(x.invoice_date || '').slice(0, 10), id: x.id }))
+        /* not a draft (not issued yet) or a cancelled one: the server refuses a note against either */
+        ? rows.filter(x => x.status !== 'Cancelled' && x.status !== 'Draft').map(x => ({ number: x.invoice_number, date: String(x.invoice_date || '').slice(0, 10), id: x.id }))
         : rows.filter(x => String(x.vendor_id) === String(head.partyId)).map(x => ({ number: x.bill_number, date: String(x.bill_date || '').slice(0, 10), id: x.id })));
     }).catch(() => setRefs([]));
   }, [head.partyId, head.partyType]);

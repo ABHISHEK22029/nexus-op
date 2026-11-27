@@ -224,7 +224,9 @@ exports.create = async (req, res) => {
          on an invoice breaks Rule 46(b). Defaulted in SQL rather than in the
          handler so it holds for any caller, not just this form. */
       [req.user?.orgId || null, customerId, qnum, quoteDate || null, validUntil || null,
-       t.subTotal, discount || 0, gstRate ?? 18, interstate, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null, terms || null,
+       /* the rate the totals were worked out at: a cleared GST box ('') is
+          0%, as compute() reads it — saved as '' it was a 500 */
+       t.subTotal, discount || 0, gstRate == null ? 18 : (Number(gstRate) || 0), interstate, t.cgst, t.sgst, t.igst, t.gstTotal, roundOff || 0, t.net, amountInWords(t.net), notes || null, terms || null,
        deliveryDays, deliveryNote]);
     const qid = rows[0].id;
     let so = 0;

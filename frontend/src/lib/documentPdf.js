@@ -150,7 +150,9 @@ function letterhead(m, logo) {
 function parties(m) {
   const list = (m.parties || []).filter(Boolean);
   if (!list.length) return null;
-  const cell = (p) => ({
+  /* `text`: a box of words, not a party — the note's reason, what a bill
+     was raised against. */
+  const cell = (p) => (p.text != null && !p.name ? { text: soft(p.text || '—'), fontSize: 8, color: SOFT } : {
     stack: [
       { text: p.name || '—', bold: true, fontSize: 9, margin: [0, 0, 0, 1] },
       ...((p.lines || []).filter(Boolean).map((l) => ({ text: soft(l), fontSize: 7.5, color: SOFT }))),
@@ -168,6 +170,31 @@ function parties(m) {
     layout: {
       hLineWidth: () => 0.8, vLineWidth: () => 0.8, hLineColor: () => INK, vLineColor: () => INK,
       paddingLeft: () => 7, paddingRight: () => 7, paddingTop: () => 3, paddingBottom: () => 4,
+    },
+    margin: [0, 0, 0, 6],
+  };
+}
+
+/* A ruled strip of particulars, each a small label over its value: the
+   challan's transport details, the note's original invoice. */
+function strip(m) {
+  const s = m.strip;
+  const items = s && (s.items || []).filter(Boolean);
+  if (!items || !items.length) return null;
+  const row = items.map(([l, v]) => ({ stack: [
+    { text: String(l).toUpperCase(), fontSize: 6, bold: true, color: MUTED, characterSpacing: 0.5, margin: [0, 0, 0, 1.5] },
+    { text: soft(v == null || v === '' ? '—' : v), fontSize: 8, bold: true },
+  ] }));
+  const body = s.title
+    ? [[{ text: s.title.toUpperCase(), colSpan: items.length, fontSize: 6.5, bold: true, characterSpacing: 0.6, fillColor: BAND }, ...items.slice(1).map(() => ({}))], row]
+    : [row];
+  return {
+    table: { widths: items.map(() => '*'), body },
+    layout: {
+      hLineWidth: () => 0.8, hLineColor: () => INK,
+      vLineWidth: (i, node) => (i === 0 || i === node.table.widths.length ? 0.8 : 0.5),
+      vLineColor: (i, node) => (i === 0 || i === node.table.widths.length ? INK : LIGHT),
+      paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => 3, paddingBottom: () => 3.5,
     },
     margin: [0, 0, 0, 6],
   };
@@ -268,7 +295,7 @@ function closing(m) {
       paddingLeft: () => 8, paddingRight: () => 8, paddingTop: () => 2.5, paddingBottom: () => 2.5,
     },
   };
-  const notes = m.notes ? { stack: [{ text: 'Notes', bold: true, fontSize: 8, margin: [0, 0, 0, 2] }, { text: soft(m.notes), fontSize: 7.5, color: SOFT }] } : { text: '' };
+  const notes = m.notes ? { stack: [{ text: m.notesTitle || 'Notes', bold: true, fontSize: 8, margin: [0, 0, 0, 2] }, { text: soft(m.notes), fontSize: 7.5, color: SOFT }] } : { text: '' };
 
   const bank = m.bank && (m.bank.rows || []).length ? box(m.bank.title, {
     table: { widths: ['auto', '*'], body: m.bank.rows.map(([l, v]) => [{ text: l, color: MUTED, fontSize: 7.5 }, { text: soft(v), bold: true, fontSize: 7.5 }]) },
@@ -311,15 +338,18 @@ function closing(m) {
       } : null,
       m.declaration ? { text: [{ text: 'Declaration: ', bold: true }, m.declaration], fontSize: 7.5, color: SOFT, margin: [0, 8, 0, 0] } : null,
       {
+        /* `receiver`: one line to sign at the left (the challan's "received
+           the goods"), or several (the RA bill's prepared by, checked by). */
         columns: [
-          m.receiver ?{ width: 170, stack: [{ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 160, y2: 0, lineWidth: 0.6 }], margin: [0, 26, 0, 3] }, { text: m.receiver, fontSize: 7.5, color: SOFT }] } : { width: '*', text: '' },
+          ...[].concat(m.receiver || []).map((r) => ({ width: 150, stack: [{ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 140, y2: 0, lineWidth: 0.6 }], margin: [0, 26, 0, 3] }, { text: r, fontSize: 7.5, color: SOFT }] })),
           { width: '*', text: '' },
           { width: 170, stack: [
             { canvas: [{ type: 'line', x1: 10, y1: 0, x2: 160, y2: 0, lineWidth: 0.6 }], margin: [0, 26, 0, 3] },
-            { text: 'Authorized Signatory', fontSize: 8, color: SOFT, alignment: 'center' },
-            { text: `For ${(m.company || {}).name || '—'}`, fontSize: 8.5, bold: true, alignment: 'center', margin: [0, 6, 0, 0] },
+            { text: m.signLabel || 'Authorized Signatory', fontSize: 8, color: SOFT, alignment: 'center' },
+            { text: m.signCompany || `For ${(m.company || {}).name || '—'}`, fontSize: 8.5, bold: true, alignment: 'center', margin: [0, 6, 0, 0] },
           ] },
         ],
+        columnGap: 10,
         margin: [0, 10, 0, 0],
       },
       /* Only the company's own footer note: the default "This is a
@@ -354,7 +384,8 @@ function definition(m, logo, { carry = 0, widths, fillMain = 0, fillTail = 0 } =
   const content = [
     letterhead(m, logo),
     { canvas: [{ type: 'line', x1: 0, y1: 0, x2: PAGE_W - margins[0] - margins[2], y2: 0, lineWidth: 1.4 }], margin: [0, 0, 0, 8] },
-    parties(m),
+    m.stripFirst ? strip(m) : parties(m),
+    m.stripFirst ? parties(m) : strip(m),
     facts(m),
     ...(m.before || []),
   ].filter(Boolean);

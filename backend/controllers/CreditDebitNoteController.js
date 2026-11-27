@@ -5,6 +5,7 @@
    source invoice / bill. Documents (statements/exports net them).
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+const { settleInvoice, settleBill } = require('../shared/invoiceSettle');
 const { isInterstate } = require('../shared/gstStates');
 const { profileFor } = require('../shared/companyProfile');
 const { allocate } = require('../shared/docSeries');
@@ -152,6 +153,15 @@ exports.create = async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: `${original.number} is for a different ${partyType}. A note adjusts the ${partyType === 'customer' ? 'invoice' : 'bill'} of the same ${partyType}.` });
       }
+      /* Only against an invoice that stands: a draft is not issued yet, and a
+         cancelled one is no longer owed — a note against either adjusts
+         nothing real, and the customer page took it off what they owe. */
+      if (original && partyType === 'customer' && ['Draft', 'Cancelled'].includes(original.status || 'Draft')) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: original.status === 'Cancelled'
+          ? `${original.number} is cancelled, so there is nothing to adjust with a note.`
+          : `${original.number} is still a draft. Change the draft itself, or issue it first.` });
+      }
       if (original) {
         ref = { type: ref.type || (partyType === 'customer' ? 'sales_invoice' : 'grn_bill'), id: original.id, date: ref.date || original.d };
         /* A note to a vendor names THEIR invoice — the number their books and
@@ -207,6 +217,9 @@ exports.create = async (req, res) => {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
         [nid, l.description, l.hsn || null, l.uom || 'nos', l.quantity || 0, l.rate || 0, l.amount || 0, so++]);
     }
+    /* The invoice it credits may now be settled (received + credited). */
+    if (partyType === 'customer' && ref.id) await settleInvoice(client, ref.id);
+    if (partyType === 'vendor' && ref.id) await settleBill(client, ref.id);
     await client.query('COMMIT');
     res.json({ id: nid, noteNumber: num, total });
   } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
@@ -322,6 +335,8 @@ exports.update = async (req, res) => {
     const { rows } = await client.query(
       `UPDATE credit_debit_notes SET ${cols.map((c, i) => `"${c}" = $${i + 1}`).join(', ')} WHERE id = $${cols.length + 1} RETURNING *`,
       [...cols.map(c => set[c]), note.id]);
+    if (note.party_type === 'customer' && note.ref_id && 'total' in set) await settleInvoice(client, note.ref_id);
+    if (note.party_type === 'vendor' && note.ref_id && 'total' in set) await settleBill(client, note.ref_id);
     await client.query('COMMIT');
     res.json(rows[0]);
   } catch (e) {
@@ -330,11 +345,24 @@ exports.update = async (req, res) => {
   } finally { client.release(); }
 };
 
+/* Only while it has not been sent. A sent note is in the party's books and
+   the GST return: deleting it left a gap in the series and changed what the
+   customer owes with no record of why. It is reversed with another note. */
 exports.remove = async (req, res) => {
+  const client = await db.getClient();
   try {
-    if (!await assertOwned(db, req, res, 'credit_debit_notes', req.params.id, { columns: 'id' })) return;
-    const r = await db.query('DELETE FROM credit_debit_notes WHERE id = $1', [req.params.id]);
-    if (!r.rowCount) return res.status(404).json({ error: 'not found' });
+    const note = await assertOwned(db, req, res, 'credit_debit_notes', req.params.id, { columns: 'id, status, note_number, party_type, ref_id' });
+    if (!note) return;
+    if (note.status === 'Sent') {
+      return res.status(409).json({ error: `${note.note_number} has been sent, so it can't be deleted. Raise a note the other way to reverse it.` });
+    }
+    await client.query('BEGIN');
+    const r = await client.query("DELETE FROM credit_debit_notes WHERE id = $1 AND COALESCE(status, '') <> 'Sent'", [req.params.id]);
+    if (!r.rowCount) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'not found' }); }
+    if (note.party_type === 'customer' && note.ref_id) await settleInvoice(client, note.ref_id);
+    if (note.party_type === 'vendor' && note.ref_id) await settleBill(client, note.ref_id);
+    await client.query('COMMIT');
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { await client.query('ROLLBACK').catch(() => {}); res.status(500).json({ error: e.message }); }
+  finally { client.release(); }
 };

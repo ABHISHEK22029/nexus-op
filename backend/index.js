@@ -45,6 +45,7 @@ const { authenticate, requireRole } = require('./middleware/auth');
    isCrossTenant. That only worked because the call happens per-request,
    long after module load — a distinction too subtle to rely on. */
 const { can, isCrossTenant, READ, WRITE, DELETE } = require('./shared/roles');
+const { DEBITED_SQL } = require('./shared/invoiceSettle');
 const { ACTION_FOR_METHOD, allow } = require('./middleware/permissions');
 const { runBulk, callRoute } = require('./shared/bulk');
 /* every change to a document is kept — see shared/docHistory */
@@ -1841,7 +1842,7 @@ async function duplicateCode(table, body, ownerId, exceptId = null) {
   return rows[0] ? `The code ${String(body.sku_code).trim()} is already used by “${rows[0].name}”. Give this product its own code.` : null;
 }
 
-function registerOwnedCrud(route, table, cols, searchCols) {
+function registerOwnedCrud(route, table, cols, searchCols, { summary } = {}) {
   app.get(`/${route}`, async (req, res) => {
     try {
       const isAdmin = isCrossTenant(req.user?.role);
@@ -1862,6 +1863,8 @@ function registerOwnedCrud(route, table, cols, searchCols) {
         defaultDir: 'DESC',
         where: scope.where,
         params: scope.params,
+        /* a total over every matching row, not the page on screen */
+        summary,
       });
       res.json(result);
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1998,7 +2001,9 @@ app.patch('/raw-materials/:id', materialUnits);
    requirements engine reads every one of them. */
 registerOwnedCrud('raw-materials','raw_materials', ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn',
   'base_uom', 'purchase_uom', 'category', 'moq', 'lead_time_days']);
-registerOwnedCrud('expenses',     'expenses',      ['project_id', 'category', 'description', 'amount', 'expense_date', 'paid_to', 'payment_mode', 'reference', 'notes']);
+/* "Total Recorded Spend" added up the 25 rows on the page it was on. */
+registerOwnedCrud('expenses',     'expenses',      ['project_id', 'category', 'description', 'amount', 'expense_date', 'paid_to', 'payment_mode', 'reference', 'notes'],
+  undefined, { summary: 'COALESCE(SUM(amount), 0)::numeric AS amount' });
 
 /* ── Customer Orders ── */
 app.get('/customer-orders',            salesController.getOrders);
@@ -2287,6 +2292,45 @@ registerCrud('work-orders', 'work_orders', ['name', 'vendorId', 'boqId', 'startD
 registerCrud('boq', 'boq_items', ['itemCode', 'description', 'unit', 'estimatedQuantity', 'rate'], 'BOQ_UPDATED');
 app.patch('/indent/:id', checkRefs({ workOrderId: 'work_orders', boqId: 'boq_items' }));
 registerCrud('indent', 'indents', ['workOrderId', 'boqId', 'requestedQuantity', 'requiredDate', 'chainage', 'status'], 'INDENT_UPDATED');
+/* A measurement that has been billed holds that bill up. RA bills bill
+   (measured − already billed) per work order and BOQ line, so moving an
+   entry to another work order, shrinking it or deleting it after billing
+   let the same quantity be billed again — and left the first work order
+   showing more billed than measured, with nothing to say so. An edit or
+   delete that would take what is measured below what is billed is refused.
+   And a blank work order or BOQ line is "none", not '' (an integer column
+   refused it with a 500 while the page said "saved"). */
+async function mbBilledGuard(req, res, next) {
+  try {
+    for (const k of ['workOrderId', 'boqId', 'length', 'width', 'depth']) if (req.body && req.body[k] === '') req.body[k] = null;
+    const own = ownerClause(req, 2);
+    const row = (await db.query(
+      `SELECT id, "workOrderId", "boqId", COALESCE("measuredQuantity", 0) AS qty FROM measurement_book WHERE id = $1${own.sql}`,
+      [req.params.id, ...own.params])).rows[0];
+    if (!row || !row.workOrderId || !row.boqId) return next();
+    const totals = async (wo, boq) => (await db.query(
+      `SELECT (SELECT COALESCE(SUM("measuredQuantity"), 0) FROM measurement_book WHERE "workOrderId" = $1 AND "boqId" = $2) AS measured,
+              (SELECT COALESCE(SUM(bli.quantity), 0) FROM bill_line_items bli JOIN bills b ON b.id = bli.bill_id
+                WHERE b."workOrderId" = $1 AND bli.boq_id = $2 AND COALESCE(b.status, '') NOT IN ('Rejected', 'Cancelled')) AS billed`,
+      [wo, boq])).rows[0];
+    const t = await totals(row.workOrderId, row.boqId);
+    const billed = Number(t.billed) || 0;
+    if (billed <= 0.0005) return next();
+    const b = req.body || {};
+    const moves = req.method === 'DELETE'
+      || (b.workOrderId !== undefined && String(b.workOrderId) !== String(row.workOrderId))
+      || (b.boqId !== undefined && String(b.boqId) !== String(row.boqId));
+    const newQty = req.method === 'DELETE' || moves ? 0
+      : (b.measuredQuantity !== undefined ? Number(b.measuredQuantity) || 0 : Number(row.qty));
+    const left = (Number(t.measured) || 0) - Number(row.qty) + newQty;
+    if (left < billed - 0.0005) {
+      return res.status(409).json({ error: `This measurement has been billed: ${billed} is billed against this work order and BOQ line, and ${req.method === 'DELETE' ? 'deleting' : 'this change'} would leave only ${Math.max(0, Math.round(left * 1000) / 1000)} measured. Reject the RA bill first, or record a correcting measurement.` });
+    }
+    next();
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+app.patch('/mb/:id', mbBilledGuard);
+app.delete('/mb/:id', mbBilledGuard);
 app.patch('/mb/:id', checkRefs({ workOrderId: 'work_orders', boqId: 'boq_items' }));
 registerCrud('mb', 'measurement_book', ['boqId', 'workOrderId', 'chainage', 'length', 'width', 'depth', 'measuredQuantity'], 'MB_UPDATED');
 app.patch('/grn/:id', grnMovedStock);
@@ -2395,7 +2439,9 @@ app.get('/dashboard', async (req, res) => {
              AND COALESCE(received_quantity, 0) > 0
              AND COALESCE(received_quantity, 0) >= COALESCE(quantity, 0) - 0.001) AS delivered,
           (SELECT COUNT(*)                          FROM inventory       WHERE TRUE ${ownerOnly.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + scopeParams.length}`)}) AS inv,
-          (SELECT COALESCE(SUM("grossAmount"), 0)   FROM bills           WHERE ${scope}) AS billed,
+          /* not a rejected or cancelled bill: its quantities are billed again
+             on the next one, and counted twice they halved "% released" */
+          (SELECT COALESCE(SUM("grossAmount"), 0)   FROM bills           WHERE ${scope} AND COALESCE(status, '') NOT IN ('Rejected', 'Cancelled')) AS billed,
           (SELECT COALESCE(SUM("netAmount"), 0)     FROM bills           WHERE ${scope} AND status = 'Paid') AS paid,
           (SELECT COUNT(*)                          FROM indents         WHERE ${scope} AND status = 'Pending') AS indents,
           (SELECT COALESCE(SUM(quantity), 0)        FROM purchase_orders WHERE ${scope}) AS po_qty
@@ -2466,9 +2512,10 @@ app.get('/dashboard', async (req, res) => {
            the same rows and arithmetic as Payables — for the chosen project
            when there is one (a vendor bill records its project); switching
            projects used to leave this figure, like every money tile, the same */
-        (SELECT COALESCE(SUM(net_amount - COALESCE(amount_paid, 0)), 0) FROM grn_bills
-          WHERE net_amount > COALESCE(amount_paid, 0) ${salesOwner} ${payProject}) AS payable,
-        (SELECT COUNT(*) FROM grn_bills WHERE net_amount > COALESCE(amount_paid, 0) ${salesOwner} ${payProject}) AS payable_count
+        /* less debit notes against each bill (shared/invoiceSettle) */
+        (SELECT COALESCE(SUM(net_amount - COALESCE(amount_paid, 0) - ${DEBITED_SQL('grn_bills')}), 0) FROM grn_bills
+          WHERE net_amount - COALESCE(amount_paid, 0) - ${DEBITED_SQL('grn_bills')} > 0.005 ${salesOwner} ${payProject}) AS payable,
+        (SELECT COUNT(*) FROM grn_bills WHERE net_amount - COALESCE(amount_paid, 0) - ${DEBITED_SQL('grn_bills')} > 0.005 ${salesOwner} ${payProject}) AS payable_count
       FROM fy`, salesParams)).rows[0];
     const fyFrom = Number(String(s.fy_start).slice(0, 4));
 

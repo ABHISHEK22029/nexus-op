@@ -35,6 +35,7 @@ const isAdmin = (req) => isCrossTenant(req.user?.role);
    spells a crore count of any size. This file had its own copy, which
    printed "undefined Hundred … Crore" from 1,000 crore up. */
 const { amountInWords } = require('../shared/amountInWords');
+const { creditedOn, settleInvoice } = require('../shared/invoiceSettle');
 
 /* Lines are checked first (shared/lineChecks): a line with figures but no
    description, an impossible quantity or rate, a discount larger than the
@@ -486,14 +487,19 @@ exports.getById = async (req, res) => {
         };
       }
     }
-    res.json({ ...inv, items, payments, customer, company, order, overBilled });
+    /* credited: credit notes against it, so the page's balance agrees with
+       the list, the dashboard and the payment check. */
+    const credited = await creditedOn(db, inv.id);
+    res.json({ ...inv, items, payments, customer, company, order, overBilled, credited });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
 // POST /sales-invoices/:id/payment
 exports.addPayment = async (req, res) => {
   const { amount, mode, reference, paidDate } = req.body;
-  if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'Enter a payment amount' });
+  /* A number, above zero. "abc" became NaN, which passes both "<= 0" and
+     "> due", and a NaN payment made every later check pass. */
+  if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: 'Enter a payment amount' });
   /* Checked BEFORE the transaction opens. Recording a payment against
      someone else's invoice corrupts their receivables rather than merely
      reading them, which is why this one mattered most of the 27. */
@@ -536,7 +542,10 @@ exports.addPayment = async (req, res) => {
     if (cur) {
       const net = Number(cur.net_amount || 0);
       const already = Number(cur.paid || 0);
-      const due = net - already;
+      /* Less any credit notes against it: what the customer owes, not what
+         the invoice once said (shared/invoiceSettle). */
+      const credited = await creditedOn(client, req.params.id);
+      const due = net - credited - already;
       /* A paisa of slack: net_amount is numeric and the final instalment is
          often computed by subtraction on the client, so an exact settlement
          can arrive a fraction over and must not be refused. */
@@ -545,8 +554,8 @@ exports.addPayment = async (req, res) => {
         return res.status(409).json({
           error: due <= 0.01
             ? `This invoice is already settled in full (₹${net.toFixed(2)}). Nothing is outstanding.`
-            : `That is more than is outstanding. Invoice ₹${net.toFixed(2)}, already received ₹${already.toFixed(2)}, so ₹${due.toFixed(2)} remains.`,
-          netAmount: net, alreadyPaid: already, outstanding: Math.max(0, due),
+            : `That is more than is outstanding. Invoice ₹${net.toFixed(2)}${credited ? `, less ₹${credited.toFixed(2)} credited` : ''}, already received ₹${already.toFixed(2)}, so ₹${due.toFixed(2)} remains.`,
+          netAmount: net, credited, alreadyPaid: already, outstanding: Math.max(0, due),
         });
       }
     }
@@ -555,10 +564,8 @@ exports.addPayment = async (req, res) => {
       `INSERT INTO sales_payments (sales_invoice_id, amount, mode, reference, paid_date) VALUES ($1,$2,$3,$4,$5)`,
       [req.params.id, Number(amount), mode || 'Bank transfer', reference || null, paidDate || null]
     );
-    const paid = (await client.query('SELECT COALESCE(SUM(amount),0) s FROM sales_payments WHERE sales_invoice_id = $1', [req.params.id])).rows[0].s;
-    const inv = (await client.query('SELECT net_amount FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0];
-    const status = Number(paid) >= Number(inv?.net_amount || 0) ? 'Paid' : 'Partially Paid';
-    await client.query('UPDATE sales_invoices SET amount_paid = $1, status = $2 WHERE id = $3', [r2(paid), status, req.params.id]);
+    /* Paid once what is received and credited covers it. */
+    const { paid, status } = await settleInvoice(client, req.params.id);
     const { invoice_number: invNo, owner_id: invOwner } = (await client.query('SELECT invoice_number, owner_id FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0] || {};
     await client.query('COMMIT');
     notify({ org: invOwner }, { type: 'PAYMENT_RECEIVED', title: `Payment received · ${invNo}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank transfer'} — invoice ${status}`, entityType: 'sales_invoice', entityId: Number(req.params.id), link: `/sales-invoices/${req.params.id}` });
@@ -783,6 +790,15 @@ exports.setStatus = async (req, res) => {
           : 'This invoice’s status follows the payments recorded against it.');
     }
 
+    /* A credit note adjusts this invoice in the GST record. Cancelled or
+       back to draft, the note would point at an invoice that is no longer
+       issued, and the customer page would still take it off what they owe. */
+    if (status === 'Draft' || status === 'Cancelled') {
+      const credited = await creditedOn(client, inv.id);
+      if (credited > 0.005) {
+        return await refuse(`A credit note of ₹${credited.toLocaleString('en-IN')} has been raised against this invoice, so it can't ${status === 'Draft' ? 'go back to draft' : 'be cancelled'}. Correct it with another note instead.`);
+      }
+    }
     await client.query('UPDATE sales_invoices SET status = $1 WHERE id = $2', [status, inv.id]);
     if (status === 'Cancelled') {
       await client.query(
@@ -822,10 +838,7 @@ exports.reversePayment = async (req, res) => {
       [req.params.paymentId, inv.id])).rows[0];
     if (!gone) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'That payment is not on this invoice' }); }
 
-    const paid = Number((await client.query(
-      'SELECT COALESCE(SUM(amount), 0) s FROM sales_payments WHERE sales_invoice_id = $1', [inv.id])).rows[0].s);
-    const status = paid <= 0 ? 'Sent' : paid >= Number(inv.net_amount || 0) ? 'Paid' : 'Partially Paid';
-    await client.query('UPDATE sales_invoices SET amount_paid = $1, status = $2 WHERE id = $3', [r2(paid), status, inv.id]);
+    const { paid, status } = await settleInvoice(client, inv.id);
 
     const amt = `₹${Number(gone.amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
     const via = [gone.mode, gone.reference && `ref ${gone.reference}`].filter(Boolean).join(', ');
@@ -853,7 +866,8 @@ exports.remove = async (req, res) => {
       `DELETE FROM sales_invoices s WHERE s.id = $1
           AND COALESCE(s.status, 'Draft') = 'Draft'
           AND COALESCE(s.amount_paid, 0) <= 0.005
-          AND NOT EXISTS (SELECT 1 FROM sales_payments p WHERE p.sales_invoice_id = s.id)`, [req.params.id]);
+          AND NOT EXISTS (SELECT 1 FROM sales_payments p WHERE p.sales_invoice_id = s.id)
+          AND NOT EXISTS (SELECT 1 FROM credit_debit_notes n WHERE n.party_type = 'customer' AND n.ref_id = s.id AND n.owner_id IS NOT DISTINCT FROM s.owner_id)`, [req.params.id]);
     if (!r.rowCount) {
       const still = (await db.query('SELECT COALESCE(amount_paid, 0) AS paid, status, invoice_number FROM sales_invoices WHERE id = $1', [req.params.id])).rows[0];
       if (!still) return res.status(404).json({ error: 'not found' });
@@ -862,6 +876,9 @@ exports.remove = async (req, res) => {
          at nothing. Cancelled, it keeps its number and says why. */
       if (Number(still.paid) <= 0.005 && (still.status || 'Draft') !== 'Draft') {
         return res.status(409).json({ error: `${still.invoice_number} has been issued (${still.status}), so it can't be deleted. Cancel it instead: a cancelled invoice keeps its number, so the GST series has no gap.` });
+      }
+      if (Number(still.paid) <= 0.005) {
+        return res.status(409).json({ error: `A credit note has been raised against ${still.invoice_number}, so it can't be deleted.` });
       }
       return res.status(409).json({
         error: `Reverse its payments first. ₹${Number(still.paid).toLocaleString('en-IN', { maximumFractionDigits: 2 })} has been received against this invoice.`,

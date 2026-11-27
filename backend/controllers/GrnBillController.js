@@ -18,6 +18,7 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
    spells a crore count of any size. This file had its own copy, which
    printed "undefined Hundred … Crore" from 1,000 crore up. */
 const { amountInWords } = require('../shared/amountInWords');
+const { DEBITED_SQL, debitedOn, billPaymentStatus, settleBill } = require('../shared/invoiceSettle');
 
 // Compute all totals from the (customizable) inputs.
 function compute(items, { freight = 0, otherCharges = 0, discount = 0, gstRate = 18, interstate = false, roundOff = 0 }) {
@@ -206,7 +207,9 @@ exports.list = async (req, res) => {
     }
     const result = await runList(db, {
       where, params,
-      table: `(SELECT gb.*, v.name AS vendor_name
+      /* debited: debit notes against each bill, so what is owed agrees
+         with Payables and the payment limit (shared/invoiceSettle). */
+      table: `(SELECT gb.*, v.name AS vendor_name, ${DEBITED_SQL('gb')} AS debited
                  FROM grn_bills gb LEFT JOIN vendors v ON v.id = gb.vendor_id) AS gb`,
       query: req.query,
       searchColumns: ["bill_number", "vendor_name", "vendor_bill_ref", "status", "payment_status"],
@@ -219,9 +222,10 @@ exports.list = async (req, res) => {
       summary: `COUNT(*)::int AS count,
                 COALESCE(SUM(net_amount),0)::numeric AS billed,
                 COALESCE(SUM(COALESCE(amount_paid,0)),0)::numeric AS paid,
-                COALESCE(SUM(GREATEST(net_amount - COALESCE(amount_paid,0), 0)),0)::numeric AS outstanding,
+                COALESCE(SUM(debited),0)::numeric AS debited,
+                COALESCE(SUM(GREATEST(net_amount - COALESCE(amount_paid,0) - debited, 0)),0)::numeric AS outstanding,
                 COUNT(*) FILTER (WHERE due_date IS NOT NULL AND due_date < CURRENT_DATE
-                                   AND net_amount > COALESCE(amount_paid,0))::int AS overdue`,
+                                   AND net_amount - COALESCE(amount_paid,0) - debited > 0.005)::int AS overdue`,
     });
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -333,7 +337,7 @@ exports.update = async (req, res) => {
       }
       /* Paid or not follows the new total. */
       const paid = Number(bill.amount_paid || 0);
-      set.payment_status = paid >= t.net && paid > 0 ? 'Paid' : paid > 0 ? 'Partially Paid' : 'Unpaid';
+      set.payment_status = billPaymentStatus(t.net, paid, await debitedOn(client, bill.id));
     }
     const cols = Object.keys(set);
     if (!cols.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Nothing to update' }); }
@@ -427,14 +431,16 @@ exports.addPayment = async (req, res) => {
     if (cur) {
       const net = Number(cur.net_amount || 0);
       const already = Number(cur.paid || 0);
-      const due = net - already;
+      /* less debit notes against it: what we owe, not what the bill said */
+      const debited = await debitedOn(client, req.params.id);
+      const due = net - debited - already;
       if (Number(amount) > due + 0.01) {
         await client.query('ROLLBACK');
         return res.status(409).json({
           error: due <= 0.01
-            ? `This bill is already paid in full (₹${net.toFixed(2)}). Nothing is outstanding.`
-            : `That is more than is outstanding. Bill ₹${net.toFixed(2)}, already paid ₹${already.toFixed(2)}, so ₹${due.toFixed(2)} remains.`,
-          netAmount: net, alreadyPaid: already, outstanding: Math.max(0, due),
+            ? `This bill is already settled (₹${net.toFixed(2)}${debited ? `, less ₹${debited.toFixed(2)} in debit notes` : ''}). Nothing is outstanding.`
+            : `That is more than is outstanding. Bill ₹${net.toFixed(2)}${debited ? `, less ₹${debited.toFixed(2)} in debit notes` : ''}, already paid ₹${already.toFixed(2)}, so ₹${due.toFixed(2)} remains.`,
+          netAmount: net, debited, alreadyPaid: already, outstanding: Math.max(0, due),
         });
       }
     }
@@ -442,11 +448,9 @@ exports.addPayment = async (req, res) => {
     await client.query(
       `INSERT INTO vendor_payments (grn_bill_id, amount, mode, reference, paid_date, notes) VALUES ($1,$2,$3,$4,$5,$6)`,
       [req.params.id, Number(amount), mode || 'Bank transfer', reference || null, paidDate || null, notes || null]);
-    const paid = (await client.query('SELECT COALESCE(SUM(amount),0) s FROM vendor_payments WHERE grn_bill_id = $1', [req.params.id])).rows[0].s;
     const bill = (await client.query('SELECT net_amount, bill_number, vendor_id, owner_id FROM grn_bills WHERE id = $1', [req.params.id])).rows[0];
     if (!bill) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bill not found' }); }
-    const pstatus = Number(paid) >= Number(bill.net_amount || 0) ? 'Paid' : Number(paid) > 0 ? 'Partially Paid' : 'Unpaid';
-    await client.query('UPDATE grn_bills SET amount_paid = $1, payment_status = $2 WHERE id = $3', [r2(paid), pstatus, req.params.id]);
+    const { paid, status: pstatus } = await settleBill(client, req.params.id);
     await client.query('COMMIT');
     notify({ org: bill.owner_id }, { type: 'VENDOR_PAID', title: `Vendor payment · ${bill.bill_number}`, message: `₹${Number(amount).toLocaleString('en-IN')} via ${mode || 'Bank transfer'} — ${pstatus}`, entityType: 'grn_bill', entityId: Number(req.params.id), link: `/grn-bills/${req.params.id}` });
     res.json({ success: true, amountPaid: r2(paid), paymentStatus: pstatus });
@@ -510,10 +514,11 @@ exports.payables = async (req, res) => {
     const { rows } = await db.query(
       `SELECT gb.id, gb.bill_number, gb.bill_date, gb.due_date, gb.net_amount,
               COALESCE(gb.amount_paid,0) AS amount_paid, gb.payment_status, v.name AS vendor_name, gb.vendor_id,
-              (gb.net_amount - COALESCE(gb.amount_paid,0)) AS outstanding,
+              ${DEBITED_SQL('gb')} AS debited,
+              (gb.net_amount - COALESCE(gb.amount_paid,0) - ${DEBITED_SQL('gb')}) AS outstanding,
               (CURRENT_DATE - COALESCE(gb.due_date, gb.bill_date)) AS age_days
          FROM grn_bills gb LEFT JOIN vendors v ON v.id = gb.vendor_id
-        WHERE gb.net_amount > COALESCE(gb.amount_paid,0)${s.clause}
+        WHERE gb.net_amount - COALESCE(gb.amount_paid,0) - ${DEBITED_SQL('gb')} > 0.005${s.clause}
         ORDER BY COALESCE(gb.due_date, gb.bill_date) ASC`, s.params);
 
     const bucket = (d) => (d == null ? '0-30' : d <= 30 ? '0-30' : d <= 60 ? '31-60' : d <= 90 ? '61-90' : '90+');
@@ -559,10 +564,7 @@ exports.reversePayment = async (req, res) => {
        RETURNING amount, mode, reference, COALESCE(paid_date, created_at::date)::text AS on_date`,
       [req.params.paymentId, bill.id])).rows[0];
     if (!gone) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'That payment is not on this bill' }); }
-    const paid = Number((await client.query(
-      'SELECT COALESCE(SUM(amount), 0) s FROM vendor_payments WHERE grn_bill_id = $1', [bill.id])).rows[0].s);
-    const pstatus = paid >= Number(bill.net_amount || 0) && paid > 0 ? 'Paid' : paid > 0 ? 'Partially Paid' : 'Unpaid';
-    await client.query('UPDATE grn_bills SET amount_paid = $1, payment_status = $2 WHERE id = $3', [r2(paid), pstatus, bill.id]);
+    const { paid, status: pstatus } = await settleBill(client, bill.id);
     const amt = `₹${Number(gone.amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
     const via = [gone.mode, gone.reference && `ref ${gone.reference}`].filter(Boolean).join(', ');
     await client.query(

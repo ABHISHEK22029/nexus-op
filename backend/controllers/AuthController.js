@@ -178,7 +178,7 @@ async function inviteInfo(req, res) {
       `SELECT u.name, u.email, u.role, u.invite_expires_at, c.name AS org_name
          FROM users u
          LEFT JOIN company_profile c ON c.owner_id = u.org_id
-        WHERE u.invite_token_hash = $1`, [hash]);
+        WHERE u.invite_token_hash = $1 AND u.is_active = TRUE`, [hash]);
     const inv = rows[0];
     /* One message for "no such invite" and "expired". Distinguishing them
        tells someone holding a stale link that it was once real. */
@@ -211,7 +211,7 @@ async function acceptInvite(req, res) {
        the second waits, then finds the token already cleared. */
     const { rows } = await client.query(
       `SELECT id, email, name, role, org_id, invite_expires_at
-         FROM users WHERE invite_token_hash = $1 FOR UPDATE`, [hash]);
+         FROM users WHERE invite_token_hash = $1 AND is_active = TRUE FOR UPDATE`, [hash]);
     const user = rows[0];
     if (!user || (user.invite_expires_at && new Date(user.invite_expires_at) < new Date())) {
       await client.query('ROLLBACK');
@@ -223,7 +223,7 @@ async function acceptInvite(req, res) {
     await client.query(
       `UPDATE users
           SET password_hash = $1, invite_token_hash = NULL, invite_expires_at = NULL,
-              is_active = TRUE, last_login = NOW()
+              last_login = NOW()
         WHERE id = $2`, [pwHash, user.id]);
     await client.query('COMMIT');
 

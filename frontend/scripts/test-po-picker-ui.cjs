@@ -143,7 +143,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const invDefault = await page.evaluate(() => document.querySelector('select[aria-label="Payment mode"]')?.value);
     ok(JSON.stringify(invModes) === JSON.stringify(MODES) && invDefault === 'Bank transfer', `Record payment offers ${invModes.join(', ')} (starts on ${invDefault})`);
     await go('/expenses');
-    await click('button', /^\+?\s*(Add|New|Record)/);
+    /* the page's own button: the rail's "+ New" (26 Nov menu) comes first */
+    await click('.app-page button', /^\+?\s*(Add|New|Record)/);
     await sleep(600);
     const expSel = await page.evaluate(() => {
       const l = [...document.querySelectorAll('label, span')].find(x => /^Mode$/.test(x.textContent.trim()));

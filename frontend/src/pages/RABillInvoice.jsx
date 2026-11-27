@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download } from 'lucide-react';
+import { ArrowLeft, Printer } from 'lucide-react';
 import axios from 'axios';
+import { usePdfDownload, PdfButton } from '../components/DocumentKit';
+import { docFileName, printAs } from '../lib/documentPdf';
+import { amountInWords } from '../lib/amountInWords';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const inr = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -18,6 +21,7 @@ export default function RABillInvoice() {
   const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const ref = useRef(null);
+  const pdf = usePdfDownload();
 
   useEffect(() => {
     (async () => {
@@ -36,13 +40,6 @@ export default function RABillInvoice() {
     })();
   }, [id]);
 
-  const downloadPdf = () => {
-    const prev = document.title;
-    document.title = (bill.bill_number || `RA-${bill.id}`).replace(/\//g, '_');
-    window.print();
-    setTimeout(() => { document.title = prev; }, 0);
-  };
-
   if (loading) return <div style={{ padding: 60, textAlign: 'center', color: '#555' }}>Loading invoice…</div>;
   if (!bill || !company) return (
     <div style={{ padding: 60, textAlign: 'center' }}>
@@ -52,10 +49,59 @@ export default function RABillInvoice() {
   );
 
   const items = bill.lineItems || [];
-  const intra = (bill.cgst || 0) > 0;
+  /* Intra-state unless IGST was charged. "CGST above zero" sent a 0% bill
+     to IGST, and "gst_rate || 18" printed a 0% bill as 18%. */
+  const intra = !(Number(bill.igst) > 0);
+  const rate = Number(bill.gst_rate ?? 18);
   const invoiceValue = (bill.sub_total || 0) + (bill.gst_total || 0);
+  /* "Amount chargeable" is the invoice value. The stored words spell the net
+     payable, after TDS and retention — a different figure under that label. */
+  const chargeable = amountInWords(invoiceValue);
+  const billNo = bill.bill_number || `RA-${bill.id}`;
+  const fileName = docFileName('RA Bill', billNo, bill.vendorName);
+  const taxRows = intra
+    ? [[`CGST @ ${rate / 2}%`, bill.cgst], [`SGST @ ${rate / 2}%`, bill.sgst]]
+    : [[`IGST @ ${rate}%`, bill.igst]];
+  const deductions = [
+    [`TDS ${bill.tds_section ? `(${bill.tds_section}) ` : ''}@ ${bill.tds_rate || 0}%`, bill.tds, true],
+    [`TDS under GST @ ${bill.gst_tds_rate || 0}%`, bill.gst_tds],
+    [`Labour Cess @ ${bill.labour_cess_rate || 0}%`, bill.labour_cess],
+    [`Retention @ ${bill.retention_pct || 0}%`, bill.retention, true],
+    ['Advance Recovery', bill.advance_recovery],
+    [`Other${bill.deduction_reason ? ` (${bill.deduction_reason})` : ''}`, bill.other_deductions],
+  ].filter(([, v, always]) => always || (v || 0) > 0);
+  const DECL = 'We declare that this invoice shows the actual price of the work described and that all particulars are true and correct. Certified that the work has been measured and recorded in the Measurement Book.';
   const totalDeductions = (bill.tds || 0) + (bill.gst_tds || 0) + (bill.labour_cess || 0)
     + (bill.retention || 0) + (bill.advance_recovery || 0) + (bill.other_deductions || 0);
+
+  /* What the PDF says — the same values as the sheet below. */
+  const pdfModel = () => ({
+    fileName, title: 'TAX INVOICE', subtitle: 'RUNNING ACCOUNT BILL', number: billNo, framed: true, company,
+    meta: [['Bill No.', billNo], ['RA No.', bill.ra_number || '—'], ['Bill Date', fmtDate(bill.bill_date || bill.date)], ['Project', bill.projectName || '—'], ['Work Order', bill.workOrderName || '—']],
+    parties: [
+      { title: 'Contractor', note: '— work billed by', name: bill.vendorName, lines: [bill.vendorAddress, bill.vendorPan && `PAN: ${bill.vendorPan}`, `Place of Supply: ${company.stateCode || '—'} (${intra ? 'Intra-State' : 'Inter-State'}) — project site`], gstin: bill.vendorGstin || '' },
+      { title: 'Certified & payable by', name: company.name, lines: [company.address, company.pan && `PAN: ${company.pan}`], gstin: company.gstin || undefined },
+    ],
+    columns: [
+      { key: 'index', label: 'Sr.' }, { key: 'description', label: 'Description of Work' }, { key: 'hsn', label: 'HSN/SAC', align: 'center' },
+      { key: 'uom', label: 'Unit', align: 'center' }, { key: 'quantity', label: 'Qty', align: 'right' },
+      { key: 'rate', label: 'Rate (₹)', align: 'right' }, { key: 'amount', label: 'Amount (₹)', align: 'right', strong: true },
+    ],
+    rows: items.map((li, i) => [String(i + 1), li.description, li.hsn_code || '9954', li.unit || '', inr(li.quantity).replace('.00', ''), inr(li.rate), inr(li.amount)]),
+    totals: [
+      { label: 'Taxable Value', value: inr(bill.sub_total) },
+      ...taxRows.map(([l, v]) => ({ label: `Add: ${l}`, value: inr(v) })),
+      { label: 'Invoice Value', value: inr(invoiceValue), strong: true },
+      { label: 'Less: Deductions', value: '' },
+      ...deductions.map(([l, v]) => ({ label: l, value: inr(v) })),
+      { label: 'Total Deductions', value: inr(totalDeductions) },
+      { label: 'NET PAYABLE', value: `₹ ${inr(bill.netAmount)}`, strong: true },
+    ],
+    words: `Amount Chargeable (in words): ${chargeable}`,
+    declaration: DECL,
+    receiver: ['Prepared By', 'Checked By'], signLabel: 'Authorised Signatory',
+    footerLeft: company.invoice_footer_note || '', footerRight: billNo,
+  });
 
   return (
     <div className="ra-screen">
@@ -66,8 +112,9 @@ export default function RABillInvoice() {
         <button onClick={() => navigate('/bills')}><ArrowLeft size={16} /> Back</button>
         <div className="ra-tb-right">
           <span className={`ra-badge st-${(bill.status || '').replace(/\s/g, '')}`}>{bill.status}</span>
-          <button onClick={() => window.print()}><Printer size={16} /> Print</button>
-          <button className="primary" onClick={downloadPdf}><Download size={16} /> Download PDF</button>
+          <button onClick={() => printAs(fileName)}><Printer size={16} /> Print</button>
+          {/* It opened the print dialog; it saves a real file now. */}
+          <PdfButton pdf={pdf} model={pdfModel} fileName={fileName} className="primary" />
         </div>
       </div>
 
@@ -180,16 +227,16 @@ export default function RABillInvoice() {
           {/* Tax + words + summary */}
           <div className="ra-foot">
             <div className="ra-foot-l">
-              <div className="ra-words"><span>Amount Chargeable (in words):</span><b>{bill.amount_in_words}</b></div>
+              <div className="ra-words"><span>Amount Chargeable (in words):</span><b>{chargeable}</b></div>
               <table className="ra-tax">
                 <tbody>
                   {intra ? (
                     <>
-                      <tr><td>CGST @ {(bill.gst_rate || 18) / 2}%</td><td className="r">{inr(bill.cgst)}</td></tr>
-                      <tr><td>SGST @ {(bill.gst_rate || 18) / 2}%</td><td className="r">{inr(bill.sgst)}</td></tr>
+                      <tr><td>CGST @ {rate / 2}%</td><td className="r">{inr(bill.cgst)}</td></tr>
+                      <tr><td>SGST @ {rate / 2}%</td><td className="r">{inr(bill.sgst)}</td></tr>
                     </>
                   ) : (
-                    <tr><td>IGST @ {bill.gst_rate || 18}%</td><td className="r">{inr(bill.igst)}</td></tr>
+                    <tr><td>IGST @ {rate}%</td><td className="r">{inr(bill.igst)}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -205,11 +252,11 @@ export default function RABillInvoice() {
                 <tr><td>Taxable Value</td><td className="r">{inr(bill.sub_total)}</td></tr>
                 {intra ? (
                   <>
-                    <tr><td>Add: CGST @ {(bill.gst_rate || 18) / 2}%</td><td className="r">{inr(bill.cgst)}</td></tr>
-                    <tr><td>Add: SGST @ {(bill.gst_rate || 18) / 2}%</td><td className="r">{inr(bill.sgst)}</td></tr>
+                    <tr><td>Add: CGST @ {rate / 2}%</td><td className="r">{inr(bill.cgst)}</td></tr>
+                    <tr><td>Add: SGST @ {rate / 2}%</td><td className="r">{inr(bill.sgst)}</td></tr>
                   </>
                 ) : (
-                  <tr><td>Add: IGST @ {bill.gst_rate || 18}%</td><td className="r">{inr(bill.igst)}</td></tr>
+                  <tr><td>Add: IGST @ {rate}%</td><td className="r">{inr(bill.igst)}</td></tr>
                 )}
                 <tr className="ra-inv"><td>Invoice Value</td><td className="r">{inr(invoiceValue)}</td></tr>
                 <tr className="ded-h"><td colSpan={2}>Less: Deductions</td></tr>

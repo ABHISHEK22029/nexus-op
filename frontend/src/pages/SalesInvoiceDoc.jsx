@@ -229,8 +229,11 @@ export default function SalesInvoiceDoc() {
   /* To the paisa: the difference of two amounts in floating point can
      come out as …543.9999999 and print a paisa short. */
   const paid = Number(inv.amount_paid) || 0;
+  /* Credit notes against it come off what is owed, as on the list, the
+     dashboard and the server's payment check. */
+  const credited = Number(inv.credited) || 0;
   /* A cancelled invoice is owed nothing, whatever its total. */
-  const due = isCancelled ? 0 : Math.max(0, Math.round(((Number(inv.net_amount) || 0) - paid) * 100) / 100);
+  const due = isCancelled ? 0 : Math.max(0, Math.round(((Number(inv.net_amount) || 0) - credited - paid) * 100) / 100);
   const input = { padding: '8px 10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 7, color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none' };
 
   const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
@@ -363,8 +366,9 @@ export default function SalesInvoiceDoc() {
     rcm ? { label: 'LESS: GST ON REVERSE CHARGE', value: `-${rup(gstTotal)}` } : null,
     Number(inv.round_off) ? { label: 'ROUND OFF', value: rup(inv.round_off) } : null,
     { label: 'INVOICE TOTAL', value: rup(inv.net_amount), strong: true },
-    ...(paid > 0 ? [
-      { label: 'AMOUNT RECEIVED', value: `-${rup(paid)}` },
+    ...(paid > 0 || credited > 0 ? [
+      credited > 0 ? { label: 'LESS: CREDIT NOTES', value: `-${rup(credited)}` } : null,
+      paid > 0 ? { label: 'AMOUNT RECEIVED', value: `-${rup(paid)}` } : null,
       { label: 'BALANCE DUE', value: rup(due), strong: true },
     ] : []),
   ].filter(Boolean);

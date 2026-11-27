@@ -60,6 +60,14 @@ exports.generateRABill = async (req, res) => {
     const venSc = stateCode(vendor.gstin);
     const intraState = !compSc || !venSc ? true : compSc === venSc;
 
+    /* One bill at a time per work order. What was billed before and the RA
+       number were read with no lock and outside the transaction, so two
+       clicks (or two people) each saw nothing billed and both billed the
+       same measured quantity, under the same RA number. The work order is
+       locked first; the second request waits, then sees the first bill. */
+    await client.query('BEGIN');
+    await client.query('SELECT id FROM work_orders WHERE id = $1 FOR UPDATE', [workOrderId]);
+
     // Cumulative measured qty per BOQ item under this work order
     const mbRes = await client.query(
       `SELECT mb."boqId" AS boq_id,
@@ -72,6 +80,7 @@ exports.generateRABill = async (req, res) => {
       [workOrderId]
     );
     if (mbRes.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'No measurement-book records for this work order to bill.' });
     }
 
@@ -112,6 +121,7 @@ exports.generateRABill = async (req, res) => {
     });
 
     if (lines.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'No new quantities to bill — everything measured is already billed.' });
     }
 
@@ -131,12 +141,13 @@ exports.generateRABill = async (req, res) => {
     const totalQty = r2(lines.reduce((s, l) => s + l.quantity, 0));
     const inWords = amountInWords(netAmount);
 
-    // RA sequence number for this work order
+    /* RA sequence number for this work order: one past the highest, not a
+       count — deleting a draft that was not the latest made the count
+       repeat a number already on a bill. */
     const raRes = await client.query(
-      `SELECT COUNT(*)::int AS n FROM bills WHERE "workOrderId" = $1`, [workOrderId]);
+      `SELECT COALESCE(MAX(ra_number), 0)::int AS n FROM bills WHERE "workOrderId" = $1`, [workOrderId]);
     const raNumber = (raRes.rows[0].n || 0) + 1;
 
-    await client.query('BEGIN');
     const ins = await client.query(
       `INSERT INTO bills
          ("projectId","workOrderId", vendor_id, ra_number, bill_date,

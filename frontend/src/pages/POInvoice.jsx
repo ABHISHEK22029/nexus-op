@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, Mail, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Printer, Mail, Pencil, Plus, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
@@ -10,7 +10,7 @@ import { amountInWords } from '../lib/amountInWords';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
 import UnitSelect from '../components/UnitSelect';
-import { ItemText, FillRows } from '../components/DocumentKit';
+import { ItemText, FillRows, usePdfDownload, PdfButton } from '../components/DocumentKit';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
 import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../components/DocHistory';
 import { GST_RATES } from '../lib/docTotals';
@@ -93,6 +93,7 @@ const POInvoice = () => {
     apply: ({ items: lines, vendor, ...row }) => { setPo(cur => ({ ...cur, ...row })); if (Array.isArray(lines) && lines.length) setItems(lines); },
   });
   const begin = (field) => { if (po && canWrite && !hist.viewing) ed.start(poValues(po, items), field); };
+  const pdf = usePdfDownload();
 
   if (loading) {
     return <div className="flex justify-center items-center h-64 text-gray-500">Loading document...</div>;
@@ -186,9 +187,10 @@ const POInvoice = () => {
     ? 'Before sign-off: the lines, GST rate, the vendor’s quote reference and the terms can all change. Totals update as you type.'
     : `${po.status}: the quote reference and the terms can still change. The amounts are what was signed off — raise a new PO to order more.`;
 
-  /* Print-to-PDF, named for what it is: "Purchase Order PO-0012 - Vendor". */
+  /* Named for what it is: "Purchase Order PO-0012 - Vendor". */
   const fileName = docFileName('Purchase Order', po.poNumber || `PO-${po.id}`, po.vendorName);
-  const handleDownloadPdf = () => { printAs(fileName); };
+  /* "PDF" opened the print dialog; it saves a real file now. */
+  const handleDownloadPdf = () => pdf.save(pdfModel);
 
   const handlePrint = () => {
     printAs(fileName);
@@ -200,6 +202,44 @@ const POInvoice = () => {
   const termCells = Object.keys(TERM_LABELS).map(k => [k, TERM_LABELS[k], po[k]])
     .filter(([k, , v]) => editable(k) || String(v || '').trim());
   const vendorLines = [po.vendorAddress, [po.vendorCity, po.vendorState].filter(Boolean).join(', ')].filter(Boolean);
+  const poNo = po.poNumber || `PO-${po.id}`;
+  const money2 = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+  /* What the PDF says — the same values as the sheet below. */
+  const pdfModel = () => ({
+    fileName, title: 'PURCHASE ORDER', number: poNo, framed: true, company,
+    meta: [['P.O. #', poNo], ['Date', poDate], po.quoteRef && ['Quote Ref', po.quoteRef]],
+    parties: [
+      { title: 'Vendor', name: po.vendorName, lines: [...vendorLines, (po.contactName || po.contactPhone) && `Contact: ${po.contactName || ''}${po.contactPhone ? ` (${po.contactPhone})` : ''}`], gstin: po.vendorGstin || '' },
+      po.projectName
+        ? { title: 'Ship To (Project)', name: po.projectName, lines: [po.clientName && `Client: ${po.clientName}`, 'Deliver to the project site, as instructed'] }
+        : { title: 'Ship To', name: company.name, lines: [company.address], gstin: company.gstin || undefined },
+      { title: 'Bill To (Corporate)', name: company.name, lines: [company.address], gstin: company.gstin || undefined },
+    ],
+    columns: [
+      { key: 'index', label: '#' }, { key: 'description', label: 'Description' }, { key: 'uom', label: 'UOM' },
+      { key: 'hsn', label: 'HSN/SAC' }, { key: 'quantity', label: 'Qty', align: 'right' },
+      { key: 'rate', label: 'Unit Price', align: 'right' }, { key: 'amount', label: 'Total', align: 'right', strong: true },
+    ],
+    boldDescription: true,
+    rows: items.map((item, idx) => [String(item.sno ?? idx + 1), item.description, item.uom || '', item.hsn || '-', String(Number(item.quantity)), fmtMoney(item.unitPrice), fmtMoney(lineAmount(item))]),
+    notesTitle: 'Other Comments or Special Instructions',
+    notes: `${po.paymentTerms ? `Payment Terms: ${po.paymentTerms}
+
+` : ''}Note: This is the ordered value. The final payable is confirmed on the GRN bill after material is received (actual quantity + freight/charges).`,
+    totals: [
+      { label: 'SUBTOTAL', value: money2(subtotal) },
+      ...(isIntraState
+        ? [{ label: `CGST - ${halfRate}%`, value: money2(cgst) }, { label: `SGST - ${halfRate}%`, value: money2(sgst) }]
+        : [{ label: `IGST - ${gstRate}%`, value: money2(igst) }]),
+      { label: 'TAX', value: money2(tax) },
+      { label: 'PO VALUE (ORDERED)', value: money2(total), strong: true },
+    ],
+    words: `Amount in Words: ${amountInWords(total)}`,
+    bank: termCells.length ? { title: 'Terms', rows: termCells.map(([, h, v]) => [h, String(v || '')]) } : null,
+    signLabel: 'Authorized by · Date', signCompany: company.name || '—',
+    footerLeft: company.invoice_footer_note || '', footerRight: `${poNo}  |  ${poDate}`,
+  });
 
   return (
     /* The padding the app's own pages have (16px on a phone, 28px wider):
@@ -226,9 +266,7 @@ const POInvoice = () => {
           <button onClick={() => setEmailing(true)} className="inv-act-btn">
             <Mail size={16} /> Email Vendor
           </button>
-          <button onClick={handleDownloadPdf} className="inv-act-btn">
-            <Download size={16} /> PDF
-          </button>
+          <PdfButton pdf={pdf} model={pdfModel} fileName={fileName} className="inv-act-btn" />
           <button onClick={handlePrint} className="inv-act-btn primary">
             <Printer size={16} /> Print
           </button>
@@ -237,7 +275,9 @@ const POInvoice = () => {
       </div>
 
       <HistoryPanel hist={hist} what={`Purchase order ${po.poNumber || `PO-${po.id}`}`} />
-      <VersionBar hist={hist} onPrint={handlePrint} />
+      <VersionBar hist={hist} onPrint={handlePrint}>
+        <PdfButton pdf={pdf} model={pdfModel} label="PDF of this version" />
+      </VersionBar>
       {ed.editing && <EditBar ed={ed} what={po.poNumber || `PO-${po.id}`} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />}
 
       {/* Screen only: what the tax on this PO rests on, when it is a guess. */}

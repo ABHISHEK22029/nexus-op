@@ -6,7 +6,7 @@
 const db = require('../db');
 const fileSafety = require('../shared/fileSafety');
 const { assertOwned } = require('../shared/ownerScope');
-const { isCrossTenant } = require('../shared/roles');
+const { isCrossTenant, can, READ, WRITE } = require('../shared/roles');
 
 /* The records a file can be attached to, and the table each lives in.
    An upload used to accept any type and any id, so a file could be hung on
@@ -19,6 +19,25 @@ const ENTITY_TABLES = {
   delivery_challan: 'delivery_challans', credit_debit_note: 'credit_debit_notes', grn_bill: 'grn_bills',
 };
 
+/* A file on a record is part of that record, so it takes that record's
+   permission. /attachments is ungated in index.js (it spans every kind of
+   record), and the only check here was the company — so a Viewer, meant
+   for auditors and the bank, could delete a signed PO scan, and Production
+   could list and download vendor-bill files it cannot open. Reading the
+   list or a file needs read on the record; adding or removing one needs
+   write (removing a file is an edit to the record, not deleting it). */
+const ENTITY_RESOURCE = {
+  customer: 'customers', expense: 'expenses', raw_material: 'raw-materials', sku: 'skus',
+  sales_quotation: 'sales-quotations', sales_invoice: 'sales-invoices', purchase_order: 'po',
+  delivery_challan: 'delivery-challans', credit_debit_note: 'credit-debit-notes', grn_bill: 'grn-bills',
+};
+function permitted(req, res, entityType, action) {
+  const resource = ENTITY_RESOURCE[entityType];
+  if (resource && can(req.user?.role, resource, action, req.user?.orgId)) return true;
+  res.status(403).json({ error: `Your role can't ${action === READ ? 'see' : 'change'} the files on this record.` });
+  return false;
+}
+
 // POST /attachments  (multipart: file + entityType + entityId)
 exports.create = async (req, res) => {
   const { entityType, entityId } = req.body;
@@ -27,6 +46,7 @@ exports.create = async (req, res) => {
   const table = ENTITY_TABLES[entityType];
   if (!table) return res.status(400).json({ error: `Files cannot be attached to "${entityType}".` });
   if (!/^\d+$/.test(String(entityId))) return res.status(400).json({ error: 'entityId must be a record id' });
+  if (!permitted(req, res, entityType, WRITE)) return;
   try {
     if (!await assertOwned(db, req, res, table, entityId, { columns: 'id' })) return;
     /* What the file really is, from its own bytes — not what the browser
@@ -48,6 +68,7 @@ exports.create = async (req, res) => {
 exports.list = async (req, res) => {
   const { entityType, entityId } = req.query;
   if (!entityType || !entityId) return res.status(400).json({ error: 'entityType and entityId are required' });
+  if (!permitted(req, res, entityType, READ)) return;
   try {
     /* Owner-scoped. entity_type + entity_id is not a secret — ids are small
        integers — so without this, naming any (type, id) pair listed another
@@ -75,7 +96,9 @@ exports.download = async (req, res) => {
        Fetching by id alone meant counting up from 1 handed over every
        document any business had uploaded — signed POs, invoices, whatever
        was attached. `remove` was checked and both reads were not. */
-    if (!await assertOwned(db, req, res, 'attachments', req.params.id, { columns: 'id' })) return;
+    const own = await assertOwned(db, req, res, 'attachments', req.params.id, { columns: 'id, entity_type' });
+    if (!own) return;
+    if (!permitted(req, res, own.entity_type, READ)) return;
     const { rows } = await db.query('SELECT filename, mime, data FROM attachments WHERE id = $1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     const f = rows[0];
@@ -87,7 +110,9 @@ exports.download = async (req, res) => {
 exports.remove = async (req, res) => {
   try {
     // attachments carries owner_id, so this is a direct check.
-    if (!await assertOwned(db, req, res, 'attachments', req.params.id, { columns: 'id' })) return;
+    const own = await assertOwned(db, req, res, 'attachments', req.params.id, { columns: 'id, entity_type' });
+    if (!own) return;
+    if (!permitted(req, res, own.entity_type, WRITE)) return;
     const r = await db.query('DELETE FROM attachments WHERE id = $1', [req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });

@@ -222,10 +222,14 @@ export default function SalesInvoiceBuilder() {
     const gst = r2(taxable * (Number(f?.gstRate) || 0) / 100);
     const cgst = interstate ? 0 : r2(gst / 2);
     const sgst = interstate ? 0 : r2(gst - cgst);
-    const before = r2(taxable + gst);
+    /* Reverse charge: the GST is shown but the recipient pays it to the
+       government, so it is not in what they pay us — as the server saves it
+       (lib/docTotals). The screen added it, showing ₹11,800 for an invoice
+       saved at ₹10,000, and rounded the wrong figure. */
+    const before = r2(taxable + (f?.reverseCharge ? 0 : gst));
     const net = r2(before + (Number(f?.roundOff) || 0));
     return { lines, sub, disc, taxable, gst, cgst, sgst, before, net };
-  }, [items, f?.discount, f?.discountMode, f?.gstRate, f?.roundOff, interstate]);
+  }, [items, f?.discount, f?.discountMode, f?.gstRate, f?.roundOff, f?.reverseCharge, interstate]);
 
   /* what would stop this invoice from saving, shown where it is wrong */
   const rowProblems = useMemo(() => lineProblems(items), [items]);

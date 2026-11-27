@@ -111,7 +111,8 @@ async function cleanup() {
     const landed = await waitFor(() => location.pathname === '/sales-quotations' && !!document.querySelector('[data-from-enquiry]'), 10000);
     const form = await page.evaluate(() => ({
       banner: document.querySelector('[data-from-enquiry]')?.innerText || '',
-      descs: [...document.querySelectorAll('form input')].map(i => i.value),
+      /* the description is a multi-line box since 26 Nov */
+      descs: [...document.querySelectorAll('form input, form textarea')].map(i => i.value),
     }));
     ok(landed && /Brushed finish, delivery in 4 weeks/.test(form.banner), 'the quotation opens with what the customer asked, quoted above the form');
     ok(form.descs.some(v => /SS304 Mounting Bracket/.test(v)) && form.descs.includes('120'),

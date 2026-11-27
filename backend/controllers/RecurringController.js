@@ -11,6 +11,7 @@
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
 const { allocate } = require('../shared/docSeries');
+const { CREDITED_SQL } = require('../shared/invoiceSettle');
 const { assertOwned } = require('../shared/ownerScope');
 const { isCrossTenant, can } = require('../shared/roles');
 const { notify } = require('../notify');
@@ -390,11 +391,12 @@ async function runPass(ownerId = null) {
           AND si.due_date < ${TODAY}
           -- Not a cancelled one. Drafts are chased: most real invoices are drafts.
           AND si.status NOT IN ('Paid', 'Cancelled')
-          AND si.net_amount > COALESCE(si.amount_paid, 0)
+          -- what is still owed, credit notes taken off (shared/invoiceSettle)
+          AND si.net_amount - COALESCE(si.amount_paid, 0) - ${CREDITED_SQL('si')} > 0.5
           AND si.reminder_stage = 0
           AND COALESCE((SELECT a.reminders_enabled FROM automation_settings a WHERE a.owner_id = si.owner_id), TRUE)
           ${ownerId ? 'AND si.owner_id = $1' : ''}
-       RETURNING si.id, si.owner_id, si.invoice_number, si.customer_id, si.net_amount, si.amount_paid,
+       RETURNING si.id, si.owner_id, si.invoice_number, si.customer_id, si.net_amount, si.amount_paid, ${CREDITED_SQL('si')} AS credited,
                  (${TODAY} - si.due_date) AS days_over)
      SELECT hit.*, c.name AS customer_name FROM hit LEFT JOIN customers c ON c.id = hit.customer_id`,
     ownerId ? [ownerId] : []
@@ -402,7 +404,7 @@ async function runPass(ownerId = null) {
 
   for (const inv of overdue) {
     const daysOver = Math.max(1, Number(inv.days_over) || 1);
-    const outstanding = r2((inv.net_amount || 0) - (inv.amount_paid || 0));
+    const outstanding = r2((inv.net_amount || 0) - (inv.amount_paid || 0) - (inv.credited || 0));
     await notify({ org: inv.owner_id }, {
       type: 'INVOICE_OVERDUE',
       title: `Invoice overdue · ${inv.invoice_number}`,

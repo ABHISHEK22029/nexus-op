@@ -734,7 +734,9 @@ exports.resetPassword = async (req, res) => {
     /* password_changed_at ends the person's existing sessions, as a reset
        by email does: a new password given out by the owner should not leave
        an old session signed in somewhere. */
-    await db.query('UPDATE users SET password_hash = $1, password_changed_at = $3 WHERE id = $2', [hash, id, new Date()]);   // the token-signing clock, see PasswordResetController
+    /* and any unused invitation goes with it: its link would otherwise
+       overwrite the password just given out. */
+    await db.query('UPDATE users SET password_hash = $1, password_changed_at = $3, invite_token_hash = NULL, invite_expires_at = NULL WHERE id = $2', [hash, id, new Date()]);   // the token-signing clock, see PasswordResetController
     forgetAccount(id);
     await log(req, null, 'password_reset', { userId: id, email: user.email });
     res.json({ success: true });
@@ -818,7 +820,13 @@ exports.setUserActive = async (req, res) => {
       }
     }
 
-    await db.query('UPDATE users SET is_active = $1 WHERE id = $2', [active, id]);
+    /* Switching someone off also cancels an invitation they have not used:
+       accepting it set is_active back to TRUE, so a link mailed before the
+       switch-off signed them straight back in. Switching on does not revive
+       it — send a new invitation. */
+    await db.query(
+      'UPDATE users SET is_active = $1, invite_token_hash = CASE WHEN $1 THEN invite_token_hash END, invite_expires_at = CASE WHEN $1 THEN invite_expires_at END WHERE id = $2',
+      [active, id]);
     forgetAccount(id);   // switched off takes effect now, not when their session runs out
     await log(req, user.role, active ? 'activated' : 'deactivated', { userId: id, email: user.email });
     res.json({ success: true, id, isActive: active });

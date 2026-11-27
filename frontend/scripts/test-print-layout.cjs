@@ -28,6 +28,8 @@
      · a one-page document fills its sheet: the item table runs down to the
        totals instead of the page ending in white; a long one flows on
      · the RA bill printed a second sheet holding only the foot of its frame
+     · every document has Download PDF — a real file, named for what it is
+       (the challan, note, PO, purchase bill and RA bill only had Print)
 
    Builds long documents on purpose: with four lines everything fits on one
    page and every pagination bug hides.
@@ -129,6 +131,10 @@ async function cleanup() {
 
     browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
     const page = await browser.newPage();
+    /* Download PDF lands here. */
+    const dlDir = fs.mkdtempSync(path.join(os.tmpdir(), `print-dl-${stamp}-`));
+    await (await page.target().createCDPSession()).send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dlDir });
+    const NAMES = { quotation: /^Quotation /, 'tax invoice': /^Tax Invoice /, 'delivery challan': /^Delivery Challan /, 'credit note': /^Credit Note /, 'purchase order': /^Purchase Order /, 'purchase bill': /^Purchase Bill /, 'RA bill': /^RA Bill / };
     const errs = [];
     page.on('pageerror', e => errs.push(e.message));
     await page.goto(`${UI}/login`, { waitUntil: 'domcontentloaded' });
@@ -205,6 +211,22 @@ async function cleanup() {
       const images = (bytes.toString('latin1').match(/\/Subtype\s*\/Image/g) || []).length;
       ok(images === 0 && bytes.length < 1024 * 1024, `real text, not a bitmap (${images} images, ${(bytes.length / 1024).toFixed(0)} KB)`);
       try { fs.unlinkSync(out); } catch { /* ignore */ }
+
+      /* Download PDF: a file, not the print dialog, named for the document. */
+      await page.emulateMediaType('screen');
+      let saved = null;
+      for (let attempt = 0; attempt < 2 && !saved; attempt++) {
+        const before = new Set(fs.readdirSync(dlDir));
+        const clicked = await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /Download PDF/.test(x.textContent)); if (b) b.click(); return !!b; });
+        if (!clicked) break;
+        for (let i = 0; i < 80 && !saved; i++) { await sleep(250); saved = fs.readdirSync(dlDir).find(x => !before.has(x) && x.endsWith('.pdf')) || null; }
+        /* a Vite dev server answers the first lazy import with a reload */
+        if (!saved) await page.reload({ waitUntil: 'networkidle2' });
+      }
+      const want = NAMES[Object.keys(NAMES).find(k => label.startsWith(k))];
+      const dl = saved ? fs.readFileSync(path.join(dlDir, saved)).toString('latin1') : '';
+      const dlPages = (dl.match(/\/Type\s*\/Page[^s]/g) || []).length;
+      ok(!!saved && dl.startsWith('%PDF') && dlPages >= 1 && (!want || want.test(saved)), `Download PDF saves a real file: ${saved ? `“${saved}”, ${dlPages} page${dlPages === 1 ? '' : 's'}` : 'nothing saved'}`);
     }
     ok(errs.length === 0, `no JavaScript errors${errs.length ? ': ' + errs[0].slice(0, 80) : ''}`);
   } catch (e) {

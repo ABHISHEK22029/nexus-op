@@ -10,9 +10,36 @@
    look like a tax invoice, and a delivery challan must say plainly that it
    isn't one.
    ══════════════════════════════════════════════════════════ */
-import React from 'react';
+import React, { useState } from 'react';
 import CompanyLogo from './CompanyLogo';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Download } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
+import { downloadDocumentPdf } from '../lib/documentPdf';
+
+/* ── Download PDF ──
+   A real A4 file in one click (lib/documentPdf.js), the same on every
+   document. Each page says what its PDF holds — `model` is a function so
+   it is built from what the page shows at the moment of the click. */
+export function usePdfDownload() {
+  const toast = useToast();
+  const [making, setMaking] = useState(false);
+  const save = async (model) => {
+    if (making) return;
+    setMaking(true);
+    try { await downloadDocumentPdf(model()); }
+    catch (e) { toast.error(`Could not make the PDF: ${e?.message || e}`); }
+    finally { setMaking(false); }
+  };
+  return { making, save };
+}
+export function PdfButton({ pdf, model, fileName, className = 'btn-secondary btn-sm', label = 'Download PDF' }) {
+  return (
+    <button type="button" onClick={() => pdf.save(model)} disabled={pdf.making} className={className} data-download-pdf
+      title={fileName ? `Saves ${fileName}.pdf` : undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <Download size={15} /> {pdf.making ? 'Making PDF…' : label}
+    </button>
+  );
+}
 
 export const rup = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const fmtDate = (d) => d

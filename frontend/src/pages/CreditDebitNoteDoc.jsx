@@ -25,7 +25,7 @@ import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../compo
 import Attachments from '../components/Attachments';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, ComplianceWarning, fmtDate, ItemText, StatusPill,
-  FillRows
+  FillRows, usePdfDownload, PdfButton
 } from '../components/DocumentKit';
 import { amountInWords } from '../lib/amountInWords';
 import { docFileName, printAs } from '../lib/documentPdf';
@@ -63,6 +63,7 @@ export default function CreditDebitNoteDoc() {
   const canWrite = can('credit-debit-notes', 'write');
   /* Every change kept; an earlier version shown here, as it was. */
   const hist = useDocHistory({ path: 'credit-debit-notes', id, reload: load, apply: (c) => setN(cur => ({ ...cur, ...c })) });
+  const pdf = usePdfDownload();
   const begin = (field) => { if (n && canWrite && !hist.viewing) ed.start(noteValues(n), field); };
 
   if (err) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Note not found. <button onClick={() => navigate('/credit-debit-notes')} className="btn-secondary" style={{ marginLeft: 8 }}>Back</button></div>;
@@ -145,6 +146,43 @@ export default function CreditDebitNoteDoc() {
     !n.ref_date && 'Original invoice date — needed to report this note in the right tax period',
     !n.reason && 'Reason for the note',
   ].filter(Boolean);
+  /* What the PDF says — the same values as the sheet below. */
+  const fileName = docFileName(n.note_type === 'credit' ? 'Credit Note' : 'Debit Note', n.note_number, party.name);
+  const legal = n.party_type === 'vendor'
+    ? "Issued to the supplier for the adjustment shown against their invoice referenced above. The supplier's corresponding note under Section 34 governs the tax."
+    : n.note_type === 'credit'
+      ? 'Issued under Section 34(1). The tax liability on the original invoice is reduced to the extent shown, provided the recipient has reversed the corresponding input tax credit.'
+      : 'Issued under Section 34(3). This note increases the taxable value and tax charged on the original invoice referenced above.';
+  const pdfModel = () => ({
+    fileName, title, number: n.note_number, company: co,
+    meta: [['No.', n.note_number], ['Date', fmtDate(n.note_date)]],
+    stripFirst: true,
+    strip: { title: 'Issued against original document', items: [
+      ['Number', n.ref_number], ['Dated', n.ref_date ? fmtDate(n.ref_date) : ''], n.ref_type && ['Type', String(n.ref_type).replace(/_/g, ' ')],
+    ] },
+    parties: [
+      { title: n.party_type === 'vendor' ? 'Vendor' : 'Customer', name: party.name, lines: [party.billing_address || party.address, party.state], gstin: party.gstin || '' },
+      { title: 'Reason', text: n.reason || '' },
+    ],
+    columns: [
+      { key: 'index', label: '#' }, { key: 'description', label: 'Description' }, { key: 'hsn', label: 'HSN/SAC' },
+      { key: 'uom', label: 'UOM', align: 'center' }, { key: 'quantity', label: 'Qty', align: 'right' },
+      { key: 'rate', label: 'Rate', align: 'right' }, { key: 'amount', label: 'Amount', align: 'right', strong: true },
+    ],
+    rows: (n.items || []).map((it, i) => [String(i + 1), it.description, it.hsn || '—', it.uom || '—', String(Number(it.quantity)), rupee(it.rate), rupee(it.amount)]),
+    notes: n.notes,
+    totals: [
+      { label: 'Taxable value', value: rupee(n.sub_total) },
+      ...(n.interstate
+        ? [{ label: `IGST (${n.gst_rate}%)`, value: rupee(n.igst) }]
+        : [{ label: `CGST (${n.gst_rate / 2}%)`, value: rupee(n.cgst) }, { label: `SGST (${n.gst_rate / 2}%)`, value: rupee(n.sgst) }]),
+      { label: 'Total', value: rupee(n.total), strong: true },
+    ],
+    words: `In words: ${amountInWords(n.total)}`,
+    notice: legal,
+    footerLeft: co.invoice_footer_note || '', footerRight: n.note_number,
+  });
+
   const th = { padding: '9px 10px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-default)' };
   const td = { padding: '9px 10px', fontSize: '0.85rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)' };
   const totRow = (l, v, bold) => (
@@ -174,13 +212,16 @@ export default function CreditDebitNoteDoc() {
                 <Send size={15} /> Mark as sent
               </button>
             )}
-            <button onClick={() => printAs(docFileName(n.note_type === 'credit' ? 'Credit Note' : 'Debit Note', n.note_number, (n.party || {}).name))} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
+            <PdfButton pdf={pdf} model={pdfModel} fileName={fileName} />
+            <button onClick={() => printAs(fileName)} className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print</button>
           </div>
         )}
       </div>
 
       <HistoryPanel hist={hist} what={`${n.note_type === 'credit' ? 'Credit' : 'Debit'} note ${n.note_number}`} />
-      <VersionBar hist={hist} onPrint={() => printAs(docFileName(n.note_type === 'credit' ? 'Credit Note' : 'Debit Note', n.note_number, (n.party || {}).name))} />
+      <VersionBar hist={hist} onPrint={() => printAs(fileName)}>
+        <PdfButton pdf={pdf} model={pdfModel} label="PDF of this version" />
+      </VersionBar>
       {ed.editing && <EditBar ed={ed} what={n.note_number} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />}
 
       <div className="no-print"><ComplianceWarning gaps={gaps} /></div>

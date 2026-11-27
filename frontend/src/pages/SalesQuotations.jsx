@@ -68,6 +68,7 @@ export default function SalesQuotations() {
     if (prefill) { try { sessionStorage.removeItem('quotation_prefill'); } catch { /* storage blocked */ } }
   }, [prefill]);
   const [showForm, setShowForm] = useState(() => !!prefill);
+  const [saving, setSaving] = useState(false);   // one quotation per press
   /* + New in the rail opens this screen with its form open (?new=1) —
      also when already on it, so the address is watched, not just read once. */
   const newLoc = useLocation();
@@ -150,6 +151,11 @@ export default function SalesQuotations() {
     if (!items.length) { toast.error('Add at least one line item'); return; }
     if (adjProblems.length) { toast.error(adjProblems[0]); return; }
     if (deliveryProblem) { toast.error(deliveryProblem); return; }
+    /* One quotation per press. A double click made two, each with its own
+       number — the orders, challans and notes forms already had this. */
+    if (saving) return;
+    setSaving(true);
+    try {
     const token = getToken();
     const res = await fetch(`${API}/sales-quotations`, {
       method: 'POST',
@@ -168,6 +174,7 @@ export default function SalesQuotations() {
     setShowForm(false); setHead(BLANK_HEAD()); setDeliveryTouched(false);
     setLines([BLANK_LINE()]);
     q.reload();
+    } finally { setSaving(false); }
   };
 
   /* Share for approval: makes (or finds) the quotation's private link and
@@ -402,7 +409,7 @@ export default function SalesQuotations() {
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button type="submit" className="btn-primary btn-sm" disabled={rowProblems.list.length > 0 || adjProblems.length > 0 || !!deliveryProblem}>Create Quotation</button>
+            <button type="submit" className="btn-primary btn-sm" disabled={saving || rowProblems.list.length > 0 || adjProblems.length > 0 || !!deliveryProblem}>{saving ? 'Creating…' : 'Create Quotation'}</button>
             <button type="button" onClick={() => { setShowForm(false); setFromEnquiry(null); }} className="btn-secondary">Cancel</button>
           </div>
         </form>

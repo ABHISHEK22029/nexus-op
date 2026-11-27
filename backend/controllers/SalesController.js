@@ -5,6 +5,9 @@
    All owner-scoped: admin sees all, a user sees only their own.
    ══════════════════════════════════════════════════════════ */
 const db = require('../db');
+/* A price from a form: '' or junk is "no price" (null), not '' — a NUMERIC
+   column refused '' with a 500 when an order line was saved without one. */
+const price = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
 const { profileFor } = require('../shared/companyProfile');
 const { computeOrder } = require('../shared/orderTotals');
 const { allocatePoNumber } = require('../shared/docNumber');
@@ -167,7 +170,7 @@ exports.createOrder = async (req, res) => {
             discount, discount_type, tax_rate, amount, sort_order)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [orderId, l.skuId || null, l.description, l.hsn || null, l.quantity || null,
-         l.unit || l.uom || 'nos', l.rate ?? l.targetPrice ?? null, l.targetPrice ?? l.rate ?? null,
+         l.unit || l.uom || 'nos', price(l.rate) ?? price(l.targetPrice), price(l.targetPrice) ?? price(l.rate),
          l.discount || 0, l.discountType || 'percent', l.taxRate ?? null, l.amount, sort++]
       );
     }
@@ -282,6 +285,20 @@ exports.updateOrder = async (req, res) => {
         keep.add(id);
         const p = progress.get(id);
         const sent = p?.dispatched || 0, billed = p?.billed || 0, floor = Math.max(sent, billed);
+        /* A challan line is matched to its order line by product, else by its
+           words. Renamed after it shipped (a typo fixed: "50x50" → "50 x 50"),
+           a line with no product read 0 sent, the next challan offered all of
+           it again and stock went out twice. So once goods have gone, the
+           product — and the name of a line with no product — stay. */
+        const was = byId.get(id);
+        if (sent > 0.0005) {
+          const renamed = !was.sku_id && String(l.description || '').trim() !== String(was.description || '').trim();
+          const reproduct = String(l.skuId || '') !== String(was.sku_id || '');
+          if (renamed || reproduct) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: `“${was.description}” has already been sent, so its ${reproduct ? 'product' : 'name'} can't change — the challans are matched to it.` });
+          }
+        }
         if (Number(l.quantity) < floor - 0.0005) {
           await client.query('ROLLBACK');
           return res.status(409).json({ error: `“${l.description}”: ${floor} has already been ${sent >= billed ? 'sent' : 'billed'}, so the quantity can't go below that.` });
@@ -304,7 +321,7 @@ exports.updateOrder = async (req, res) => {
       for (const [n, l] of t.lines.entries()) {
         const id = Number(l.id) || null;
         const v = [l.skuId || null, l.description, l.hsn || null, l.quantity || null, l.unit || l.uom || 'nos',
-          l.rate ?? l.targetPrice ?? null, l.targetPrice ?? l.rate ?? null, l.amount, n];
+          price(l.rate) ?? price(l.targetPrice), price(l.targetPrice) ?? price(l.rate), l.amount, n];
         if (id) {
           await client.query(
             `UPDATE customer_order_items SET sku_id = $1, description = $2, hsn = $3, quantity = $4, unit = $5, rate = $6,
@@ -506,7 +523,12 @@ exports.selectQuote = async (req, res) => {
        accepted, so a PO could be generated at another comparison's price. */
     const line = (await db.query('SELECT id FROM quote_lines WHERE id = $1 AND quotation_id = $2', [quoteLineId, req.params.id])).rows[0];
     if (!line) return res.status(400).json({ error: 'That quote is not one of this comparison’s quotes' });
-    await db.query('UPDATE quotations SET selected_quote_id = $1, status = $2 WHERE id = $3', [quoteLineId, 'Selected', req.params.id]);
+    /* Not once a PO has been raised from it: re-selecting reset it to
+       "Selected", and the next Generate raised a second PO. */
+    const r = await db.query(
+      "UPDATE quotations SET selected_quote_id = $1, status = $2 WHERE id = $3 AND COALESCE(status, '') <> 'PO Raised'",
+      [quoteLineId, 'Selected', req.params.id]);
+    if (!r.rowCount) return res.status(409).json({ error: 'A PO has already been raised from this comparison, so the winning quote can no longer change.' });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 };
@@ -523,6 +545,7 @@ exports.deleteQuotation = async (req, res) => {
 // Turn the selected quote into a real Vendor PO (existing purchase_orders).
 exports.generatePO = async (req, res) => {
   const { projectId } = req.body;
+  let claimedFrom = null;
   try {
     // Owner-scoped: raising a PO off someone else's quotation would commit
     // real money against a vendor they chose.
@@ -533,6 +556,13 @@ exports.generatePO = async (req, res) => {
     const line = (await db.query('SELECT * FROM quote_lines WHERE id = $1', [quote.selected_quote_id])).rows[0];
     if (!line) return res.status(400).json({ error: 'selected quote missing' });
     if (!line.vendor_id) return res.status(400).json({ error: 'The selected quote has no linked vendor — pick a vendor from your Vendors list on that quote' });
+    /* Claimed before anything is written: a double click (or a repeat POST)
+       raised two POs, both counted as on order and both receivable. The
+       second request finds the comparison already claimed. */
+    const claimed = await db.query(
+      "UPDATE quotations SET status = 'PO Raised' WHERE id = $1 AND COALESCE(status, '') <> 'PO Raised' RETURNING id", [quote.id]);
+    if (!claimed.rowCount) return res.status(409).json({ error: 'A PO has already been raised from this comparison.' });
+    claimedFrom = { id: quote.id, status: quote.status };
     /* No project needed: the PO's context is the vendor quote it came from. */
 
     // Trace back to the customer order (quotation → order item → order).
@@ -571,11 +601,15 @@ exports.generatePO = async (req, res) => {
       [{ sno: 1, description: quote.part_description, uom: quote.unit || 'nos', quantity: quote.quantity || 1, unitPrice: line.unit_price || 0 }],
       ownerId);
     notifyApproval(rows[0].id, poNumber, gate, ownerId);
-    await db.query('UPDATE quotations SET status = $1 WHERE id = $2', ['PO Raised', req.params.id]);
+    claimedFrom = null;   // the PO exists; the claim stands
     // Move the customer order into procurement automatically.
     if (customerOrderId) {
       await db.query(`UPDATE customer_orders SET status = 'In Procurement' WHERE id = $1 AND status = 'Open' AND owner_id = $2`, [customerOrderId, quote.owner_id]);
     }
     res.json({ poId: rows[0].id, poNumber, customerOrderId, approvalStatus: gate.needsApproval ? 'Pending Approval' : 'Not Required' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    /* No PO came of it: the comparison can be used again. */
+    if (claimedFrom) await db.query('UPDATE quotations SET status = $1 WHERE id = $2', [claimedFrom.status, claimedFrom.id]).catch(() => {});
+    res.status(500).json({ error: e.message });
+  }
 };

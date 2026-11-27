@@ -38,6 +38,8 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
   const [debounced, setDebounced] = useState(urlQ);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  /* the server's total over every matching row, when it sends one */
+  const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -69,7 +71,7 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
       const data = await r.json();
       // Tolerates both shapes: paginated envelope or a plain array.
       if (Array.isArray(data)) { setRows(data); setTotal(data.length); }
-      else { setRows(data.items || []); setTotal(data.total ?? 0); }
+      else { setRows(data.items || []); setTotal(data.total ?? 0); setSummary(data.summary || null); }
     } catch (err) {
       // Previously this swallowed the error and showed an empty list, so a
       // failure was indistinguishable from "no records".
@@ -246,10 +248,13 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
           <span style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>{summaryLabel || `Total ${title}`}</span>
           {/* Compact (₹16.03 L), the exact sum in the tooltip — a full
               figure in the crores ran off a phone screen. */}
-          <span title={fmtINR(rows.reduce((s, r) => s + (Number(r[summaryField]) || 0), 0))}
+          {/* Over every matching row (the server's summary). Summed from
+              `rows`, it was the 25 on this page, and changed on Next. */}
+          {(() => { const sum = summary && summary[summaryField] != null ? Number(summary[summaryField]) : rows.reduce((s, r) => s + (Number(r[summaryField]) || 0), 0); return (
+          <span title={fmtINR(sum)}
             style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--brand-amber)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-            {fmtCompactINR(rows.reduce((s, r) => s + (Number(r[summaryField]) || 0), 0))}
-          </span>
+            {fmtCompactINR(sum)}
+          </span>); })()}
         </div>
       )}
 

@@ -79,8 +79,10 @@ const MeasurementBook = () => {
     const measuredQuantity = l * w * d;
 
     try {
+      /* The answer is read: a refused save said "updated" and kept nothing. */
+      const ok = async (r) => { if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Could not save the measurement'); } };
       if (editingId) {
-        await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/mb/${editingId}`, {
+        const r = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/mb/${editingId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -93,13 +95,15 @@ const MeasurementBook = () => {
             measuredQuantity
           })
         });
+        await ok(r);
         toast.success('Measurement updated');
       } else {
-        await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/mb`, {
+        const r = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/mb`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...newItem, projectId: activeProject.id, measuredQuantity })
         });
+        await ok(r);
         toast.success('Measurement recorded');
       }
       resetForm();
@@ -124,7 +128,9 @@ const MeasurementBook = () => {
   const handleDelete = async (id) => {
     if (!(await confirm({ title: 'Delete this measurement record?', message: "This can't be undone.", confirmLabel: 'Delete record', tone: 'danger' }))) return;
     try {
-      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/mb/${id}`, { method: 'DELETE' });
+      const r = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/mb/${id}`, { method: 'DELETE' });
+      /* a billed measurement is refused (it holds an RA bill up): say why */
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Could not delete it'); }
       toast.success('Measurement deleted');
       if (editingId === id) resetForm();
       fetchData();
