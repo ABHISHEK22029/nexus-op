@@ -183,8 +183,14 @@ function facts(m) {
 }
 
 /* The item table. `widths` is passed on the second pass so that the rows
-   carried over to the closing block line up with the table above them. */
-function itemTable(m, rows, { widths, lastRowId } = {}) {
+   carried over to the closing block line up with the table above them.
+
+   Ruled — a frame and a line between columns — and `fill` points of blank
+   row at its foot, so that on paper the table runs down to the totals (or
+   to the foot of a page it continues from) instead of the page ending in
+   white. Both from the 26–27 Nov complaint: "unidentified space left at
+   the bottom… it should be professional". */
+function itemTable(m, rows, { widths, lastRowId, fill = 0 } = {}) {
   const cols = m.columns;
   const head = cols.map((c) => ({ text: c.label.toUpperCase(), bold: true, fontSize: 7, characterSpacing: 0.4, alignment: c.align || 'left', fillColor: BAND, noWrap: c.align === 'right' }));
   const body = rows.map((r, ri) => r.map((v, ci) => {
@@ -201,8 +207,7 @@ function itemTable(m, rows, { widths, lastRowId } = {}) {
         fontSize: 8.5, alignment: 'left', color: INK,
       };
       if (ci === 0 && ri === rows.length - 1 && lastRowId) cell.id = lastRowId;
-    if (ci === 0 && ri === rows.length - 2 && lastRowId) cell.id = 'prev-row';
-      if (ci === 0 && ri === rows.length - 2 && lastRowId) cell.id = 'prev-row';
+      if (ci === 0 && ri === rows.length - 2 && lastRowId === 'last-row') cell.id = 'prev-row';
       return cell;
     }
     const cell = {
@@ -213,19 +218,27 @@ function itemTable(m, rows, { widths, lastRowId } = {}) {
       color: c.muted ? SOFT : INK,
     };
     if (ci === 0 && ri === rows.length - 1 && lastRowId) cell.id = lastRowId;
+    /* the row before the last, so a last row left alone on a page is
+       noticed — only multi-line descriptions were marked before */
+    if (ci === 0 && ri === rows.length - 2 && lastRowId === 'last-row') cell.id = 'prev-row';
     return cell;
   }));
+  const blank = fill > 0 ? body.push(cols.map(() => ({ text: '' }))) : 0;   // its row index, head included
+  const outer = (i, n) => i === 0 || i === n;
   return {
     table: {
       headerRows: 1, dontBreakRows: true, keepWithHeaderRows: 1,
       widths: widths || cols.map((c) => (c.key === 'description' ? '*' : 'auto')),
       body: [head, ...body],
+      /* the blank row is exactly `fill` tall, padding included */
+      heights: blank ? (i) => (i === blank ? Math.max(0, fill - 7) : 'auto') : undefined,
     },
     layout: {
       ...hairline,
-      hLineWidth: (i) => (i === 1 ? 1.2 : 0.6),
-      hLineColor: (i) => (i === 1 ? INK : LIGHT),
-      vLineWidth: () => 0,
+      hLineWidth: (i, node) => (outer(i, node.table.body.length) ? 0.8 : i === 1 ? 1.2 : 0.6),
+      hLineColor: (i, node) => (outer(i, node.table.body.length) || i === 1 ? INK : LIGHT),
+      vLineWidth: (i, node) => (outer(i, node.table.widths.length) ? 0.8 : 0.5),
+      vLineColor: (i, node) => (outer(i, node.table.widths.length) ? INK : '#b5b5b5'),
       paddingLeft: () => 5, paddingRight: () => 5, paddingTop: () => 3.5, paddingBottom: () => 3.5,
     },
   };
@@ -309,11 +322,13 @@ function closing(m) {
         ],
         margin: [0, 10, 0, 0],
       },
-      {
-        table: { widths: ['*', 'auto'], body: [[{ text: soft(m.footerLeft || ''), fontSize: 7, color: SOFT }, { text: m.footerRight || '', fontSize: 7, bold: true, alignment: 'right', noWrap: true }]] },
+      /* Only the company's own footer note: the default "This is a
+         computer-generated document." strip was dropped (26 Nov 2026). */
+      m.footerLeft ? {
+        table: { widths: ['*', 'auto'], body: [[{ text: soft(m.footerLeft), fontSize: 7, color: SOFT }, { text: m.footerRight || '', fontSize: 7, bold: true, alignment: 'right', noWrap: true }]] },
         layout: { hLineWidth: (i) => (i === 0 ? 1.2 : 0), vLineWidth: () => 0, hLineColor: () => INK, paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => 4, paddingBottom: () => 4, fillColor: () => BAND },
         margin: [0, 8, 0, 0],
-      },
+      } : null,
   ];
   /* The totals are not marked unbreakable: the layout below finds where they
      land by their id, and an unbreakable block reports no page — so totals
@@ -325,7 +340,11 @@ function closing(m) {
   ];
 }
 
-function definition(m, logo, { carry = 0, widths } = {}) {
+/* Marks where something ends, so the layout below can measure the space
+   left under it on its page. A line of no height. */
+const MARK = (id) => ({ id, canvas: [{ type: 'line', x1: 0, y1: 0, x2: 1, y2: 0, lineWidth: 0.1, lineColor: '#ffffff' }] });
+
+function definition(m, logo, { carry = 0, widths, fillMain = 0, fillTail = 0 } = {}) {
   const rows = m.rows || [];
   const split = carry ? rows.length - carry : rows.length;
   const main = rows.slice(0, split);
@@ -341,14 +360,17 @@ function definition(m, logo, { carry = 0, widths } = {}) {
   ].filter(Boolean);
   const [totalsPart, restPart] = closing(m);
   if (!carry) {
-    content.push(itemTable(m, rows, { lastRowId: 'last-row' }), totalsPart, restPart);
+    content.push(itemTable(m, rows, { lastRowId: 'last-row', fill: fillTail }), totalsPart, restPart);
   } else {
-    if (main.length) content.push(itemTable(m, main, { widths }));
+    /* The table above runs on to the foot of its page, so that page reads
+       "continued", not "finished early". */
+    if (main.length) content.push(itemTable(m, main, { widths, lastRowId: 'main-last', fill: fillMain }), MARK('main-end'));
     /* The carried rows and the totals start a fresh page together. They
        come with their own header row, so the new page reads as a
        continuation of the table above. The rest follows them. */
-    content.push({ stack: [itemTable(m, tail, { widths }), totalsPart], pageBreak: 'before' }, restPart);
+    content.push({ stack: [itemTable(m, tail, { widths, lastRowId: 'last-row', fill: fillTail }), totalsPart], pageBreak: 'before' }, restPart);
   }
+  content.push(MARK('doc-end'));
   return {
     pageSize: 'A4',
     pageMargins: margins,
@@ -380,23 +402,56 @@ const blobOf = (pdfMake, dd) => new Promise((resolve, reject) => {
  */
 export async function downloadDocumentPdf(model) {
   const [pdfMake, logo] = await Promise.all([loadPdfMake(), logoDataUrl(model.company?.logo_url || null)]);
-  const seen = {};
-  const first = definition(model, logo);
-  first.pageBreakBefore = (node) => { if (node.id) seen[node.id] = node.pageNumbers; return false; };
-  let blob = await blobOf(pdfMake, first);
+  /* Lay it out, noting where the marked pieces landed. */
+  const layout = async (opts) => {
+    const seen = {};
+    const dd = definition(model, logo, opts);
+    dd.pageBreakBefore = (node) => { if (node.id) seen[node.id] = node; return false; };
+    const blob = await blobOf(pdfMake, dd);
+    return { dd, blob, seen };
+  };
+  const first = await layout({});
+  let { blob, seen, dd } = first;
+  let opts = {};
 
   const n = (model.rows || []).length;
-  const lastPage = (seen['last-row'] || [])[0];
-  const closingPages = seen.closing || [];
-  const prevPage = (seen['prev-row'] || [])[0];
-  /* the totals left behind by the last row, or the last row left on a page
-     by itself with them: either way the last rows move over together */
-  const apart = n > 0 && lastPage != null && (closingPages.some((p) => p !== lastPage) || (prevPage != null && prevPage !== lastPage));
+  const pageOf = (s, id) => ((s[id] && s[id].pageNumbers) || [])[0];
+  const topOf = (s, id) => (s[id] && s[id].startPosition ? s[id].startPosition.top : null);
+  const pagesIn = (s) => Math.max(1, ...Object.values(s).flatMap((x) => x.pageNumbers || []));
+  const lastPage = pageOf(seen, 'last-row');
+  const prevPage = pageOf(seen, 'prev-row');
+  /* The whole closing — totals, words, bank, terms, signature — ends on the
+     page of the last row, or the last rows move over to start a page with
+     it. Only the totals used to be held to the rows; the rest could go on
+     alone, and a 20-line invoice put its bank box at the top of page two,
+     its signature at the foot, and nothing between. A last row left on a
+     page by itself moves too. */
+  const apart = n > 0 && lastPage != null && (pageOf(seen, 'doc-end') !== lastPage || (prevPage != null && prevPage !== lastPage));
   if (apart) {
     /* The widths the first layout settled on, so both halves agree. */
-    const table = first.content.find((c) => c && c.table && c.table.headerRows === 1);
+    const table = first.dd.content.find((c) => c && c.table && c.table.headerRows === 1);
     const widths = table ? table.table.widths.map((w) => (typeof w === 'object' && w._calcWidth != null ? w._calcWidth : w)) : undefined;
-    blob = await blobOf(pdfMake, definition(model, logo, { carry: n >= 3 ? 2 : 1, widths }));
+    opts = { carry: n >= 3 ? 2 : 1, widths };
+    ({ blob, seen, dd } = await layout(opts));
+  }
+
+  /* Then every page is filled: the table above the totals runs down to
+     them, so the closing ends at the foot of the last page, and a table
+     continued overleaf runs to the foot of its page. The space is measured
+     from where each part ended and laid out once more; 2pt short of the
+     margin, and used only if the page count does not change. */
+  const bottom = PAGE_H - dd.pageMargins[3];
+  const roomUnder = (id) => { const t = topOf(seen, id); return t == null ? 0 : bottom - t - 2; };
+  const fills = {};
+  if (pageOf(seen, 'doc-end') === pageOf(seen, 'last-row') && roomUnder('doc-end') > 6) fills.fillTail = roomUnder('doc-end');
+  if (opts.carry && pageOf(seen, 'main-end') === pageOf(seen, 'main-last') && roomUnder('main-end') > 6) fills.fillMain = roomUnder('main-end');
+  if (fills.fillTail || fills.fillMain) {
+    for (const less of [0, 10]) {
+      const f = {};
+      for (const [k, v] of Object.entries(fills)) f[k] = v - less;
+      const filled = await layout({ ...opts, ...f });
+      if (pagesIn(filled.seen) === pagesIn(seen)) { blob = filled.blob; break; }
+    }
   }
 
   const name = `${model.fileName || 'document'}.pdf`;

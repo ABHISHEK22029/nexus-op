@@ -10,8 +10,9 @@ import { amountInWords } from '../lib/amountInWords';
 import EmailDocumentModal from '../components/EmailDocumentModal';
 import Attachments from '../components/Attachments';
 import UnitSelect from '../components/UnitSelect';
-import { ItemText } from '../components/DocumentKit';
+import { ItemText, FillRows } from '../components/DocumentKit';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
+import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../components/DocHistory';
 import { GST_RATES } from '../lib/docTotals';
 import { lineProblems } from '../lib/lineChecks';
 import { docFileName, printAs } from '../lib/documentPdf';
@@ -86,7 +87,12 @@ const POInvoice = () => {
   useEffect(() => { fetchInvoiceData(); /* eslint-disable-next-line */ }, [id]);
 
   const canWrite = can('po', 'write');
-  const begin = (field) => { if (po && canWrite) ed.start(poValues(po, items), field); };
+  /* Every change kept; an earlier version shown here, as it was. */
+  const hist = useDocHistory({
+    path: 'po', id, reload: () => fetchInvoiceData(),
+    apply: ({ items: lines, vendor, ...row }) => { setPo(cur => ({ ...cur, ...row })); if (Array.isArray(lines) && lines.length) setItems(lines); },
+  });
+  const begin = (field) => { if (po && canWrite && !hist.viewing) ed.start(poValues(po, items), field); };
 
   if (loading) {
     return <div className="flex justify-center items-center h-64 text-gray-500">Loading document...</div>;
@@ -106,7 +112,7 @@ const POInvoice = () => {
   const d = ed.editing ? ed.draft : null;
   const editAll = !!d && pending;
   const editable = (k) => !!d && (pending || TERM_KEYS.includes(k));
-  const spotOn = (k) => !ed.editing && canWrite && (pending || TERM_KEYS.includes(k));
+  const spotOn = (k) => !ed.editing && !hist.viewing && canWrite && (pending || TERM_KEYS.includes(k));
   const shownItems = editAll ? d.items : items;
   const lp = editAll ? lineProblems(d.items.map(it => ({ ...it, rate: it.unitPrice }))) : null;
   const zeroQty = editAll ? new Set(d.items.map((it, i) => (String(it.description).trim() && !(Number(it.quantity) > 0) ? i : -1)).filter(i => i >= 0)) : new Set();
@@ -206,8 +212,9 @@ const POInvoice = () => {
         <button onClick={() => navigate('/purchase-orders')} className="inv-act-btn">
           <ArrowLeft size={16} /> Back to POs
         </button>
-        {!ed.editing && (
+        {!ed.editing && !hist.viewing && (
         <div className="flex flex-wrap items-center gap-3">
+          <HistoryButton hist={hist} className="inv-act-btn" />
           <span className="doc-status-pill" data-doc-status>{po.status}</span>
           {canWrite && (
             <button onClick={() => begin()} data-doc-edit className="inv-act-btn" title={pending ? 'Change the lines, GST and terms, right here on the PO' : 'Change the quote reference or the terms'}>
@@ -229,6 +236,8 @@ const POInvoice = () => {
         )}
       </div>
 
+      <HistoryPanel hist={hist} what={`Purchase order ${po.poNumber || `PO-${po.id}`}`} />
+      <VersionBar hist={hist} onPrint={handlePrint} />
       {ed.editing && <EditBar ed={ed} what={po.poNumber || `PO-${po.id}`} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />}
 
       {/* Screen only: what the tax on this PO rests on, when it is a guess. */}
@@ -350,6 +359,7 @@ const POInvoice = () => {
                 ))}
               </tbody>
             )}
+            <FillRows cols={7} />
           </table>
           {editAll && <div style={{ padding: '0 22px' }}><button type="button" className="de-add-line" onClick={() => ed.addItem(blankLine())} data-de-add-line><Plus size={14} /> Add line</button></div>}
         </div>
@@ -443,16 +453,16 @@ const POInvoice = () => {
         </div>
 
         {/* Footer */}
-        <div className="inv-footer">
-          {/* The business's own document, sent to its own vendor: its own
-              footer line, as on every other document — not ours. */}
-          <div className="inv-footer-left">
-            {company.invoice_footer_note || 'This is a computer-generated purchase order.'}
+        {/* The business's own document, sent to its own vendor: its own
+            footer line (Company Profile), if it wrote one — not ours. */}
+        {company.invoice_footer_note && (
+          <div className="inv-footer">
+            <div className="inv-footer-left">{company.invoice_footer_note}</div>
+            <div className="inv-footer-right">
+              {po.poNumber || `PO-${po.id}`} &nbsp;|&nbsp; {poDate}
+            </div>
           </div>
-          <div className="inv-footer-right">
-            {po.poNumber || `PO-${po.id}`} &nbsp;|&nbsp; {poDate}
-          </div>
-        </div>
+        )}
         </div>
 
       </div>

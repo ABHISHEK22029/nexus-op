@@ -14,6 +14,7 @@
    sign-in starts without it.
    ══════════════════════════════════════════════════════════════════════ */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { GUIDE_ENABLED } from '../lib/features';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
@@ -38,8 +39,9 @@ export function TutorialProvider({ children }) {
   const activeKey = `maks.tutorial.active.${user?.id ?? 'me'}`;
 
   /* First sign-in: open once (the flag is cleared below), then never by itself again. */
-  const [open, setOpen] = useState(pendingNow);
-  const [intro, setIntro] = useState(pendingNow);
+  /* …and only while the Guide is switched on (lib/features). */
+  const [open, setOpen] = useState(() => GUIDE_ENABLED && pendingNow());
+  const [intro, setIntro] = useState(() => GUIDE_ENABLED && pendingNow());
   const [counts, setCounts] = useState(null);
   const [active, setActiveState] = useState(() => session.get(activeKey));
 

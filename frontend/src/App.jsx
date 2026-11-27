@@ -36,6 +36,12 @@ const Quotations = lazy(() => import('./pages/Quotations'));
 const GrnBillBuilder = lazy(() => import('./pages/GrnBillBuilder'));
 const GrnBillDoc = lazy(() => import('./pages/GrnBillDoc'));
 const SalesInvoices = lazy(() => import('./pages/SalesInvoices'));
+/* The invoice list on its Unpaid view (?view=unpaid), for Money > To collect. */
+function Receivables() {
+  const loc = useLocation();
+  if (!new URLSearchParams(loc.search).get('view')) return <Navigate to="/receivables?view=unpaid" replace />;
+  return <SalesInvoices />;
+}
 const SalesInvoiceBuilder = lazy(() => import('./pages/SalesInvoiceBuilder'));
 const SalesInvoiceDoc = lazy(() => import('./pages/SalesInvoiceDoc'));
 const Expenses = lazy(() => import('./pages/Expenses'));
@@ -258,6 +264,9 @@ const AppRoutes = () => {
       <Route path="/customer-orders" element={<AppLayout><CustomerOrders /></AppLayout>} />
       <Route path="/customer-orders/:coId/invoice" element={<AppLayout><SalesInvoiceBuilder /></AppLayout>} />
       <Route path="/sales-invoices"  element={<AppLayout><SalesInvoices /></AppLayout>} />
+      {/* Money > To collect: the invoices still owed, at an address of its own
+          so the Money rail icon stays lit (lib/navigation). */}
+      <Route path="/receivables"     element={<AppLayout><Receivables /></AppLayout>} />
       <Route path="/sales-invoices/new" element={<AppLayout><SalesInvoiceBuilder /></AppLayout>} />
       <Route path="/sales-invoices/:id" element={<AppLayout><SalesInvoiceDoc /></AppLayout>} />
       <Route path="/sales-invoices/:id/edit" element={<AppLayout><SalesInvoiceBuilder /></AppLayout>} />

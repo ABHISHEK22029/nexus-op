@@ -45,6 +45,7 @@ const ROUTES = [
   ['/grn', 'Goods received'],
   ['/bills', 'Vendor bills'],
   ['/payables', 'Payables'],
+  ['/receivables', 'To collect'],
   ['/inventory', 'Stock on hand'],
   ['/items', 'Items (products tab)'],
   ['/items?tab=materials', 'Items (materials tab)'],
@@ -197,7 +198,9 @@ const IGNORABLE = (t) =>
     if (!b) return false; b.click(); return true;
   });
   if (clicked) {
-    await new Promise(r => setTimeout(r, 900));
+    /* Purchases opens on Purchase orders (since 26 Nov 2026); the panel
+       follows once that screen has loaded. */
+    await page.waitForFunction(() => [...document.querySelectorAll('.nav-panel-group')].some(g => /Buy/.test(g.textContent)), { timeout: 10000 }).catch(() => {});
     const after = await page.evaluate(() => ({
       url: location.pathname,
       groups: [...document.querySelectorAll('.nav-panel-group')].map(g => g.textContent),
@@ -208,7 +211,7 @@ const IGNORABLE = (t) =>
     console.log(`  groups shown : ${after.groups.join(' / ') || '(none)'}`);
     console.log(`  items shown  : ${after.items.join(', ') || '(none)'}`);
     console.log(`  badges       : ${after.badges.join(', ') || '(none)'}`);
-    if (!after.groups.length) finding('MED', '/vendors', 'panel groups did not render', 'expected Source / Buy & receive / Pay');
+    if (!after.groups.length) finding('MED', '/purchase-orders', 'panel groups did not render', 'expected Buy & receive / Source');
   } else finding('HIGH', '/dashboard', 'could not click the Purchases module', 'rail button not found');
 
   /* ── identity: the scope bar and the account avatar ──

@@ -68,6 +68,12 @@ export default function SalesQuotations() {
     if (prefill) { try { sessionStorage.removeItem('quotation_prefill'); } catch { /* storage blocked */ } }
   }, [prefill]);
   const [showForm, setShowForm] = useState(() => !!prefill);
+  /* + New in the rail opens this screen with its form open (?new=1) —
+     also when already on it, so the address is watched, not just read once. */
+  const newLoc = useLocation();
+  useEffect(() => {
+    if (new URLSearchParams(newLoc.search).get('new') === '1') setShowForm(true);
+  }, [newLoc.search]);
   const [head, setHead] = useState(() => ({ ...BLANK_HEAD(), customerId: prefill?.customerId ? String(prefill.customerId) : '' }));
   /* The product's minimum order and lead time travel with each line: the
      first to warn when a quantity is under it, the second to suggest the

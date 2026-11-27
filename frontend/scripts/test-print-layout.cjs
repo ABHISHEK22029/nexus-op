@@ -23,6 +23,12 @@
      · the purchase order printed an empty item table and a 0.00 total for
        any PO whose line lived on the order itself
 
+   Round three (27 Nov — "unidentified space at the bottom", "in so many
+   printing places"):
+     · a one-page document fills its sheet: the item table runs down to the
+       totals instead of the page ending in white; a long one flows on
+     · the RA bill printed a second sheet holding only the foot of its frame
+
    Builds long documents on purpose: with four lines everything fits on one
    page and every pagination bug hides.
 
@@ -102,6 +108,13 @@ async function cleanup() {
        from a shortfall or a customer order. */
     const po = await api('POST', '/po', { projectId: proj.id, vendorId: vendor.id, itemName: 'SS304 sheet, 2 mm', quantity: 180, unitPrice: 260 });
     const bill = await api('POST', '/grn-bills', { vendorId: vendor.id, projectId: proj.id, vendorBillRef: 'DMA/INV/2291', items: lines(8), gstRate: 18 });
+    /* An RA bill: BOQ lines, a work order, measurements, then the bill. */
+    const boq = [];
+    for (let i = 0; i < 5; i++) boq.push((await api('POST', '/boq', { projectId: proj.id, itemCode: `B${i + 1}`, description: `Excavation in all soils, item ${i + 1}`, unit: 'cum', estimatedQuantity: 1000, rate: 450 + i })).id);
+    const wo = await api('POST', '/work-orders', { projectId: proj.id, vendorId: vendor.id, name: 'Civil works', boqId: boq[0], contractValue: 2500000 });
+    for (const b of boq) await api('POST', '/mb', { projectId: proj.id, workOrderId: wo.id, boqId: b, chainage: '0+100', measuredQuantity: 120 });
+    const ra = await api('POST', '/bills/generate', { projectId: proj.id, workOrderId: wo.id });
+    const raId = ra.id || (ra.bill && ra.bill.id) || ra.billId;
 
     const DOCS = [
       ['quotation (40 lines)', `/sales-quotations/${quote.id}`, 3],
@@ -110,7 +123,9 @@ async function cleanup() {
       ['credit note', `/credit-debit-notes/${cn.id}`, 1],
       ['purchase order', `/po/${po.id}`, 1],
       ['purchase bill', `/grn-bills/${bill.id}`, 1],
+      ...(raId ? [['RA bill', `/bills/${raId}`, 1]] : []),
     ];
+    ok(!!raId, `an RA bill to print${raId ? '' : ': ' + JSON.stringify(ra).slice(0, 120)}`);
 
     browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
     const page = await browser.newPage();
@@ -125,7 +140,7 @@ async function cleanup() {
       await page.setViewport({ width: 1440, height: 1000 });
       await page.goto(`${UI}${url}`, { waitUntil: 'networkidle2' });
       /* the document itself, not a fixed wait: it can take a moment to arrive */
-      await page.waitForSelector('.invoice-mock tbody tr, .doc-sheet tbody tr', { timeout: 30000 }).catch(() => {});
+      await page.waitForSelector('.invoice-mock tbody tr, .doc-sheet tbody tr, .ra-items tbody tr', { timeout: 30000 }).catch(() => {});
       await sleep(800);
       const rows = await page.evaluate(() => document.querySelectorAll('table tbody tr').length);
       ok(rows > 0, `it is on screen (${rows} table rows)`);
@@ -165,6 +180,15 @@ async function cleanup() {
         ok(/SS304 sheet, 2 mm/.test(m.text) && /46,800\.00/.test(m.text), 'the PO prints its item and its real value, not an empty table and 0.00');
         ok(!/Not calculated/.test(m.text) && /Amount in Words: Rupees/.test(m.text), 'and its amount in words');
       }
+      /* One page: the sheet is a page tall and the item table's blank
+         stretch is what fills it. Longer: no stretch, it flows on. */
+      const fill = await page.evaluate(() => {
+        const el = document.querySelector('.doc-fill, .ra-fill');
+        const sheet = document.querySelector('.doc-sheet, .invoice-mock, .ra-doc');
+        return { shown: !!el && getComputedStyle(el).display !== 'none', h: el ? el.getBoundingClientRect().height : 0, sheet: sheet ? sheet.getBoundingClientRect().height : 0 };
+      });
+      if (maxPages === 1) ok(fill.shown && fill.sheet >= 260 * MM, `it fills the sheet: the item table runs down to the totals (sheet ${Math.round(fill.sheet / MM)}mm, blank rows ${Math.round(fill.h / MM)}mm)`);
+      else ok(!fill.shown, 'a long document flows on: no stretched table');
       if (label.startsWith('tax invoice')) ok(/CGST @ 9%/.test(m.text) && /SGST @ 9%/.test(m.text), 'the tax RATE is printed, not just the amount (Rule 46)');
 
       await page.setViewport({ width: 1440, height: 1000 });

@@ -47,6 +47,8 @@ const { authenticate, requireRole } = require('./middleware/auth');
 const { can, isCrossTenant, READ, WRITE, DELETE } = require('./shared/roles');
 const { ACTION_FOR_METHOD, allow } = require('./middleware/permissions');
 const { runBulk, callRoute } = require('./shared/bulk');
+/* every change to a document is kept — see shared/docHistory */
+const { track, trackMw, historyRoute } = require('./shared/docHistory');
 const { notify } = require('./notify');
 const { runList } = require('./shared/listQuery');
 /* Ready-made views on Purchase orders (?view=): the sign-off queue, and what
@@ -876,7 +878,7 @@ app.post('/po', async (req, res) => {
   }
 });
 
-app.post('/po/:id/items', async (req, res) => {
+app.post('/po/:id/items', trackMw('purchase_order', 'edit'), async (req, res) => {
   const poId = req.params.id;
   const items = req.body; // Array of items
 
@@ -1048,7 +1050,8 @@ app.delete('/company-profile/logo', allow('company-profile', 'write'), companyLo
      approved   the quote reference and the terms — words, not money; the
                 GST rate is fixed with the amounts that were signed off */
 const PO_TERMS = { quoteRef: '"quoteRef"', paymentTerms: '"paymentTerms"', priceBasis: '"priceBasis"', pnfInsurance: '"pnfInsurance"', loadingScope: '"loadingScope"', warranty: 'warranty' };
-app.patch('/po/:id', async (req, res) => {
+app.get('/po/:id/history', historyRoute('purchase_order'));
+app.patch('/po/:id', trackMw('purchase_order', 'edit'), async (req, res) => {
   const b = req.body || {};
   try {
     if (!(await ownsPo(req, req.params.id))) return res.status(404).json({ error: 'PO not found' });
@@ -1085,7 +1088,7 @@ app.patch('/po/:id', async (req, res) => {
   }
 });
 
-app.patch('/po/:id/approve', async (req, res) => {
+app.patch('/po/:id/approve', trackMw('purchase_order', 'status'), async (req, res) => {
   try {
     /* Yours only. Approve, sign-off and dispatch read the PO by id alone, so
        another company could approve, sign off or dispatch it by guessing. */
@@ -1126,7 +1129,8 @@ const signOffPo = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-app.patch('/po/:id/approval', allow('po-approval', 'write'), signOffPo);
+const signOffPoTracked = track('purchase_order', 'approval', signOffPo);
+app.patch('/po/:id/approval', allow('po-approval', 'write'), signOffPoTracked);
 
 /* Sign off several POs at once — the queue the page exists to clear.
    Only a PO that is waiting for sign-off is signed off; the preview says
@@ -1144,7 +1148,7 @@ app.post('/po/bulk', allow('po-approval', 'write'), async (req, res) => {
       if (po.status !== 'Pending') return { label, reason: `Already ${po.status}` };
       return { label };
     },
-    apply: (id) => callRoute(signOffPo, req, { params: { id: String(id) }, body: { decision: 'Approved' } }),
+    apply: (id) => callRoute(signOffPoTracked, req, { params: { id: String(id) }, body: { decision: 'Approved' } }),
   });
 });
 
@@ -1221,8 +1225,9 @@ app.post('/enquiries/:id/convert',    allow('enquiries', 'write'), catalogueCont
 app.get('/sales-quotations', salesQuotationController.list);
 app.get('/sales-quotations/:id', salesQuotationController.getById);
 app.post('/sales-quotations', salesQuotationController.create);
-app.patch('/sales-quotations/:id/status', salesQuotationController.setStatus);
-app.patch('/sales-quotations/:id', salesQuotationController.update);
+app.get('/sales-quotations/:id/history', historyRoute('sales_quotation'));
+app.patch('/sales-quotations/:id/status', track('sales_quotation', 'status', salesQuotationController.setStatus));
+app.patch('/sales-quotations/:id', track('sales_quotation', 'edit', salesQuotationController.update));
 app.post('/sales-quotations/:id/convert', salesQuotationController.convertToOrder);
 app.post('/sales-quotations/:id/share-link', salesQuotationController.shareLink);
 app.delete('/sales-quotations/:id', salesQuotationController.remove);
@@ -1232,15 +1237,17 @@ app.get('/delivery-challans', deliveryChallanController.list);
 app.get('/delivery-challans/prefill/:orderId', deliveryChallanController.prefill);  // before :id
 app.get('/delivery-challans/:id', deliveryChallanController.getById);
 app.post('/delivery-challans', deliveryChallanController.create);
-app.patch('/delivery-challans/:id/status', deliveryChallanController.setStatus);
-app.patch('/delivery-challans/:id',        deliveryChallanController.updateDetails);
+app.get('/delivery-challans/:id/history', historyRoute('delivery_challan'));
+app.patch('/delivery-challans/:id/status', track('delivery_challan', 'status', deliveryChallanController.setStatus));
+app.patch('/delivery-challans/:id',        track('delivery_challan', 'edit', deliveryChallanController.updateDetails));
 app.delete('/delivery-challans/:id', deliveryChallanController.remove);
 
 // ── Credit / debit notes (Wave 1D) ──
 app.get('/credit-debit-notes', creditDebitNoteController.list);
 app.get('/credit-debit-notes/:id', creditDebitNoteController.getById);
 app.post('/credit-debit-notes', creditDebitNoteController.create);
-app.patch('/credit-debit-notes/:id', creditDebitNoteController.update);
+app.get('/credit-debit-notes/:id/history', historyRoute('credit_debit_note'));
+app.patch('/credit-debit-notes/:id', track('credit_debit_note', 'edit', creditDebitNoteController.update));
 app.delete('/credit-debit-notes/:id', creditDebitNoteController.remove);
 
 // ── Ask AI + shared Knowledge Base ──
@@ -1248,7 +1255,7 @@ app.post('/ai/ask', aiController.ask);
 app.get('/kb/articles', aiController.kbList);
 app.get('/kb/articles/:slug', aiController.kbGet);
 
-app.patch('/po/:id/dispatch', async (req, res) => {
+app.patch('/po/:id/dispatch', trackMw('purchase_order', 'dispatch'), async (req, res) => {
   try {
     /* Yours only. Approve, sign-off and dispatch read the PO by id alone, so
        another company could approve, sign off or dispatch it by guessing. */
@@ -2053,8 +2060,9 @@ app.get('/grn-bills/:id/payments',     grnBillController.payments);
 app.post('/grn-bills/:id/payment',     grnBillController.addPayment);
 app.delete('/grn-bills/:id/payments/:paymentId', grnBillController.reversePayment);
 app.get('/grn-bills/:id',              grnBillController.getById);
-app.patch('/grn-bills/:id/status',     grnBillController.setStatus);
-app.patch('/grn-bills/:id',            grnBillController.update);
+app.get('/grn-bills/:id/history',      historyRoute('grn_bill'));
+app.patch('/grn-bills/:id/status',     track('grn_bill', 'status', grnBillController.setStatus));
+app.patch('/grn-bills/:id',            track('grn_bill', 'edit', grnBillController.update));
 app.delete('/grn-bills/:id',           grnBillController.remove);
 
 /* ── Customer Sales Invoices + payments ── */
@@ -2069,7 +2077,9 @@ app.get('/sales-invoices/:id',         salesInvoiceController.getById);
 app.post('/sales-invoices/:id/payment', salesInvoiceController.addPayment);
 /* DELETE, so the RBAC gate above checks sales-invoices delete. */
 app.delete('/sales-invoices/:id/payments/:paymentId', salesInvoiceController.reversePayment);
-app.patch('/sales-invoices/:id/status', salesInvoiceController.setStatus);
+const setInvoiceStatus = track('sales_invoice', 'status', salesInvoiceController.setStatus);
+app.get('/sales-invoices/:id/history', historyRoute('sales_invoice'));
+app.patch('/sales-invoices/:id/status', setInvoiceStatus);
 /* Mark several drafts as sent at once. */
 app.post('/sales-invoices/bulk', async (req, res) => {
   if (req.body?.action !== 'mark_sent') return res.status(400).json({ error: 'Unknown action. Try mark_sent.' });
@@ -2083,10 +2093,10 @@ app.post('/sales-invoices/bulk', async (req, res) => {
       if (Number(inv.paid) > 0.005) return { label, reason: 'Money is already in; its status follows the payments' };
       return { label };
     },
-    apply: (id) => callRoute(salesInvoiceController.setStatus, req, { params: { id: String(id) }, body: { status: 'Sent' } }),
+    apply: (id) => callRoute(setInvoiceStatus, req, { params: { id: String(id) }, body: { status: 'Sent' } }),
   });
 });
-app.patch('/sales-invoices/:id',        salesInvoiceController.update);
+app.patch('/sales-invoices/:id',        track('sales_invoice', 'edit', salesInvoiceController.update));
 app.delete('/sales-invoices/:id',      salesInvoiceController.remove);
 
 /* ══════════════════════════════════════════════════════════

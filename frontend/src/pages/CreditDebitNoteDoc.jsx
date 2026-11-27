@@ -21,9 +21,11 @@ import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
+import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../components/DocHistory';
 import Attachments from '../components/Attachments';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, ComplianceWarning, fmtDate, ItemText, StatusPill,
+  FillRows
 } from '../components/DocumentKit';
 import { amountInWords } from '../lib/amountInWords';
 import { docFileName, printAs } from '../lib/documentPdf';
@@ -59,7 +61,9 @@ export default function CreditDebitNoteDoc() {
   const load = () => fetch(`${API}/credit-debit-notes/${id}`).then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(setN).catch(() => setErr(true));
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
   const canWrite = can('credit-debit-notes', 'write');
-  const begin = (field) => { if (n && canWrite) ed.start(noteValues(n), field); };
+  /* Every change kept; an earlier version shown here, as it was. */
+  const hist = useDocHistory({ path: 'credit-debit-notes', id, reload: load, apply: (c) => setN(cur => ({ ...cur, ...c })) });
+  const begin = (field) => { if (n && canWrite && !hist.viewing) ed.start(noteValues(n), field); };
 
   if (err) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Note not found. <button onClick={() => navigate('/credit-debit-notes')} className="btn-secondary" style={{ marginLeft: 8 }}>Back</button></div>;
   if (!n) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading…</div>;
@@ -76,7 +80,7 @@ export default function CreditDebitNoteDoc() {
     ...(sent ? [] : ['note_date', 'items', ...(n.ref_id ? [] : ['gst_rate'])]),
   ];
   const editable = (k) => !!d && keys.includes(k);
-  const spotOn = (k) => !ed.editing && canWrite && keys.includes(k);
+  const spotOn = (k) => !ed.editing && !hist.viewing && canWrite && keys.includes(k);
   const editLines = editable('items');
   const lp = editLines ? lineProblems(d.items) : null;
   const zeroQty = editLines ? new Set(d.items.map((it, i) => (lp.kept.includes(it) && !(Number(it.quantity) > 0) ? i : -1)).filter(i => i >= 0)) : new Set();
@@ -156,8 +160,9 @@ export default function CreditDebitNoteDoc() {
           <button onClick={() => navigate('/credit-debit-notes')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All Notes</button>
           <StatusPill status={n.status} />
         </div>
-        {!ed.editing && (
+        {!ed.editing && !hist.viewing && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <HistoryButton hist={hist} className="btn-secondary btn-sm" />
             {canWrite && (
               <button onClick={() => begin()} data-doc-edit className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 title={sent ? "Change the reason, the notes or the original document's date" : 'Change anything on this note, right here — it has not been sent'}>
@@ -174,6 +179,8 @@ export default function CreditDebitNoteDoc() {
         )}
       </div>
 
+      <HistoryPanel hist={hist} what={`${n.note_type === 'credit' ? 'Credit' : 'Debit'} note ${n.note_number}`} />
+      <VersionBar hist={hist} onPrint={() => printAs(docFileName(n.note_type === 'credit' ? 'Credit Note' : 'Debit Note', n.note_number, (n.party || {}).name))} />
       {ed.editing && <EditBar ed={ed} what={n.note_number} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />}
 
       <div className="no-print"><ComplianceWarning gaps={gaps} /></div>
@@ -278,6 +285,7 @@ export default function CreditDebitNoteDoc() {
               ))}
             </tbody>
             )}
+            <FillRows cols={7} />
           </table>
           {editLines && <button type="button" className="de-add-line" onClick={() => ed.addItem(blankLine())} data-de-add-line><Plus size={14} /> Add line</button>}
         </div>

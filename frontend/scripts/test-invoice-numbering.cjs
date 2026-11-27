@@ -218,7 +218,9 @@ async function cleanup() {
     await page.type('input[aria-label="Line 1 rate"]', '15000');
     await page.evaluate(() => [...document.querySelectorAll('button')].find(b => /^Create invoice/.test(b.textContent)).click());
     await page.waitForFunction(() => /\/sales-invoices\/\d+$/.test(location.pathname), { timeout: 15000 });
-    await sleep(1000);
+    /* the address changes first; the invoice's own page follows once loaded */
+    await page.waitForSelector('.invoice-mock', { timeout: 15000 }).catch(() => {});
+    await sleep(500);
     ok(/Laser cutting/.test(await page.evaluate(() => document.body.innerText)), 'a one-off job is invoiced without inventing an order');
 
     console.log('\n  ── the other series follow the same rules');

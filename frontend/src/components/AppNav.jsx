@@ -18,8 +18,9 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import ScopeBar from './ScopeBar';
 import { SearchTrigger } from './GlobalSearch';
 import {
-  ChevronLeft, ChevronRight, Sun, Moon, Home, Play,
+  ChevronLeft, ChevronRight, Sun, Moon, Home, Play, Plus,
 } from 'lucide-react';
+import { GUIDE_ENABLED } from '../lib/features';
 import { useTutorial } from '../context/TutorialContext';
 import { NAV_ICONS as ICONS } from '../lib/navIcons';
 import { usePermissions } from '../context/PermissionContext';
@@ -157,10 +158,15 @@ export default function AppNav() {
   const goToModule = (m) => {
     const allowed = visibleLinks(m.key, can, role, orgModules);
     if (!allowed.length) return;
-    navigate(allowed[0].path);
+    /* Its landing screen — the one most often wanted (Sales opens on
+       Orders) — when this user may open it; else the first they can. */
+    const to = (m.landing && allowed.find(i => i.path === m.landing)) || allowed[0];
+    navigate(to.path);
     /* On a phone, tapping a module also shows its screens to choose from. */
-    if (narrow) setOpenOn(allowed[0].path);
+    if (narrow) setOpenOn(to.path);
   };
+  const railModules = modules.filter(m => !m.bottom);
+  const footModules = modules.filter(m => m.bottom);
 
   return (
     <>
@@ -169,12 +175,13 @@ export default function AppNav() {
           <MaksAppIcon size={34} radius={14} decorative />
         </button>
         <GuideButton />
+        <NewButton />
         {/* With the menu panel open its own search field is there; the rail
             carries one when the panel is closed, and on a phone. */}
         {(!shown || narrow) && <SearchTrigger variant="rail" />}
 
         <div className="nav-rail-items">
-          {modules.map(m => {
+          {railModules.map(m => {
             const Icon = ICONS[m.icon] || Home;
             const active = m.key === activeModule;
             return (
@@ -192,6 +199,18 @@ export default function AppNav() {
           })}
         </div>
 
+        {/* Help, small, at the foot of the rail. */}
+        {footModules.map(m => {
+          const Icon = ICONS[m.icon] || Home;
+          const active = m.key === activeModule;
+          return (
+            <button key={m.key} onClick={() => goToModule(m)} data-rail-foot={m.key}
+              className={`nav-rail-foot${active ? ' is-active' : ''}`} aria-current={active ? 'page' : undefined} title={m.label}>
+              <Icon size={16} />
+              <span>{m.label}</span>
+            </button>
+          );
+        })}
         <button className="nav-rail-theme" onClick={toggleTheme}
           title={isDark ? 'Switch to light' : 'Switch to dark'}>
           {isDark ? <Sun size={16} /> : <Moon size={16} />}
@@ -265,7 +284,8 @@ export default function AppNav() {
    green once it is; the steps for later are counted after that. */
 function GuideButton() {
   const tut = useTutorial();
-  if (!tut) return null;
+  /* Switched off for now (lib/features) — kept whole for when it returns. */
+  if (!tut || !GUIDE_ENABLED) return null;
   const known = tut.ready && tut.total > 0;
   const complete = known && tut.coreComplete;
   const pct = !known ? 0 : complete ? tut.doneCount / tut.total : tut.core.done / tut.core.total;
@@ -288,5 +308,58 @@ function GuideButton() {
       </span>
       <span className="nav-rail-guide-label">Guide</span>
     </button>
+  );
+}
+
+/* + New — start the documents made most often from anywhere, in one click:
+   it opens that screen with its form already open (?new=1). Only what this
+   role may create is offered. */
+const NEW_ITEMS = [
+  { label: 'Quotation', to: '/sales-quotations?new=1', resource: 'sales-quotations' },
+  { label: 'Order', to: '/customer-orders?new=1', resource: 'customer-orders' },
+  { label: 'Delivery challan', to: '/delivery-challans?new=1', resource: 'delivery-challans' },
+  { label: 'Invoice', to: '/sales-invoices/new', resource: 'sales-invoices' },
+  { label: 'Purchase order', to: '/purchase-orders?new=1', resource: 'po' },
+];
+function NewButton() {
+  const navigate = useNavigate();
+  const { can } = usePermissions();
+  const [open, setOpen] = useState(false);
+  /* Placed on the page, beside the button: the rail clips what sticks out of it. */
+  const [pos, setPos] = useState(null);
+  const ref = React.useRef(null);
+  const btn = React.useRef(null);
+  const toggle = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (r) setPos({ top: Math.max(8, r.top), left: r.right + 8 });
+    setOpen(o => !o);
+  };
+  useEffect(() => {
+    if (!open) return undefined;
+    const out = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', out);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', out); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  const items = NEW_ITEMS.filter(i => can(i.resource, 'write'));
+  if (!items.length) return null;
+  return (
+    <div className="nav-rail-new-wrap" ref={ref}>
+      <button ref={btn} className="nav-rail-new" onClick={toggle} aria-expanded={open} aria-haspopup="menu" data-rail-new title="Create a document">
+        <span className="nav-rail-new-icon"><Plus size={16} strokeWidth={3} /></span>
+        <span className="nav-rail-new-label">New</span>
+      </button>
+      {open && (
+        <div className="nav-rail-new-menu" role="menu" aria-label="Create" style={pos ? { top: pos.top, left: pos.left } : undefined}>
+          <div className="nav-rail-new-head">Create</div>
+          {items.map(i => (
+            <button key={i.label} role="menuitem" data-new-item={i.label} onClick={() => { setOpen(false); navigate(i.to); }}>
+              <Plus size={13} /> {i.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

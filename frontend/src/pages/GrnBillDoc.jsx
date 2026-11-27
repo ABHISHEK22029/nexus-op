@@ -6,8 +6,9 @@ import { useConfirm } from '../context/ConfirmContext';
 import { usePermissions } from '../context/PermissionContext';
 import Attachments from '../components/Attachments';
 import UnitSelect from '../components/UnitSelect';
-import { ItemText } from '../components/DocumentKit';
+import { ItemText, FillRows } from '../components/DocumentKit';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
+import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../components/DocHistory';
 import { GST_RATES } from '../lib/docTotals';
 import { lineProblems } from '../lib/lineChecks';
 import { docFileName, printAs } from '../lib/documentPdf';
@@ -74,7 +75,9 @@ export default function GrnBillDoc() {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
   const canWrite = can('grn-bills', 'write');
-  const begin = (field) => { if (bill && canWrite) ed.start(billValues(bill), field); };
+  /* Every change kept; an earlier version shown here, as it was. */
+  const hist = useDocHistory({ path: 'grn-bills', id, reload: load, apply: (c) => setBill(cur => ({ ...cur, ...c })) });
+  const begin = (field) => { if (bill && canWrite && !hist.viewing) ed.start(billValues(bill), field); };
 
   /* Reopen as draft: the whole document is editable again, and editing
      starts as soon as the reload shows it as a draft. */
@@ -139,7 +142,7 @@ export default function GrnBillDoc() {
   const d = ed.editing ? ed.draft : null;
   const editAll = !!d && isDraft;
   const editable = (k) => !!d && (isDraft || APPROVED_KEYS.includes(k));
-  const spotOn = (k) => !ed.editing && canWrite && (isDraft || APPROVED_KEYS.includes(k));
+  const spotOn = (k) => !ed.editing && !hist.viewing && canWrite && (isDraft || APPROVED_KEYS.includes(k));
   const lt = editAll ? billTotals(d.items, d) : null;
   const lp = editAll ? lineProblems(d.items) : null;
   const zeroQty = editAll ? new Set(d.items.map((it, i) => (lp.kept.includes(it) && !(Number(it.quantity) > 0) ? i : -1)).filter(i => i >= 0)) : new Set();
@@ -198,8 +201,9 @@ export default function GrnBillDoc() {
       {/* Toolbar */}
       <div className="print:hidden" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         <button onClick={() => navigate('/payables')} className="inv-act-btn"><ArrowLeft size={15} /> Payables</button>
-        {!ed.editing && (
+        {!ed.editing && !hist.viewing && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <HistoryButton hist={hist} className="inv-act-btn" />
           {bill.payment_status && <span data-bill-payment-status style={{ fontSize: '0.8rem', fontWeight: 700, color: bill.payment_status === 'Paid' ? 'var(--accent-emerald, #10b981)' : 'var(--text-secondary)' }}>{bill.payment_status}</span>}
           {canWrite && (
             <button onClick={() => begin()} data-doc-edit className="inv-act-btn" title={isDraft ? 'Change anything on this draft bill, right here' : 'Change the vendor’s invoice number, due date or notes'}>
@@ -222,6 +226,8 @@ export default function GrnBillDoc() {
         )}
       </div>
 
+      <HistoryPanel hist={hist} what={`Vendor bill ${bill.bill_number}`} />
+      <VersionBar hist={hist} onPrint={pdf} />
       {ed.editing && <EditBar ed={ed} what={bill.bill_number} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />}
 
       {(bill.payments || []).length > 0 && !ed.editing && (
@@ -339,6 +345,7 @@ export default function GrnBillDoc() {
                 ))}
               </tbody>
             )}
+            <FillRows cols={7} />
           </table>
           {editAll && <div style={{ padding: '0 22px' }}><button type="button" className="de-add-line" onClick={() => ed.addItem(blankLine())} data-de-add-line><Plus size={14} /> Add line</button></div>}
         </div>
@@ -425,10 +432,13 @@ export default function GrnBillDoc() {
             <div className="inv-sig-company mt-2">{co.name || co.tradeName || '—'}</div>
           </div>
         </div>
-        <div className="inv-footer">
-          <div className="inv-footer-left">{co.invoice_footer_note || 'This is a computer-generated document.'}</div>
-          <div className="inv-footer-right">{bill.bill_number} &nbsp;|&nbsp; {date}</div>
-        </div>
+        {/* Only the company's own footer note (Company Profile), if it wrote one. */}
+        {co.invoice_footer_note && (
+          <div className="inv-footer">
+            <div className="inv-footer-left">{co.invoice_footer_note}</div>
+            <div className="inv-footer-right">{bill.bill_number} &nbsp;|&nbsp; {date}</div>
+          </div>
+        )}
         </div>
       </div>
       </div>

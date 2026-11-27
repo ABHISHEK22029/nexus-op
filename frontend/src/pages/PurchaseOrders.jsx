@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import VendorPicker from '../components/VendorPicker';
 import { useConfirm } from '../context/ConfirmContext';
 import axios from 'axios';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { FilePlus, PackageCheck, Send, CheckCircle2, FileText, Plus, Trash2, ShieldCheck, ShoppingCart } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
@@ -23,6 +23,12 @@ const PurchaseOrders = () => {
   const { can } = usePermissions();
   const [vendors, setVendors] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  /* + New in the rail opens this screen with its form open (?new=1) —
+     also when already on it, so the address is watched, not just read once. */
+  const newLoc = useLocation();
+  useEffect(() => {
+    if (new URLSearchParams(newLoc.search).get('new') === '1') setShowForm(true);
+  }, [newLoc.search]);
   const [raising, setRaising] = useState(false);
   const { confirm, prompt } = useConfirm();
   const [company, setCompany] = useState(null);

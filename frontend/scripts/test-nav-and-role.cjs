@@ -2,10 +2,12 @@
 /* ══════════════════════════════════════════════════════════════════════
    Two things built without a test behind them, now covered.
 
-   1. The Marketing menu. The structure is checked by navtest.mjs, but that
-      reads the definition file — it cannot say whether the rail actually
-      renders a Marketing button, whether clicking it lists Enquiries and
-      Catalogue, or whether those two really left the Sales menu.
+   1. The menu as it is used (26 Nov 2026). navtest.mjs reads the
+      definition; this reads the rail as rendered: Marketing folded into
+      Sales (Enquiries and Catalogue are where an order starts), Money for
+      what is owed both ways, Settings with its Admin group, Help small at
+      the foot, + New for the documents made most often, and the Guide
+      switched off (lib/features).
 
    2. The "All organisations" badge. A cross-tenant role reads every
       organisation's data, which is by design and indistinguishable from a
@@ -91,38 +93,80 @@ const BACKEND = path.join(__dirname, '..', '..', 'backend');
     await sleep(1800);
   };
 
-  console.log('\n  ── the Marketing menu, in the rail');
+  const railNow = () => page.evaluate(() => ({
+    items: [...document.querySelectorAll('.nav-rail-item')].map(b => b.innerText.trim()).filter(Boolean),
+    foot: [...document.querySelectorAll('.nav-rail-foot')].map(b => b.innerText.trim()).filter(Boolean),
+    lit: (document.querySelector('.nav-rail-item.is-active, .nav-rail-foot.is-active')?.innerText || '').trim(),
+  }));
+  const panelNow = () => page.evaluate(() =>
+    [...document.querySelectorAll('.nav-panel a, .nav-panel-row, .nav-panel-items a')].map(a => a.innerText.trim()).filter(Boolean).join(' | '));
+  const clickRail = (label) => page.evaluate((l) => {
+    [...document.querySelectorAll('.nav-rail-item, .nav-rail-foot')].find(x => x.innerText.trim() === l)?.click();
+  }, label);
+
+  console.log('\n  ── the rail, as it is used');
   await asUser(owner.token);
-  const rail = await page.evaluate(() =>
-    [...document.querySelectorAll('.nav-rail-item, .nav-rail button')].map(b => b.innerText.trim()).filter(Boolean));
-  ok(rail.some(l => /Marketing/i.test(l)), `Marketing is in the rail (${rail.join(' · ')})`);
+  const r = await railNow();
+  ok(['Home', 'Sales', 'Purchases', 'Money', 'Settings'].every(l => r.items.includes(l)), `the rail (${r.items.join(' · ')})`);
+  ok(!r.items.some(l => /Marketing|Configurator/i.test(l)), 'no Marketing or Configurator of their own');
+  ok(r.foot.includes('Help') && !r.items.includes('Help'), `Help sits at the foot (${r.foot.join(' · ')})`);
+  ok(!(await page.$('.nav-rail-guide')) && !(await page.$('.tut-panel')), 'the Guide is switched off, and no tour pops up');
 
-  await page.evaluate(() => {
-    const b = [...document.querySelectorAll('.nav-rail-item, .nav-rail button')]
-      .find(x => /Marketing/i.test(x.innerText));
-    b?.click();
-  });
-  await sleep(1200);
-  const panel = await page.evaluate(() =>
-    [...document.querySelectorAll('.nav-panel a, .nav-panel-row, .nav-panel-items a')].map(a => a.innerText.trim()).filter(Boolean).join(' | '));
-  ok(/Enquiries/i.test(panel), `Enquiries is under Marketing (${panel})`);
-  ok(/Catalogue/i.test(panel), 'Catalogue is under Marketing');
-
-  await page.goto(`${UI}/customers`, { waitUntil: 'networkidle2' });
+  await clickRail('Sales');
   await sleep(1500);
-  const salesPanel = await page.evaluate(() =>
-    [...document.querySelectorAll('.nav-panel a, .nav-panel-row, .nav-panel-items a')].map(a => a.innerText.trim()).filter(Boolean).join(' | '));
-  ok(!/Enquiries/i.test(salesPanel) && !/Catalogue/i.test(salesPanel),
-    `and neither is still under Sales (${salesPanel})`);
+  const sales = await panelNow();
+  ok(/Enquiries/.test(sales) && /Catalogue/.test(sales), `Enquiries and Catalogue are under Sales (${sales})`);
+  ok(['Customers', 'Quotations', 'Orders', 'Delivery challans', 'Invoices'].every(l => sales.includes(l)), 'with the rest of selling, in the order it happens');
+  ok(/\/customer-orders/.test(await page.evaluate(() => location.pathname)), 'Sales opens on Orders');
 
-  console.log('\n  ── landing on /enquiries lights Marketing, not Sales');
   await page.goto(`${UI}/enquiries`, { waitUntil: 'networkidle2' });
   await sleep(1500);
-  const active = await page.evaluate(() => {
-    const el = document.querySelector('.nav-rail-item.is-active, .nav-rail .is-active');
-    return el ? el.innerText.trim() : null;
-  });
-  ok(/Marketing/i.test(active || ''), `the rail highlights ${active}`);
+  ok((await railNow()).lit === 'Sales', `landing on /enquiries lights Sales (${(await railNow()).lit})`);
+
+  await clickRail('Money');
+  await sleep(1800);
+  const money = await page.evaluate(() => location.pathname + location.search);
+  ok(money === '/receivables?view=unpaid' && (await railNow()).lit === 'Money', `Money opens on what is to collect (${money})`);
+  const mp = await panelNow();
+  ok(/To collect/.test(mp) && /To pay/.test(mp), `and has both ways (${mp})`);
+
+  await clickRail('Help');
+  await sleep(1500);
+  ok(/^\/knowledge/.test(await page.evaluate(() => location.pathname)) && (await railNow()).lit === 'Help', 'Help opens the knowledge base and lights');
+
+  console.log('\n  ── + New');
+  const newBtn = await page.$('[data-rail-new]');
+  ok(!!newBtn, '+ New is in the rail');
+  if (newBtn) {
+    await newBtn.click(); await sleep(400);
+    const items = await page.$$eval('[data-new-item]', els => els.map(e => e.getAttribute('data-new-item')));
+    ok(['Quotation', 'Order', 'Delivery challan', 'Invoice', 'Purchase order'].every(l => items.includes(l)), `it offers ${items.join(', ')}`);
+    const box = await page.$eval('.nav-rail-new-menu', el => { const b = el.getBoundingClientRect(); return { l: b.left, w: b.width, vw: innerWidth }; });
+    ok(box.w > 120 && box.l + box.w <= box.vw, 'the menu opens in full view, beside the rail');
+    await page.keyboard.press('Escape'); await sleep(200);
+    ok(!(await page.$('.nav-rail-new-menu')), 'Esc closes it');
+    await newBtn.click(); await sleep(300);
+    await page.click('[data-new-item="Quotation"]');
+    await sleep(2500);
+    ok(/\/sales-quotations\?new=1/.test(await page.evaluate(() => location.pathname + location.search)), 'Quotation goes to quotations…');
+    ok(!!(await page.$('form')), '…with the form already open');
+  }
+
+  console.log('\n  ── Settings');
+  await clickRail('Settings');
+  await sleep(1500);
+  const ownerSettings = await panelNow();
+  const short = (t) => [...new Set(t.split(' | ').map(x => x.split('\n')[0]))].join(' · ');
+  ok(['Company profile', 'Document numbering', 'Team', 'Import data'].every(l => ownerSettings.includes(l)), `Settings: the company, its people, its data (${short(ownerSettings)})`);
+  /* adminOnly is the Administrator and the company's Owner — as it was
+     under Configurator. The Owner runs the company and sets up its roles. */
+  ok(/Users & roles/.test(ownerSettings) && /Roles & permissions/.test(ownerSettings), 'and the Admin group, for the Owner who runs the company');
+  await asUser(admin.token);
+  await clickRail('Settings');
+  await sleep(1500);
+  const adminSettings = await panelNow();
+  ok(/Users & roles/.test(adminSettings) && /Roles & permissions/.test(adminSettings) && /Change history/.test(adminSettings),
+    'and for an Administrator, with Change history');
 
   console.log('\n  ── the "All organisations" badge');
   await asUser(owner.token);

@@ -50,6 +50,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     await api('PUT', '/company-profile', { name: `Tutor Fab ${stamp}`, address: 'Hyderabad' });
     browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
     const page = await browser.newPage();
+    /* the Guide is off for everyone since 26 Nov 2026 (lib/features); on here */
+    await page.evaluateOnNewDocument(() => localStorage.setItem('maks_guide', 'on'));
     page.on('pageerror', e => errs.push(e.message));
     await page.setViewport({ width: 1440, height: 900 });
     const waitFor = (fn, ms = 12000, ...a) => page.waitForFunction(fn, { timeout: ms }, ...a).then(() => true).catch(() => false);
@@ -127,6 +129,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     /* Their own browser profile: a second tab would share the owner's sign-in. */
     const ctx2 = await browser.createBrowserContext();
     const page2 = await ctx2.newPage();
+    await page2.evaluateOnNewDocument(() => localStorage.setItem('maks_guide', 'on'));
     page2.on('pageerror', e => errs.push(e.message));
     await page2.setViewport({ width: 1440, height: 900 });
     await page2.goto(`${UI}/login`, { waitUntil: 'networkidle2' });

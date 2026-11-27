@@ -91,7 +91,7 @@ async function cleanup() {
     const qs = await api('POST', '/sales-quotations', { customerId: L.id, items: [{ description: 'Canopy', quantity: 2, rate: 1000 }] });
     await api('PATCH', `/sales-quotations/${qs.id}/status`, { status: 'Sent' });
     const qc = await api('POST', '/sales-quotations', { customerId: L.id, items: [{ description: 'Rafter', quantity: 2, rate: 1000 }] });
-    await api('POST', `/sales-quotations/${qc.id}/convert`);
+    const qcv = await api('POST', `/sales-quotations/${qc.id}/convert`);
     const dpf = await api('GET', `/delivery-challans/prefill/${ord.id}`);
     const dc = await api('POST', '/delivery-challans', { customerId: L.id, customerOrderId: ord.id, challanDate: today, items: dpf.items, vehicleNo: 'TS09AB1234' });
     const note = await api('POST', '/credit-debit-notes', { noteType: 'credit', partyType: 'customer', partyId: L.id, refId: sent.id, gstRate: 18, reason: 'Short supply', items: [{ description: 'MS bracket', quantity: 1, rate: 450 }] });
@@ -265,14 +265,36 @@ async function cleanup() {
     await go(`/sales-quotations/${qs.id}`);
     await page.click('[data-doc-edit]');
     await page.waitForSelector('[data-de-bar]');
-    const qsent = await page.evaluate(() => ({ on: ['Valid until', 'Notes', 'Terms'].filter(l => document.querySelector(`[aria-label="${l}"]`)), off: ['Quotation number', 'Line 1 rate', 'Discount', 'Delivery days'].filter(l => document.querySelector(`[aria-label="${l}"]`)) }));
-    ok(qsent.on.length === 3 && qsent.off.length === 0, `sent: only how long it holds, the notes and the terms${qsent.off.length ? ` — also open: ${qsent.off.join(', ')}` : ''}`);
+    const qsent = await page.evaluate(() => ({ on: ['Quotation number', 'Quotation date', 'Valid until', 'Notes', 'Terms'].filter(l => document.querySelector(`[aria-label="${l}"]`)), off: ['Line 1 rate', 'Discount', 'Delivery days'].filter(l => document.querySelector(`[aria-label="${l}"]`)) }));
+    ok(qsent.on.length === 5 && qsent.off.length === 0, `sent: its number and date, how long it holds, the notes and the terms (${qsent.on.length}/5)${qsent.off.length ? ` — also open: ${qsent.off.join(', ')}` : ''}`);
     await page.evaluate(() => { const i = document.querySelector('[aria-label="Valid until"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, '2026-12-20'); i.dispatchEvent(new Event('input', { bubbles: true })); });
     await page.click('[data-de-save]');
     await page.waitForFunction(() => !document.querySelector('[data-de-bar]'), { timeout: 15000 }).catch(() => {});
     ok(String((await api('GET', `/sales-quotations/${qs.id}`)).valid_until).slice(0, 10) === '2026-12-20', 'its validity is extended and stored');
+    /* Converted (26 Nov 2026): "the quote no. should be changeable". Its
+       number, date, notes and terms still change; its lines and prices are
+       the order's, changed there. */
     await go(`/sales-quotations/${qc.id}`);
-    ok(!(await page.$('[data-doc-edit]')), 'a converted quotation has nothing to edit');
+    ok(!!(await page.$('[data-doc-edit]')), 'a converted quotation can be edited');
+    await page.click('[data-doc-edit]');
+    await page.waitForSelector('[data-de-bar]');
+    const qconv = await page.evaluate(() => ({ on: ['Quotation number', 'Quotation date', 'Notes', 'Terms'].filter(l => document.querySelector(`[aria-label="${l}"]`)), off: ['Valid until', 'Line 1 rate', 'Discount', 'Delivery days'].filter(l => document.querySelector(`[aria-label="${l}"]`)) }));
+    ok(qconv.on.length === 4 && qconv.off.length === 0, `converted: its number, date, notes and terms (${qconv.on.length}/4)${qconv.off.length ? ` — also open: ${qconv.off.join(', ')}` : ''}`);
+    ok(/lines and prices are on the order/i.test(await text('[data-de-bar]')), 'and the bar says lines and prices are changed on the order');
+    const renamed = `QT-R-${stamp}`.toUpperCase();
+    await page.evaluate((v) => { const i = document.querySelector('[aria-label="Quotation number"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, v); i.dispatchEvent(new Event('input', { bubbles: true })); }, renamed);
+    await page.click('[data-de-save]');
+    await page.waitForFunction(() => !document.querySelector('[data-de-bar]'), { timeout: 15000 }).catch(() => {});
+    await sleep(500);
+    ok((await api('GET', `/sales-quotations/${qc.id}`)).quote_number === renamed && (await text('.doc-sheet')).includes(renamed), `its number changes and the sheet shows it (${renamed})`);
+    const ordNotes = String((await api('GET', `/customer-orders/${qcv.orderId}`)).notes || '');
+    ok(ordNotes.includes(`Converted from quotation ${renamed}`), `the order made from it names the new number (${ordNotes.slice(0, 60)})`);
+    const lineTry = await api('PATCH', `/sales-quotations/${qc.id}`, { items: [{ description: 'Rafter', quantity: 3, rate: 1000 }] });
+    ok(lineTry.status === 409 && /on the order/.test(lineTry.error || ''), 'its lines are refused, pointing at the order');
+    const dupTry = await api('PATCH', `/sales-quotations/${qc.id}`, { quote_number: qs.quoteNumber });
+    ok(dupTry.status === 409 && /already used/.test(dupTry.error || ''), 'a number another quotation has is refused');
+    const blankTry = await api('PATCH', `/sales-quotations/${qc.id}`, { quote_number: '  ' });
+    ok(blankTry.status === 400, 'a blank number is refused');
 
     /* ── the look of the sheets ── */
     section('The documents look like one set');

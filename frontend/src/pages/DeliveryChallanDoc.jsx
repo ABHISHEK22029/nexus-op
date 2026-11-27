@@ -26,8 +26,10 @@ import InlineEdit from '../components/InlineEdit';
 import UnitSelect from '../components/UnitSelect';
 import {
   CompanyHeader, Party, SignatureBlock, DocFooter, NotATaxInvoice, rup, fmtDate, CopyPicker, COPIES, ItemText, StatusPill,
+  FillRows
 } from '../components/DocumentKit';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
+import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../components/DocHistory';
 import { lineProblems } from '../lib/lineChecks';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -95,7 +97,9 @@ export default function DeliveryChallanDoc() {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
   const canWrite = can('delivery-challans', 'write');
-  const begin = (field) => { if (dc && canWrite) ed.start(challanValues(dc), field); };
+  /* Every change kept; an earlier version shown here, as it was. */
+  const hist = useDocHistory({ path: 'delivery-challans', id, reload: load, apply: (c) => setDc(cur => ({ ...cur, ...c })) });
+  const begin = (field) => { if (dc && canWrite && !hist.viewing) ed.start(challanValues(dc), field); };
 
   /* Reopen as draft: the whole document is editable again, and editing
      starts as soon as the reload shows it as a draft. */
@@ -122,7 +126,7 @@ export default function DeliveryChallanDoc() {
   const d = ed.editing ? ed.draft : null;
   const editAll = !!d && isDraft;
   const editable = (k) => !!d && (isDraft || TRANSPORT_KEYS.includes(k));
-  const spotOn = (k) => !ed.editing && canWrite && (isDraft || TRANSPORT_KEYS.includes(k));
+  const spotOn = (k) => !ed.editing && !hist.viewing && canWrite && (isDraft || TRANSPORT_KEYS.includes(k));
   const amounts = editAll ? d.items.map(it => r2((Number(it.quantity) || 0) * (Number(it.rate) || 0))) : null;
   const value = editAll ? r2(amounts.reduce((s, a) => s + a, 0)) : Number(dc.total_value || 0);
   const lp = editAll ? lineProblems(d.items) : null;
@@ -195,8 +199,9 @@ export default function DeliveryChallanDoc() {
           <button onClick={() => navigate('/delivery-challans')} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={15} /> All Challans</button>
           <StatusPill status={dc.status} />
         </div>
-        {!ed.editing && (
+        {!ed.editing && !hist.viewing && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <HistoryButton hist={hist} className="btn-secondary btn-sm" />
           {canWrite && (
             <button onClick={() => begin()} data-doc-edit className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
               title={isDraft ? 'Change anything on this draft challan, right here' : 'Change the transport details, e-way bill or notes'}>
@@ -217,6 +222,8 @@ export default function DeliveryChallanDoc() {
         )}
       </div>
 
+      <HistoryPanel hist={hist} what={`Delivery challan ${dc.challan_number}`} />
+      <VersionBar hist={hist} onPrint={() => printAs(docFileName('Delivery Challan', dc.challan_number, shipName))} />
       {ed.editing && <EditBar ed={ed} what={dc.challan_number} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />}
 
       {/* On screen only: where this challan came from and what billed it. */}
@@ -369,6 +376,7 @@ export default function DeliveryChallanDoc() {
                 ))}
               </tbody>
             )}
+            <FillRows cols={editAll ? 7 : 6} />
           </table>
           {editAll && <button type="button" className="de-add-line" onClick={() => ed.addItem(blankLine())} data-de-add-line><Plus size={14} /> Add line</button>}
         </div>

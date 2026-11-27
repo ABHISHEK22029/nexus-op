@@ -7,7 +7,7 @@
    screen would ever tell you it exists.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams, useLocation } from 'react-router-dom';
 import { ShoppingBag, Plus, Trash2, X, ChevronDown, ChevronRight, Files, Factory, Lock } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useProject } from '../context/ProjectContext';
@@ -49,6 +49,12 @@ export default function CustomerOrders() {
   const [customers, setCustomers] = useState([]);
   const [skus, setSkus] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  /* + New in the rail opens this screen with its form open (?new=1) —
+     also when already on it, so the address is watched, not just read once. */
+  const newLoc = useLocation();
+  useEffect(() => {
+    if (new URLSearchParams(newLoc.search).get('new') === '1') setShowForm(true);
+  }, [newLoc.search]);
   const [expanded, setExpanded] = useState(null);
   const [detail, setDetail] = useState({});
   const [head, setHead] = useState({ customerId: '', customerPoRef: '', orderDate: today() });

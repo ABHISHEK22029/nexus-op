@@ -198,11 +198,34 @@ export function SignatureBlock({ company = {}, label = 'Authorized Signatory', r
   );
 }
 
-/* ── Footer ── */
+/* ── The rest of the item table, on paper ──
+   A one-page document used to stop where its lines stopped and leave the
+   foot of the sheet empty; moving the signature down only moved the gap up
+   between the lines and the totals ("unidentified space"). On paper the
+   item table now runs down to the totals, its column lines carried to the
+   bottom, as on a printed invoice book. This is that empty stretch: a row
+   of blank cells, one per column, hidden on screen and shown by print.css
+   only on a document that fits one page. Its own tbody, so nothing that
+   counts or numbers the item rows sees it. */
+export function FillRows({ cols }) {
+  return (
+    <tbody className="doc-fill" aria-hidden="true">
+      <tr>{Array.from({ length: cols }, (_, i) => <td key={i} />)}</tr>
+    </tbody>
+  );
+}
+
+/* ── Footer ──
+   Only when there is something to say: the company's own footer note
+   (Company Profile), or a page's note such as the challan's. The default
+   line "This is a computer-generated document." was dropped on 26 Nov
+   2026 — "this is not required"; the number it repeated is at the top. */
 export function DocFooter({ company = {}, right, note }) {
+  const text = note || company.invoice_footer_note;
+  if (!text) return null;
   return (
     <div className="inv-footer">
-      <div className="inv-footer-left">{note || company.invoice_footer_note || 'This is a computer-generated document.'}</div>
+      <div className="inv-footer-left">{text}</div>
       <div className="inv-footer-right">{right}</div>
     </div>
   );

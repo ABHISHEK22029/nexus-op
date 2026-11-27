@@ -17,9 +17,19 @@ t('/items                -> stock',      moduleForPath('/items'), 'stock');
 t('/skus                 -> stock',      moduleForPath('/skus'), 'stock');
 t('/production           -> production', moduleForPath('/production'), 'production');
 t('/mb                   -> production', moduleForPath('/mb'), 'production');
-/* Configure became its own module in the rail; this assertion still
-   expected it to live under Settings. */
-t('/configurator         -> configurator', moduleForPath('/configurator'), 'configurator');
+/* 26 Nov: Configure folded back into Settings (its Admin group); Marketing
+   into Sales; money in and out into Money; the Knowledge base into Help. */
+t('/configurator         -> settings',   moduleForPath('/configurator'), 'settings');
+t('/configurator/roles   -> settings',   moduleForPath('/configurator/roles'), 'settings');
+t('/enquiries            -> sales',      moduleForPath('/enquiries'), 'sales');
+t('/catalogue            -> sales',      moduleForPath('/catalogue'), 'sales');
+t('/receivables          -> money',      moduleForPath('/receivables'), 'money');
+t('/payables             -> money',      moduleForPath('/payables'), 'money');
+t('/grn-bills/7          -> money',      moduleForPath('/grn-bills/7'), 'money');
+t('/knowledge            -> help',       moduleForPath('/knowledge'), 'help');
+t('/receivables  -> sales-invoices',     resourceForPath('/receivables'), 'sales-invoices');
+t('rail has no Marketing or Configure',  MODULES.some(m => m.key === 'marketing' || m.key === 'configurator'), false);
+t('Help sits at the foot of the rail',   MODULES.find(m => m.key === 'help')?.bottom, true);
 t('/dashboard            -> home',       moduleForPath('/dashboard'), 'home');
 t('unknown path          -> home',       moduleForPath('/nonsense'), 'home');
 console.log('');

@@ -18,6 +18,7 @@ import { ArrowLeft, Printer, ArrowRightLeft, Clock , Mail, Download, Pencil, Plu
 import { usePermissions } from '../context/PermissionContext';
 import UnitSelect from '../components/UnitSelect';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
+import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../components/DocHistory';
 import { docTotals, GST_RATES } from '../lib/docTotals';
 import { lineProblems, adjustmentProblems } from '../lib/lineChecks';
 import { stateCode } from '../lib/gstStates';
@@ -28,6 +29,7 @@ import Attachments from '../components/Attachments';
 import {
   CompanyHeader, Party, BankBox, TermsBox, SignatureBlock, DocFooter,
   NotATaxInvoice, ComplianceWarning, complianceGaps, rup, fmtDate, ItemText, StatusPill,
+  FillRows
 } from '../components/DocumentKit';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -44,9 +46,11 @@ const trimNum = (n) => {
 };
 
 /* Editing on the page (components/DocEdit). A draft: all of it. Sent or
-   accepted: only how long it holds, and its notes and terms — the server's
-   QUOTE_SENT_FIELDS. Converted: nothing; an order stands on these figures. */
-const SENT_KEYS = ['valid_until', 'notes', 'terms'];
+   accepted: its number and date, how long it holds, its notes and terms —
+   the server's QUOTE_SENT_FIELDS. Converted: its number and date, notes
+   and terms; the lines and prices are the order's now, changed there. */
+const SENT_KEYS = ['quote_number', 'quote_date', 'valid_until', 'notes', 'terms'];
+const CONVERTED_KEYS = ['quote_number', 'quote_date', 'notes', 'terms'];
 const str = (v) => (v == null ? '' : String(v));
 const numStr = (v) => (v == null || v === '' ? '' : String(Number(v)));
 const blankLine = () => ({ description: '', hsn: '', uom: 'nos', quantity: '', rate: '', skuId: null });
@@ -92,9 +96,12 @@ export default function SalesQuotationDoc() {
 
   const canWrite = can('sales-quotations', 'write');
   /* Open the sheet for editing, at the piece that was clicked. */
+  /* Every change kept; an earlier version shown here, as it was. */
+  const hist = useDocHistory({ path: 'sales-quotations', id, reload: load, apply: (c) => setQ(cur => ({ ...cur, ...c })) });
   const begin = (field) => {
-    if (!q || q.status === 'Converted' || q.converted_order_id || !canWrite) return;
-    if (q.status === 'Draft' && customers == null) {
+    if (hist.viewing) return;
+    if (!q || !canWrite) return;
+    if (q.status === 'Draft' && !q.converted_order_id && customers == null) {
       fetch(`${API}/customers`).then(r => (r.ok ? r.json() : [])).then(d => {
         const list = Array.isArray(d) ? d : (d.items || d.rows || []);
         setCustomers([...list].sort((a, b) => String(a.name).localeCompare(String(b.name))));
@@ -117,11 +124,13 @@ export default function SalesQuotationDoc() {
     setEditWhenDraft(true);
   };
 
-  const isDraft = q?.status === 'Draft';
   const isConverted = q?.status === 'Converted' || !!q?.converted_order_id;
+  const isDraft = q?.status === 'Draft' && !isConverted;
+  /* What a sent or converted quotation still lets you change. */
+  const openKeys = isConverted ? CONVERTED_KEYS : SENT_KEYS;
 
   const convert = async () => {
-    if (!(await confirm({ title: `Turn ${q.quote_number} into an order?`, message: 'An order is made with its lines, prices and delivery. The quotation is marked Converted and can no longer be edited.', confirmLabel: 'Make the order' }))) return;
+    if (!(await confirm({ title: `Turn ${q.quote_number} into an order?`, message: 'An order is made with its lines, prices and delivery. After that, lines and prices are changed on the order; the quotation keeps its number, date, notes and terms editable.', confirmLabel: 'Make the order' }))) return;
     try {
       const res = await fetch(`${API}/sales-quotations/${id}/convert`, { method: 'POST' });
       const d = await res.json();
@@ -139,8 +148,8 @@ export default function SalesQuotationDoc() {
   /* ── Editing on the page ─────────────────────────────────────────── */
   const d = ed.editing ? ed.draft : null;
   const editAll = !!d && isDraft;
-  const editable = (k) => !!d && (isDraft || SENT_KEYS.includes(k));
-  const spotOn = (k) => !ed.editing && canWrite && !isConverted && (isDraft || SENT_KEYS.includes(k));
+  const editable = (k) => !!d && (isDraft || openKeys.includes(k));
+  const spotOn = (k) => !ed.editing && !hist.viewing && canWrite && (isDraft || openKeys.includes(k));
   /* A draft moved to another customer shows that customer straight away. */
   const picked = editAll && customers ? customers.find(c => String(c.id) === String(d.customer_id)) : null;
   const cust = picked || q.customer || {};
@@ -155,10 +164,10 @@ export default function SalesQuotationDoc() {
   const zeroQty = editAll ? new Set(d.items.map((it, i) => (lp.kept.includes(it) && !(Number(it.quantity) > 0) ? i : -1)).filter(i => i >= 0)) : new Set();
   const gstBad = editAll && (d.gst_rate === '' || !(Number(d.gst_rate) >= 0 && Number(d.gst_rate) <= 100));
   const dayBad = (v) => String(v ?? '').trim() !== '' && !(Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 3650);
-  const validBad = !!d && !!d.valid_until && d.valid_until < (editAll ? d.quote_date : str(q.quote_date).slice(0, 10));
+  const validBad = !!d && !isConverted && !!d.valid_until && d.valid_until < (editable('quote_date') ? d.quote_date : str(q.quote_date).slice(0, 10));
   const problems = !d ? [] : [
-    editAll && !d.quote_number.trim() && 'The quotation number cannot be blank.',
-    editAll && !d.quote_date && 'The quotation date cannot be blank.',
+    editable('quote_number') && !d.quote_number.trim() && 'The quotation number cannot be blank.',
+    editable('quote_date') && !d.quote_date && 'The quotation date cannot be blank.',
     validBad && 'The validity date is before the quotation date.',
     ...(lp ? lp.list : []),
     editAll && lp.kept.length === 0 && 'Add at least one line item.',
@@ -175,7 +184,7 @@ export default function SalesQuotationDoc() {
     if (!d || ed.saving) return;
     if (problems.length) { ed.setTried(true); return; }
     const body = {};
-    for (const k of ed.changed(isDraft ? undefined : SENT_KEYS)) if (k !== 'items') body[k] = outValue(k, d[k]);
+    for (const k of ed.changed(isDraft ? undefined : openKeys)) if (k !== 'items') body[k] = outValue(k, d[k]);
     if (isDraft && ed.changed(['items']).length) {
       body.items = lp.kept.map(it => ({
         description: it.description.trim(), hsn: String(it.hsn || '').trim() || null, uom: it.uom || 'nos',
@@ -198,13 +207,17 @@ export default function SalesQuotationDoc() {
   const cancelEdit = async () => { if (await confirmDiscard(ed, confirm)) ed.stop(); };
   const scope = isDraft
     ? 'A draft: change anything on it — the number, dates, customer, lines and their specifications, discount, GST, delivery, payment and terms. Totals update as you type.'
-    : 'Sent to the customer: how long it holds, the notes and the terms can still change. To change prices or lines, set it back to Draft or raise a revised quotation.';
+    : isConverted
+      ? 'Made into an order: the number, date, notes and terms can still change. Its lines and prices are on the order now — change them there (View order), so the order, challans and invoices stay in line.'
+      : 'Sent to the customer: the number, date, how long it holds, the notes and the terms can still change. To change prices or lines, set it back to Draft or raise a revised quotation.';
 
   /* Validity is the whole point of a quotation — steel prices move weekly.
      An expired quote being presented as live is how a job gets taken at a
      rate that no longer covers the material. */
-  const expired = q.valid_until && new Date(q.valid_until) < new Date();
-  const daysLeft = q.valid_until
+  /* Once it is an order the customer has said yes: "re-quote before
+     converting" on a converted quotation was a warning about nothing. */
+  const expired = !isConverted && q.valid_until && new Date(q.valid_until) < new Date();
+  const daysLeft = q.valid_until && !isConverted
     ? Math.ceil((new Date(q.valid_until) - new Date()) / 86400000) : null;
 
   const gaps = complianceGaps({
@@ -264,7 +277,7 @@ export default function SalesQuotationDoc() {
     } : null,
     terms: terms ? { text: terms } : null, termsFirst: true,
     notice,
-    footerLeft: co.invoice_footer_note || 'This is a computer-generated document.',
+    footerLeft: co.invoice_footer_note || '',
     footerRight: q.quote_number,
   });
   /* "A proper PDF download" (the owner's words): a real A4 file, saved in
@@ -292,12 +305,15 @@ export default function SalesQuotationDoc() {
           {/* Where it has got to is the seller's business: here, not on the sheet. */}
           <StatusPill status={q.status} />
         </div>
-        {!ed.editing && (
+        {!ed.editing && !hist.viewing && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <HistoryButton hist={hist} className="btn-secondary" />
           {/* Edit, here on the quotation itself. */}
-          {!isConverted && canWrite && (
+          {canWrite && (
             <button onClick={() => begin()} data-doc-edit className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-              title={isDraft ? 'Change anything on this draft, right here on the quotation' : 'Change how long it holds, the notes or the terms'}>
+              title={isDraft ? 'Change anything on this draft, right here on the quotation'
+                : isConverted ? 'Change its number, date, notes or terms. Lines and prices are changed on the order.'
+                : 'Change its number, date, how long it holds, the notes or the terms'}>
               <Pencil size={15} /> Edit quotation
             </button>
           )}
@@ -317,6 +333,10 @@ export default function SalesQuotationDoc() {
         )}
       </div>
 
+      <HistoryPanel hist={hist} what={`Quotation ${q.quote_number}`} />
+      <VersionBar hist={hist} onPrint={() => printAs(fileName)}>
+        <button onClick={() => pdf().catch(() => {})} disabled={making} className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Download size={15} /> {making ? 'Making PDF…' : 'PDF of this version'}</button>
+      </VersionBar>
       {ed.editing && (
         <EditBar ed={ed} what={q.quote_number} scope={scope} problems={problems} onSave={save} onCancel={cancelEdit} />
       )}
@@ -447,6 +467,7 @@ export default function SalesQuotationDoc() {
               ))}
             </tbody>
             )}
+            <FillRows cols={LAYOUT.columns.length} />
           </table>
           {editAll && <button type="button" className="de-add-line" onClick={() => ed.addItem(blankLine())} data-de-add-line><Plus size={14} /> Add line</button>}
         </div>

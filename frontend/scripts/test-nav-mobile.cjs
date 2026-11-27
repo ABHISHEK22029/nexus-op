@@ -45,7 +45,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     await sleep(500);
     ok(!(await panel()), 'on a phone, a page opens with the menu closed');
     await page.click('.nav-rail-item[title="Sales"]');
-    await sleep(600);
+    /* Sales opens on Orders (its landing, since 26 Nov 2026); the menu
+       shows once that screen has loaded, which in dev takes a second. */
+    await page.waitForSelector('.nav-panel-item', { timeout: 10000 }).catch(() => {});
     ok(await panel(), 'tapping a module icon shows its screens');
     const target = await page.evaluate(() => {
       const a = [...document.querySelectorAll('.nav-panel-item')].find(x => /Invoices/.test(x.textContent));

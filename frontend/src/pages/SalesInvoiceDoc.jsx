@@ -11,8 +11,9 @@ import UnitSelect from '../components/UnitSelect';
 import { amountInWords } from '../lib/amountInWords';
 import { docFileName, downloadDocumentPdf, printAs } from '../lib/documentPdf';
 import { PAYMENT_MODES, DEFAULT_PAYMENT_MODE } from '../lib/paymentModes';
-import { CopyPicker, COPIES, DECLARATION, Declaration, ItemText } from '../components/DocumentKit';
+import { CopyPicker, COPIES, DECLARATION, Declaration, ItemText, FillRows } from '../components/DocumentKit';
 import { useDocEdit, EditBar, Field, Spot, onSheetClick, confirmDiscard } from '../components/DocEdit';
+import { useDocHistory, HistoryButton, HistoryPanel, VersionBar } from '../components/DocHistory';
 import { docTotals, GST_RATES, invoiceNumberProblem } from '../lib/docTotals';
 import { lineProblems, adjustmentProblems } from '../lib/lineChecks';
 import { GST_STATES, stateCode, stateName } from '../lib/gstStates';
@@ -116,13 +117,15 @@ export default function SalesInvoiceDoc() {
     .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) { setMissing(r.status === 403 ? 'Your role can\'t open invoices.' : (d.error || 'This invoice was not found. It may have been deleted.')); return null; } setMissing(''); return d; })
     .then(d => { if (d) setInv(d); });
   useEffect(() => { load(); }, [id]);
+  /* Every change kept; an earlier version shown here, as it was. */
+  const hist = useDocHistory({ path: 'sales-invoices', id, reload: load, apply: (c) => setInv(cur => ({ ...cur, ...c })) });
 
   /* Open the sheet for editing — at the piece that was clicked, if one was.
      A cancelled invoice, or a role that may not change invoices, has
      nothing to open. */
   const canWrite = can('sales-invoices', 'write');
   const begin = (field) => {
-    if (!inv || inv.status === 'Cancelled' || !canWrite) return;
+    if (!inv || inv.status === 'Cancelled' || !canWrite || hist.viewing) return;
     if (inv.status === 'Draft' && customers == null && !inv.customer_order_id) {
       fetch(`${API}/customers`).then(r => (r.ok ? r.json() : [])).then(d => {
         const list = Array.isArray(d) ? d : (d.items || d.rows || []);
@@ -245,7 +248,7 @@ export default function SalesInvoiceDoc() {
   const editAll = !!d && isDraft;
   /* Which pieces are fields now, and which light up to be clicked. */
   const editable = (k) => !!d && (isDraft || ISSUED_KEYS.includes(k));
-  const spotOn = (k) => !ed.editing && canWrite && !isCancelled && (isDraft || ISSUED_KEYS.includes(k));
+  const spotOn = (k) => !ed.editing && !hist.viewing && canWrite && !isCancelled && (isDraft || ISSUED_KEYS.includes(k));
   /* IGST or CGST+SGST follows the place of supply against our own state;
      when either is unknown, the invoice keeps the split it has. */
   const supplierCode = co.stateCode || stateCode(co.gstin);
@@ -415,7 +418,7 @@ export default function SalesInvoiceDoc() {
     notes: inv.notes, totals: totalRows, words: `Amount in Words: ${words}`,
     bank: bankRows.length ? { title: 'Bank Details for Payment', rows: bankRows } : null,
     terms: terms ? { text: terms } : null, irn: inv.irn, declaration: isDraft ? null : DECLARATION,
-    footerLeft: co.invoice_footer_note || 'This is a computer-generated invoice.',
+    footerLeft: co.invoice_footer_note || '',
     footerRight: `${inv.invoice_number}  |  ${date}`,
   });
   /* A real file, saved in one click — lib/documentPdf.js says why it is
@@ -434,8 +437,9 @@ export default function SalesInvoiceDoc() {
         <button onClick={() => navigate('/sales-invoices')} className="inv-act-btn"><ArrowLeft size={15} /> All Invoices</button>
         {/* While the sheet is being edited, its bar below has Save and
             Cancel, and printing waits: what prints is what was saved. */}
-        {!ed.editing && (
+        {!ed.editing && !hist.viewing && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', whiteSpace: 'nowrap' }}>
+          <HistoryButton hist={hist} className="inv-act-btn" />
           {/* Edit, here on the invoice itself. A draft: all of it. Issued:
               its notes, terms, due date and e-way bill. */}
           {!isCancelled && canWrite && (
@@ -479,6 +483,10 @@ export default function SalesInvoiceDoc() {
         )}
       </div>
 
+      <HistoryPanel hist={hist} what={`Invoice ${inv.invoice_number}`} />
+      <VersionBar hist={hist} onPrint={() => printAs(fileName)}>
+        <button onClick={() => pdf().catch(() => {})} disabled={making} className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Download size={15} /> {making ? 'Making PDF…' : 'PDF of this version'}</button>
+      </VersionBar>
       {ed.editing && (
         <EditBar ed={ed} what={inv.invoice_number} scope={scope} problems={problems} onSave={() => save()} onCancel={cancelEdit} />
       )}
@@ -521,7 +529,7 @@ export default function SalesInvoiceDoc() {
       </div>
 
       {/* Record payment — not while the invoice itself is being edited. */}
-      {due > 0 && !ed.editing && (
+      {due > 0 && !ed.editing && !hist.viewing && (
         <div className="print:hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 14, marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)', flexBasis: '100%' }}><IndianRupee size={16} style={{ color: 'var(--brand-amber)' }} /> Record payment</div>
           {/* Explicit widths: the global form styles make a bare select or
@@ -755,6 +763,7 @@ export default function SalesInvoiceDoc() {
                 ))}
               </tbody>
             )}
+            <FillRows cols={7} />
           </table>
           {editAll && (
             <div style={{ padding: '0 22px' }}>
@@ -887,12 +896,13 @@ export default function SalesInvoiceDoc() {
             <div className="inv-sig-company mt-2">For {co.name || '—'}</div>
           </div>
         </div>
-        <div className="inv-footer">
-          <div className="inv-footer-left">
-            {co.invoice_footer_note || 'This is a computer-generated invoice.'}
+        {/* Only the company's own footer note (Company Profile), if it wrote one. */}
+        {co.invoice_footer_note && (
+          <div className="inv-footer">
+            <div className="inv-footer-left">{co.invoice_footer_note}</div>
+            <div className="inv-footer-right">{inv.invoice_number} &nbsp;|&nbsp; {date}</div>
           </div>
-          <div className="inv-footer-right">{inv.invoice_number} &nbsp;|&nbsp; {date}</div>
-        </div>
+        )}
         </div>
       </div>
       </div>

@@ -611,6 +611,48 @@ a { color: inherit; text-decoration: none; transition: color var(--transition-ba
 .nav-rail-guide-label { font-size: var(--t-2xs); font-weight: 600; letter-spacing: 0.01em; line-height: 1.1; }
 @media (max-width: 900px) { .nav-rail-guide { width: 46px; } .nav-rail-guide-label { display: none; } }
 
+/* + New, under the logo (AppNav NewButton): the documents made most often. */
+.nav-rail-new-wrap { position: relative; flex-shrink: 0; margin-bottom: 6px; }
+.nav-rail-new {
+  width: 62px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 4px 2px 6px; border: none; border-radius: 10px; background: transparent; cursor: pointer;
+  color: var(--text-muted); transition: background 140ms ease, color 140ms ease;
+}
+[data-theme="light"] .nav-rail-new { color: hsl(220, 15%, 72%); }
+.nav-rail-new-icon {
+  width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--brand-amber); color: #fff; box-shadow: 0 4px 12px rgba(234, 88, 12, 0.35);
+}
+.nav-rail-new-label { font-size: var(--t-2xs); font-weight: 600; line-height: 1.1; }
+.nav-rail-new:hover, .nav-rail-new[aria-expanded="true"] { background: var(--bg-elevated); color: var(--text-primary); }
+[data-theme="light"] .nav-rail-new:hover, [data-theme="light"] .nav-rail-new[aria-expanded="true"] { background: hsl(222, 38%, 22%); color: #fff; }
+.nav-rail-new:focus-visible { outline: 2px solid var(--brand-amber); outline-offset: 2px; }
+.nav-rail-new-menu {
+  position: fixed; left: 88px; top: 64px; z-index: 1300; min-width: 200px;
+  background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22); padding: 6px; display: grid; gap: 2px;
+}
+.nav-rail-new-head { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); padding: 6px 10px 4px; }
+.nav-rail-new-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; cursor: pointer;
+  font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--text-primary);
+}
+.nav-rail-new-menu button:hover, .nav-rail-new-menu button:focus-visible { background: var(--bg-elevated); outline: none; }
+.nav-rail-new-menu button svg { color: var(--brand-amber); }
+@media (max-width: 900px) { .nav-rail-new { width: 46px; } .nav-rail-new-label { display: none; } }
+
+/* Help, small, at the foot of the rail. */
+.nav-rail-foot {
+  width: 62px; display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0;
+  padding: 5px 2px; margin-bottom: 4px; border: none; border-radius: 10px; background: transparent; cursor: pointer;
+  color: var(--text-muted); font-size: var(--t-2xs); font-weight: 600;
+}
+[data-theme="light"] .nav-rail-foot { color: hsl(220, 15%, 72%); }
+.nav-rail-foot:hover, .nav-rail-foot.is-active { background: var(--bg-elevated); color: var(--text-primary); }
+[data-theme="light"] .nav-rail-foot:hover, [data-theme="light"] .nav-rail-foot.is-active { background: hsl(222, 38%, 22%); color: #fff; }
+@media (max-width: 900px) { .nav-rail-foot { width: 46px; } .nav-rail-foot span { display: none; } }
+
 .tut-backdrop { position: fixed; inset: 0; z-index: 1190; }
 @media (max-width: 900px) { .tut-backdrop { background: rgba(15, 23, 42, 0.45); } }
 .tut-panel {

@@ -293,8 +293,15 @@ exports.setStatus = async (req, res) => {
  *
  *   Draft            everything, including the number and the line items
  *   Sent / Accepted  only the things that are not the offer itself —
- *                    notes, terms, and how long it stays valid
- *   Converted        nothing; an order exists against these figures
+ *                    its number and date, notes, terms, and how long it
+ *                    stays valid
+ *   Converted        its number and date, notes and terms. The lines and
+ *                    prices are the order's now, and change on the order,
+ *                    so the order, its challans and invoices stay in line.
+ *
+ * 26 Nov 2026: the number used to be fixed once a quotation was sent, and
+ * a converted one could not be touched at all. "The quote no. should be
+ * changeable": a number is how the two sides refer to it, not the offer.
  *
  * The line is drawn there because a quotation is what a customer agrees a
  * price against. Editing the rates on a quotation they already hold, under
@@ -306,7 +313,8 @@ exports.setStatus = async (req, res) => {
 const QUOTE_OPEN_FIELDS = ['quote_number', 'quote_date', 'valid_until', 'discount',
   'gst_rate', 'round_off', 'notes', 'terms', 'payment_terms_days', 'customer_id',
   'delivery_days', 'delivery_note'];
-const QUOTE_SENT_FIELDS = ['valid_until', 'notes', 'terms'];
+const QUOTE_SENT_FIELDS = ['quote_number', 'quote_date', 'valid_until', 'notes', 'terms'];
+const QUOTE_CONVERTED_FIELDS = ['quote_number', 'quote_date', 'notes', 'terms'];
 
 exports.update = async (req, res) => {
   /* A Draft may change its customer and lines — to this company's own. */
@@ -318,33 +326,44 @@ exports.update = async (req, res) => {
     const q = (await client.query(`SELECT * FROM sales_quotations WHERE ${s.where}`, s.params)).rows[0];
     if (!q) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Quotation not found' }); }
 
-    if (q.status === 'Converted' || q.converted_order_id) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({
-        error: 'This quotation has been converted to an order and can no longer be edited.',
-      });
-    }
-    const draft = q.status === 'Draft';
-    const allowed = draft ? QUOTE_OPEN_FIELDS : QUOTE_SENT_FIELDS;
+    const converted = q.status === 'Converted' || !!q.converted_order_id;
+    const draft = !converted && q.status === 'Draft';
+    const allowed = draft ? QUOTE_OPEN_FIELDS : converted ? QUOTE_CONVERTED_FIELDS : QUOTE_SENT_FIELDS;
     const offered = Object.keys(req.body || {}).filter(k => k !== 'items');
     const refused = offered.filter(k => !allowed.includes(k));
     if (refused.length) {
       await client.query('ROLLBACK');
       return res.status(409).json({
-        error: `This quotation has been sent, so ${refused.join(', ')} can no longer be changed. `
-             + `Set it back to Draft first, or raise a revised quotation.`,
+        error: converted
+          ? `This quotation is now an order, so ${refused.join(', ')} can't be changed here. Change the order instead.`
+          : `This quotation has been sent, so ${refused.join(', ')} can no longer be changed. `
+            + `Set it back to Draft first, or raise a revised quotation.`,
         editable: allowed,
       });
     }
     if (!draft && req.body.items) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Line items can only be changed while the quotation is a Draft.' });
+      return res.status(409).json({
+        error: converted
+          ? 'This quotation is now an order: change its lines and prices on the order.'
+          : 'Line items can only be changed while the quotation is a Draft.',
+      });
     }
+    if ('quote_number' in req.body && !String(req.body.quote_number ?? '').trim()) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'The quotation number cannot be blank.' });
+    }
+    if ('quote_date' in req.body && !req.body.quote_date) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'The quotation date cannot be blank.' });
+    }
+    if (typeof req.body.quote_number === 'string') req.body.quote_number = req.body.quote_number.trim();
 
     /* A number the customer can quote back at you has to stay unique per
        supplier — the same rule Rule 46 puts on invoices, and the reason the
        number comes from a sequence rather than a count. */
-    if (draft && req.body.quote_number && req.body.quote_number !== q.quote_number) {
+    const renumbered = !!req.body.quote_number && req.body.quote_number !== q.quote_number;
+    if (renumbered) {
       const clash = await client.query(
         'SELECT id FROM sales_quotations WHERE owner_id = $1 AND quote_number = $2 AND id <> $3',
         [q.owner_id, req.body.quote_number, q.id]);
@@ -400,6 +419,18 @@ exports.update = async (req, res) => {
       [...cols.map(c => set[c]), q.id]);
     const under = req.body.items
       ? await belowMoq(client, prepareLines(req.body.items), q.owner_id) : undefined;
+    /* The order made from it says which quotation it came from, in its
+       notes. A new number there too, so the two still agree. */
+    if (renumbered && q.converted_order_id) {
+      const o = (await client.query('SELECT notes FROM customer_orders WHERE id = $1 AND owner_id IS NOT DISTINCT FROM $2',
+        [q.converted_order_id, q.owner_id])).rows[0];
+      /* whole number only: QT-1 must not match inside QT-10 */
+      const was = new RegExp(`Converted from quotation ${String(q.quote_number).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?= ·|$)`);
+      if (o && o.notes && was.test(o.notes)) {
+        await client.query('UPDATE customer_orders SET notes = $1 WHERE id = $2',
+          [o.notes.replace(was, () => `Converted from quotation ${req.body.quote_number}`), q.converted_order_id]);
+      }
+    }
     await client.query('COMMIT');
     res.json(under ? { ...rows[0], belowMoq: under } : rows[0]);
   } catch (e) {

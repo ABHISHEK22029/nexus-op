@@ -91,6 +91,8 @@ window.__click = (src, scope) => {
   const newPage = async (ctx) => {
     const p = await (ctx || browser).newPage();
     await p.evaluateOnNewDocument(HELPERS);
+    /* the Guide is off for everyone since 26 Nov 2026 (lib/features); on here */
+    await p.evaluateOnNewDocument(() => localStorage.setItem('maks_guide', 'on'));
     p.on('pageerror', e => errs.push(e.message));
     p.on('dialog', d => d.accept());
     await p.setViewport({ width: 1440, height: 900 });
@@ -156,8 +158,11 @@ window.__click = (src, scope) => {
       window.__setV(name, 'Priya Walkthrough'); window.__setV(email, em); pws.forEach(p => window.__setV(p, pw));
     }, [EMAIL, PW]);
     await ev(() => window.__click('sign ?up|create|register|get started')).catch(() => {});   // it loads the next page
-    await waitFor(() => location.pathname === '/welcome', 15000);
-    ok(await ev(() => location.pathname) === '/welcome', 'sign-up lands on the two setup questions');
+    /* A whole new page loads, and a wait that is running when it does
+       gives up at once — so ask again until the new page answers. */
+    const here = () => ev(() => location.pathname).catch(() => '');
+    for (let i = 0; i < 40 && (await here()) !== '/welcome'; i++) await sleep(400);
+    ok(await here() === '/welcome', 'sign-up lands on the two setup questions');
     await waitFor(() => [...document.querySelectorAll('#root input')].some(i => i.type !== 'hidden' && i.offsetParent), 15000);
     await ev(() => {
       window.__setV([...document.querySelectorAll('#root input')].filter(i => i.type !== 'hidden')[0], 'Walkthrough Fabricators');
@@ -296,7 +301,8 @@ window.__click = (src, scope) => {
     await page.goto(`${UI}/login`, { waitUntil: 'networkidle2' });
     await ev(([em, pw]) => { const ins = [...document.querySelectorAll('input')]; window.__setV(ins.find(i => i.type === 'email'), em); window.__setV(ins.find(i => i.type === 'password'), pw); }, [EMAIL, PW]);
     await ev(() => window.__click('^(sign in|log in|login)')).catch(() => {});
-    await waitFor(() => location.pathname === '/dashboard', 15000); await sleep(2000);
+    for (let i = 0; i < 40 && (await here()) !== '/dashboard'; i++) await sleep(400);
+    await waitFor(() => !!document.querySelector('.nav-rail-item'), 15000); await sleep(2000);
     ok(!(await ev(() => !!document.querySelector('.tut-panel'))), 'signing in again: the tutorial does not open by itself');
     ok(await ev(() => !!document.querySelector('.nav-rail-guide')), 'and ▶ Guide is there at the top left');
 

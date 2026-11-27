@@ -35,6 +35,19 @@
 /* Resource names must match backend/shared/roles.js exactly — the server is
    the authority, and a name that doesn't match there grants nothing. */
 export const MODULES = [
+  /* 26 Nov: arranged by how often things are used — what is done every day
+     first (sell, buy, stock), what is touched once last (settings) — and
+     ten rail icons became seven and a small Help:
+       · Marketing (Enquiries, Catalogue) folded into Sales as its first
+         step: an enquiry is where a sale starts, and "Marketing" read as the
+         public website rather than part of the work
+       · Money gathers money in and out — what customers owe (To collect)
+         and what is owed to vendors (To pay, was under Purchases)
+       · Configure folded into Settings as its Admin group
+       · Knowledge base moved to Help, at the foot of the rail
+     A module opens on its `landing` screen when the user may open it — the
+     one most often wanted (Sales on Orders, Purchases on Purchase orders) —
+     else on its first. Every screen keeps its address. */
   {
     key: 'home',
     label: 'Home',
@@ -43,53 +56,33 @@ export const MODULES = [
     landing: '/dashboard',
     items: [
       { label: 'Dashboard', path: '/dashboard' },
-      { label: 'Knowledge base', path: '/knowledge' },
       { label: 'Activity', path: '/activity' },
-    ],
-  },
-  {
-    /* Marketing sits before Sales because that is the order the work happens:
-       the catalogue is what you put in front of strangers, and an enquiry is
-       a stranger answering it. Both used to live under Sales > Sell, next to
-       Customers and Orders — but those are about people you already deal
-       with, and the two reaching-outward screens were lost among them.
-
-       Enquiries leads, and is the landing page: an enquiry is somebody
-       waiting for a call back, and it goes cold faster than anything else
-       in the product. */
-    key: 'marketing',
-    label: 'Marketing',
-    icon: 'Megaphone',
-    landing: '/enquiries',
-    items: [
-      { label: 'Enquiries', path: '/enquiries', resource: 'enquiries',
-        badge: { endpoint: 'enquiries', field: 'new', tone: 'info', title: 'not yet read' } },
-      /* A menu entry of its own, not a Configurator tile. The catalogue is
-         something a business works ON — deciding what to list, writing the
-         copy, sharing the link — not a setting they touch once. The
-         Configurator keeps its own "Catalogue" entry for the public page's
-         settings; this one is the products. */
-      { label: 'Catalogue', path: '/catalogue', resource: 'catalogue' },
     ],
   },
   {
     key: 'sales',
     label: 'Sales',
     icon: 'ShoppingBag',
-    landing: '/customers',
-    /* Grouped in the order the work actually happens: win it, ship it, bill
-       it. A flat list of six gives no clue that a quotation becomes an order
-       becomes a challan becomes an invoice. The menu can show the flow
-       rather than merely listing the screens.
+    landing: '/customer-orders',
+    /* In the order the work happens: someone asks, you quote, they order,
+       you ship, you bill. Enquiries lead the panel: an enquiry is somebody
+       waiting for a call back, and it goes cold faster than anything else.
 
        `badge` points at a field the list endpoint's summary already
        computes, so the menu can say where work is waiting without inventing
        a second source for the number. */
     items: [
-      { group: 'Sell' },
+      { group: 'Win' },
+      { label: 'Enquiries', path: '/enquiries', resource: 'enquiries',
+        badge: { endpoint: 'enquiries', field: 'new', tone: 'info', title: 'not yet read' } },
+      /* The products on the public page — something a business works ON
+         (what to list, the copy, sharing the link). The page's settings stay
+         under Settings > Admin > Catalogue. */
+      { label: 'Catalogue', path: '/catalogue', resource: 'catalogue' },
       { label: 'Customers', path: '/customers', resource: 'customers' },
       { label: 'Quotations', path: '/sales-quotations', resource: 'sales-quotations',
         badge: { endpoint: 'sales-quotations', field: 'expired', tone: 'warn', title: 'expired' } },
+      { group: 'Order' },
       { label: 'Orders', path: '/customer-orders', resource: 'customer-orders',
         badge: { endpoint: 'customer-orders', field: 'open', tone: 'info', title: 'still open' } },
       { group: 'Ship' },
@@ -105,39 +98,24 @@ export const MODULES = [
     key: 'purchases',
     label: 'Purchases',
     icon: 'ShoppingCart',
-    landing: '/vendors',
+    landing: '/purchase-orders',
     items: [
+      { group: 'Buy & receive' },
+      { label: 'Purchase orders', path: '/purchase-orders', resource: 'po',
+        badge: { endpoint: 'po', field: 'awaiting_approval', tone: 'warn', title: 'awaiting approval' } },
+      { label: 'Goods received', path: '/grn', resource: 'grn' },
       { group: 'Source' },
-      /* Was two menu entries. A vendor and what that vendor supplies are the
-         same subject, and splitting them meant answering "who sells us
-         plate" from a different screen than "who are our vendors". */
+      /* A vendor and what that vendor supplies are one subject: one entry. */
       { label: 'Vendors', path: '/vendors', resource: 'vendors',
         hint: 'Directory and what each one supplies' },
-      { label: 'Indents', path: '/indent', resource: 'indent', module: 'contracting' },
-      /* Quotations that arrived as files. Same resource as Vendor quotes —
+      /* Quotations that arrived as files. Same resource as Ask for quotes —
          the same people raise and decide on both. */
       { label: 'Vendor quotations', path: '/vendor-quotations', resource: 'quotations',
         hint: 'Upload the quotes vendors sent and compare them' },
       { label: 'Ask for quotes', path: '/quotations', resource: 'quotations',
         hint: 'Ask up to three vendors to price one item',
         badge: { endpoint: 'quotations', field: 'awaiting_quotes', tone: 'info', title: 'still short of three quotes' } },
-      { group: 'Buy & receive' },
-      { label: 'Purchase orders', path: '/purchase-orders', resource: 'po',
-        badge: { endpoint: 'po', field: 'awaiting_approval', tone: 'warn', title: 'awaiting approval' } },
-      { label: 'Goods received', path: '/grn', resource: 'grn' },
-      { group: 'Pay' },
-      /* "Vendor bills" used to sit here pointing at /bills, which is the RA
-         Bills Engine — running-account billing against a measurement book,
-         a civil-contracting screen. So the Purchases menu offered vendor
-         bills and opened something else entirely, and the same path
-         appeared twice in the nav under two different names.
-       *
-         What a buyer actually wants here is what is owed and how old it
-         is, which is Payables — it reads grn_bills and records payments
-         against them. RA bills keep their own entry under Projects, where
-         the label matches the screen. */
-      { label: 'Payables', path: '/payables', resource: 'payables',
-        hint: 'What you owe suppliers, and how overdue it is' },
+      { label: 'Indents', path: '/indent', resource: 'indent', module: 'contracting' },
     ],
   },
   {
@@ -173,11 +151,20 @@ export const MODULES = [
     ],
   },
   {
+    /* Money in and out, in one place. "To collect" is the invoices still
+       owed (the Unpaid view, at an address of its own so this rail icon
+       stays lit); "To pay" is Payables — the vendor bills, and how overdue. */
     key: 'money',
     label: 'Money',
     icon: 'Wallet',
-    landing: '/expenses',
+    landing: '/receivables',
     items: [
+      { group: 'In and out' },
+      { label: 'To collect', path: '/receivables', resource: 'sales-invoices',
+        hint: 'Invoices still owed by customers' },
+      { label: 'To pay', path: '/payables', resource: 'payables',
+        hint: 'What you owe suppliers, and how overdue it is' },
+      { group: 'Records' },
       { label: 'Expenses', path: '/expenses', resource: 'expenses' },
       { label: 'RA bills', path: '/bills', resource: 'bills', module: 'contracting' },
       { label: 'Reports', path: '/reports' },
@@ -198,43 +185,37 @@ export const MODULES = [
       { group: 'Data' },
       { label: 'Import data', path: '/import' },
       { label: 'Process flow', path: '/flow', module: 'contracting' },
-    ],
-  },
-  /* The Configurator is its own rail entry, not a line inside Settings.
-
-     It was one link among ten under a gear icon, which put "change what every
-     role in the business is allowed to do" at the same weight as "import a
-     CSV". It is the administrator's control panel and it earns its own icon.
-
-     Every item is adminOnly, and visibleModules() drops a module with no
-     reachable links — so this whole entry is simply absent for anyone who is
-     not an Administrator, rather than showing an icon that refuses them. */
-  {
-    key: 'configurator',
-    label: 'Configure',
-    icon: 'SlidersHorizontal',
-    landing: '/configurator',
-    items: [
+      /* What was the Configure rail entry: the administrator's controls.
+         Every item is adminOnly, so the group — heading and all — is simply
+         absent for anyone who is not an owner or Administrator. */
+      { group: 'Admin' },
       { label: 'All settings', path: '/configurator', adminOnly: true,
         hint: 'Everything you can configure' },
-      { group: 'Access' },
       { label: 'Users & roles', path: '/configurator/people', adminOnly: true,
         hint: 'Who has a login, and how much they can reach' },
       { label: 'Roles & permissions', path: '/configurator/roles', adminOnly: true,
         hint: 'What each role may open and change' },
-      { group: 'Business' },
       { label: 'Categories', path: '/configurator/categories', adminOnly: true,
         hint: 'Your words for what you buy and sell' },
-      /* Modules and Catalogue had tiles on the Configurator page and no
-         entry in this menu, so the only way to reach either was to open
-         "All settings" first and spot the tile. A tile without a menu
-         entry reads as something half-wired. */
       { label: 'Modules', path: '/configurator/modules', adminOnly: true,
         hint: 'Which parts of the product this business uses' },
       { label: 'Catalogue', path: '/configurator/catalogue', adminOnly: true,
         hint: 'Your public page and what appears on it' },
       { label: 'Change history', path: '/configurator/history', adminOnly: true,
         hint: 'Who widened access, and when' },
+    ],
+  },
+  {
+    /* At the foot of the rail, small: where to look things up. The Guide
+       (getting-started tutorial) is switched off for now (lib/features); the
+       Knowledge base offers it again when it is switched on. */
+    key: 'help',
+    label: 'Help',
+    icon: 'LifeBuoy',
+    landing: '/knowledge',
+    bottom: true,
+    items: [
+      { label: 'Knowledge base', path: '/knowledge' },
     ],
   },
 ];
@@ -244,22 +225,21 @@ export const MODULES = [
    panel with things you never navigate to directly. */
 const DETAIL_ROUTES = {
   '/customers/': 'sales',
-  /* Moved with their menu entries — these decide which rail icon lights up,
-     and left on 'sales' the rail would highlight Sales while the Marketing
-     panel was open. */
-  '/enquiries': 'marketing',
-  '/catalogue': 'marketing',
+  /* Enquiries and the Catalogue are Sales' first step since 26 Nov. */
+  '/enquiries': 'sales',
+  '/catalogue': 'sales',
   '/sales-quotations/': 'sales',
   '/sales-invoices/': 'sales',
   '/delivery-challans/': 'sales',
   '/credit-debit-notes/': 'sales',
   '/vendor-supplies': 'purchases',      // kept as a redirect into the Vendors tab
   '/po/': 'purchases',
-  '/grn-bills/': 'purchases',
+  /* a vendor bill is money owed: it opens from Money > To pay */
+  '/grn-bills/': 'money',
   '/skus': 'stock',
   '/raw-materials': 'stock',
   '/production/': 'production',
-  '/knowledge/': 'home',
+  '/knowledge/': 'help',
 };
 
 /* ── path -> permission ───────────────────────────────────── */

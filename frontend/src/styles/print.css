@@ -143,6 +143,8 @@
    document type and counts lines per page.
    ══════════════════════════════════════════════════════════════════════ */
 .print-only { display: none; }
+/* the blank stretch of an item table: paper only (see FillRows) */
+.doc-fill { display: none; }
 
 @media print {
   .print-only { display: inline !important; }
@@ -294,6 +296,58 @@
   }
 
   .inv-bank-terms { margin: 6pt 10pt 0 !important; gap: 8pt !important; }
+
+  /* Item tables are ruled: a frame and a line between every column, as on
+     any printed invoice book. The open table (row lines only) could not
+     run down the page — an empty stretch of it was just more white. */
+  .doc-sheet table.doc-items { border: 0.75pt solid #000 !important; }
+  .doc-sheet table.doc-items th, .doc-sheet table.doc-items td { border-left: 0.5pt solid #b5b5b5 !important; }
+  .doc-sheet table.doc-items th:first-child, .doc-sheet table.doc-items td:first-child { border-left: 0 !important; }
+  .doc-sheet table.doc-items thead th { border-bottom: 1pt solid #000 !important; }
+  .invoice-mock table.doc-items td { border-right-color: #b5b5b5 !important; }
+
+  /* A document that fits one page fills it. It used to stop where its
+     content stopped and leave the foot of the sheet empty ("unidentified
+     space at the bottom"); pushing the signature down only moved the gap up
+     between the lines and the totals. Now the sheet is a page tall and the
+     ITEM TABLE takes the spare height: the blank row under the last line
+     (FillRows in DocumentKit) stretches, its column lines run on to the
+     totals, and the totals, words, bank, terms and signature close the
+     page. A little under the 271mm the @page margins leave, so rounding
+     can never push a sliver onto a blank second sheet.
+
+     Only on a document of up to 12 lines, which fits one page. The flex
+     layout this needs loses Chrome's "carry the last rows over with the
+     totals" (it will not reach back into the table for a break), so a
+     longer document keeps the plain layout. Download PDF fills every page
+     of a long one: lib/documentPdf.js. */
+  .doc-sheet:not(:has(:is(.doc-items, .inv-items-table) tbody > tr:nth-child(13))),
+  .invoice-mock:not(:has(:is(.doc-items, .inv-items-table) tbody > tr:nth-child(13))) {
+    display: flex !important; flex-direction: column !important;
+    min-height: 266mm;
+  }
+  .doc-sheet:not(:has(:is(.doc-items, .inv-items-table) tbody > tr:nth-child(13))) > :has(> table.doc-items),
+  .invoice-mock:not(:has(:is(.doc-items, .inv-items-table) tbody > tr:nth-child(13))) > :has(> table.doc-items) {
+    flex: 1 0 auto; display: flex !important; flex-direction: column !important;
+  }
+  .doc-sheet:not(:has(:is(.doc-items, .inv-items-table) tbody > tr:nth-child(13))) table.doc-items,
+  .invoice-mock:not(:has(:is(.doc-items, .inv-items-table) tbody > tr:nth-child(13))) table.doc-items {
+    flex: 1 0 auto; margin-bottom: 0 !important;
+  }
+  .doc-sheet:not(:has(:is(.doc-items, .inv-items-table) tbody > tr:nth-child(13))) .doc-fill,
+  .invoice-mock:not(:has(:is(.doc-items, .inv-items-table) tbody > tr:nth-child(13))) .doc-fill { display: table-row-group !important; }
+  /* On the tbody, not the row: a table given extra height shares it out
+     between its sections first, and only a section asking for a
+     percentage takes it all — anything else stretched every item row. */
+  .doc-fill, .doc-fill tr { height: 100%; }
+  .doc-fill td { border-top: 0 !important; border-bottom: 0 !important; padding: 0 !important; }
+  /* the invoice's table has no frame of its own (the sheet's is round it):
+     a rule under the stretch closes it above the totals */
+  .invoice-mock .doc-fill td { border-bottom: 1px solid #000 !important; }
+  /* The wrappers around a sheet carry screen spacing (the PO's had 64px at
+     its foot): on paper, a full-height sheet plus that ran onto a second,
+     empty page. */
+  :has(> .doc-scroll), .doc-scroll { padding-bottom: 0 !important; margin-bottom: 0 !important; }
 
   /* The totals box stays a box at the right, as on screen. "Every table
      full width" (section 3) was meant for item tables; stretched, it put

@@ -4,11 +4,11 @@
    missing from here falls back to the Home icon. */
 import {
   LayoutDashboard, Megaphone, ShoppingBag, ShoppingCart, Package, Factory, Wallet,
-  Settings, SlidersHorizontal, Home,
+  Settings, SlidersHorizontal, Home, LifeBuoy,
 } from 'lucide-react';
 
 export const NAV_ICONS = {
-  LayoutDashboard, Megaphone, ShoppingBag, ShoppingCart, Package, Factory, Wallet, Settings, SlidersHorizontal,
+  LayoutDashboard, Megaphone, ShoppingBag, ShoppingCart, Package, Factory, Wallet, Settings, SlidersHorizontal, LifeBuoy,
 };
 
 export const navIcon = (name) => NAV_ICONS[name] || Home;

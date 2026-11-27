@@ -11,7 +11,7 @@
    stopped. The count is computed server-side over the whole filtered set.
    ══════════════════════════════════════════════════════════ */
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Truck, Plus, Trash2, X, Eye } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../context/PermissionContext';
@@ -40,6 +40,12 @@ export default function DeliveryChallans() {
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  /* + New in the rail opens this screen with its form open (?new=1) —
+     also when already on it, so the address is watched, not just read once. */
+  const newLoc = useLocation();
+  useEffect(() => {
+    if (new URLSearchParams(newLoc.search).get('new') === '1') setShowForm(true);
+  }, [newLoc.search]);
   const [head, setHead] = useState({ customerId: '', customerOrderId: '', challanDate: today(), dispatchThrough: '', vehicleNo: '', lrNo: '', placeOfSupply: '' });
   const [lines, setLines] = useState([{ description: '', hsn: '', quantity: '', uom: 'nos', rate: '' }]);
   const linesNow = useRef(lines);      // the lines as they are when an order's arrive, not as they were when it was asked for
