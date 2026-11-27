@@ -15,7 +15,9 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
    — and `upper` to capitalise as typed; `pair` cross-checks a GSTIN with a
    PAN. A wrong value is marked under its field, and the save button says
    why it will not save rather than doing nothing. */
-export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity, summaryField, summaryLabel, rowAction, pair }) {
+/* `actions` sits beside the Add button (an Import button, say); a change of
+   `reloadKey` reloads the list, for an import that adds rows from outside. */
+export default function MasterList({ title, subtitle, endpoint, icon: Icon, fields, columns, attachEntity, summaryField, summaryLabel, rowAction, pair, actions = null, reloadKey = 0 }) {
   const { confirm } = useConfirm();
   const toast = useToast();
   const [rows, setRows] = useState([]);
@@ -81,7 +83,7 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
       setLoading(false);
     }
   };
-  useEffect(() => { load(); }, [endpoint, debounced, page]);
+  useEffect(() => { load(); }, [endpoint, debounced, page, reloadKey]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1;
@@ -184,6 +186,7 @@ export default function MasterList({ title, subtitle, endpoint, icon: Icon, fiel
               </button>
             )}
           </div>
+          {actions}
           <button onClick={openNew} className="btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
             <Plus size={16} /> Add {title.replace(/s$/, '')}
           </button>

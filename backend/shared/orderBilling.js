@@ -37,10 +37,13 @@ async function billedLines(exec, orderId, { exceptInvoiceId = null } = {}) {
       WHERE customer_order_id = $1 ORDER BY sort_order, id`, [orderId])).rows
     .map((r) => ({ id: r.id, description: r.description, unit: r.unit, ordered: Number(r.quantity) || 0, billed: 0, invoices: new Set() }));
   const items = (await exec.query(
-    `SELECT sii.quantity, sii.description, sii.customer_order_item_id, si.invoice_number
+    `SELECT sii.quantity, sii.description, sii.customer_order_item_id, si.invoice_number, si.status
        FROM sales_invoice_items sii JOIN sales_invoices si ON si.id = sii.sales_invoice_id
       WHERE si.customer_order_id = $1 AND si.status <> 'Cancelled' AND si.id <> COALESCE($2::int, -1)
       ORDER BY si.id, sii.sort_order, sii.id`, [orderId, exceptInvoiceId])).rows;
+  /* Which of them are drafts: a spare draft is deleted, an issued one
+     cancelled, so the refusal says which it is. */
+  const drafts = new Set(items.filter((it) => it.status === 'Draft').map((it) => it.invoice_number));
   const byId = new Map(lines.map((l) => [l.id, l]));
   const add = (l, qty, number) => { l.billed += qty; l.invoices.add(number); };
   const unlinked = [];
@@ -62,7 +65,8 @@ async function billedLines(exec, orderId, { exceptInvoiceId = null } = {}) {
       if (take > 0) { add(l, take, it.invoice_number); qty -= take; }
     });
   }
-  return lines.map((l) => ({ ...l, left: Math.max(0, l.ordered - l.billed), invoices: [...l.invoices] }));
+  return lines.map((l) => ({ ...l, left: Math.max(0, l.ordered - l.billed), invoices: [...l.invoices],
+    drafts: [...l.invoices].filter((n) => drafts.has(n)) }));
 }
 
 /**
@@ -91,8 +95,12 @@ function linkLines(lines, orderLines) {
 
 /**
  * The lines that would bill more than is left, as one message — or null.
+ * `keep`: order line id → what this invoice already billed of it when it
+ * was last saved. A draft may always keep that much, so an order already
+ * billed twice (two drafts, from before this check, or a spare copy) does
+ * not freeze both drafts: an edit is refused only when it bills MORE.
  */
-function overBilled(lines, orderLines, orderNumber) {
+function overBilled(lines, orderLines, orderNumber, { keep = null, lead = null } = {}) {
   const want = new Map();
   for (const l of lines) {
     if (!l.customerOrderItemId) continue;
@@ -101,30 +109,71 @@ function overBilled(lines, orderLines, orderNumber) {
   const problems = [];
   for (const o of orderLines) {
     const w = want.get(o.id) || 0;
-    if (w > o.left + EPS) {
-      const where = o.invoices.length ? ` on ${o.invoices.join(', ')}` : '';
+    const may = Math.max(o.left, keep?.get(o.id) || 0);
+    if (w > may + EPS) {
+      const named = o.invoices.map((n) => (o.drafts?.includes(n) ? `${n} (draft)` : n));
+      const where = named.length ? ` on ${named.join(', ')}` : '';
       problems.push(`“${o.description}”: ordered ${fmtQty(o.ordered)} ${o.unit || ''}, already invoiced ${fmtQty(o.billed)}${where}, `
         + `${fmtQty(o.left)} left — this invoice has ${fmtQty(w)}.`.replace(/\s+,/g, ','));
     }
   }
   if (!problems.length) return null;
-  return `This would bill more of ${orderNumber || 'the order'} than was ordered. ${problems.join(' ')} `
-       + 'To bill it again, cancel the earlier invoice first.';
+  return `${lead || `This would bill more of ${orderNumber || 'the order'} than was ordered.`} ${problems.join(' ')} `
+       + 'Only one invoice can bill it: take the line off the other invoice — delete it if it is a spare draft, '
+       + 'cancel it if it was issued by mistake — or lower the quantity here.';
+}
+
+/* What this invoice billed of each order line when it was last saved:
+   everything billed on the order, less everything but this invoice. Same
+   linking rules as billedLines, so a renamed line still counts as itself. */
+async function savedOnInvoice(exec, orderId, invoiceId) {
+  const [all, others] = await Promise.all([
+    billedLines(exec, orderId), billedLines(exec, orderId, { exceptInvoiceId: invoiceId })]);
+  const rest = new Map(others.map((o) => [o.id, o.billed]));
+  return new Map(all.map((o) => [o.id, Math.max(0, o.billed - (rest.get(o.id) || 0))]));
 }
 
 /**
  * Lock the order for the rest of the transaction, so two invoices saved at
  * the same moment cannot both take what is left, then check the lines.
  * Returns the lines with their order-line link, or throws (status 409).
+ * keepSaved: editing a draft — what it already billed may stay (see overBilled).
  */
-async function checkOrderBilling(client, { orderId, lines, exceptInvoiceId = null }) {
+async function checkOrderBilling(client, { orderId, lines, exceptInvoiceId = null, keepSaved = false }) {
   const order = (await client.query('SELECT id, order_number FROM customer_orders WHERE id = $1 FOR UPDATE', [orderId])).rows[0];
   if (!order) return lines;
   const orderLines = await billedLines(client, orderId, { exceptInvoiceId });
+  const keep = keepSaved && exceptInvoiceId ? await savedOnInvoice(client, orderId, exceptInvoiceId) : null;
   const linked = linkLines(lines, orderLines);
-  const problem = overBilled(linked, orderLines, order.order_number);
+  const problem = overBilled(linked, orderLines, order.order_number, { keep });
   if (problem) { const e = new Error(problem); e.status = 409; e.code = 'ORDER_OVERBILLED'; throw e; }
   return linked;
+}
+
+/**
+ * Before a draft is issued (or money is recorded on it, which issues it):
+ * its lines, as saved, against every other invoice for the order that is not
+ * cancelled — drafts included, because the next thing a draft does is go out.
+ * Editing a draft keeps what it had (keepSaved above), so this is where two
+ * invoices billing the same order line are finally stopped.
+ * Returns the message, or null.
+ */
+async function issueProblem(client, invoiceId) {
+  const inv = (await client.query(
+    'SELECT id, invoice_number, customer_order_id FROM sales_invoices WHERE id = $1', [invoiceId])).rows[0];
+  if (!inv?.customer_order_id) return null;
+  const order = (await client.query('SELECT id, order_number FROM customer_orders WHERE id = $1 FOR UPDATE', [inv.customer_order_id])).rows[0];
+  if (!order) return null;
+  const mine = (await client.query(
+    'SELECT description, quantity, customer_order_item_id FROM sales_invoice_items WHERE sales_invoice_id = $1 ORDER BY sort_order, id',
+    [inv.id])).rows;
+  const orderLines = await billedLines(client, order.id, { exceptInvoiceId: inv.id });
+  /* A stored link to a line no longer on the order is billed freely, as a
+     line typed by hand would be; linkLines would refuse it outright. */
+  const ids = new Set(orderLines.map((o) => o.id));
+  const linked = linkLines(mine.map((l) => ({ ...l, customer_order_item_id: ids.has(l.customer_order_item_id) ? l.customer_order_item_id : null })), orderLines);
+  return overBilled(linked, orderLines, order.order_number,
+    { lead: `${inv.invoice_number} can't be issued yet — it would bill more of ${order.order_number} than was ordered.` });
 }
 
 /**
@@ -136,8 +185,12 @@ async function checkOrderBilling(client, { orderId, lines, exceptInvoiceId = nul
  * the figures (freight is real; billing the order twice is not).
  * Returns the message, or null. Values are before discounts and GST.
  */
-async function aboveOrderValue(client, { orderId, lines, exceptInvoiceId = null }) {
+async function aboveOrderValue(client, { orderId, lines, exceptInvoiceId = null, previousValue = null }) {
   const free = lines.filter(l => !l.customerOrderItemId);
+  /* Editing: asked once, when the invoice grows — not again on every save
+     of a draft that is worth no more than it was. */
+  const worth = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.rate) || 0), 0);
+  if (previousValue != null && worth <= Number(previousValue) + 0.5) return null;
   const { rows: [v] } = await client.query(
     `SELECT co.order_number,
             (SELECT COALESCE(SUM(coi.quantity * COALESCE(coi.rate, coi.target_price, 0)), 0)
@@ -170,4 +223,4 @@ async function aboveOrderValue(client, { orderId, lines, exceptInvoiceId = null 
        + 'if the order has already been invoiced, cancel the earlier invoice first.';
 }
 
-module.exports = { billedLines, linkLines, overBilled, checkOrderBilling, aboveOrderValue, key };
+module.exports = { billedLines, linkLines, overBilled, checkOrderBilling, issueProblem, aboveOrderValue, key };

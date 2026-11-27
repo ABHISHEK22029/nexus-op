@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
-import { Tags, Layers } from 'lucide-react';
+import { Tags, Layers, FileSpreadsheet } from 'lucide-react';
 import MasterList from '../components/MasterList';
 import BomModal from '../components/BomModal';
+import ItemImport from '../components/ItemImport';
 import { fmtINR } from '../lib/format';
+
+const importBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' };
 
 export default function SKUs() {
   const [bomSku, setBomSku] = useState(null);
+  /* 'products' | 'recipes' — the import window that is open, if any. */
+  const [importing, setImporting] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   return (
     <>
@@ -15,6 +21,17 @@ export default function SKUs() {
         endpoint="skus"
         attachEntity="sku"
         icon={Tags}
+        reloadKey={reloadKey}
+        actions={<>
+          <button type="button" onClick={() => setImporting('products')} className="btn-secondary btn-sm" style={importBtn}
+            title="Add or update products from an Excel or CSV sheet" data-import-open="products">
+            <FileSpreadsheet size={15} /> Import
+          </button>
+          <button type="button" onClick={() => setImporting('recipes')} className="btn-secondary btn-sm" style={importBtn}
+            title="Set many products' recipes (bills of materials) from one sheet" data-import-open="recipes">
+            <Layers size={15} /> Import recipes
+          </button>
+        </>}
         rowAction={{
           label: 'Recipe',
           title: 'Set the bill of materials for this product',
@@ -38,6 +55,9 @@ export default function SKUs() {
         ]}
       />
       {bomSku && <BomModal sku={bomSku} onClose={() => setBomSku(null)} />}
+      {importing && (
+        <ItemImport kind={importing} onClose={() => setImporting(null)} onDone={() => setReloadKey(k => k + 1)} />
+      )}
     </>
   );
 }

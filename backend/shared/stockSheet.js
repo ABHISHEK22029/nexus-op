@@ -221,8 +221,12 @@ class SheetError extends Error {
 }
 
 /** Reads .xlsx or .csv into [{ n: sheet row number, cells: [...] }].
- *  With several worksheets, the one that looks most like a stock table. */
-async function readSheet(buffer, filename = '') {
+ *  With several worksheets, the one that looks most like a stock table.
+ *  `findHeader` lets another kind of sheet (products, recipes) say what its
+ *  heading row looks like; `firstMatch` takes the first worksheet that has
+ *  one, so a workbook with reference sheets after the one being filled in
+ *  is read from the right place. */
+async function readSheet(buffer, filename = '', { findHeader = findHeaderRow, firstMatch = false } = {}) {
   const name = String(filename).toLowerCase();
   const isZip = buffer && buffer.length > 3 && buffer[0] === 0x50 && buffer[1] === 0x4b;
   if (/\.xls$/.test(name) && !isZip) {
@@ -243,7 +247,8 @@ async function readSheet(buffer, filename = '') {
         const filled = Array.from(cells, (v) => (v === undefined ? '' : v));
         if (filled.some((c) => norm(c))) rows.push({ n: row.number, cells: filled });
       });
-      const h = findHeaderRow(rows);
+      const h = findHeader(rows);
+      if (firstMatch && h >= 0) return { sheet: ws.name, rows };
       const score = h >= 0 ? rows.length + 1000 : rows.length;
       if (!best || score > best.score) best = { sheet: ws.name, rows, score };
     }

@@ -27,7 +27,7 @@ const { syncOrderDelivery } = require('../shared/orderProgress');
 const { lineAmount } = require('../shared/orderTotals');
 const { prepareLines, checkAdjustments } = require('../shared/lineChecks');
 const { assertRefs } = require('../shared/ownedRefs');
-const { billedLines, checkOrderBilling, aboveOrderValue } = require('../shared/orderBilling');
+const { billedLines, checkOrderBilling, issueProblem, aboveOrderValue } = require('../shared/orderBilling');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const isAdmin = (req) => isCrossTenant(req.user?.role);
 
@@ -539,6 +539,15 @@ exports.addPayment = async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This invoice is cancelled, so no payment can be recorded against it.' });
     }
+    /* Money on a draft issues it (Paid / Partially Paid), so the same
+       check as issuing: not on an order line another invoice already bills. */
+    if (cur?.status === 'Draft') {
+      const problem = await issueProblem(client, req.params.id);
+      if (problem) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: problem.replace(/can't be issued yet/, "can't take a payment yet") });
+      }
+    }
     if (cur) {
       const net = Number(cur.net_amount || 0);
       const already = Number(cur.paid || 0);
@@ -691,11 +700,16 @@ exports.update = async (req, res) => {
         place_of_supply_code: set.place_of_supply_code ?? tax.placeOfSupplyCode ?? inv.place_of_supply_code,
       });
       if (req.body.items) {
-        /* An order is billed once — this invoice's own earlier lines aside. */
+        /* An order is billed once — this invoice's own earlier lines aside.
+           A draft may keep what it already billed (an order billed twice
+           left both drafts unsaveable, 27 Nov); billing more is refused, and
+           the duplicate is stopped when one of them is issued. */
         if (inv.customer_order_id) {
-          t.lines = await checkOrderBilling(client, { orderId: inv.customer_order_id, lines: t.lines, exceptInvoiceId: inv.id });
+          t.lines = await checkOrderBilling(client, { orderId: inv.customer_order_id, lines: t.lines, exceptInvoiceId: inv.id, keepSaved: true });
+          const previousValue = Number((await client.query(
+            'SELECT COALESCE(SUM(quantity * rate), 0) AS v FROM sales_invoice_items WHERE sales_invoice_id = $1', [inv.id])).rows[0].v);
           const above = req.body.confirmAboveOrder ? null
-            : await aboveOrderValue(client, { orderId: inv.customer_order_id, lines: t.lines, exceptInvoiceId: inv.id });
+            : await aboveOrderValue(client, { orderId: inv.customer_order_id, lines: t.lines, exceptInvoiceId: inv.id, previousValue });
           if (above) {
             await client.query('ROLLBACK');
             return res.status(409).json({ error: above, needsConfirm: 'above_order_value' });
@@ -798,6 +812,12 @@ exports.setStatus = async (req, res) => {
       if (credited > 0.005) {
         return await refuse(`A credit note of ₹${credited.toLocaleString('en-IN')} has been raised against this invoice, so it can't ${status === 'Draft' ? 'go back to draft' : 'be cancelled'}. Correct it with another note instead.`);
       }
+    }
+    /* Issuing: the order's lines may be billed once. Drafts can keep a
+       duplicate while they are edited; it stops here. */
+    if (inv.status === 'Draft' && status === 'Sent') {
+      const problem = await issueProblem(client, inv.id);
+      if (problem) return await refuse(problem);
     }
     await client.query('UPDATE sales_invoices SET status = $1 WHERE id = $2', [status, inv.id]);
     if (status === 'Cancelled') {

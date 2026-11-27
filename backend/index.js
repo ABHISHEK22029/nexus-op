@@ -31,6 +31,7 @@ const adminController = require('./controllers/AdminController');
 const { profileFor } = require('./shared/companyProfile');
 const stockController = require('./controllers/StockController');
 const stockImportController = require('./controllers/StockImportController');
+const itemImportController = require('./controllers/ItemImportController');
 const vendorImportController = require('./controllers/VendorImportController');
 const passwordResetController = require('./controllers/PasswordResetController');
 const { limit, ip: rlIp, emailOf: rlEmail } = require('./shared/rateLimit');
@@ -1722,6 +1723,17 @@ app.use('/grn', grnRouter);
 app.post('/production/from-order-item/:itemId', productionController.createFromOrderItem);
 app.get('/production',              productionController.getOrders);
 app.post('/production',             productionController.createOrder);
+
+/* ── Products, raw materials and recipes from a sheet ──
+   Excel or CSV, previewed row by row before anything is saved
+   (controllers/ItemImportController). Under /skus and /raw-materials so
+   the same permissions apply as adding one by hand: reading a template
+   needs read, a preview or an import needs write. */
+for (const [base, kind] of [['/skus/import', 'products'], ['/raw-materials/import', 'materials'], ['/skus/recipes/import', 'recipes']]) {
+  app.get(`${base}/template`, itemImportController.template(kind));
+  app.post(`${base}/plan`, upload.single('file'), itemImportController.plan(kind));
+  app.post(`${base}/commit`, upload.single('file'), itemImportController.commit(kind));
+}
 
 /* ── Bill of Materials (per SKU) ── */
 /* The product must be yours. sku_bom has no owner of its own, so by id

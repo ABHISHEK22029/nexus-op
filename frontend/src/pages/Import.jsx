@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
 import { Upload, FileSpreadsheet, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import ItemImport from '../components/ItemImport';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+/* Products, raw materials and recipes have their own importer — Excel or
+   CSV, a template, their own column names, every row checked before
+   anything is saved (components/ItemImport). The others stay a CSV here. */
 const TARGETS = {
   customers:      { label: 'Customers', cols: ['name', 'gstin', 'state', 'contact_name', 'phone', 'email', 'billing_address', 'opening_balance'] },
-  'raw-materials':{ label: 'Raw Materials', cols: ['material_code', 'name', 'grade', 'unit', 'standard_rate', 'hsn'] },
-  skus:           { label: 'SKUs', cols: ['sku_code', 'name', 'description', 'unit', 'price', 'hsn'] },
   vendors:        { label: 'Vendors', cols: ['name', 'type', 'gstin', 'pan'] },
+  skus:           { label: 'Products (SKUs)', item: 'products' },
+  'raw-materials':{ label: 'Raw materials', item: 'materials' },
+  recipes:        { label: 'Recipes (bills of materials)', item: 'recipes' },
 };
 
 // Small CSV parser (handles quotes, commas, newlines inside quotes).
@@ -38,6 +43,7 @@ export default function Import() {
   const [headers, setHeaders] = useState([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  const [itemImport, setItemImport] = useState(null);
 
   const onFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -84,7 +90,7 @@ export default function Import() {
         <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
           <FileSpreadsheet size={24} style={{ color: 'var(--brand-amber)' }} /> Import Data
         </h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>Bring your masters in from a CSV — no hand-keying. Customers can carry an <b>opening balance</b>.</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>Bring your records in from a spreadsheet — no hand-keying. Products, raw materials and recipes take Excel or CSV; customers can carry an <b>opening balance</b>.</p>
       </div>
 
       <div style={{ ...card, marginBottom: 16 }}>
@@ -95,11 +101,26 @@ export default function Import() {
               {Object.entries(TARGETS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
           </div>
-          <label className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-            <Upload size={16} /> Choose CSV
-            <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: 'none' }} />
-          </label>
+          {t.item ? (
+            <button type="button" onClick={() => setItemImport(t.item)} className="btn-primary btn-sm" data-import-open={t.item}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Upload size={16} /> Open the importer
+            </button>
+          ) : (
+            <label className="btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <Upload size={16} /> Choose CSV
+              <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: 'none' }} />
+            </label>
+          )}
         </div>
+        {t.item ? (
+          <div style={{ marginTop: 14, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Excel (.xlsx) or CSV, in your own column names. Download a template from the importer, and see every
+            row checked — new, updated, or what's wrong with it — before anything is saved.
+            {t.item !== 'recipes' && <> The same importer is on Stock → Items.</>}
+            {t.item === 'recipes' && <> Import raw materials and products first: a recipe links the two.</>}
+          </div>
+        ) : (
         <div style={{ marginTop: 14, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           {/* Wrapped, not one unbreakable run: the names sat back to back with
               no space between them and ran off the card on a phone. */}
@@ -109,7 +130,9 @@ export default function Import() {
           </span>
           <div style={{ marginTop: 4 }}>Only <b>name</b> is required; extra/unknown columns are ignored.</div>
         </div>
+        )}
       </div>
+      {itemImport && <ItemImport kind={itemImport} onClose={() => setItemImport(null)} />}
 
       {result && (
         <div style={{ ...card, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, color: result.fail ? 'var(--accent-red)' : '#10b981' }}>

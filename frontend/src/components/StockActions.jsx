@@ -83,7 +83,9 @@ export function Shell({ title, subtitle, icon, onClose, children, footer, width 
 
         {footer && (
           <div style={{
-            display: 'flex', justifyContent: 'flex-end', gap: 8,
+            /* Wraps on a phone, rather than squeezing a summary line into
+               a column beside the buttons. */
+            display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: 8,
             padding: '13px 18px', borderTop: '1px solid var(--border-subtle)',
           }}>{footer}</div>
         )}
